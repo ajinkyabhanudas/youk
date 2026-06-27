@@ -1,0 +1,61 @@
+version: "1.0"
+updated: "2026-06-28"
+
+hard_rules:
+  - id: no-auto-apply-proposals
+    name: "Self-heal proposals require founder approval"
+    description: >
+      youk cannot apply changes to skills, guardrails, or routes without
+      explicit founder approval. apply_proposal tool enforces this.
+    enforced_by: "youk-core.apply_proposal"
+    violation: "BLOCK — return error, do not write"
+
+  - id: no-credential-commits
+    name: "No secrets in git"
+    description: >
+      Files matching *.env, *secret*, *credential*, *api_key*, *password*
+      cannot be committed or written to knowledge/.
+    enforced_by: "youk-code.check_commit_quality"
+    violation: "BLOCK — name the specific file match"
+
+  - id: knowledge-extraction-not-logging
+    name: "Extract insights, never log transcripts"
+    description: >
+      knowledge/ stores structured insights (interpretation patterns, domain
+      concepts, clarification cases, proposals). Raw session content is never
+      written. session_end validates structure before any write.
+    enforced_by: "youk-core.session_end — validate before write"
+    violation: "BLOCK — refuse unstructured writes to knowledge/"
+
+  - id: no-destructive-without-confirm
+    name: "Destructive ops require explicit confirmation"
+    description: >
+      rm -rf, DROP TABLE, force push, reset --hard: must confirm intent before
+      executing. Confirmation is per-operation, not per-session.
+    enforced_by: "CLAUDE.md proactive pattern + pre-bash hook"
+    violation: "BLOCK — surface confirmation prompt"
+
+soft_rules:
+  - id: session-close-cluster
+    name: "Session-close cluster at session end"
+    description: "context-sync end + learn + humanize should run at session end"
+    enforced_by: "youk-core.session_end"
+    violation: "NUDGE — once, with explicit skip path"
+
+  - id: nfr-before-m-tasks
+    name: "NFR check before M+ tasks"
+    description: "Medium and larger tasks should have NFR check before coding"
+    enforced_by: "youk-core.route_task — warning flag in output"
+    violation: "SURFACE — include in routing decision"
+
+  - id: spec-before-l-tasks
+    name: "write-spec before L/XL tasks"
+    description: "Large tasks should have a write-spec output before dev-loop"
+    enforced_by: "youk-core.route_task — warning flag in output"
+    violation: "SURFACE — include in routing decision"
+
+  - id: adr-for-real-alternatives
+    name: "Document architectural choices with rejected alternatives"
+    description: "When a decision has real alternatives, document it with /adr"
+    enforced_by: "CLAUDE.md proactive pattern"
+    violation: "SURFACE — once per session"

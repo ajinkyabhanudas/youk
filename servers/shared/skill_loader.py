@@ -1,0 +1,99 @@
+from __future__ import annotations
+from pathlib import Path
+from typing import Optional
+
+
+CLAUDE_ROOT = Path("/claude")
+SKILLS_DIR = CLAUDE_ROOT / "skills"
+
+
+def load_skill(skill_name: str) -> str:
+    """Load a SKILL.md file by name from the mounted claude volume."""
+    skill_file = SKILLS_DIR / skill_name / "SKILL.md"
+    if not skill_file.exists():
+        raise FileNotFoundError(f"Skill not found: {skill_name} at {skill_file}")
+    return skill_file.read_text()
+
+
+def load_skill_reference(skill_name: str, reference_name: str) -> str:
+    """Load a reference file from a skill's references/ directory."""
+    ref_file = SKILLS_DIR / skill_name / "references" / reference_name
+    if not ref_file.exists():
+        raise FileNotFoundError(f"Reference not found: {skill_name}/references/{reference_name}")
+    return ref_file.read_text()
+
+
+def load_skill_fast_path(skill_name: str) -> Optional[str]:
+    """Extract the fast-path frontmatter from a SKILL.md if present."""
+    try:
+        content = load_skill(skill_name)
+    except FileNotFoundError:
+        return None
+
+    if not content.startswith("---"):
+        return None
+
+    end = content.find("---", 3)
+    if end == -1:
+        return None
+
+    frontmatter = content[3:end]
+    fast_path_start = frontmatter.find("fast-path:")
+    auto_skip_start = frontmatter.find("auto-skip:")
+
+    if fast_path_start != -1:
+        return frontmatter[fast_path_start:].strip()
+    if auto_skip_start != -1:
+        return frontmatter[auto_skip_start:].strip()
+    return None
+
+
+def list_skills() -> list[dict]:
+    """List all available skills with basic metadata."""
+    if not SKILLS_DIR.exists():
+        return []
+
+    skills = []
+    for skill_dir in sorted(SKILLS_DIR.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        skill_file = skill_dir / "SKILL.md"
+        if not skill_file.exists():
+            continue
+
+        content = skill_file.read_text()
+        description = _extract_description(content)
+        fast_path = load_skill_fast_path(skill_dir.name) is not None
+
+        skills.append({
+            "name": skill_dir.name,
+            "description": description,
+            "has_fast_path": fast_path,
+            "size_bytes": skill_file.stat().st_size,
+        })
+    return skills
+
+
+def _extract_description(content: str) -> str:
+    """Extract the first non-empty line after the frontmatter as a description."""
+    lines = content.split("\n")
+    in_frontmatter = False
+    past_frontmatter = False
+
+    for line in lines:
+        if line.strip() == "---":
+            if not in_frontmatter:
+                in_frontmatter = True
+            else:
+                past_frontmatter = True
+            continue
+        if past_frontmatter and line.strip() and not line.startswith("#"):
+            return line.strip()[:120]
+        if past_frontmatter and line.startswith("# "):
+            return line.lstrip("# ").strip()[:120]
+
+    # No frontmatter — first heading
+    for line in lines:
+        if line.startswith("# "):
+            return line.lstrip("# ").strip()[:120]
+    return "No description"

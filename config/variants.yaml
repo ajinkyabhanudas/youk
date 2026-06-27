@@ -1,0 +1,38 @@
+version: "1.0"
+updated: "2026-06-28"
+
+active_variants:
+  - id: core
+    name: youk-core
+    docker_image: youk-core:latest
+    description: "Session management, routing, self-heal, living knowledge"
+    always_on: true
+    phase: 1
+
+  - id: code
+    name: youk-code
+    docker_image: youk-code:latest
+    description: "Software engineering — NFR, dev-loop, review, verify skills"
+    always_on: false
+    phase: 1
+
+planned_variants:
+  - id: pm
+    name: youk-pm
+    description: "Product management — pm-review, write-spec, adr, stress-test"
+    phase: 3
+
+  - id: research
+    name: youk-research
+    description: "Research and synthesis — web search, learn skill"
+    phase: 3
+
+  - id: design
+    name: youk-design
+    description: "UX and design — ux-designer skill, Figma integration"
+    phase: 4
+
+  - id: analytics
+    name: youk-analytics
+    description: "Production feedback — Amplitude, error rates, user behavior"
+    phase: 5

@@ -1,0 +1,109 @@
+version: "1.0"
+updated: "2026-06-28"
+
+task_sizes:
+  XS:
+    signals:
+      - typo
+      - clarification
+      - rename
+      - one-liner
+      - single variable
+    ceremony: none
+    skills: []
+
+  S:
+    signals:
+      - bug fix
+      - hotfix
+      - small add
+      - single function
+      - config change
+      - test addition
+    ceremony: minimal
+    skills:
+      - nfr_check
+    nfr_mode: fast_path_2q
+
+  M:
+    signals:
+      - feature
+      - add
+      - implement
+      - refactor
+      - new endpoint
+      - new component
+    ceremony: standard
+    skills:
+      - nfr_check
+      - dev_loop
+      - code_review
+      - verify
+    nfr_mode: quick_4q
+
+  L:
+    signals:
+      - system
+      - architecture
+      - new module
+      - multi-day
+      - significant refactor
+    ceremony: full
+    skills:
+      - pm_review
+      - write_spec
+      - nfr_check
+      - adr
+      - dev_loop
+      - code_review
+      - security_review
+      - verify
+    nfr_mode: full
+
+  XL:
+    signals:
+      - new project
+      - platform
+      - multi-week
+      - major migration
+      - new service
+    ceremony: full_plus_stress
+    skills:
+      - orchestrate
+      - pm_review
+      - write_spec
+      - nfr_check
+      - adr
+      - stress_test
+      - dev_loop
+      - code_review
+      - security_review
+      - verify
+    nfr_mode: full
+
+proactive_triggers:
+  - id: auth-file-edit
+    match_on: file_path
+    pattern: "auth|security|password|token|secret|credential"
+    suggest: security_review
+    threshold: once_per_session
+
+  - id: new-dependency
+    match_on: content
+    pattern: "import|require|pip install"
+    context: new_dependency_not_in_context
+    suggest: dependency_check
+    threshold: once_per_session
+
+  - id: big-diff-no-review
+    match_on: session_state
+    condition: "exchange_count > 3 AND estimated_diff_lines > 50"
+    suggest: code_review
+    threshold: once_per_session
+
+  - id: architecture-choice
+    match_on: content
+    pattern: "vs\\.|compared to|instead of|over|rather than"
+    context: technology_or_approach_comparison
+    suggest: adr
+    threshold: once_per_session

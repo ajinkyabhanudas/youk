@@ -1,0 +1,117 @@
+"""youk-code MCP server — software engineering skills."""
+from __future__ import annotations
+import sys
+sys.path.insert(0, "/shared")
+
+from pathlib import Path
+from mcp.server.fastmcp import FastMCP
+
+from nfr import run_nfr_check
+from skills import route_to_skill as _route_to_skill, get_skill_list, get_skill_content, get_skill_fast_path
+from review import check_commit_quality as _check_commit_quality
+
+CLAUDE_ROOT = Path("/claude")
+
+mcp = FastMCP("youk-code")
+
+
+@mcp.tool()
+def nfr_check(task: str, size: str = "M") -> dict:
+    """
+    Run an NFR (Non-Functional Requirements) check on a task.
+
+    XS/S: 2-question fast path, no API call, instant.
+    M: 4-question block via API (~10-15s).
+    L/XL: Full 5-phase check via API (~20-30s).
+
+    task: What you're about to build.
+    size: XS, S, M, L, or XL. Defaults to M.
+
+    Returns: size, mode, decisions, connections, raw_output.
+    """
+    result = run_nfr_check(task, size)
+    return {
+        "task": result.task,
+        "size": result.size.value,
+        "mode": result.mode,
+        "decisions": result.decisions,
+        "connections": result.connections,
+        "markdown": result.to_markdown(),
+    }
+
+
+@mcp.tool()
+def route_to_skill(skill: str, task: str, context: dict | None = None) -> str:
+    """
+    Run any skill against a task by loading its SKILL.md as the system prompt.
+    Phase tokens are preserved in the output so you can use them for audit.
+
+    skill: Skill name (e.g. 'pm-review', 'write-spec', 'adr', 'stress-test', 'humanize', 'learn').
+    task: Task description for the skill.
+    context: Optional key-value pairs (e.g. {'framework': 'Gradio', 'project': 'canopy'}).
+
+    Returns: Skill output in native format.
+    """
+    return _route_to_skill(skill, task, context)
+
+
+@mcp.tool()
+def check_commit_quality(message: str, file_paths: list[str] | None = None) -> dict:
+    """
+    Score a commit message against youk voice rules and check for credential files.
+
+    HARD RULE enforced: if any file_path matches credential patterns (*.env, *secret*,
+    *credential*, *api_key*, *password*), this tool returns blocked=True and the commit
+    must not proceed.
+
+    message: The git commit message to evaluate.
+    file_paths: Optional list of files being committed (for credential check).
+
+    Returns: score (0-100), violations, suggested_rewrite, blocked, block_reason.
+    """
+    result = _check_commit_quality(message, file_paths or [])
+    return result.to_dict()
+
+
+@mcp.resource("youk://skills")
+def list_available_skills() -> str:
+    """List all available skills with health status and fast-path availability."""
+    skills = get_skill_list()
+    if not skills:
+        return "No skills found at /claude/skills/"
+    lines = ["# Available youk-code Skills\n"]
+    for s in skills:
+        fp = " [fast-path]" if s["has_fast_path"] else ""
+        lines.append(f"- **{s['name']}**{fp}: {s['description']}")
+    return "\n".join(lines)
+
+
+@mcp.resource("youk://skills/{skill_name}")
+def get_skill(skill_name: str) -> str:
+    """Return full SKILL.md content for the named skill."""
+    return get_skill_content(skill_name)
+
+
+@mcp.resource("youk://skills/{skill_name}/fast-path")
+def get_fast_path(skill_name: str) -> str:
+    """Return fast-path rules for the named skill."""
+    return get_skill_fast_path(skill_name)
+
+
+@mcp.resource("youk://context/{project}")
+def get_project_context(project: str) -> str:
+    """Return L2 project context file for the named project."""
+    # Try common locations
+    candidates = [
+        CLAUDE_ROOT / "projects" / f"-Users-ajinkya-Desktop-{project}" / "memory",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            for f in candidate.iterdir():
+                if f.suffix == ".md":
+                    return f.read_text()
+    return f"No context found for project: {project}"
+
+
+if __name__ == "__main__":
+    mcp.run()
