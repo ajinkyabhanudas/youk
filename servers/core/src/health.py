@@ -154,6 +154,22 @@ def _extract_content_block(text: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def _parse_skill_gap_signals(audit_texts: list[str]) -> list[dict]:
+    """Aggregate SkillGap: lines from audit into per-skill gap signal counts."""
+    raw: dict[str, list[str]] = {}
+    for text in audit_texts:
+        for line in text.splitlines():
+            if line.startswith("SkillGap:"):
+                rest = line[len("SkillGap:"):].strip()
+                if " — " in rest:
+                    skill, gap = rest.split(" — ", 1)
+                    raw.setdefault(skill.strip(), []).append(gap.strip())
+    return [
+        {"skill": s, "gaps": gaps, "count": len(gaps)}
+        for s, gaps in sorted(raw.items(), key=lambda x: -len(x[1]))
+    ]
+
+
 def run_health_check() -> HealthReport:
     audit_texts = _read_recent_audit_logs(days=30)
     score = _score_org(audit_texts)
@@ -166,6 +182,34 @@ def run_health_check() -> HealthReport:
         findings=findings,
         proposals=proposals,
     )
+
+
+def run_health_check_with_skill_signals() -> dict:
+    """
+    Extended health check that also returns skill gap signals for evolution.
+    Used by the self_heal MCP tool to surface what skills need assess_skill() called.
+    """
+    report = run_health_check()
+    audit_texts = _read_recent_audit_logs(days=60)
+    skill_gap_signals = _parse_skill_gap_signals(audit_texts)
+
+    base = {
+        "org_score": report.org_score,
+        "sessions_analyzed": report.sessions_analyzed,
+        "findings": report.findings,
+        "proposals": [p.to_dict() for p in report.proposals],
+        "proposals_count": len(report.proposals),
+    }
+
+    if skill_gap_signals:
+        base["skill_gap_signals"] = skill_gap_signals
+        base["skill_evolution_note"] = (
+            "Skills with recurring gap signals detected. "
+            "Call youk-code.assess_skill(skill_name) for each, then add_proposal() "
+            "with the returned proposed_additions."
+        )
+
+    return base
 
 
 def add_proposal(proposal: Proposal) -> None:

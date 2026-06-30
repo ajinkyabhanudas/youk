@@ -321,6 +321,7 @@ def end_session(
     explicit_contracts: list[str] | None = None,
     skills_used: list[str] | None = None,
     close_cluster: bool = False,
+    skill_gaps: dict[str, list[str]] | None = None,
 ) -> dict:
     """
     Write structured audit log entry, detect and save contract phrases.
@@ -346,12 +347,18 @@ def end_session(
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     skills_line = ", ".join(skills_used) if skills_used else "none"
     close_line = "yes" if close_cluster else "no"
+    gap_lines = ""
+    if skill_gaps:
+        for skill_name, gaps in skill_gaps.items():
+            for gap in gaps:
+                gap_lines += f"SkillGap: {skill_name} — {gap}\n"
     entry = (
         f"\n### Session — {timestamp}\n"
         f"{summary}\n"
         f"Skills: {skills_line}\n"
         f"CloseCluster: {close_line}\n"
         f"Commits: {'yes' if commits_made else 'no'}\n"
+        f"{gap_lines}"
     )
 
     with open(audit_file, "a") as f:

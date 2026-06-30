@@ -8,7 +8,12 @@ from mcp.server.fastmcp import FastMCP
 
 from session import start_session, end_session
 from routing import route_task as _route_task
-from health import run_health_check, apply_proposal as _apply_proposal, _load_pending_proposals
+from health import (
+    run_health_check_with_skill_signals,
+    add_proposal as _add_proposal,
+    apply_proposal as _apply_proposal,
+    _load_pending_proposals,
+)
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
 from intent import optimize_intent as _optimize_intent
 from compaction import build_brief
@@ -39,6 +44,7 @@ def session_end(
     explicit_contracts: list[str] | None = None,
     skills_used: list[str] | None = None,
     close_cluster: bool = False,
+    skill_gaps: dict | None = None,
 ) -> dict:
     """
     End a youk session. Writes audit log entry, saves contracts, checks session-close cluster.
@@ -62,6 +68,11 @@ def session_end(
     Written as CloseCluster: yes/no in the audit log. The next session_start reads this
     to set close_cluster_missed — which surfaces as a session_plan item if False.
 
+    skill_gaps: Optional dict mapping skill_name to list of gap descriptions observed
+    this session. Example: {"nfr-check": ["dark mode not surfaced for CSS change"]}.
+    Written as SkillGap: lines in the audit log. These accumulate across sessions and
+    feed into self_heal() skill_gap_signals → assess_skill() evolution loop.
+
     Returns: knowledge_extracted, proposals_added, audit_written,
              session_close_cluster_detected, contracts_saved.
     """
@@ -70,7 +81,7 @@ def session_end(
     except HardRuleViolation as e:
         return {"error": str(e), "blocked": True, "rule_id": e.rule_id}
 
-    return end_session(summary, commits_made, explicit_contracts, skills_used, close_cluster)
+    return end_session(summary, commits_made, explicit_contracts, skills_used, close_cluster, skill_gaps)
 
 
 @mcp.tool()
@@ -132,19 +143,60 @@ def check_command(command: str) -> dict:
 def self_heal() -> dict:
     """
     Run a health analysis on the last 30 days of audit logs.
-    Identifies skill usage patterns, skipped sessions, and generates improvement proposals.
+    Identifies skill usage patterns, skipped sessions, and improvement signals.
     Proposals are written to knowledge/proposals/PENDING.md — never auto-applied.
 
-    Returns: org_score, sessions_analyzed, findings, proposals_added.
+    Also returns skill_gap_signals when recurring skill gaps are detected in audit logs.
+    For each signal: call youk-code.assess_skill(skill_name) to get proposed_additions,
+    then call add_proposal() here for each one you approve.
+
+    Returns: org_score, sessions_analyzed, findings, proposals_count,
+             skill_gap_signals (if any — skills needing evolution).
     """
-    report = run_health_check()
-    return {
-        "org_score": report.org_score,
-        "sessions_analyzed": report.sessions_analyzed,
-        "findings": report.findings,
-        "proposals_count": len(report.proposals),
-        "report_markdown": report.to_markdown(),
-    }
+    return run_health_check_with_skill_signals()
+
+
+@mcp.tool()
+def add_proposal(
+    title: str,
+    rationale: str,
+    change_type: str,
+    target: str,
+    content: str = "",
+    target_section: str = "",
+) -> dict:
+    """
+    Add an improvement proposal to PENDING.md for founder review.
+    Use this after assess_skill() returns proposed_additions, or to register
+    a generate_skill() draft before applying it.
+
+    title: Short description (e.g. "Add null check to session_end")
+    rationale: Why this change is needed — include signal type if from assess_skill
+    change_type: SKILL_EDIT | CONFIG_EDIT | REFERENCE_ADD | FILE_CREATE
+    target: skill name for SKILL_EDIT, file path for FILE_CREATE/CONFIG_EDIT
+    content: The new content to write (full file for FILE_CREATE, section text for SKILL_EDIT)
+    target_section: Section heading within target skill (for SKILL_EDIT only)
+
+    Returns: proposal_id, status. Review with get_proposals(), apply with apply_proposal().
+    """
+    from models import Proposal
+    from datetime import datetime
+
+    proposal = Proposal(
+        id=f"PENDING-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+        target=target,
+        change_description=title,
+        reason=rationale,
+        before="",
+        after=content[:300] if content else "",
+        status="PENDING",
+        proposed_date=datetime.utcnow().strftime("%Y-%m-%d"),
+        change_type=change_type,
+        target_section=target_section,
+        content=content,
+    )
+    _add_proposal(proposal)
+    return {"proposal_id": proposal.id, "status": "added", "target": target}
 
 
 @mcp.tool()
