@@ -1,10 +1,26 @@
+<div align="center">
+
 # youk
 
-**An AI engineering system built on Claude Code + MCP servers.**
+**ambient AI engineering system**
+
+*routes tasks · remembers context · learns from work · stays out of your way*
+
+[![CI](https://github.com/ajinkyabhanudas/youk/actions/workflows/ci.yml/badge.svg)](https://github.com/ajinkyabhanudas/youk/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.13+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/docker-required-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![MCP](https://img.shields.io/badge/protocol-MCP-8B5CF6)](https://modelcontextprotocol.io)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![License](https://img.shields.io/badge/license-MIT-22C55E)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](https://github.com/ajinkyabhanudas/youk)
+
+</div>
+
+---
 
 youk turns Claude Code from a chat assistant into an engineering system with persistent memory, structured task routing, live guard rails, and domain-specialized variants. It runs in Docker containers, speaks the Model Context Protocol, and learns across sessions without ever storing raw conversation transcripts.
 
-> **Status:** Active development — v0.1.0. Core variant (youk-core + youk-code) is live. PM, research, and design variants are on the roadmap.
+> **Status:** Active development — v0.1.0. Core variant (youk-core + youk-code) is live.
 
 ---
 
