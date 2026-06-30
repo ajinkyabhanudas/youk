@@ -18,8 +18,8 @@ jobs:
           python-version: "3.13"
           cache: pip
 
-      - name: Install Ruff
-        run: pip install ruff
+      - name: Install lint dependencies
+        run: pip install ruff pyyaml
 
       - name: Ruff check
         run: ruff check servers/
