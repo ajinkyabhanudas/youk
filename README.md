@@ -31,6 +31,7 @@ youk turns Claude Code from a chat assistant into an engineering system with per
 | No guard rails — Claude can commit credentials | `check_commit_quality()` blocks credential files at tool level (hard rule, not suggestion) |
 | Self-improvement is manual | `self_heal()` reads 30 days of audit logs, generates improvement proposals — never auto-applies |
 | Sessions start reactive with no plan | `session_start()` returns `session_plan` — a 3-5 item forward-looking proposal built from contracts + context, not a question |
+| Skills are static and generic | `generate_skill()` + `assess_skill()` — signal-driven skill generation and evolution from repo context, audit gaps, and best-practices knowledge |
 
 ---
 
@@ -105,6 +106,9 @@ youk is two Docker containers registered as MCP servers in Claude Code:
 - `route_to_skill(skill, task)` — loads any skill's SKILL.md and runs it against your task
 - `check_commit_quality(message, file_paths)` — scores commit, blocks credential files
 - `list_skills()` — lists all skills with health status; `has_skill_md: false` = gap
+- `generate_skill(name, purpose, project_context, signal_type)` — generates a new SKILL.md from repo context + best-practices knowledge + skill schema
+- `assess_skill(skill_name)` — assesses an existing skill against audit evidence and cross-project patterns; returns gaps + proposed additions
+- `detect_skill_gaps()` — aggregates all signals (missing skills, audit gaps, uncovered best-practice patterns) into a prioritised list
 
 Both containers mount `~/.claude/` via Docker volumes. youk-core has write access (writes session state, knowledge entries, audit logs). youk-code has read-only access (reads skills, config, context).
 
@@ -157,6 +161,38 @@ knowledge/
 Each session, `session_end` extracts structured insights and writes them here. Raw transcripts are never stored — that's enforced by the `knowledge-extraction-not-logging` hard rule.
 
 Every 3 sessions, `self_heal` reads the last 30 days of audit logs and generates improvement proposals. Proposals sit in `PENDING.md` until you review and approve them via `apply_proposal(id, confirmed=True)`.
+
+---
+
+## Skill lifecycle
+
+Skills are not static files — they generate and evolve from signals.
+
+**Generation triggers:**
+- `route_task` returns a skill with no SKILL.md (`has_skill_md: false` in `list_skills()`)
+- Project type detected at session start with no domain skill (e.g. Python ML project, no `python-ml` skill)
+- Best-practices pattern in `cross-project.md` not encoded in any existing skill
+- Engineer explicitly requests a new skill
+
+**Evolution triggers:**
+- `self_heal()` returns `skill_gap_signals` — skills with recurring `SkillGap:` lines in audit logs
+- Session ends with `skill_gaps={"skill-name": ["what was missed"]}` in `session_end()`
+- `assess_skill()` called directly reveals coverage gaps
+
+**The loop:**
+```
+repo context / audit signals
+        ↓
+generate_skill() or assess_skill()
+        ↓
+add_proposal()          ← queued to PENDING.md, never auto-applied
+        ↓
+apply_proposal(confirmed=True)   ← founder reviews and approves
+        ↓
+updated SKILL.md        ← read at runtime via volume mount, no rebuild
+```
+
+`knowledge/skill-schema.md` is the canonical template that drives generation — it defines required sections, phase structure, quality bar conventions, and anti-patterns. Generated skills follow the same structure as hand-written ones.
 
 ---
 
@@ -292,8 +328,10 @@ youk/
 │   │   └── src/            ← server.py, session.py, routing.py, health.py, compaction.py
 │   └── code/               ← youk-code container
 │       ├── Dockerfile
-│       └── src/            ← server.py, nfr.py, skills.py, review.py
+│       └── src/            ← server.py, nfr.py, skills.py, review.py, skill_gen.py
 ├── knowledge/              ← living knowledge base (committed to repo)
+│   ├── skill-schema.md     ← canonical SKILL.md template (drives generate_skill)
+│   └── cross-project.md    ← best-practices patterns (feeds generation + assessment)
 ├── scripts/
 │   ├── install.sh          ← one-command idempotent setup (curl | bash)
 │   └── doctor.sh           ← health check with Fix: lines per failure
