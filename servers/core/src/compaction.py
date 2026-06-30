@@ -63,18 +63,31 @@ def _load_task_state() -> dict:
         return {}
 
 
+def _load_session_plan() -> list[str]:
+    plan_file = YOUK_ROOT / "state" / "session-plan.json"
+    if not plan_file.exists():
+        return []
+    try:
+        data = json.loads(plan_file.read_text())
+        return data.get("plan", [])
+    except Exception:
+        return []
+
+
 def build_brief(project_dir: str) -> dict:
     """
     Build a structured context brief from youk's knowledge store.
 
-    Returns a brief that Claude should use as its working context anchor
-    when context is growing large. The brief is generated from structured
-    files — not from summarizing conversation — so information loss is impossible.
+    Returns a brief that Claude must paste VERBATIM into its response so it
+    appears in recent context and survives the next compaction cycle.
+    Content is generated from structured files — not conversation summaries —
+    so contracts are immune to paraphrase degradation.
     """
     slug = _slug(project_dir)
     contracts = _load_contracts(slug)
     decisions = _load_decisions(slug)
     state = _load_task_state()
+    session_plan = _load_session_plan()
 
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
@@ -106,6 +119,11 @@ def build_brief(project_dir: str) -> dict:
         f"Project: {slug} | Session #{session_n} | Dir: {project}"
     )
 
+    # Session plan: what was in-progress at session_start (survives compaction from files)
+    if session_plan:
+        plan_lines = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(session_plan))
+        sections.append(f"## Session plan (from last session_start)\n{plan_lines}")
+
     sections.append(f"## Compaction instruction\n{_TIER_INSTRUCTION}")
 
     brief = "\n\n".join(sections)
@@ -114,11 +132,13 @@ def build_brief(project_dir: str) -> dict:
         "brief": brief,
         "contracts_count": len(contracts),
         "decisions_count": len(decisions),
+        "session_plan_items": len(session_plan),
         "slug": slug,
         "generated_at": timestamp,
         "instruction": (
-            "Paste this brief explicitly into your next response so it appears in recent context. "
-            "From this point, treat CONTRACT lines as invariant — never rephrase them."
+            "PASTE this brief VERBATIM into your next response — do not summarize or paraphrase. "
+            "It must appear in recent context to survive the next compaction cycle. "
+            "CONTRACT lines are invariant: never rephrase, never shorten, never drop."
         ),
     }
 

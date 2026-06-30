@@ -88,6 +88,15 @@ def route_task(task: str, skills_already_invoked: list[str] | None = None) -> Ro
             violation_type=ViolationType.SURFACE,
         ))
 
+    plan_hook = ""
+    if size in (TaskSize.M, TaskSize.L, TaskSize.XL) and skills:
+        skill_chain = " → ".join(skills)
+        plan_hook = (
+            f"{size.value} task — {skill_chain}. "
+            f"Starting with {skills[0]}. "
+            f"Redirect with one line if wrong, otherwise proceeding."
+        )
+
     return RoutingDecision(
         task=task,
         size=size,
@@ -96,4 +105,5 @@ def route_task(task: str, skills_already_invoked: list[str] | None = None) -> Ro
         nfr_mode=nfr_mode,
         token_budget=token_budget,
         warnings=warnings,
+        plan_hook=plan_hook,
     )

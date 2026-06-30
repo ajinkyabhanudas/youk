@@ -47,6 +47,9 @@ class RoutingDecision:
     nfr_mode: str
     warnings: list[SoftRuleWarning] = field(default_factory=list)
     token_budget: int = 0
+    # For M+ tasks: pre-formatted planning gate string to output verbatim before acting.
+    # Empty for XS/S tasks — those proceed without a gate.
+    plan_hook: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -60,6 +63,7 @@ class RoutingDecision:
                 {"rule_id": w.rule_id, "name": w.name, "message": w.message}
                 for w in self.warnings
             ],
+            "plan_hook": self.plan_hook,
         }
 
 

@@ -300,6 +300,19 @@ def start_session(project_dir: str) -> SessionState:
         project_type=project_type,
     )
 
+    # Persist session plan so compact_context can include it in briefs
+    plan_file = YOUK_ROOT / "state" / "session-plan.json"
+    try:
+        import json as _json
+        plan_file.parent.mkdir(parents=True, exist_ok=True)
+        plan_file.write_text(_json.dumps({
+            "plan": session_plan,
+            "slug": slug,
+            "generated_at": datetime.utcnow().isoformat(),
+        }, indent=2))
+    except Exception:
+        pass  # non-critical — compact_context degrades gracefully without it
+
     return SessionState(
         project=slug,
         resume_point=resume_point,
