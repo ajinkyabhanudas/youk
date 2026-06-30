@@ -18,6 +18,37 @@ Sizing shorthand for XS tasks (skip route_task call):
 - Recommendation with real alternatives → suggest /adr
 - "Done / ship it / commit" signal → surface session-close cluster (context-sync + learn + humanize)
 
+## Session plan (present at start of every session)
+
+After calling `session_start`, present the returned `session_plan` as your first response —
+as a proposal the user can redirect in one line, not as a question. Format:
+
+```
+Working on {project} (session #{n}).
+
+Today's plan:
+1. {item 1}
+2. {item 2}
+...
+```
+
+If the user says "sounds right" or just starts working, proceed. If they redirect,
+update your working priority and continue. Never ask "what do you want to do today?"
+
+## Workflow commands (user types these — compose underlying skills silently)
+
+/build  → call route_task first; M+: nfr_check(quick) then dev-loop; S-: dev-loop only
+/done   → code-review + verify + humanize, in that order; report findings per skill
+/check  → code-review; add security-review if auth/creds/endpoints in scope
+/decide → adr; ask for the decision statement if not provided in the command
+/health → self_heal(); surface org_score, top 2 findings, pending proposals count
+/plan   → rebuild session plan: compact_context(project_dir) then present updated priorities
+
+Aliases (route to the underlying skill):
+/requirements → nfr_check
+/spec         → route_to_skill("write-spec", task)
+/review       → route_to_skill("code-review", task)
+
 ## Context management (proactive — runs before Claude's auto-compaction)
 
 When you reach 25+ exchanges in a session, or when you notice the conversation becoming
