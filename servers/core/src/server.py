@@ -10,7 +10,7 @@ from models import SessionState, RoutingDecision
 from session import start_session, end_session
 from routing import route_task as _route_task
 from health import run_health_check, add_proposal, apply_proposal as _apply_proposal, _load_pending_proposals
-from guardrails import check_knowledge_write, HardRuleViolation
+from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
 from intent import optimize_intent as _optimize_intent
 
 YOUK_ROOT = Path("/youk")
@@ -89,6 +89,24 @@ def route_task(task: str, skills_already_invoked: list[str] | None = None) -> di
     """
     decision = _route_task(task, skills_already_invoked or [])
     return decision.to_dict()
+
+
+@mcp.tool()
+def check_command(command: str) -> dict:
+    """
+    Check a shell command against the no-destructive-without-confirm hard rule.
+    Call this before executing any rm, DROP TABLE, force push, reset --hard,
+    truncate, or similar destructive operation.
+
+    command: The shell command about to be executed.
+
+    Returns: {"safe": bool, "blocked": bool, "reason": str}
+    """
+    try:
+        check_destructive_command(command)
+        return {"safe": True, "blocked": False, "reason": ""}
+    except HardRuleViolation as e:
+        return {"safe": False, "blocked": True, "reason": str(e), "rule_id": e.rule_id}
 
 
 @mcp.tool()
