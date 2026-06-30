@@ -193,6 +193,61 @@ def _parse_last_session_flags(audit_dir: Path) -> tuple[bool, bool]:
     return close_cluster_missed, orchestrate_pending
 
 
+def _generate_session_plan(
+    slug: str,
+    resume_point: str,
+    contracts: list[str],
+    pending_proposals: int,
+    close_cluster_missed: bool,
+    project_type: str,
+) -> list[str]:
+    """
+    Generate a forward-looking session plan from structured context.
+    Returns 3-5 bullet points: current priority, next task, what to defer.
+    Built from files — not by summarising conversation — so it's always grounded.
+    """
+    plan: list[str] = []
+
+    # 1. Current priority — what the resume point signals
+    if resume_point and resume_point != "No prior context found — fresh session.":
+        if resume_point.startswith("Last commit:"):
+            plan.append(f"Continue from: {resume_point}")
+        else:
+            plan.append(f"Resume: {resume_point}")
+    else:
+        plan.append(f"New session on {slug} — establish context before coding")
+
+    # 2. Pending proposals surface
+    if pending_proposals > 0:
+        plan.append(
+            f"Review {pending_proposals} pending self-heal proposal(s) "
+            f"before major changes (call get_proposals)"
+        )
+
+    # 3. Missed close-cluster from last session
+    if close_cluster_missed:
+        plan.append(
+            "Last session ended without context-sync + learn — "
+            "call session_end with explicit_contracts before new work piles up"
+        )
+
+    # 4. Project-type-specific nudge
+    type_nudges = {
+        "python_postgresql": "DB changes this session? Run nfr_check before touching schema.",
+        "js_react": "UI changes? verify dark mode + error states (nfr_check → /done).",
+        "python": "Adding new dependency? Flag for dependency check.",
+    }
+    nudge = type_nudges.get(project_type, "")
+    if nudge:
+        plan.append(nudge)
+
+    # 5. Contract reminder if contracts exist (first one only — most load-bearing)
+    if contracts:
+        plan.append(f"Active contract: {contracts[0]}")
+
+    return plan[:5]  # hard cap
+
+
 def _count_pending_proposals() -> int:
     pending_file = YOUK_ROOT / "knowledge" / "proposals" / "PENDING.md"
     if not pending_file.exists():
@@ -236,6 +291,15 @@ def start_session(project_dir: str) -> SessionState:
     counter = state["session_counter"]
     health_check_due = counter % 3 == 0
 
+    session_plan = _generate_session_plan(
+        slug=slug,
+        resume_point=resume_point,
+        contracts=contracts,
+        pending_proposals=pending,
+        close_cluster_missed=close_cluster_missed,
+        project_type=project_type,
+    )
+
     return SessionState(
         project=slug,
         resume_point=resume_point,
@@ -247,6 +311,7 @@ def start_session(project_dir: str) -> SessionState:
         contracts=contracts,
         close_cluster_missed=close_cluster_missed,
         orchestrate_pending=orchestrate_pending,
+        session_plan=session_plan,
     )
 
 

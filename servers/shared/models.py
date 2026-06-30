@@ -82,6 +82,8 @@ class SessionState:
     contracts: list[str] = field(default_factory=list)
     # MCP server recommendations for detected project type
     mcp_recommendations: list[dict] = field(default_factory=list)
+    # forward-looking session plan (3-5 items, generated from context at session_start)
+    session_plan: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -97,6 +99,7 @@ class SessionState:
             "context_loaded": self.context_loaded,
             "contracts": self.contracts,
             "mcp_recommendations": self.mcp_recommendations,
+            "session_plan": self.session_plan,
         }
 
 
