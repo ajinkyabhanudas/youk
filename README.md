@@ -26,13 +26,14 @@ youk turns Claude Code from a chat assistant into an engineering system with per
 
 ## What youk does
 
-| Without youk | With youk |
+| Problem | youk mechanism |
 |---|---|
-| You manually invoke skills and remember which ones apply | `route_task()` sizes the task and returns the right skills |
-| Context is lost between sessions | `session_start()` restores project context from the last session |
-| No guard rails — Claude can commit credentials | `check_commit_quality()` blocks credential commits at tool level |
-| Learning is informal | Structured knowledge extracted and committed to the repo |
-| Self-improvement requires manual effort | Health check every 3 sessions, proposals require your approval |
+| Context resets every session (15 min re-establishment tax) | `session_start()` detects project type, loads contracts + decisions, gives you a resume point |
+| Behavioral contracts get blurred by Claude's auto-compaction | `compact_context()` runs at 25+ exchanges — tiers content, preserves contracts verbatim |
+| Ceremony mismatch (too much process for a typo, too little for a migration) | `route_task()` sizes the task and returns the right ceremony level and skill list |
+| Working agreements aren't durable (live in conversation, not files) | `session_end(explicit_contracts=[...])` writes them to `contracts.md`; every future session loads them first |
+| No guard rails — Claude can commit credentials | `check_commit_quality()` blocks credential files at tool level (hard rule, not suggestion) |
+| Self-improvement is manual | `self_heal()` reads 30 days of audit logs, generates improvement proposals — never auto-applies |
 
 ---
 
@@ -45,62 +46,25 @@ youk turns Claude Code from a chat assistant into an engineering system with per
 
 ---
 
-## Quick start (5 minutes)
-
-### 1. Clone the repo
+## Quick start
 
 ```bash
-git clone https://github.com/ajinkya-dessai/youk ~/.claude/youk
+curl -sL https://raw.githubusercontent.com/ajinkyabhanudas/youk/main/scripts/install.sh | bash
 ```
 
-> If you already have a `~/.claude/` directory from Claude Code, that's fine — youk lives in a `youk/` subdirectory inside it.
+The installer handles everything: preflight checks, Docker build, MCP server registration, CLAUDE.md patch, and a validation run. First install takes ~2 minutes (Docker image build). Re-runs are safe — all steps are idempotent.
 
-### 2. Run the installer
+**Prerequisites:** Docker Desktop running · Claude Code installed · `ANTHROPIC_API_KEY` in your shell profile.
+
+After the installer exits, open a new Claude Code session. youk starts automatically — no activation phrase.
+
+**Verify the install:**
 
 ```bash
-cd ~/.claude/youk
-bash scripts/install.sh
+bash ~/.claude/youk/scripts/doctor.sh
 ```
 
-The installer:
-- Creates runtime directories (`state/`, `knowledge/`)
-- Sets up symlinks to your existing Claude skills
-- Builds the Docker images (takes ~2 minutes on first run — subsequent builds use cache)
-- Validates that everything responds correctly
-
-### 3. Register the MCP servers
-
-```bash
-claude mcp add --scope user youk-core --transport stdio -- \
-  docker run -i --rm \
-  -v "$HOME/.claude:/claude" \
-  -v "$HOME/.claude/youk:/youk" \
-  -e ANTHROPIC_API_KEY \
-  youk-core:latest
-
-claude mcp add --scope user youk-code --transport stdio -- \
-  docker run -i --rm \
-  -v "$HOME/.claude:/claude:ro" \
-  -v "$HOME/.claude/youk:/youk:ro" \
-  -e ANTHROPIC_API_KEY \
-  youk-code:latest
-```
-
-Verify both are connected:
-
-```bash
-claude mcp list
-```
-
-You should see `youk-core` and `youk-code` with status `Connected`.
-
-### 4. Update your CLAUDE.md
-
-Add the youk identity block to `~/.claude/CLAUDE.md`. A template is at `docs/claude-md-template.md`.
-
-### 5. Open a new Claude Code session
-
-youk starts automatically. No activation phrase needed.
+`doctor.sh` checks every dependency and gives a specific `Fix:` line for anything that fails.
 
 ---
 
@@ -130,16 +94,20 @@ youk is two Docker containers registered as MCP servers in Claude Code:
 ```
 
 **youk-core** (read-write access):
-- `session_start` — loads project context, checks pending proposals
-- `session_end` — validates and writes structured knowledge
-- `route_task` — sizes the task, returns skill list and ceremony level
-- `self_heal` — analyzes audit logs, generates improvement proposals
-- `get_proposals` / `apply_proposal` — proposal review and approval
+- `session_start(project_dir)` — detects project type (Python/JS/Go/Rust), loads contracts + decisions, returns resume point
+- `compact_context(project_dir)` — builds a tiered context brief from structured files; call at 25+ exchanges to preempt Claude's generic auto-compaction
+- `session_end(summary, commits_made, explicit_contracts)` — writes audit log, saves working agreements to `contracts.md`
+- `route_task(task)` — sizes the task (XS→XL), returns skill list and ceremony level
+- `optimize_intent(raw_input)` — compresses vague/multi-part input into a structured intent brief before routing
+- `check_command(command)` — enforces the no-destructive hard rule at tool level
+- `self_heal()` — analyzes audit logs, generates improvement proposals
+- `get_proposals()` / `apply_proposal(id, confirmed)` — proposal review and two-step apply
 
 **youk-code** (read-only access):
-- `nfr_check` — XS/S: instant 2-question logic check; M: API call; L/XL: full check
-- `route_to_skill` — loads any skill's SKILL.md and runs it against your task
-- `check_commit_quality` — scores commit message, blocks credential files
+- `nfr_check(task, size)` — XS/S: instant 2-question check; M: 4-question API block; L/XL: full check
+- `route_to_skill(skill, task)` — loads any skill's SKILL.md and runs it against your task
+- `check_commit_quality(message, file_paths)` — scores commit, blocks credential files
+- `list_skills()` — lists all skills with health status; `has_skill_md: false` = gap
 
 Both containers mount `~/.claude/` via Docker volumes. youk-core has write access (writes session state, knowledge entries, audit logs). youk-code has read-only access (reads skills, config, context).
 
@@ -232,6 +200,45 @@ Adding a variant means building one Dockerfile, one server.py, one entry in `con
 
 ---
 
+## Context management
+
+youk's context compaction runs proactively — before Claude's generic auto-compaction can blur behavioral contracts.
+
+At 25+ exchanges (or when context feels dense), Claude calls `compact_context(project_dir)`. The tool builds a brief from structured knowledge files, not by summarizing conversation. Content is tiered:
+
+| Tier | What it is | How compacted |
+|---|---|---|
+| CONTRACT | Behavioral agreements (commit format, test cadence) | Preserved verbatim, always first |
+| DECISION | Architectural choices with rationale | Key fact + 1-sentence rationale |
+| EXPLORATION | Depth dives, explanations | 1 sentence |
+| CLARIFICATION | One-shot Q&A | Dropped entirely, re-ask if needed |
+
+Working agreements detected mid-session are saved via `session_end(explicit_contracts=[...])` to `knowledge/projects/{slug}/contracts.md`. Every future `session_start` loads them first. `compact_context` pins them in every brief. They are immune to compaction because they come from files, not conversation history.
+
+---
+
+## Cross-project learning
+
+youk learns at three scopes: project, domain, global.
+
+```
+knowledge/
+├── projects/
+│   └── {slug}/
+│       ├── contracts.md    ← working agreements (always loaded first)
+│       ├── decisions.md    ← architectural decisions + rationale
+│       └── context.md      ← project type, tech stack, gate progress
+├── interpretation/         ← how your phrases map to intent (global)
+└── proposals/
+    └── PENDING.md          ← self-heal proposals awaiting review
+```
+
+A correction that happens 3+ times in one project gets promoted to domain-level knowledge. The same pattern across 2+ projects promotes to global. Confidence scoring (+0.05 on reference, -0.1 on contradiction) keeps the knowledge base calibrated over time.
+
+**Zero footprint in your repo.** All knowledge writes to `~/.claude/youk/knowledge/`. Your project's git history is untouched. youk reads your project (project type detection, git log for resume point), never writes to it.
+
+---
+
 ## Development commands
 
 ```bash
@@ -244,11 +251,8 @@ make test
 # Full rebuild from scratch
 make rebuild
 
-# Update after pulling changes
-bash scripts/update.sh
-
-# Validate installation
-bash scripts/validate.sh
+# Health check with actionable Fix: lines
+bash scripts/doctor.sh
 ```
 
 ---
@@ -268,15 +272,14 @@ youk/
 │   │   └── skill_loader.py ← reads SKILL.md files from volume mount
 │   ├── core/               ← youk-core container
 │   │   ├── Dockerfile
-│   │   └── src/            ← server.py, session.py, routing.py, health.py
+│   │   └── src/            ← server.py, session.py, routing.py, health.py, compaction.py
 │   └── code/               ← youk-code container
 │       ├── Dockerfile
 │       └── src/            ← server.py, nfr.py, skills.py, review.py
 ├── knowledge/              ← living knowledge base (committed to repo)
 ├── scripts/
-│   ├── install.sh          ← one-command setup
-│   ├── update.sh           ← pull + rebuild + validate
-│   └── validate.sh         ← post-install health check
+│   ├── install.sh          ← one-command idempotent setup (curl | bash)
+│   └── doctor.sh           ← health check with Fix: lines per failure
 ├── docs/
 │   ├── getting-started.md
 │   ├── guardrails.md
@@ -290,33 +293,23 @@ youk/
 
 ## Troubleshooting
 
+**Run `doctor.sh` first — it diagnoses and gives Fix: lines for every known failure:**
+
+```bash
+bash ~/.claude/youk/scripts/doctor.sh
+```
+
 **`claude mcp list` shows youk-core/youk-code as disconnected**
 
-Docker may not be running, or the images need rebuilding:
-```bash
-docker ps  # verify Docker is running
-cd ~/.claude/youk && make rebuild
-```
+Docker may not be running, or the images need rebuilding. Doctor will tell you which.
 
-**`session_start` returns an error about missing context files**
+**`compact_context` returns empty contracts**
 
-The state directory needs to exist:
-```bash
-mkdir -p ~/.claude/youk/state
-```
-
-**`nfr_check` or `route_to_skill` can't find skills**
-
-The volume mount uses your local `~/.claude/` path. Verify:
-```bash
-ls ~/.claude/skills/dev-loop/SKILL.md
-```
-
-If you're using a non-standard Claude config location, update the volume paths in your `claude mcp add` commands.
+No contracts have been saved yet for this project. Call `session_end` with `explicit_contracts=[...]` at the end of your first session to seed them.
 
 **Build fails with `COPY servers/shared/ /shared/` error**
 
-Build must run from the repo root (not from inside `servers/core/`). The Makefile handles this — use `make build`, not `docker build` directly.
+Build must run from the repo root. The Makefile handles this — use `make build`, not `docker build` directly.
 
 ---
 
