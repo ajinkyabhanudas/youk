@@ -1,10 +1,6 @@
 <div align="center">
 
-# youk
-
-**ambient AI engineering system**
-
-*routes tasks · remembers context · learns from work · stays out of your way*
+<img src="assets/banner.svg" alt="youk — ambient engineering intelligence" width="100%"/>
 
 [![CI](https://github.com/ajinkyabhanudas/youk/actions/workflows/ci.yml/badge.svg)](https://github.com/ajinkyabhanudas/youk/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.13+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -34,6 +30,7 @@ youk turns Claude Code from a chat assistant into an engineering system with per
 | Working agreements aren't durable (live in conversation, not files) | `session_end(explicit_contracts=[...])` writes them to `contracts.md`; every future session loads them first |
 | No guard rails — Claude can commit credentials | `check_commit_quality()` blocks credential files at tool level (hard rule, not suggestion) |
 | Self-improvement is manual | `self_heal()` reads 30 days of audit logs, generates improvement proposals — never auto-applies |
+| Sessions start reactive with no plan | `session_start()` returns `session_plan` — a 3-5 item forward-looking proposal built from contracts + context, not a question |
 
 ---
 
@@ -173,13 +170,33 @@ Every 3 sessions, `self_heal` reads the last 30 days of audit logs and generates
   "ceremony": "standard",
   "skills": ["nfr_check", "dev_loop", "code_review", "verify"],
   "nfr_mode": "quick_4q",
+  "token_budget": 75000,
   "warnings": ["NFR check recommended before this task"]
 }
 ```
 
 Sizes: **XS** (typo, clarification) → **S** (bug fix, config) → **M** (feature, refactor) → **L** (system, architecture) → **XL** (new project, migration)
 
-Routing logic lives in `config/routes.yaml` — readable, editable, committed.
+Routing uses **net-score**: positive signal matches minus (negative matches × 2). "implement a typo fix" routes XS not M — the `typo` negative signal cancels the `implement` positive.
+
+Routing logic lives in `config/routes.yaml` — readable, editable, committed. Token budgets per size: XS 5k · S 25k · M 75k · L 200k · XL 500k.
+
+---
+
+## Workflow commands
+
+Five commands compose the underlying skills. Type them in Claude Code — youk routes silently.
+
+| Command | Composes | When |
+|---------|---------|------|
+| `/build` | route_task → nfr_check (M+) → dev-loop | Implementing a feature |
+| `/done` | code-review → verify → humanize | Just finished implementing |
+| `/check` | code-review → security-review (if auth in scope) | Before committing |
+| `/decide` | adr | Making an architectural choice |
+| `/health` | self_heal() | "How is the system doing?" |
+| `/plan` | compact_context → session_plan rebuild | Refocus mid-session |
+
+Aliases: `/requirements` → nfr_check · `/spec` → write-spec · `/review` → code-review
 
 ---
 

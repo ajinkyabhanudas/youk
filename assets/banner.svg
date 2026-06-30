@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+  <defs>
+    <!-- Background gradient: deep dark with subtle blue undertone -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0e1a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0d1420;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Signal glow for nodes -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Subtle horizontal line glow -->
+    <filter id="line-glow" x="-10%" y="-200%" width="120%" height="500%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Text glow -->
+    <filter id="text-glow" x="-5%" y="-30%" width="110%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Clip path for the diagram area -->
+    <clipPath id="diagram-clip">
+      <rect x="680" y="80" width="540" height="480" rx="4"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <!-- Subtle grid lines (very faint) -->
+  <g opacity="0.04" stroke="#4a9eff" stroke-width="0.5">
+    <line x1="0" y1="160" x2="1280" y2="160"/>
+    <line x1="0" y1="320" x2="1280" y2="320"/>
+    <line x1="0" y1="480" x2="1280" y2="480"/>
+    <line x1="320" y1="0" x2="320" y2="640"/>
+    <line x1="640" y1="0" x2="640" y2="640"/>
+    <line x1="960" y1="0" x2="960" y2="640"/>
+  </g>
+
+  <!-- ── LEFT PANEL: Wordmark + tagline ──────────────────────────── -->
+
+  <!-- youk logotype -->
+  <text
+    x="88"
+    y="268"
+    font-family="'SF Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace"
+    font-size="128"
+    font-weight="700"
+    letter-spacing="-4"
+    fill="#ffffff"
+    filter="url(#text-glow)"
+  >youk</text>
+
+  <!-- Accent underline -->
+  <rect x="88" y="290" width="340" height="3" rx="1.5" fill="#4a9eff" opacity="0.8"/>
+
+  <!-- Tagline -->
+  <text
+    x="88"
+    y="348"
+    font-family="'SF Pro Text', 'Inter', 'Helvetica Neue', sans-serif"
+    font-size="22"
+    font-weight="400"
+    letter-spacing="1.5"
+    fill="#8b9ab5"
+  >ambient engineering intelligence</text>
+
+  <!-- Three capability chips -->
+  <!-- Chip 1: session memory -->
+  <rect x="88" y="392" width="148" height="34" rx="17" fill="#1a2535" stroke="#2a3f5e" stroke-width="1"/>
+  <text x="162" y="414" text-anchor="middle" font-family="'SF Mono', monospace" font-size="13" fill="#4a9eff">session memory</text>
+
+  <!-- Chip 2: task routing -->
+  <rect x="248" y="392" width="124" height="34" rx="17" fill="#1a2535" stroke="#2a3f5e" stroke-width="1"/>
+  <text x="310" y="414" text-anchor="middle" font-family="'SF Mono', monospace" font-size="13" fill="#4a9eff">task routing</text>
+
+  <!-- Chip 3: self-heal -->
+  <rect x="384" y="392" width="96" height="34" rx="17" fill="#1a2535" stroke="#2a3f5e" stroke-width="1"/>
+  <text x="432" y="414" text-anchor="middle" font-family="'SF Mono', monospace" font-size="13" fill="#4a9eff">self-heal</text>
+
+  <!-- ── RIGHT PANEL: Architecture diagram ───────────────────────── -->
+
+  <!-- Claude Code box -->
+  <rect x="880" y="110" width="200" height="52" rx="8" fill="#111827" stroke="#2a3f5e" stroke-width="1.5"/>
+  <text x="980" y="130" text-anchor="middle" font-family="'SF Mono', monospace" font-size="12" fill="#8b9ab5">Claude Code</text>
+  <text x="980" y="150" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" fill="#4a9eff">MCP client</text>
+
+  <!-- Vertical connector from Claude Code down -->
+  <line x1="980" y1="162" x2="980" y2="210" stroke="#2a3f5e" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- Split connector: left to youk-core, right to youk-code -->
+  <line x1="835" y1="210" x2="1125" y2="210" stroke="#2a3f5e" stroke-width="1.5"/>
+  <line x1="835" y1="210" x2="835" y2="252" stroke="#2a3f5e" stroke-width="1.5"/>
+  <line x1="1125" y1="210" x2="1125" y2="252" stroke="#2a3f5e" stroke-width="1.5"/>
+
+  <!-- youk-core box -->
+  <rect x="730" y="252" width="210" height="130" rx="8" fill="#0f1f35" stroke="#1e4080" stroke-width="1.5"/>
+  <text x="835" y="276" text-anchor="middle" font-family="'SF Mono', monospace" font-size="13" font-weight="600" fill="#ffffff">youk-core</text>
+  <line x1="750" y1="285" x2="920" y2="285" stroke="#1e4080" stroke-width="1" opacity="0.6"/>
+  <text x="835" y="306" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" fill="#4a9eff">session_start</text>
+  <text x="835" y="324" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" fill="#4a9eff">route_task</text>
+  <text x="835" y="342" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" fill="#4a9eff">self_heal</text>
+  <text x="835" y="360" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" fill="#4a9eff">compact_context</text>
+
+  <!-- youk-code box -->
+  <rect x="1020" y="252" width="210" height="130" rx="8" fill="#0f1f35" stroke="#1e4080" stroke-width="1.5"/>
+  <text x="1125" y="276" text-anchor="middle" font-family="'SF Mono', monospace" font-size="13" font-weight="600" fill="#ffffff">youk-code</text>
+  <line x1="1040" y1="285" x2="1210" y2="285" stroke="#1e4080" stroke-width="1" opacity="0.6"/>
+  <text x="1125" y="306" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" fill="#4a9eff">nfr_check</text>
+  <text x="1125" y="324" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" fill="#4a9eff">route_to_skill</text>
+  <text x="1125" y="342" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" fill="#4a9eff">check_commit_quality</text>
+  <text x="1125" y="360" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" fill="#4a9eff">list_skills</text>
+
+  <!-- Connectors from boxes to volume -->
+  <line x1="835" y1="382" x2="835" y2="426" stroke="#2a3f5e" stroke-width="1.5"/>
+  <line x1="1125" y1="382" x2="1125" y2="426" stroke="#2a3f5e" stroke-width="1.5"/>
+  <line x1="835" y1="426" x2="1125" y2="426" stroke="#2a3f5e" stroke-width="1.5"/>
+  <line x1="980" y1="426" x2="980" y2="450" stroke="#2a3f5e" stroke-width="1.5"/>
+
+  <!-- Volume box -->
+  <rect x="810" y="450" width="340" height="74" rx="8" fill="#111827" stroke="#2a3f5e" stroke-width="1.5"/>
+  <text x="980" y="474" text-anchor="middle" font-family="'SF Mono', monospace" font-size="12" fill="#8b9ab5">~/.claude/ · ~/.claude/youk/</text>
+  <text x="980" y="496" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" fill="#4a6070">contracts · audit · knowledge · skills</text>
+  <text x="980" y="514" text-anchor="middle" font-family="'SF Mono', monospace" font-size="10" fill="#2a4050">read-write · zero footprint in your repo</text>
+
+  <!-- Animated pulse dots on connectors (static representation) -->
+  <circle cx="980" cy="186" r="3" fill="#4a9eff" filter="url(#glow)" opacity="0.9"/>
+  <circle cx="907" cy="210" r="2.5" fill="#4a9eff" filter="url(#glow)" opacity="0.7"/>
+  <circle cx="1052" cy="210" r="2.5" fill="#4a9eff" filter="url(#glow)" opacity="0.7"/>
+  <circle cx="980" cy="436" r="3" fill="#4a9eff" filter="url(#glow)" opacity="0.9"/>
+
+  <!-- Divider between left and right panels -->
+  <line x1="660" y1="80" x2="660" y2="560" stroke="#1a2535" stroke-width="1.5" filter="url(#line-glow)"/>
+
+  <!-- Subtle corner accent top-left -->
+  <line x1="0" y1="0" x2="60" y2="0" stroke="#4a9eff" stroke-width="2" opacity="0.6"/>
+  <line x1="0" y1="0" x2="0" y2="60" stroke="#4a9eff" stroke-width="2" opacity="0.6"/>
+
+  <!-- Subtle corner accent bottom-right -->
+  <line x1="1280" y1="640" x2="1220" y2="640" stroke="#4a9eff" stroke-width="2" opacity="0.6"/>
+  <line x1="1280" y1="640" x2="1280" y2="580" stroke="#4a9eff" stroke-width="2" opacity="0.6"/>
+
+  <!-- Version / attribution line at bottom -->
+  <text
+    x="640"
+    y="620"
+    text-anchor="middle"
+    font-family="'SF Mono', monospace"
+    font-size="11"
+    fill="#2a3f5e"
+    letter-spacing="2"
+  >TWO CONTAINERS · FULL CONTEXT · ZERO CEREMONY OVERHEAD</text>
+</svg>
