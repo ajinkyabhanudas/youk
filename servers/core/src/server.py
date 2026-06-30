@@ -17,6 +17,7 @@ from health import (
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
 from intent import optimize_intent as _optimize_intent
 from compaction import build_brief
+from tokens import init_token_tracker, record_checkpoint
 
 YOUK_ROOT = Path("/youk")
 
@@ -31,9 +32,11 @@ def session_start(project_dir: str) -> dict:
     your first response without announcing 'context loaded'.
 
     Returns: project, resume_point, context_health, pending_proposals_count,
-             session_counter, health_check_due.
+             session_counter, health_check_due, session_plan, contracts.
     """
     state = start_session(project_dir)
+    # Reset token tracker for the new session
+    init_token_tracker(session_id=state.project + "-" + str(state.session_counter))
     return state.to_dict()
 
 
@@ -266,6 +269,30 @@ def compact_context(project_dir: str) -> dict:
     Returns: brief (pin this), contracts_count, decisions_count, instruction.
     """
     return build_brief(project_dir)
+
+
+@mcp.tool()
+def track_tokens(input_tokens: int, output_tokens: int, note: str = "") -> dict:
+    """
+    Record token usage at a checkpoint in the current session.
+
+    Call this after each significant work unit:
+    - After a route_to_skill call returns (note = skill name)
+    - After a commit is made (note = "commit")
+    - After an Agent spawn (note = "agent_spawn: {role}")
+    - Before session_end as the final tally
+
+    Token counts are estimates from your context window usage indicator —
+    rough figures are fine. The goal is trend detection across sessions,
+    not per-call accounting precision.
+
+    input_tokens: approximate tokens in this exchange (prompt + context)
+    output_tokens: approximate tokens generated in this exchange
+    note: optional label for this checkpoint
+
+    Returns: session_total_input, session_total_output, vs_budget_pct (if budget set).
+    """
+    return record_checkpoint(input_tokens, output_tokens, note)
 
 
 @mcp.resource("youk://session/state")

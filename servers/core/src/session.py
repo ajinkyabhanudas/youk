@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, "/shared")
 from models import SessionState
 from compaction import write_contracts
+from tokens import read_and_clear as _read_and_clear_tokens
 
 CLAUDE_ROOT = Path("/claude")
 YOUK_ROOT = Path("/youk")
@@ -393,12 +394,25 @@ def end_session(
         for skill_name, gaps in skill_gaps.items():
             for gap in gaps:
                 gap_lines += f"SkillGap: {skill_name} — {gap}\n"
+
+    token_data = _read_and_clear_tokens()
+    total_tokens = token_data["total_input"] + token_data["total_output"]
+    budget = token_data.get("token_budget", 0)
+    if total_tokens > 0 and budget > 0:
+        pct = round(total_tokens / budget * 100)
+        tokens_line = f"Tokens: {total_tokens}/{budget} ({pct}%)\n"
+    elif total_tokens > 0:
+        tokens_line = f"Tokens: {total_tokens} (no budget set)\n"
+    else:
+        tokens_line = ""
+
     entry = (
         f"\n### Session — {timestamp}\n"
         f"{summary}\n"
         f"Skills: {skills_line}\n"
         f"CloseCluster: {close_line}\n"
         f"Commits: {'yes' if commits_made else 'no'}\n"
+        f"{tokens_line}"
         f"{gap_lines}"
     )
 

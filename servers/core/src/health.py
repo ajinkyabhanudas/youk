@@ -47,6 +47,16 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         s["skills"] = [sk.strip() for sk in skills_match.group(1).split(",")] if skills_match else []
         close_match = re.search(r"^CloseCluster:\s*(\w+)$", block, re.MULTILINE)
         s["close_cluster"] = (close_match.group(1).lower() == "yes") if close_match else False
+        # Tokens: actual/budget (pct%) or Tokens: actual (no budget set)
+        tokens_match = re.search(r"^Tokens:\s*(\d+)(?:/(\d+))?", block, re.MULTILINE)
+        if tokens_match:
+            s["tokens_actual"] = int(tokens_match.group(1))
+            s["tokens_budget"] = int(tokens_match.group(2)) if tokens_match.group(2) else 0
+            s["tokens_ratio"] = (s["tokens_actual"] / s["tokens_budget"]) if s["tokens_budget"] else None
+        else:
+            s["tokens_actual"] = 0
+            s["tokens_budget"] = 0
+            s["tokens_ratio"] = None
         sessions.append(s)
     return sessions
 
@@ -66,7 +76,12 @@ def _score_org(audit_texts: list[str]) -> float:
     close_rate = close_count / total
     tracked_rate = tracked_count / total
 
-    score = 5.0 + (close_rate * 2.0) + (tracked_rate * 1.0)
+    # Token efficiency: sessions consistently >2× budget lose 1 point
+    token_sessions = [s for s in sessions if s["tokens_ratio"] is not None]
+    over_budget_count = sum(1 for s in token_sessions if s["tokens_ratio"] > 2.0)
+    token_penalty = -1.0 if len(token_sessions) >= 2 and over_budget_count / max(len(token_sessions), 1) > 0.5 else 0.0
+
+    score = 5.0 + (close_rate * 2.0) + (tracked_rate * 1.0) + token_penalty
     return min(round(score, 1), 10.0)
 
 
@@ -106,6 +121,29 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
 
     if score < 6.0:
         findings.append("Org score below 6.0 — review which skills are being skipped.")
+
+    # Token efficiency findings
+    token_sessions = [s for s in sessions if s["tokens_ratio"] is not None]
+    if token_sessions:
+        avg_ratio = sum(s["tokens_ratio"] for s in token_sessions) / len(token_sessions)
+        over_budget = [s for s in token_sessions if s["tokens_ratio"] > 2.0]
+        if len(over_budget) >= 2:
+            findings.append(
+                f"Token usage consistently {avg_ratio:.1f}× over budget "
+                f"({len(over_budget)}/{len(token_sessions)} sessions). "
+                "Consider adding headroom (github.com/headroomlabs-ai/headroom) "
+                "for 60-95% token cost reduction."
+            )
+        elif avg_ratio < 0.5 and len(token_sessions) >= 3:
+            findings.append(
+                f"Token usage consistently under budget ({avg_ratio:.1f}× avg). "
+                "Verify skills are running — under-ceremony on M+ tasks is a risk."
+            )
+    elif total >= 3:
+        findings.append(
+            f"No token data in {total} sessions. "
+            "Call track_tokens(input, output, note) at session checkpoints to enable cost tracking."
+        )
 
     if not findings:
         findings.append(f"Org health nominal. Score: {score}/10.")
