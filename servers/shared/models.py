@@ -1,10 +1,10 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
-from enum import Enum
+from enum import StrEnum
 
 
-class TaskSize(str, Enum):
+class TaskSize(StrEnum):
     XS = "XS"
     S = "S"
     M = "M"
@@ -12,18 +12,18 @@ class TaskSize(str, Enum):
     XL = "XL"
 
 
-class RuleType(str, Enum):
+class RuleType(StrEnum):
     HARD = "hard"
     SOFT = "soft"
 
 
-class ViolationType(str, Enum):
+class ViolationType(StrEnum):
     BLOCK = "BLOCK"
     NUDGE = "NUDGE"
     SURFACE = "SURFACE"
 
 
-class KnowledgeTier(str, Enum):
+class KnowledgeTier(StrEnum):
     CONTRACT = "contract"       # behavioral instruction — preserve verbatim, always load
     DECISION = "decision"       # architectural choice — preserve facts + rationale
     EXPLORATION = "exploration" # depth discussion — compress to 1-2 sentence summary
