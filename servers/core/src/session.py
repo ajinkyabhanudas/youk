@@ -218,6 +218,7 @@ def _generate_session_plan(
     pending_proposals: int,
     close_cluster_missed: bool,
     project_type: str,
+    doc_gaps: list[str] | None = None,
 ) -> list[str]:
     """
     Generate a forward-looking session plan from structured context.
@@ -263,7 +264,53 @@ def _generate_session_plan(
     if contracts:
         plan.append(f"Active contract: {contracts[0]}")
 
-    return plan[:5]  # hard cap
+    # 6. Doc-freshness gaps (up to 2 — surface before any new work starts)
+    for gap in (doc_gaps or [])[:2]:
+        plan.append(f"Doc sync: {gap}")
+
+    return plan[:6]  # hard cap raised to 6 to fit doc-sync items
+
+
+def _check_doc_freshness() -> list[str]:
+    """
+    Read docs/doc-map.yaml. Extract public MCP tool names from both server.py files.
+    Return list of undocumented tools — in server.py but absent from the doc-map.
+    Called at session_start so gaps surface in session_plan before any work begins.
+    """
+    doc_map_file = YOUK_ROOT / "docs" / "doc-map.yaml"
+    if not doc_map_file.exists():
+        return []
+    try:
+        import re
+        import yaml  # already a dep (health.py uses it)
+        doc_map = yaml.safe_load(doc_map_file.read_text()) or {}
+        mcp_tools = doc_map.get("mcp_tools", {})
+        mapped_tools: set[str] = set()
+        for server_tools in mcp_tools.values():
+            for entry in (server_tools or []):
+                if isinstance(entry, dict) and "tool" in entry:
+                    mapped_tools.add(entry["tool"])
+
+        undocumented = []
+        for server_file in [
+            YOUK_ROOT / "servers" / "core" / "src" / "server.py",
+            YOUK_ROOT / "servers" / "code" / "src" / "server.py",
+        ]:
+            if not server_file.exists():
+                continue
+            source = server_file.read_text()
+            # collect names of @mcp.tool()-decorated functions
+            decorated = set(re.findall(
+                r'@mcp\.tool\(\)\s+def (\w+)\s*\(', source, re.DOTALL
+            ))
+            for name in sorted(decorated - mapped_tools):
+                undocumented.append(
+                    f"tool '{name}' missing from docs/doc-map.yaml — "
+                    "add it (and update README.md + docs/claude-md-template.md if needed)"
+                )
+        return undocumented
+    except Exception:
+        return []
 
 
 def _count_pending_proposals() -> int:
@@ -320,6 +367,8 @@ def start_session(project_dir: str) -> SessionState:
     counter = state["session_counter"]
     health_check_due = counter % 3 == 0
 
+    doc_gaps = _check_doc_freshness()
+
     session_plan = _generate_session_plan(
         slug=slug,
         resume_point=resume_point,
@@ -327,6 +376,7 @@ def start_session(project_dir: str) -> SessionState:
         pending_proposals=pending,
         close_cluster_missed=close_cluster_missed,
         project_type=project_type,
+        doc_gaps=doc_gaps,
     )
 
     # Persist session plan so compact_context can include it in briefs

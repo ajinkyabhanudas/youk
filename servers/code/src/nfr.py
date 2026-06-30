@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import sys
+from pathlib import Path
 sys.path.insert(0, "/shared")
 
 from models import NFRBlock, TaskSize
@@ -116,15 +117,54 @@ def nfr_check_full(task: str, size: TaskSize) -> NFRBlock:
     )
 
 
+_WAF_QUESTIONS = [
+    "Does this change maintain zero footprint in downstream project repos "
+    "(no writes outside /youk/ or /claude/skills/)?",
+    "Does this change respect the knowledge-extraction-not-logging hard rule "
+    "(no raw conversation transcripts stored at any point in the code path)?",
+]
+
+
+def _load_current_slug() -> str:
+    """Read the last project slug from youk state — used for WAF injection."""
+    try:
+        import json
+        state_file = Path("/youk/state/session.json")
+        if state_file.exists():
+            return json.loads(state_file.read_text()).get("last_project", "")
+    except Exception:
+        pass
+    return ""
+
+
+def _is_youk_project() -> bool:
+    slug = _load_current_slug()
+    return Path(slug).name == "youk" if slug else False
+
+
 def run_nfr_check(task: str, size_str: str = "M") -> NFRBlock:
     size = TaskSize(size_str.upper()) if size_str.upper() in TaskSize.__members__ else TaskSize.M
 
     if size in (TaskSize.XS, TaskSize.S):
         return nfr_check_fast(task)
     elif size == TaskSize.M:
-        return nfr_check_quick(task)
+        result = nfr_check_quick(task)
     else:
-        return nfr_check_full(task, size)
+        result = nfr_check_full(task, size)
+
+    # Inject WAF invariant checks for M+ tasks on the youk platform repo itself.
+    # These are the two hardest-to-detect violations in a platform codebase.
+    if size not in (TaskSize.XS, TaskSize.S) and _is_youk_project():
+        waf_note = (
+            "\n[WAF — PLATFORM INVARIANTS]\n"
+            f"Q-WAF1: {_WAF_QUESTIONS[0]}\n"
+            f"Q-WAF2: {_WAF_QUESTIONS[1]}\n"
+            "If either answer is No or Uncertain — stop and surface before proceeding."
+        )
+        result.decisions.append(waf_note)
+        result.raw_output += waf_note
+
+    return result
 
 
 def _extract_section(text: str, section_name: str) -> str:

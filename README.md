@@ -100,6 +100,7 @@ youk is two Docker containers registered as MCP servers in Claude Code:
 - `check_command(command)` — enforces the no-destructive hard rule at tool level
 - `self_heal()` — analyzes audit logs, generates improvement proposals
 - `get_proposals()` / `apply_proposal(id, confirmed)` — proposal review and two-step apply
+- `track_tokens(input_tokens, output_tokens, note)` — record token usage at a session checkpoint; `session_end` writes a `Tokens:` line to the audit log; `self_heal` uses this for cost trend detection across sessions
 
 **youk-code** (read-only access):
 - `nfr_check(task, size)` — XS/S: instant 2-question check; M: 4-question API block; L/XL: full check
@@ -257,7 +258,7 @@ Adding a variant means building one Dockerfile, one server.py, one entry in `con
 
 youk's context compaction runs proactively — before Claude's generic auto-compaction can blur behavioral contracts.
 
-At 25+ exchanges (or when context feels dense), Claude calls `compact_context(project_dir)`. The tool builds a brief from structured knowledge files, not by summarizing conversation. Content is tiered:
+When new significant context is established — after a `route_to_skill` call, after a commit, when a decision is verbalized, before `session_end`, or after 8+ tool calls — Claude calls `compact_context(project_dir)`. The tool builds a brief from structured knowledge files, not by summarizing conversation. Content is tiered:
 
 | Tier | What it is | How compacted |
 |---|---|---|
@@ -325,7 +326,7 @@ youk/
 │   │   └── skill_loader.py ← reads SKILL.md files from volume mount
 │   ├── core/               ← youk-core container
 │   │   ├── Dockerfile
-│   │   └── src/            ← server.py, session.py, routing.py, health.py, compaction.py
+│   │   └── src/            ← server.py, session.py, routing.py, health.py, compaction.py, tokens.py
 │   └── code/               ← youk-code container
 │       ├── Dockerfile
 │       └── src/            ← server.py, nfr.py, skills.py, review.py, skill_gen.py
@@ -336,6 +337,8 @@ youk/
 │   ├── install.sh          ← one-command idempotent setup (curl | bash)
 │   └── doctor.sh           ← health check with Fix: lines per failure
 ├── docs/
+│   ├── doc-map.yaml        ← maps tools + src files to their doc refs; session_start flags gaps
+│   ├── well-architected.md ← how youk satisfies the 6 AWS Well-Architected Framework pillars
 │   ├── getting-started.md
 │   ├── guardrails.md
 │   └── variants.md

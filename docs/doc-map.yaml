@@ -1,0 +1,54 @@
+# doc-map.yaml — maps code artifacts to their documentation references.
+#
+# Update this file alongside the code change that adds or removes a tool,
+# skill, or significant source file. session_start reads this and flags
+# any @mcp.tool() in server.py that is absent from this map — surfacing
+# it in session_plan as a doc-sync item so no new session starts blind.
+#
+# refs: list of files that must be updated when the artifact changes.
+# Add, rename, or remove entries here when you ship the code change.
+
+mcp_tools:
+  youk-core:
+    - {tool: session_start, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: session_end, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: optimize_intent, refs: [README.md]}
+    - {tool: route_task, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: check_command, refs: [README.md]}
+    - {tool: self_heal, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: add_proposal, refs: [README.md]}
+    - {tool: get_proposals, refs: [README.md]}
+    - {tool: apply_proposal, refs: [README.md]}
+    - {tool: compact_context, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: track_tokens, refs: [README.md, docs/claude-md-template.md]}
+
+  youk-code:
+    - {tool: nfr_check, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: route_to_skill, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: check_commit_quality, refs: [README.md]}
+    - {tool: list_skills, refs: [README.md]}
+    - {tool: generate_skill, refs: [README.md]}
+    - {tool: assess_skill, refs: [README.md]}
+    - {tool: detect_skill_gaps, refs: [README.md]}
+
+src_files:
+  - {file: servers/core/src/server.py, refs: [README.md]}
+  - {file: servers/core/src/session.py, refs: [README.md]}
+  - {file: servers/core/src/routing.py, refs: [README.md]}
+  - {file: servers/core/src/health.py, refs: [README.md]}
+  - {file: servers/core/src/compaction.py, refs: [README.md]}
+  - {file: servers/core/src/tokens.py, refs: [README.md]}
+  - {file: servers/shared/models.py, refs: [README.md]}
+  - {file: servers/code/src/server.py, refs: [README.md]}
+  - {file: servers/code/src/nfr.py, refs: [README.md]}
+  - {file: servers/code/src/skills.py, refs: [README.md]}
+
+skills:
+  - {skill: code-review, refs: [README.md]}
+  - {skill: security-review, refs: [README.md]}
+  - {skill: dev-loop, refs: [README.md]}
+  - {skill: verify, refs: [README.md]}
+  - {skill: humanize, refs: [README.md]}
+  - {skill: nfr-check, refs: [README.md]}
+  - {skill: adr, refs: [README.md]}
+  - {skill: write-spec, refs: [README.md]}

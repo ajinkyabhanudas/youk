@@ -81,16 +81,26 @@ Contract phrases to detect mid-conversation (offer to save to contracts.md when 
 "always", "never", "from now on", "remember to", "make sure you", "every time",
 "commit format", "test after", "before committing"
 
+## Token tracking (call at session checkpoints)
+
+Call `youk-core.track_tokens(approx_input, approx_output, note)` at:
+- After each `route_to_skill` call returns (note = skill name)
+- After each commit (note = "commit")
+- Before `session_end` as the final tally (note = "final")
+
+Rough estimates from the context window display are fine — trend detection, not accounting.
+
 ## Session end — sequence is fixed, order matters
 
 When done/stopping detected:
-1. `compact_context(project_dir)` — first, always. Captures in-progress state before the session closes.
-2. `session_end(summary, commits_made, explicit_contracts=[...], skills_used=[...], close_cluster=True|False, skill_gaps={})` — pass all params.
+1. `track_tokens(approx_input, approx_output, "final")` — final tally before closing.
+2. `compact_context(project_dir)` — captures in-progress state before the session closes.
+3. `session_end(summary, commits_made, explicit_contracts=[...], skills_used=[...], close_cluster=True|False, skill_gaps={})` — pass all params.
    - `explicit_contracts`: working agreements extracted from this session (verbatim phrases)
    - `skills_used`: list of skill names invoked via route_to_skill this session
    - `close_cluster`: True only if context-sync + learn + humanize all completed
    - `skill_gaps`: dict mapping skill name → list of gaps observed (if any)
-3. Surface context-sync + learn + humanize as one prompt.
+4. Surface context-sync + learn + humanize as one prompt.
 
 Summary = structured what/why, never raw transcript. Never include `Human:` or `Assistant:` markers.
 
