@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+# youk health check — actionable diagnostics with Fix: lines for every failure
+# Exit code: 0 = all pass, 1 = any failure
+set -uo pipefail
+
+YOUK_DIR="${YOUK_DIR:-$HOME/.claude/youk}"
+CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
+
+PASS=0; FAIL=0; WARN=0
+
+pass() { echo "  PASS  $1"; PASS=$((PASS+1)); }
+warn() { echo "  WARN  $1"; WARN=$((WARN+1)); }
+fail() {
+  echo "  FAIL  $1"
+  echo "        Fix: $2"
+  FAIL=$((FAIL+1))
+}
+
+echo "youk doctor"
+echo ""
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+echo "Docker"
+
+if ! command -v docker &>/dev/null; then
+  fail "docker: not installed" \
+    "install Docker Desktop from https://docker.com"
+else
+  if ! docker info &>/dev/null 2>&1; then
+    fail "docker: not running" \
+      "start Docker Desktop, then re-run: bash $YOUK_DIR/scripts/doctor.sh"
+  else
+    pass "docker: running"
+  fi
+fi
+
+if docker image inspect youk-core:latest &>/dev/null 2>&1; then
+  pass "youk-core image: built"
+else
+  fail "youk-core image: not found" \
+    "cd $YOUK_DIR && make build"
+fi
+
+if docker image inspect youk-code:latest &>/dev/null 2>&1; then
+  pass "youk-code image: built"
+else
+  fail "youk-code image: not found" \
+    "cd $YOUK_DIR && make build"
+fi
+echo ""
+
+# ── API key ───────────────────────────────────────────────────────────────────
+echo "API key"
+
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  pass "ANTHROPIC_API_KEY: set in environment"
+elif [[ -f "$HOME/.anthropic/api_key" ]]; then
+  pass "api_key: found at ~/.anthropic/api_key (fallback)"
+else
+  fail "api_key: ANTHROPIC_API_KEY not set and ~/.anthropic/api_key not found" \
+    "add to your shell profile: export ANTHROPIC_API_KEY=sk-ant-..."
+fi
+echo ""
+
+# ── MCP registration ──────────────────────────────────────────────────────────
+echo "MCP servers"
+
+if ! command -v claude &>/dev/null; then
+  fail "claude: Claude Code not found" \
+    "install from https://claude.ai/code"
+else
+  if claude mcp list 2>/dev/null | grep -q "youk-core"; then
+    pass "youk-core: registered"
+  else
+    fail "youk-core: not registered with Claude Code" \
+      "bash $YOUK_DIR/scripts/install.sh"
+  fi
+
+  if claude mcp list 2>/dev/null | grep -q "youk-code"; then
+    pass "youk-code: registered"
+  else
+    fail "youk-code: not registered with Claude Code" \
+      "bash $YOUK_DIR/scripts/install.sh"
+  fi
+fi
+echo ""
+
+# ── Runtime directories ───────────────────────────────────────────────────────
+echo "Runtime directories"
+
+for dir in \
+  "$YOUK_DIR/state" \
+  "$YOUK_DIR/knowledge/proposals" \
+  "$YOUK_DIR/knowledge/projects" \
+  "$CLAUDE_DIR/audit"
+do
+  if [[ -d "$dir" ]]; then
+    pass "exists: ${dir/$HOME/~}"
+  else
+    fail "missing: ${dir/$HOME/~}" \
+      "mkdir -p $dir"
+  fi
+done
+echo ""
+
+# ── Config files ──────────────────────────────────────────────────────────────
+echo "Config files"
+
+for f in \
+  "$YOUK_DIR/config/guardrails.yaml" \
+  "$YOUK_DIR/config/routes.yaml" \
+  "$YOUK_DIR/config/variants.yaml"
+do
+  if [[ -f "$f" ]]; then
+    pass "$(basename $f)"
+  else
+    fail "$(basename $f): missing" \
+      "re-clone: git clone https://github.com/ajinkyabhanudas/youk $YOUK_DIR"
+  fi
+done
+echo ""
+
+# ── Skills ────────────────────────────────────────────────────────────────────
+echo "Skills"
+
+if [[ -d "$CLAUDE_DIR/skills" ]]; then
+  SKILL_COUNT=$(ls "$CLAUDE_DIR/skills" 2>/dev/null | wc -l | tr -d ' ')
+  MISSING_SKILL_MD=$(find "$CLAUDE_DIR/skills" -maxdepth 1 -mindepth 1 -type d \
+    -exec test ! -f {}/SKILL.md \; -print 2>/dev/null | wc -l | tr -d ' ')
+  pass "skills directory: $SKILL_COUNT skills found"
+  if [[ "$MISSING_SKILL_MD" -gt 0 ]]; then
+    warn "skills: $MISSING_SKILL_MD skill directories missing SKILL.md (run list_skills() to identify)"
+  fi
+else
+  warn "~/.claude/skills/ not found (optional — youk-code route_to_skill requires it)"
+fi
+echo ""
+
+# ── MCP handshake ─────────────────────────────────────────────────────────────
+echo "MCP handshake"
+
+if docker image inspect youk-core:latest &>/dev/null 2>&1; then
+  CORE_RESPONSE=$(echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | \
+    docker run -i --rm \
+      -v "$CLAUDE_DIR:/claude" \
+      -v "$YOUK_DIR:/youk" \
+      youk-core:latest 2>/dev/null || echo '{}')
+
+  if echo "$CORE_RESPONSE" | python3 -c \
+      "import sys,json; r=json.load(sys.stdin); assert 'result' in r" 2>/dev/null; then
+    TOOL_COUNT=$(echo "$CORE_RESPONSE" | \
+      python3 -c "import sys,json; r=json.load(sys.stdin); print(len(r['result']['tools']))" 2>/dev/null || echo "?")
+    pass "youk-core: responds ($TOOL_COUNT tools)"
+  else
+    fail "youk-core: did not return valid MCP response" \
+      "make rebuild — then re-run: bash $YOUK_DIR/scripts/doctor.sh"
+  fi
+
+  CODE_RESPONSE=$(echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | \
+    docker run -i --rm \
+      -v "$CLAUDE_DIR:/claude:ro" \
+      -v "$YOUK_DIR:/youk:ro" \
+      youk-code:latest 2>/dev/null || echo '{}')
+
+  if echo "$CODE_RESPONSE" | python3 -c \
+      "import sys,json; r=json.load(sys.stdin); assert 'result' in r" 2>/dev/null; then
+    TOOL_COUNT=$(echo "$CODE_RESPONSE" | \
+      python3 -c "import sys,json; r=json.load(sys.stdin); print(len(r['result']['tools']))" 2>/dev/null || echo "?")
+    pass "youk-code: responds ($TOOL_COUNT tools)"
+  else
+    fail "youk-code: did not return valid MCP response" \
+      "make rebuild — then re-run: bash $YOUK_DIR/scripts/doctor.sh"
+  fi
+else
+  warn "handshake: skipped (images not built)"
+fi
+echo ""
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+TOTAL=$((PASS+FAIL+WARN))
+echo "────────────────────────────────────"
+echo "  $PASS/$TOTAL passed  |  $FAIL failed  |  $WARN warnings"
+echo ""
+
+if [[ $FAIL -eq 0 ]]; then
+  echo "  youk is healthy."
+  exit 0
+else
+  echo "  $FAIL check(s) failed. Fix the items above, then re-run:"
+  echo "  bash $YOUK_DIR/scripts/doctor.sh"
+  exit 1
+fi
