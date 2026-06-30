@@ -71,21 +71,30 @@ ok "Directories ready"
 # ── Step 3: Symlinks ─────────────────────────────────────────────────────────
 step "Symlinks"
 
-if [[ -d "$CLAUDE_DIR/skills" ]]; then
-  if [[ ! -L "$YOUK_DIR/skills" ]]; then
-    ln -sf "$CLAUDE_DIR/skills" "$YOUK_DIR/skills"
-    ok "Linked skills → $CLAUDE_DIR/skills"
-  else
-    ok "skills symlink already in place"
-  fi
+# Skills are owned by the youk repo (skills/ directory). ~/.claude/skills is a
+# relative symlink into the repo so Docker can follow it inside the container.
+# Relative symlink (not absolute) required for Docker bind-mount compatibility.
+SKILLS_LINK="$CLAUDE_DIR/skills"
+SKILLS_REPO="$YOUK_DIR/skills"
+
+if [[ -L "$SKILLS_LINK" ]] && [[ "$(readlink "$SKILLS_LINK")" == "youk/skills" ]]; then
+  ok "skills symlink already in place (→ youk/skills)"
+elif [[ ! -e "$SKILLS_LINK" ]]; then
+  # Create relative symlink from ~/.claude/skills → youk/skills
+  ln -sf "youk/skills" "$SKILLS_LINK"
+  ok "Linked ~/.claude/skills → youk/skills"
+elif [[ -d "$SKILLS_LINK" ]] && [[ ! -L "$SKILLS_LINK" ]]; then
+  # Real directory exists from old setup — warn, don't overwrite
+  warn "~/.claude/skills is a real directory, not a symlink."
+  warn "To migrate: mv $SKILLS_LINK $SKILLS_LINK.bak && ln -sf youk/skills $SKILLS_LINK"
 else
-  warn "~/.claude/skills not found — skill routing will work but /route_to_skill needs skills installed"
+  ok "skills symlink exists (may point elsewhere — check readlink ~/.claude/skills)"
 fi
 
-if [[ -d "$CLAUDE_DIR/skills/learn/knowledge" ]]; then
+if [[ -d "$SKILLS_REPO/learn/knowledge" ]]; then
   if [[ ! -L "$YOUK_DIR/knowledge/domain" ]]; then
-    ln -sf "$CLAUDE_DIR/skills/learn/knowledge" "$YOUK_DIR/knowledge/domain"
-    ok "Linked knowledge/domain → $CLAUDE_DIR/skills/learn/knowledge"
+    ln -sf "$SKILLS_REPO/learn/knowledge" "$YOUK_DIR/knowledge/domain"
+    ok "Linked knowledge/domain → youk/skills/learn/knowledge"
   else
     ok "knowledge/domain symlink already in place"
   fi

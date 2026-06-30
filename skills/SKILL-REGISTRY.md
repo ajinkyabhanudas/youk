@@ -1,0 +1,205 @@
+# Skill Registry — y2k-1
+
+**Company:** y2k-1 | **Activation:** say "activate y2k-1" | **Roster size:** 18
+*Living document. Updated by /skill-health after each review. Last updated: 2026-06-27.*
+*Owner: Ajinkya Dessai. All skills are scoped to the ~/.claude/skills/ directory.*
+
+---
+
+## What This Document Is
+
+The complete map of the skill ecosystem. Every skill that exists, what it does, what
+it tends to miss, and how it connects to others. The hiring committee standard for
+any new skill: it must do something no existing skill does.
+
+---
+
+## Skill Inventory
+
+| Skill | Role | Invoke When | Health |
+|---|---|---|---|
+| `/dev-loop` | Senior Engineer | Any implementation task | ACTIVE |
+| `/ux-designer` | UX Researcher | Any user-facing design decision | ACTIVE |
+| `/code-review` | Quality Reviewer | Any diff before merging | ACTIVE |
+| `/security-review` | Security Auditor | Auth, data, new endpoints | ACTIVE |
+| `/verify` | QA Tester | After implementation, confirm live behavior | ACTIVE |
+| `/nfr-check` | Systems Engineer | Before any non-trivial feature (quick=default, full for L/XL) | ACTIVE |
+| `/adr` | Staff Architect | Any significant technical decision | ACTIVE |
+| `/stress-test` | Red Team Lead | Before committing to any major design | ACTIVE |
+| `/pm-review` | AI Product Manager | Any new feature request or prioritization question | ACTIVE |
+| `/write-spec` | Technical PM | After build decision — define WHAT to build precisely | ACTIVE |
+| `/orchestrate` | Chief of Staff / COO | New project, feature sprint, or "what's next?" | ACTIVE |
+| `/context-sync` | Context Manager | Session start, session end, when context feels stale | ACTIVE |
+| `/humanize` | Technical Writer | Commit messages, docs, decision rationale | ACTIVE |
+| `/learn` | L&D Coach | Session end (always), explicit concept deep-dives | ACTIVE |
+| `/skill-health` | Engineering Manager | Periodic review, post-observed gap; reads audit logs | ACTIVE |
+| `/simplify` | Code Quality | After implementation, reduce complexity | ACTIVE |
+| `/run` | DevOps | Run/start the project for manual verification | ACTIVE |
+| `/review` | GitHub PR Review | GitHub PR review | ACTIVE |
+
+---
+
+## Invocation Flows
+
+### New Feature Flow
+
+```
+1. /pm-review          — Should we build this? P0/P1/P2? Why NOT build it?
+2. /write-spec         — Define WHAT to build precisely (after build decision)
+3. /nfr-check          — Quick (4 Qs) for S/M; full for L/XL
+4. /adr                — Any architectural decisions to document?
+5. /stress-test        — L/XL only: does the design hold up?
+6. /dev-loop           — Implement (consumes NFR Decision Block as context)
+7. /ux-designer        — If user-facing: design the UI states
+8. /code-review        — Quality gate on the implementation
+9. /security-review    — If auth/data/new endpoint: security gate
+10. /verify            — Confirm live behavior is correct (use Playwright MCP for any UI change; protocol in ~/.claude/skills/verify/playwright-protocol.md)
+11. /humanize          — Commit messages and documentation
+12. /learn             — Session-end knowledge capture
+```
+
+### New Project Flow
+
+```
+1. /orchestrate        — Set up rolling 3-step plan, routing to skill teams
+2. /pm-review          — Product brief + prioritization
+3. /write-spec         — Full PRD for core features
+4. /nfr-check full     — Full NFR check for new project
+5. /adr                — Document founding architecture decisions
+6. /stress-test        — Attack the architecture before building
+7. → Feature flow above for each feature
+```
+
+### Decision Flow
+
+```
+1. /adr                — Document the decision and rejected alternatives
+2. /stress-test        — Attack the chosen design
+3. /nfr-check connect  — Check if the decision creates new NFR requirements
+```
+
+### Session Management Flow
+
+```
+Session start:
+1. /context-sync start — Load L1 + L2 + L3; report resume point
+
+Session end:
+1. /context-sync end   — Flush to L2/L3; prune session context
+2. /learn              — Post-session knowledge capture
+3. /humanize           — Final commit message
+```
+
+### Maintenance / Review Flow
+
+```
+Periodic (every 2-3 weeks):
+1. /skill-health       — Review skill ecosystem health
+2. /code-review        — Review accumulated technical debt
+```
+
+---
+
+## What Each Skill Tends to Miss
+
+Honest assessment of known gaps. Updated by /skill-health reviews.
+
+| Skill | Known Gaps |
+|---|---|
+| `/dev-loop` | NFR decisions (caching especially) made too late; no "should we build this?" gate; no decision documentation |
+| `/dev-loop` | NFR decisions (caching especially) made too late; no "should we build this?" gate; no decision documentation; no implicit ADR detection in AUDIT phase |
+| `/ux-designer` | Accessibility (WCAG); mobile/responsive; performance budget; **rendering environment now covered by checklist.md Rendering Environment section** |
+| `/code-review` | Architectural drift over time; doesn't catch NFR gaps (that's /nfr-check's job) |
+| `/security-review` | Not always invoked on internal modules; only catches what it's shown |
+| `/verify` | **Now Playwright-enabled** — Protocol: `~/.claude/skills/verify/playwright-protocol.md`. **Test 10 added: dark mode rendering check.** Remaining gap: no automated performance regression. |
+| `/nfr-check` | May default to full ceremony when quick block would do; watch for over-triggering. **Category 11 added: Rendering Environment (mandatory for all CSS/UI changes).** |
+| `/adr` | Easy to skip on "obvious" decisions that later turn out not to be obvious. **Implicit architectural decisions section added to decision-triggers.md.** |
+| `/stress-test` | Agent independence requires explicit instruction; poorly run = agents echoing each other |
+| `/pm-review` | Solo developer calibration still evolving; "do nothing" option sometimes skipped |
+| `/write-spec` | New — may over-specify for small features; use `quick` mode for S |
+| `/orchestrate` | Consistently skipped — no session-start invocation observed. Session planning done informally instead. |
+| `/context-sync` | Session-close cluster (context-sync + learn + humanize) skipped every session. FOUNDER-GUIDE.md now frames these as required, not optional. |
+| `/humanize` | Requires explicit invocation; not yet auto-triggered; Co-Authored-By misapplied when run manually |
+| `/learn` | Consistently skipped at session end. Same root cause as /context-sync. |
+| `/skill-health` | Audit log had zero entries before this review — limits trend analysis. First entry now created. |
+
+---
+
+## Skill Wiring Diagram
+
+```
+  /orchestrate ←─── Founder entry point. Routes all skills per project type.
+       │
+       ▼
+  /pm-review  ─── Should we build this? P0/P1/P2? Why NOT?
+       │
+       ▼
+  /write-spec ─── WHAT exactly are we building? (PRD quality)
+       │
+       ▼
+  /nfr-check  ─── 4 Qs (S/M) or full check (L/XL)
+       │
+  ┌────┴─────┐
+  │          │
+/adr    /stress-test  ←── L/XL only
+  │
+  └────┬─────┘
+       ▼
+  /dev-loop  ─── Implementation
+       │
+  ┌────┴────────┬────────────┐
+  ▼             ▼            ▼
+/ux-designer /code-review /security-review
+                  │
+                  ▼
+              /verify
+                  │
+  ┌───────────────┼──────────┐
+  ▼               ▼          ▼
+/humanize      /learn   /context-sync end
+(commits)    (knowledge)   (flush + audit log)
+
+Meta (run separately):
+  /skill-health  ← reads audit logs, scores org efficiency
+  /context-sync start ← beginning of every session
+```
+
+---
+
+## New Skill Backlog
+
+Proposed skills that don't yet exist. Evaluated against the hiring bar before creation.
+
+| Proposed Skill | Gap It Addresses | Priority | Status |
+|---|---|---|---|
+| `/incident-review` | Post-production incident structured retrospective | LOW | Deferred — promote when first project reaches production |
+| `/dependency-audit` | Review all dependencies for CVEs, updates, deprecation | LOW | Deferred — run as one-time /dev-loop audit at handover; no standing skill needed yet |
+| `/cross-project` | Surface patterns from one project applicable to a new project | MEDIUM | LOW-ACTIVE — invoke at project completion or when starting a second project in the same domain |
+
+---
+
+## Change Log
+
+| Date | Change | Reason |
+|---|---|---|
+| 2026-06-27 | Created registry; added 8 new skills | Initial ecosystem design — AI agentic company session |
+| 2026-06-27 | Elevated caching in dev-loop audit checklist (LOW → HIGH) | Caching decision slipped post-implementation because it was rated too low to trigger early |
+| 2026-06-27 | Added NFR gate to dev-loop UNDERSTAND phase | Pre-build NFR check prevents post-hoc NFR decisions |
+| 2026-06-27 | Added /orchestrate (COO), /write-spec (Technical PM) | Close PM gap vs. Anthropic plugin; orchestrate skill routing |
+| 2026-06-27 | Simplified /nfr-check: 4-question default, full only for L/XL | Reduce ceremony, keep what catches 80% of incidents |
+| 2026-06-27 | Added audit log to /context-sync FLUSH; extended /skill-health with org efficiency score | CEO-level visibility into org health trends |
+| 2026-06-27 | Rewrote /humanize voice profile: hard rules for no em dashes, no rhetorical buildup | Extracted from Ajinkya's actual writing patterns |
+| 2026-06-27 | Added Playwright MCP protocol to /verify; wired into New Feature Flow | Live browser testing revealed bugs invisible to unit tests — validation mismatches, tab label drift from stale server |
+| 2026-06-27 | /skill-health review — Org score 5.8/10. Added: NFR category 11 (Rendering Environment), ux-designer checklist Rendering Environment section, /verify Test 10 (dark mode rendering check), /adr implicit decisions section, FOUNDER-GUIDE session-close required framing | Rendering environment gap slipped past UX review and reached the user; session-close cluster consistently skipped across multiple sessions |
+
+---
+
+## Hiring Committee Standard
+
+Any new skill must pass these gates before being added:
+
+1. **Scope test**: "Does this do something that NO OTHER SKILL on the current roster already does?"
+2. **Hiring bar test**: "If this were a team member, would we hire them for this specific role?"
+3. **Reference test**: "Does it have at least 2 reference files that make it robust on any task?"
+4. **Handoff test**: "Does its output format connect cleanly to the next skill in the chain?"
+5. **Self-limiting test**: "Does it know when NOT to invoke itself, and does it say so?"
