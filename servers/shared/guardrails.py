@@ -2,7 +2,6 @@ from __future__ import annotations
 import re
 import yaml
 from pathlib import Path
-from typing import Optional
 
 from models import ViolationType, SoftRuleWarning
 

@@ -6,10 +6,9 @@ sys.path.insert(0, "/shared")
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
-from models import SessionState, RoutingDecision
 from session import start_session, end_session
 from routing import route_task as _route_task
-from health import run_health_check, add_proposal, apply_proposal as _apply_proposal, _load_pending_proposals
+from health import run_health_check, apply_proposal as _apply_proposal, _load_pending_proposals
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
 from intent import optimize_intent as _optimize_intent
 

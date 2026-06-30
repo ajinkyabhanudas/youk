@@ -20,7 +20,7 @@ def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> s
     Returns the skill output in its native format (phase tokens preserved).
     """
     if not _client:
-        return f"[ERROR] API client not available — check ANTHROPIC_API_KEY"
+        return "[ERROR] API client not available — check ANTHROPIC_API_KEY"
 
     try:
         skill_content = load_skill(skill_name)
