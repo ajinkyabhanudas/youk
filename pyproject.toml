@@ -6,5 +6,8 @@ line-length = 100
 select = ["E", "F", "W", "I", "UP"]
 ignore = [
     "E402",   # module-level import not at top — sys.path.insert required before shared imports
+    "E501",   # line too long — pre-existing in generated code, not enforced
+    "I001",   # import sort — sys.path.insert splits import blocks intentionally
     "UP007",  # use X | Y for Union — keep Optional where it aids readability
+    "UP045",  # use X | None for Optional — same as UP007
 ]

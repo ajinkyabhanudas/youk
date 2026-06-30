@@ -1,6 +1,6 @@
 from __future__ import annotations
 import json
-import os
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -11,7 +11,11 @@ from models import SessionState
 CLAUDE_ROOT = Path("/claude")
 YOUK_ROOT = Path("/youk")
 STATE_FILE = YOUK_ROOT / "state" / "session.json"
-SKILLS_DIR = CLAUDE_ROOT / "skills"
+
+_CONTRACT_PHRASES = [
+    "always ", "never ", "from now on", "remember to", "make sure you",
+    "every time", "don't forget", "commit format", "test after", "before committing",
+]
 
 
 def _load_state() -> dict:
@@ -28,32 +32,118 @@ def _save_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
-def _detect_project(project_dir: str) -> str:
-    """Infer project name from directory path."""
+def _slug(project_dir: str) -> str:
+    return Path(project_dir).name or "unknown"
+
+
+def _detect_project_type(project_dir: str) -> str:
     p = Path(project_dir)
-    return p.name if p.name else "unknown"
+    if not p.exists():
+        return "unknown"
+
+    if (p / "go.mod").exists():
+        return "go"
+    if (p / "Cargo.toml").exists():
+        return "rust"
+
+    has_python = any((p / f).exists() for f in ["requirements.txt", "pyproject.toml", "setup.py"])
+    if has_python:
+        for candidate in [p / "requirements.txt", p / "pyproject.toml"]:
+            if candidate.exists():
+                try:
+                    content = candidate.read_text().lower()
+                    if "psycopg" in content or "sqlalchemy" in content or "asyncpg" in content:
+                        return "python_postgresql"
+                except Exception:
+                    pass
+        return "python"
+
+    if (p / "package.json").exists():
+        try:
+            pkg = json.loads((p / "package.json").read_text())
+            deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+            if "react" in deps or "next" in deps:
+                return "js_react"
+        except Exception:
+            pass
+        return "js_node"
+
+    return "unknown"
+
+
+def _read_git_log(project_dir: str, n: int = 5) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", project_dir, "log", "--oneline", f"-{n}"],
+            capture_output=True, text=True, timeout=5
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
+
+
+def _load_project_context(slug: str) -> str | None:
+    ctx_file = YOUK_ROOT / "knowledge" / "projects" / slug / "context.md"
+    if not ctx_file.exists():
+        return None
+    try:
+        return ctx_file.read_text()
+    except Exception:
+        return None
+
+
+def _write_project_context(slug: str, project_type: str, git_log: str, first_seen: str) -> None:
+    ctx_dir = YOUK_ROOT / "knowledge" / "projects" / slug
+    ctx_dir.mkdir(parents=True, exist_ok=True)
+    ctx_file = ctx_dir / "context.md"
+
+    # Preserve original first-seen date if context already exists
+    existing_first_seen = first_seen
+    if ctx_file.exists():
+        for line in ctx_file.read_text().splitlines():
+            if line.startswith("first-seen:"):
+                existing_first_seen = line.split(":", 1)[1].strip()
+                break
+
+    ctx_file.write_text(
+        f"# Project context: {slug}\n\n"
+        f"project-type: {project_type}\n"
+        f"first-seen: {existing_first_seen}\n"
+        f"last-seen: {datetime.utcnow().strftime('%Y-%m-%d')}\n\n"
+        f"## Recent commits\n\n"
+        f"```\n{git_log or 'no git history'}\n```\n"
+    )
+
+
+def _load_contracts(slug: str) -> list[str]:
+    contracts_file = YOUK_ROOT / "knowledge" / "projects" / slug / "contracts.md"
+    if not contracts_file.exists():
+        return []
+    try:
+        return [
+            line.strip()
+            for line in contracts_file.read_text().splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+    except Exception:
+        return []
 
 
 def _load_l2_context(project_dir: str) -> tuple[str, str]:
-    """
-    Returns (resume_point, context_health).
-    Looks for .claude/*-context.md and .claude/prd-status.md.
-    """
+    """Returns (resume_point, context_health) from project's .claude/ dir."""
     p = Path(project_dir)
     claude_dir = p / ".claude"
-    resume_point = "No prior context found — fresh session."
+    resume_point = ""
     context_health = "NONE"
 
     if not claude_dir.exists():
         return resume_point, context_health
 
-    # Look for prd-status.md first (most specific resume point)
     prd_status = claude_dir / "prd-status.md"
     if prd_status.exists():
         content = prd_status.read_text()
         for line in content.split("\n"):
             if "Resume from" in line or "resume from" in line:
-                # Grab the next non-empty line
                 lines = content.split("\n")
                 idx = lines.index(line)
                 for next_line in lines[idx + 1:]:
@@ -63,7 +153,6 @@ def _load_l2_context(project_dir: str) -> tuple[str, str]:
                 break
         context_health = "L3"
 
-    # Look for project context file
     for f in claude_dir.iterdir():
         if f.suffix == ".md" and "context" in f.name.lower():
             context_health = "L2+L3" if context_health == "L3" else "L2"
@@ -72,12 +161,42 @@ def _load_l2_context(project_dir: str) -> tuple[str, str]:
     return resume_point, context_health
 
 
+def _parse_last_session_flags(audit_dir: Path) -> tuple[bool, bool]:
+    """Returns (close_cluster_missed, orchestrate_pending) from last session entry."""
+    close_cluster_missed = False
+    orchestrate_pending = False
+
+    month = datetime.utcnow().strftime("%Y-%m")
+    audit_file = audit_dir / f"{month}.md"
+    if not audit_file.exists():
+        return False, False
+
+    try:
+        content = audit_file.read_text()
+        sessions = content.split("### Session —")
+        if len(sessions) < 2:
+            return False, False
+        last = sessions[-1]
+
+        for line in last.splitlines():
+            if line.startswith("CloseCluster:") and "no" in line.lower():
+                close_cluster_missed = True
+            if line.startswith("Skills:") and "orchestrate" not in line.lower():
+                # Only flag if session had meaningful skill usage (at least 2 skills)
+                skills_line = line[len("Skills:"):].strip()
+                if skills_line.count(",") >= 1:
+                    orchestrate_pending = True
+    except Exception:
+        pass
+
+    return close_cluster_missed, orchestrate_pending
+
+
 def _count_pending_proposals() -> int:
     pending_file = YOUK_ROOT / "knowledge" / "proposals" / "PENDING.md"
     if not pending_file.exists():
         return 0
-    content = pending_file.read_text()
-    return content.count("## PENDING-")
+    return pending_file.read_text().count("## PENDING-")
 
 
 def start_session(project_dir: str) -> SessionState:
@@ -87,37 +206,72 @@ def start_session(project_dir: str) -> SessionState:
     state["last_session"] = datetime.utcnow().isoformat()
     _save_state(state)
 
-    project = _detect_project(project_dir)
-    resume_point, context_health = _load_l2_context(project_dir)
+    slug = _slug(project_dir)
+    project_type = _detect_project_type(project_dir)
+    git_log = _read_git_log(project_dir)
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+
+    _write_project_context(slug, project_type, git_log, first_seen=today)
+
+    l2_resume, context_health = _load_l2_context(project_dir)
+    existing_ctx = _load_project_context(slug)
+    if existing_ctx and context_health == "NONE":
+        context_health = "L1"
+
+    # Priority-ordered resume point: L3 > L2 > git log > fresh session
+    if l2_resume:
+        resume_point = l2_resume
+    elif git_log:
+        first_commit = git_log.splitlines()[0]
+        resume_point = f"Last commit: {first_commit}"
+    else:
+        resume_point = "No prior context found — fresh session."
+
+    contracts = _load_contracts(slug)
+    audit_dir = CLAUDE_ROOT / "audit"
+    close_cluster_missed, orchestrate_pending = _parse_last_session_flags(audit_dir)
+
     pending = _count_pending_proposals()
     counter = state["session_counter"]
     health_check_due = counter % 3 == 0
 
     return SessionState(
-        project=project,
+        project=slug,
         resume_point=resume_point,
         context_health=context_health,
         pending_proposals_count=pending,
         session_counter=counter,
         health_check_due=health_check_due,
+        project_type=project_type,
+        contracts=contracts,
+        close_cluster_missed=close_cluster_missed,
+        orchestrate_pending=orchestrate_pending,
     )
 
 
 def end_session(summary: str, commits_made: bool) -> dict:
-    """Write audit log entry, validate summary structure."""
+    """Write structured audit log entry and detect contract phrases."""
     from guardrails import check_knowledge_write
     check_knowledge_write(summary)
 
-    # Write audit entry
+    detected_contracts = [
+        phrase for phrase in _CONTRACT_PHRASES
+        if phrase.lower() in summary.lower()
+    ]
+
     audit_dir = CLAUDE_ROOT / "audit"
     audit_dir.mkdir(parents=True, exist_ok=True)
     month = datetime.utcnow().strftime("%Y-%m")
     audit_file = audit_dir / f"{month}.md"
 
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    entry = f"\n### Session — {timestamp}\n{summary}\n"
-    if commits_made:
-        entry += "Commits made: yes\n"
+    # Skills: and CloseCluster: lines are populated by the caller via the summary.
+    # The structured fields below are defaults; the summary text is the source of truth.
+    entry = (
+        f"\n### Session — {timestamp}\n"
+        f"{summary}\n"
+        f"Commits: {'yes' if commits_made else 'no'}\n"
+    )
 
     with open(audit_file, "a") as f:
         f.write(entry)
@@ -132,4 +286,6 @@ def end_session(summary: str, commits_made: bool) -> dict:
         "proposals_added": 0,
         "audit_written": True,
         "session_close_cluster_detected": session_close_detected,
+        "contract_phrases_detected": detected_contracts,
+        "add_to_contracts_prompt": len(detected_contracts) > 0,
     }
