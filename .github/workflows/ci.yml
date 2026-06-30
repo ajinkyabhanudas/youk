@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Ruff check
+        run: ruff check servers/
+
+      - name: Validate config YAML
+        run: |
+          python - <<'EOF'
+          import yaml, sys
+          files = ["config/guardrails.yaml", "config/routes.yaml", "config/variants.yaml"]
+          failed = []
+          for f in files:
+              try:
+                  yaml.safe_load(open(f))
+                  print(f"  OK  {f}")
+              except Exception as e:
+                  print(f"  FAIL {f}: {e}")
+                  failed.append(f)
+          sys.exit(1 if failed else 0)
+          EOF
+
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up test directories
+        run: |
+          mkdir -p $HOME/.claude/audit
+          mkdir -p $GITHUB_WORKSPACE/state
+          mkdir -p $GITHUB_WORKSPACE/knowledge/proposals
+
+      - name: Build Docker images
+        run: make build
+
+      - name: Test MCP server handshakes
+        # Override YOUK_DIR to point to the repo checkout so config files are in place.
+        # CLAUDE_DIR only needs audit/ to exist for a tools/list handshake.
+        run: |
+          make test \
+            YOUK_DIR=$GITHUB_WORKSPACE \
+            CLAUDE_DIR=$HOME/.claude
