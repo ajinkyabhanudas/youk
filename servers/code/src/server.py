@@ -9,6 +9,7 @@ from mcp.server.fastmcp import FastMCP
 from nfr import run_nfr_check
 from skills import route_to_skill as _route_to_skill, get_skill_list, get_skill_content, get_skill_fast_path
 from review import check_commit_quality as _check_commit_quality
+from skill_loader import list_skills as _list_skills
 
 CLAUDE_ROOT = Path("/claude")
 
@@ -71,6 +72,18 @@ def check_commit_quality(message: str, file_paths: list[str] | None = None) -> d
     """
     result = _check_commit_quality(message, file_paths or [])
     return result.to_dict()
+
+
+@mcp.tool()
+def list_skills() -> list[dict]:
+    """
+    List all skills in the mounted claude/skills directory.
+
+    Returns name, description, has_skill_md, has_fast_path, size_bytes per skill.
+    has_skill_md: false means the skill directory exists but SKILL.md is missing — a gap.
+    Use this to discover available skills and identify incomplete ones.
+    """
+    return _list_skills()
 
 
 @mcp.resource("youk://skills")

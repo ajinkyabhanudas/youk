@@ -58,7 +58,16 @@ def list_skills() -> list[dict]:
         if not skill_dir.is_dir():
             continue
         skill_file = skill_dir / "SKILL.md"
+
         if not skill_file.exists():
+            # Include dirs without SKILL.md — they're gaps, not invisible
+            skills.append({
+                "name": skill_dir.name,
+                "description": "No SKILL.md found — skill directory exists but is incomplete.",
+                "has_skill_md": False,
+                "has_fast_path": False,
+                "size_bytes": 0,
+            })
             continue
 
         content = skill_file.read_text()
@@ -68,6 +77,7 @@ def list_skills() -> list[dict]:
         skills.append({
             "name": skill_dir.name,
             "description": description,
+            "has_skill_md": True,
             "has_fast_path": fast_path,
             "size_bytes": skill_file.stat().st_size,
         })
