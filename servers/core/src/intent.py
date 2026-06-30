@@ -11,12 +11,24 @@ import os
 import re
 from pathlib import Path
 
+def _resolve_api_key() -> str:
+    """Read API key from env var, then fall back to mounted file."""
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if key:
+        return key
+    fallback = Path("/claude/.anthropic/api_key")
+    if fallback.exists():
+        return fallback.read_text().strip()
+    return ""
+
 try:
     import anthropic
-    _CLIENT = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
-    _ANTHROPIC_AVAILABLE = True
+    _API_KEY = _resolve_api_key()
+    _CLIENT = anthropic.Anthropic(api_key=_API_KEY)
+    _ANTHROPIC_AVAILABLE = bool(_API_KEY)
 except Exception:
     _ANTHROPIC_AVAILABLE = False
+    _API_KEY = ""
 
 YOUK_ROOT = Path("/youk")
 
@@ -144,6 +156,14 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
         else:
             raise ValueError("No JSON in response")
     except Exception as e:
+        error_msg = str(e)
+        # Surface the actual error so it can be debugged, not silently swallowed
+        if not _API_KEY:
+            error_msg = (
+                "ANTHROPIC_API_KEY not set and /claude/.anthropic/api_key not found. "
+                "Set the env var in your shell profile or create the fallback file. "
+                f"Original error: {e}"
+            )
         return {
             "problem": raw_input,
             "success_criteria": "Task completed as described.",
@@ -157,5 +177,5 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
             "token_efficiency_gain": "n/a",
             "raw_input": raw_input,
             "mode": "api_error",
-            "error": str(e),
+            "error": error_msg,
         }
