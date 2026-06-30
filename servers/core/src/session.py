@@ -315,7 +315,13 @@ def start_session(project_dir: str) -> SessionState:
     )
 
 
-def end_session(summary: str, commits_made: bool, explicit_contracts: list[str] | None = None) -> dict:
+def end_session(
+    summary: str,
+    commits_made: bool,
+    explicit_contracts: list[str] | None = None,
+    skills_used: list[str] | None = None,
+    close_cluster: bool = False,
+) -> dict:
     """
     Write structured audit log entry, detect and save contract phrases.
 
@@ -338,11 +344,13 @@ def end_session(summary: str, commits_made: bool, explicit_contracts: list[str] 
     audit_file = audit_dir / f"{month}.md"
 
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    # Skills: and CloseCluster: lines are populated by the caller via the summary.
-    # The structured fields below are defaults; the summary text is the source of truth.
+    skills_line = ", ".join(skills_used) if skills_used else "none"
+    close_line = "yes" if close_cluster else "no"
     entry = (
         f"\n### Session — {timestamp}\n"
         f"{summary}\n"
+        f"Skills: {skills_line}\n"
+        f"CloseCluster: {close_line}\n"
         f"Commits: {'yes' if commits_made else 'no'}\n"
     )
 

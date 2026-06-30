@@ -37,6 +37,8 @@ def session_end(
     summary: str,
     commits_made: bool = False,
     explicit_contracts: list[str] | None = None,
+    skills_used: list[str] | None = None,
+    close_cluster: bool = False,
 ) -> dict:
     """
     End a youk session. Writes audit log entry, saves contracts, checks session-close cluster.
@@ -52,6 +54,14 @@ def session_end(
     can pin them in future sessions. Phrase-detection runs automatically on the
     summary, but explicit_contracts takes priority.
 
+    skills_used: List of skill names invoked this session (e.g. ["nfr_check", "dev-loop"]).
+    Written as a structured line in the audit log so future sessions can detect
+    which skills were consistently used or skipped.
+
+    close_cluster: True if context-sync + learn + humanize were completed this session.
+    Written as CloseCluster: yes/no in the audit log. The next session_start reads this
+    to set close_cluster_missed — which surfaces as a session_plan item if False.
+
     Returns: knowledge_extracted, proposals_added, audit_written,
              session_close_cluster_detected, contracts_saved.
     """
@@ -60,7 +70,7 @@ def session_end(
     except HardRuleViolation as e:
         return {"error": str(e), "blocked": True, "rule_id": e.rule_id}
 
-    return end_session(summary, commits_made, explicit_contracts)
+    return end_session(summary, commits_made, explicit_contracts, skills_used, close_cluster)
 
 
 @mcp.tool()
