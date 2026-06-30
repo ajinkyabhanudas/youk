@@ -57,8 +57,8 @@ if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
 elif [[ -f "$HOME/.anthropic/api_key" ]]; then
   pass "api_key: found at ~/.anthropic/api_key (fallback)"
 else
-  fail "api_key: ANTHROPIC_API_KEY not set and ~/.anthropic/api_key not found" \
-    "add to your shell profile: export ANTHROPIC_API_KEY=sk-ant-..."
+  warn "api_key: ANTHROPIC_API_KEY not set in shell (Claude Code manages it — this is OK if installed via Claude Code UI)" \
+    "Only needed if calling youk MCP tools directly outside Claude Code"
 fi
 echo ""
 
@@ -139,34 +139,47 @@ echo ""
 # ── MCP handshake ─────────────────────────────────────────────────────────────
 echo "MCP handshake"
 
-if docker image inspect youk-core:latest &>/dev/null 2>&1; then
-  CORE_RESPONSE=$(echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | \
-    docker run -i --rm \
-      -v "$CLAUDE_DIR:/claude" \
-      -v "$YOUK_DIR:/youk" \
-      youk-core:latest 2>/dev/null || echo '{}')
+MCP_INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"doctor","version":"0"}}}'
+MCP_DONE='{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}'
+MCP_LIST='{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 
-  if echo "$CORE_RESPONSE" | python3 -c \
-      "import sys,json; r=json.load(sys.stdin); assert 'result' in r" 2>/dev/null; then
-    TOOL_COUNT=$(echo "$CORE_RESPONSE" | \
-      python3 -c "import sys,json; r=json.load(sys.stdin); print(len(r['result']['tools']))" 2>/dev/null || echo "?")
-    pass "youk-core: responds ($TOOL_COUNT tools)"
+_handshake_tool_count() {
+  local image="$1"; shift
+  local mount_opts=("$@")
+  printf '%s\n%s\n%s\n' "$MCP_INIT" "$MCP_DONE" "$MCP_LIST" | \
+    docker run -i --rm "${mount_opts[@]}" "$image" 2>/dev/null | \
+    python3 -c "
+import sys, json
+count = 0
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        msg = json.loads(line)
+        tools = msg.get('result', {}).get('tools', [])
+        if tools:
+            count = len(tools)
+    except Exception:
+        pass
+print(count)
+" 2>/dev/null || echo "0"
+}
+
+if docker image inspect youk-core:latest &>/dev/null 2>&1; then
+  CORE_COUNT=$(_handshake_tool_count youk-core:latest \
+    -v "$CLAUDE_DIR:/claude" -v "$YOUK_DIR:/youk")
+  if [[ "${CORE_COUNT:-0}" -gt 0 ]]; then
+    pass "youk-core: $CORE_COUNT tools"
   else
     fail "youk-core: did not return valid MCP response" \
       "make rebuild — then re-run: bash $YOUK_DIR/scripts/doctor.sh"
   fi
 
-  CODE_RESPONSE=$(echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | \
-    docker run -i --rm \
-      -v "$CLAUDE_DIR:/claude:ro" \
-      -v "$YOUK_DIR:/youk:ro" \
-      youk-code:latest 2>/dev/null || echo '{}')
-
-  if echo "$CODE_RESPONSE" | python3 -c \
-      "import sys,json; r=json.load(sys.stdin); assert 'result' in r" 2>/dev/null; then
-    TOOL_COUNT=$(echo "$CODE_RESPONSE" | \
-      python3 -c "import sys,json; r=json.load(sys.stdin); print(len(r['result']['tools']))" 2>/dev/null || echo "?")
-    pass "youk-code: responds ($TOOL_COUNT tools)"
+  CODE_COUNT=$(_handshake_tool_count youk-code:latest \
+    -v "$CLAUDE_DIR:/claude:ro" -v "$YOUK_DIR:/youk:ro")
+  if [[ "${CODE_COUNT:-0}" -gt 0 ]]; then
+    pass "youk-code: $CODE_COUNT tools"
   else
     fail "youk-code: did not return valid MCP response" \
       "make rebuild — then re-run: bash $YOUK_DIR/scripts/doctor.sh"
