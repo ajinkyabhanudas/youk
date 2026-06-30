@@ -10,6 +10,7 @@ from nfr import run_nfr_check
 from skills import route_to_skill as _route_to_skill, get_skill_list, get_skill_content, get_skill_fast_path
 from review import check_commit_quality as _check_commit_quality
 from skill_loader import list_skills as _list_skills
+from skill_gen import generate_skill as _generate_skill, assess_skill as _assess_skill, detect_skill_gaps as _detect_skill_gaps
 
 CLAUDE_ROOT = Path("/claude")
 
@@ -84,6 +85,66 @@ def list_skills() -> list[dict]:
     Use this to discover available skills and identify incomplete ones.
     """
     return _list_skills()
+
+
+@mcp.tool()
+def generate_skill(
+    name: str,
+    purpose: str,
+    project_context: dict | None = None,
+    signal_type: str = "engineer_request",
+) -> dict:
+    """
+    Generate a new SKILL.md from signals — project context, audit gaps, or best-practice patterns.
+
+    name: kebab-case skill name (e.g. 'security-review', 'python-ml')
+    purpose: What the skill does and when it triggers (1-3 sentences)
+    project_context: Optional dict — project type, stack, domain patterns, detected signals
+    signal_type: "engineer_request" | "demand_gap" | "project_type_gap" | "best_practices_gap"
+      - demand_gap: route_task referenced this skill but no SKILL.md exists
+      - project_type_gap: project type detected, no domain skill exists
+      - best_practices_gap: cross-project pattern not encoded in any skill
+
+    Returns draft content + proposal dict. Does NOT write to disk.
+    Review content, then call youk-core.add_proposal() + apply_proposal() to write.
+    """
+    return _generate_skill(name, purpose, project_context, signal_type)
+
+
+@mcp.tool()
+def assess_skill(skill_name: str) -> dict:
+    """
+    Assess how well an existing skill covers its domain.
+
+    Reads the skill's SKILL.md, recent audit evidence (sessions where skill was used),
+    and cross-project best-practices knowledge. Returns gaps and proposed SKILL_EDIT additions.
+
+    skill_name: Name of the skill to assess (e.g. 'dev-loop', 'adr')
+
+    Returns:
+    - coverage_score: 0-10
+    - strengths: what the skill covers well
+    - gaps: specific gaps with evidence
+    - proposed_additions: list of SKILL_EDIT additions ready for add_proposal()
+
+    Each item in proposed_additions maps directly to a youk-core.add_proposal() call.
+    """
+    return _assess_skill(skill_name)
+
+
+@mcp.tool()
+def detect_skill_gaps() -> dict:
+    """
+    Aggregate all signal sources to surface skills that need generation or evolution.
+
+    Reads audit logs and existing SKILL.md files to find:
+    - missing_skills: referenced in sessions but no SKILL.md exists (demand-driven gaps)
+    - gap_signals: existing skills with SkillGap: entries in audit (evolution signals)
+    - knowledge_gaps: best-practice patterns in cross-project.md not encoded in any skill
+
+    Use this to decide what to generate or assess next. Returns a recommendation field.
+    """
+    return _detect_skill_gaps()
 
 
 @mcp.resource("youk://skills")
