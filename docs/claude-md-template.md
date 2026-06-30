@@ -18,8 +18,35 @@ Sizing shorthand for XS tasks (skip route_task call):
 - Recommendation with real alternatives → suggest /adr
 - "Done / ship it / commit" signal → surface session-close cluster (context-sync + learn + humanize)
 
+## Context management (proactive — runs before Claude's auto-compaction)
+
+When you reach 25+ exchanges in a session, or when you notice the conversation becoming
+dense with explanations and earlier instructions feel distant, call:
+
+```
+youk-core.compact_context(project_dir)
+```
+
+Then **state the returned `brief` explicitly in your response** so it appears in recent
+context and survives the next compaction cycle. Do not wait for Claude's generic
+auto-compaction — that algorithm treats all content equally and will blur behavioral
+contracts into summaries.
+
+Tier priorities when you summarize anything yourself:
+- **CONTRACT** (behavioral instructions — commit format, test cadence, review rules):
+  preserve VERBATIM, never paraphrase, never drop
+- **DECISION** (architectural choices): preserve key fact + rationale in 1-2 sentences
+- **EXPLORATION** (depth dives, explanations): compress to 1 sentence
+- **CLARIFICATION** (one-shot Q&A): drop entirely, re-ask if needed
+
+Contract phrases to detect mid-conversation (offer to save to contracts.md when seen):
+"always", "never", "from now on", "remember to", "make sure you", "every time",
+"commit format", "test after", "before committing"
+
 ## Session end
-When "done", "stopping", or "that's it" is detected: call `youk-core.session_end(summary, commits_made)`. Surface the session-close cluster as one prompt. The summary must be structured (what changed and why) — never raw conversation transcript.
+When "done", "stopping", or "that's it" is detected: call `youk-core.session_end(summary, commits_made, explicit_contracts=[...])`.
+Extract any working agreements from the conversation and pass them as `explicit_contracts` — they are written verbatim to contracts.md so compact_context pins them in future sessions.
+Surface the session-close cluster as one prompt. The summary must be structured (what changed and why) — never raw conversation transcript.
 
 ## Skill invocation
 When routing returns skills: use `youk-code.route_to_skill(skill_name, task)` to run a skill with its full SKILL.md context. Don't load SKILL.md files manually.
