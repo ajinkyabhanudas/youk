@@ -15,6 +15,9 @@ venv/
 # Runtime state (local only, not committed)
 state/
 
+# Per-project session context (personal, local only — not shared across installs)
+knowledge/projects/
+
 # OS
 .DS_Store
 Thumbs.db

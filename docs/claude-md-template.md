@@ -55,11 +55,14 @@ Aliases (route to the underlying skill):
 
 ## Context management — preempt Claude's auto-compaction, never wait for it
 
-Call `youk-core.compact_context(project_dir)` at these structural trigger points:
-- **After any M+ task completes** (after /done, after a commit cluster, after major implementation)
-- **Every 15 exchanges** (before Claude's auto-compaction at 25+, inside the cache window)
+Call `youk-core.compact_context(project_dir)` when new significant context has been established — not on a timer:
+- **After any `route_to_skill` call returns** (skill phase complete — new analysis just produced)
+- **After any commit is made** (code in new state — anchor before continuing)
+- **After any M+ task completes** (after /done, after a major implementation block)
+- **When a new decision or contract is verbalized** (compact to anchor it before it drifts)
+- **When moving to a new session plan item** (compact the previous item before shifting context)
 - **Before session_end** (always — compact first, then close)
-- **When CLAUDE.md instructions feel distant** (re-anchor before continuing)
+- **After 8+ tool calls without compacting** (rough 30-40% context fill proxy — don't wait for 50%)
 
 When compact_context runs:
 1. Call `youk-core.compact_context(project_dir)`

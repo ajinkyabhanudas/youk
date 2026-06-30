@@ -98,22 +98,39 @@ def _write_project_context(slug: str, project_type: str, git_log: str, first_see
     ctx_dir.mkdir(parents=True, exist_ok=True)
     ctx_file = ctx_dir / "context.md"
 
-    # Preserve original first-seen date if context already exists
+    # Preserve first-seen date and resume-from point across rewrites
     existing_first_seen = first_seen
+    existing_resume = ""
     if ctx_file.exists():
         for line in ctx_file.read_text().splitlines():
             if line.startswith("first-seen:"):
                 existing_first_seen = line.split(":", 1)[1].strip()
-                break
+            elif line.startswith("resume-from:"):
+                existing_resume = line  # preserve verbatim
 
+    resume_line = f"{existing_resume}\n" if existing_resume else ""
     ctx_file.write_text(
         f"# Project context: {slug}\n\n"
         f"project-type: {project_type}\n"
         f"first-seen: {existing_first_seen}\n"
-        f"last-seen: {datetime.utcnow().strftime('%Y-%m-%d')}\n\n"
-        f"## Recent commits\n\n"
+        f"last-seen: {datetime.utcnow().strftime('%Y-%m-%d')}\n"
+        f"{resume_line}"
+        f"\n## Recent commits\n\n"
         f"```\n{git_log or 'no git history'}\n```\n"
     )
+
+
+def _update_resume_point(slug: str, resume_text: str) -> None:
+    """Write the resume point for the next session into external context.md."""
+    ctx_file = YOUK_ROOT / "knowledge" / "projects" / slug / "context.md"
+    if not ctx_file.exists():
+        return
+    try:
+        lines = [ln for ln in ctx_file.read_text().splitlines() if not ln.startswith("resume-from:")]
+        lines.append(f"resume-from: {resume_text[:200]}")
+        ctx_file.write_text("\n".join(lines) + "\n")
+    except Exception:
+        pass
 
 
 def _load_contracts(slug: str) -> list[str]:
@@ -271,10 +288,21 @@ def start_session(project_dir: str) -> SessionState:
 
     l2_resume, context_health = _load_l2_context(project_dir)
     existing_ctx = _load_project_context(slug)
+
+    # If no in-project context, check youk's external context.md for a resume point.
+    # This is the zero-footprint path: no files needed in the project repo.
+    if not l2_resume and existing_ctx:
+        for line in existing_ctx.splitlines():
+            if line.startswith("resume-from:"):
+                l2_resume = line[len("resume-from:"):].strip()
+                if l2_resume:
+                    context_health = "L1"
+                break
+
     if existing_ctx and context_health == "NONE":
         context_health = "L1"
 
-    # Priority-ordered resume point: L3 > L2 > git log > fresh session
+    # Priority-ordered resume point: L3 > L2 > external context.md > git log > fresh session
     if l2_resume:
         resume_point = l2_resume
     elif git_log:
@@ -382,6 +410,24 @@ def end_session(
     slug = _slug(current_state.get("last_project", ""))
     contracts_to_save = explicit_contracts or detected_contracts
     contracts_saved = write_contracts(slug, contracts_to_save) if slug and contracts_to_save else 0
+
+    # Write the resume point for the next session into external context.md (zero footprint).
+    # Extract: first non-empty line after a ## heading, or first non-empty line of summary.
+    if slug:
+        resume_text = ""
+        lines = summary.splitlines()
+        for i, line in enumerate(lines):
+            if line.startswith("##"):
+                for next_line in lines[i + 1:]:
+                    if next_line.strip():
+                        resume_text = next_line.strip()
+                        break
+                if resume_text:
+                    break
+        if not resume_text:
+            resume_text = next((ln.strip() for ln in lines if ln.strip()), "")
+        if resume_text:
+            _update_resume_point(slug, resume_text)
 
     session_close_detected = any(
         marker in summary
