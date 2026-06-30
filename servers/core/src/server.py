@@ -11,6 +11,7 @@ from routing import route_task as _route_task
 from health import run_health_check, apply_proposal as _apply_proposal, _load_pending_proposals
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
 from intent import optimize_intent as _optimize_intent
+from compaction import build_brief
 
 YOUK_ROOT = Path("/youk")
 
@@ -32,25 +33,34 @@ def session_start(project_dir: str) -> dict:
 
 
 @mcp.tool()
-def session_end(summary: str, commits_made: bool = False) -> dict:
+def session_end(
+    summary: str,
+    commits_made: bool = False,
+    explicit_contracts: list[str] | None = None,
+) -> dict:
     """
-    End a youk session. Validates the summary structure, writes to audit log,
-    and checks for session-close cluster completion.
+    End a youk session. Writes audit log entry, saves contracts, checks session-close cluster.
 
     summary: Structured summary of what was done — NOT raw conversation transcript.
     Must not contain 'Human:', 'Assistant:', or other transcript markers.
 
     commits_made: True if any git commits were made this session.
 
+    explicit_contracts: Working agreements from this session to preserve verbatim.
+    Extract these from the conversation before calling — e.g. commit format rules,
+    test cadence, review requirements. Written to contracts.md so compact_context
+    can pin them in future sessions. Phrase-detection runs automatically on the
+    summary, but explicit_contracts takes priority.
+
     Returns: knowledge_extracted, proposals_added, audit_written,
-             session_close_cluster_detected.
+             session_close_cluster_detected, contracts_saved.
     """
     try:
         check_knowledge_write(summary)
     except HardRuleViolation as e:
         return {"error": str(e), "blocked": True, "rule_id": e.rule_id}
 
-    return end_session(summary, commits_made)
+    return end_session(summary, commits_made, explicit_contracts)
 
 
 @mcp.tool()
@@ -172,6 +182,28 @@ def apply_proposal(proposal_id: str, confirmed: bool = False) -> dict:
         return _apply_proposal(proposal_id, confirmed)
     except ValueError as e:
         return {"applied": False, "error": str(e), "rule_id": "no-auto-apply-proposals"}
+
+
+@mcp.tool()
+def compact_context(project_dir: str) -> dict:
+    """
+    Build a structured context brief from youk's knowledge store.
+
+    Call this proactively when the session is getting long (25+ exchanges) —
+    BEFORE Claude's generic auto-compaction triggers. The brief preserves
+    Contracts verbatim, Decisions as key-fact + rationale, and drops
+    Clarifications entirely. It is generated from structured files, not
+    by summarizing conversation, so no information is lost.
+
+    Use the returned 'brief' as your working context anchor: state it
+    explicitly in your response so it appears in recent context and
+    survives the next compaction cycle.
+
+    project_dir: The current project directory (same as session_start).
+
+    Returns: brief (pin this), contracts_count, decisions_count, instruction.
+    """
+    return build_brief(project_dir)
 
 
 @mcp.resource("youk://session/state")

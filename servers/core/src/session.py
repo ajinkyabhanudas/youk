@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, "/shared")
 from models import SessionState
+from compaction import write_contracts
 
 CLAUDE_ROOT = Path("/claude")
 YOUK_ROOT = Path("/youk")
@@ -249,13 +250,20 @@ def start_session(project_dir: str) -> SessionState:
     )
 
 
-def end_session(summary: str, commits_made: bool) -> dict:
-    """Write structured audit log entry and detect contract phrases."""
+def end_session(summary: str, commits_made: bool, explicit_contracts: list[str] | None = None) -> dict:
+    """
+    Write structured audit log entry, detect and save contract phrases.
+
+    explicit_contracts: Contract lines to save directly (e.g. extracted from
+    conversation by Claude before calling session_end). These take priority over
+    the phrase-detected ones and are written verbatim to contracts.md.
+    """
     from guardrails import check_knowledge_write
     check_knowledge_write(summary)
 
     detected_contracts = [
-        phrase for phrase in _CONTRACT_PHRASES
+        phrase.strip()
+        for phrase in _CONTRACT_PHRASES
         if phrase.lower() in summary.lower()
     ]
 
@@ -276,6 +284,12 @@ def end_session(summary: str, commits_made: bool) -> dict:
     with open(audit_file, "a") as f:
         f.write(entry)
 
+    # Write contracts to disk so they survive future sessions and compact_context can pin them
+    current_state = _load_state()
+    slug = _slug(current_state.get("last_project", ""))
+    contracts_to_save = explicit_contracts or detected_contracts
+    contracts_saved = write_contracts(slug, contracts_to_save) if slug and contracts_to_save else 0
+
     session_close_detected = any(
         marker in summary
         for marker in ["FLUSHED", "[MENTAL MODEL UPDATE", "context-sync end", "learn complete"]
@@ -287,5 +301,6 @@ def end_session(summary: str, commits_made: bool) -> dict:
         "audit_written": True,
         "session_close_cluster_detected": session_close_detected,
         "contract_phrases_detected": detected_contracts,
-        "add_to_contracts_prompt": len(detected_contracts) > 0,
+        "contracts_saved": contracts_saved,
+        "add_to_contracts_prompt": len(detected_contracts) > 0 and contracts_saved == 0,
     }
