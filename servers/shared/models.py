@@ -23,6 +23,13 @@ class ViolationType(str, Enum):
     SURFACE = "SURFACE"
 
 
+class KnowledgeTier(str, Enum):
+    CONTRACT = "contract"       # behavioral instruction — preserve verbatim, always load
+    DECISION = "decision"       # architectural choice — preserve facts + rationale
+    EXPLORATION = "exploration" # depth discussion — compress to 1-2 sentence summary
+    CLARIFICATION = "clarification"  # one-shot Q&A — don't persist
+
+
 @dataclass
 class SoftRuleWarning:
     rule_id: str
@@ -39,6 +46,7 @@ class RoutingDecision:
     skills: list[str]
     nfr_mode: str
     warnings: list[SoftRuleWarning] = field(default_factory=list)
+    token_budget: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -47,6 +55,7 @@ class RoutingDecision:
             "ceremony": self.ceremony,
             "skills": self.skills,
             "nfr_mode": self.nfr_mode,
+            "token_budget": self.token_budget,
             "warnings": [
                 {"rule_id": w.rule_id, "name": w.name, "message": w.message}
                 for w in self.warnings
@@ -62,6 +71,17 @@ class SessionState:
     pending_proposals_count: int
     session_counter: int
     health_check_due: bool = False
+    # behavioral flags (read from last audit log entry at session_start)
+    orchestrate_pending: bool = False
+    close_cluster_missed: bool = False
+    # project context (detected from project_dir)
+    project_type: str = "unknown"
+    # knowledge loading summary
+    context_loaded: dict = field(default_factory=dict)
+    # contracts loaded for this session
+    contracts: list[str] = field(default_factory=list)
+    # MCP server recommendations for detected project type
+    mcp_recommendations: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -71,6 +91,12 @@ class SessionState:
             "pending_proposals_count": self.pending_proposals_count,
             "session_counter": self.session_counter,
             "health_check_due": self.health_check_due,
+            "orchestrate_pending": self.orchestrate_pending,
+            "close_cluster_missed": self.close_cluster_missed,
+            "project_type": self.project_type,
+            "context_loaded": self.context_loaded,
+            "contracts": self.contracts,
+            "mcp_recommendations": self.mcp_recommendations,
         }
 
 
@@ -103,6 +129,7 @@ class CommitQualityResult:
     suggested_rewrite: Optional[str]
     blocked: bool = False
     block_reason: Optional[str] = None
+    suggested_skill: Optional[str] = None  # set to "humanize" when score < 70
 
     def to_dict(self) -> dict:
         return {
@@ -111,6 +138,7 @@ class CommitQualityResult:
             "suggested_rewrite": self.suggested_rewrite,
             "blocked": self.blocked,
             "block_reason": self.block_reason,
+            "suggested_skill": self.suggested_skill,
         }
 
 
@@ -124,16 +152,44 @@ class Proposal:
     after: str
     status: str
     proposed_date: str
+    # fields required for apply_proposal to know WHAT and WHERE to write
+    change_type: str = ""     # "SKILL_EDIT" | "CONFIG_EDIT" | "REFERENCE_ADD" | "FILE_CREATE"
+    target_section: str = ""  # heading or key within the target file
+    content: str = ""         # the new content to write
 
     def to_markdown(self) -> str:
-        return f"""## {self.id} — {self.proposed_date}
-**Target:** {self.target}
-**Change:** {self.change_description}
-**Reason:** {self.reason}
-**Before:** {self.before}
-**After:** {self.after}
-**Status:** {self.status}
-"""
+        lines = [
+            f"## {self.id} — {self.proposed_date}",
+            f"**Target:** {self.target}",
+            f"**Change:** {self.change_description}",
+            f"**Reason:** {self.reason}",
+            f"**Before:** {self.before}",
+            f"**After:** {self.after}",
+            f"**Status:** {self.status}",
+        ]
+        if self.change_type:
+            lines.append(f"**ChangeType:** {self.change_type}")
+        if self.target_section:
+            lines.append(f"**TargetSection:** {self.target_section}")
+        if self.content:
+            lines.append(f"**Content:**\n```\n{self.content}\n```")
+        lines.append("")
+        return "\n".join(lines)
+
+
+@dataclass
+class KnowledgeEntry:
+    id: str
+    content: str
+    tier: KnowledgeTier
+    transfer_type: str = "local"         # "local" | "domain" | "global"
+    domain_tags: list[str] = field(default_factory=list)
+    project_type_tags: list[str] = field(default_factory=list)
+    confidence: float = 0.7
+    source_projects: list[str] = field(default_factory=list)
+    correction_count: int = 0
+    last_referenced: str = ""            # ISO date
+    status: str = "active"              # "active" | "dormant" | "archived"
 
 
 @dataclass
@@ -145,7 +201,7 @@ class HealthReport:
 
     def to_markdown(self) -> str:
         lines = [
-            f"# youk Health Report",
+            "# youk Health Report",
             f"**Org Score:** {self.org_score}/10",
             f"**Sessions Analyzed:** {self.sessions_analyzed}",
             "",
