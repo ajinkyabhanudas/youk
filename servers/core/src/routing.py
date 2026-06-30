@@ -19,24 +19,30 @@ def _load_routes() -> dict:
 
 def _score_size(task: str, routes: dict) -> TaskSize:
     """
-    Score task size by matching against signal keywords.
-    Returns the highest-priority size whose signals appear in the task description.
-    Tie-break: prefer more specific (larger) size.
+    Net-score routing: positive signal matches minus (negative signal matches × 2).
+    A negative signal is a strong downward vote — it takes two positive signals to
+    override one negative. This makes "implement a typo fix" route XS (add=+1, typo=-2
+    net=-1), not M (add=+1 only).
     """
     task_lower = task.lower()
     sizes = routes.get("task_sizes", {})
-
-    matched: list[tuple[int, TaskSize]] = []
     size_order = {"XL": 5, "L": 4, "M": 3, "S": 2, "XS": 1}
 
-    for size_name, config in sizes.items():
-        signals = config.get("signals", [])
-        score = sum(1 for s in signals if s.lower() in task_lower)
-        if score > 0:
-            matched.append((score, TaskSize(size_name)))
+    scored: list[tuple[int, TaskSize]] = []
 
-    if not matched:
-        # Default by description length
+    for size_name, config in sizes.items():
+        positive = sum(1 for s in config.get("signals", []) if s.lower() in task_lower)
+        negative = sum(1 for s in config.get("negative_signals", []) if s.lower() in task_lower)
+        net = positive - (negative * 2)
+        if net > 0:
+            scored.append((net, TaskSize(size_name)))
+
+    if not scored:
+        # XS signals without positive match — check if any XS signal is present
+        xs_signals = sizes.get("XS", {}).get("signals", [])
+        if any(s.lower() in task_lower for s in xs_signals):
+            return TaskSize.XS
+        # Fall back to word count heuristic
         word_count = len(task.split())
         if word_count <= 5:
             return TaskSize.XS
@@ -44,12 +50,11 @@ def _score_size(task: str, routes: dict) -> TaskSize:
             return TaskSize.S
         elif word_count <= 40:
             return TaskSize.M
-        else:
-            return TaskSize.L
+        return TaskSize.L
 
-    # Highest match score wins; tie-break by size order (larger wins)
-    matched.sort(key=lambda x: (x[0], size_order.get(x[1].value, 0)), reverse=True)
-    return matched[0][1]
+    # Highest net score wins; tie-break by size order (larger size preferred)
+    scored.sort(key=lambda x: (x[0], size_order.get(x[1].value, 0)), reverse=True)
+    return scored[0][1]
 
 
 def route_task(task: str, skills_already_invoked: list[str] | None = None) -> RoutingDecision:
@@ -61,6 +66,7 @@ def route_task(task: str, skills_already_invoked: list[str] | None = None) -> Ro
     ceremony = size_config.get("ceremony", "none")
     skills = size_config.get("skills", [])
     nfr_mode = size_config.get("nfr_mode", "fast_path_2q")
+    token_budget = routes.get("token_budgets", {}).get(size.value, 0)
 
     # Build soft rule warnings
     warnings: list[SoftRuleWarning] = []
@@ -88,5 +94,6 @@ def route_task(task: str, skills_already_invoked: list[str] | None = None) -> Ro
         ceremony=ceremony,
         skills=skills,
         nfr_mode=nfr_mode,
+        token_budget=token_budget,
         warnings=warnings,
     )

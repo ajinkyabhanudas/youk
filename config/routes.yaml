@@ -1,5 +1,5 @@
-version: "1.0"
-updated: "2026-06-28"
+version: "1.1"
+updated: "2026-06-30"
 
 task_sizes:
   XS:
@@ -9,6 +9,11 @@ task_sizes:
       - rename
       - one-liner
       - single variable
+      - single line
+      - wording
+      - comment
+      - whitespace
+    negative_signals: []
     ceremony: none
     skills: []
 
@@ -20,6 +25,14 @@ task_sizes:
       - single function
       - config change
       - test addition
+      - fix the
+      - correct the
+      - update the
+    negative_signals:
+      - multiple
+      - system
+      - architecture
+      - refactor
     ceremony: minimal
     skills:
       - nfr_check
@@ -33,6 +46,18 @@ task_sizes:
       - refactor
       - new endpoint
       - new component
+      - build
+      - create
+      - integrate
+    negative_signals:
+      - typo
+      - rename
+      - one-liner
+      - single variable
+      - single line
+      - single function
+      - comment
+      - wording
     ceremony: standard
     skills:
       - nfr_check
@@ -48,6 +73,14 @@ task_sizes:
       - new module
       - multi-day
       - significant refactor
+      - redesign
+      - overhaul
+      - migrate
+    negative_signals:
+      - typo
+      - rename
+      - single
+      - fix the
     ceremony: full
     skills:
       - pm_review
@@ -67,6 +100,12 @@ task_sizes:
       - multi-week
       - major migration
       - new service
+      - greenfield
+    negative_signals:
+      - fix
+      - update
+      - add
+      - single
     ceremony: full_plus_stress
     skills:
       - orchestrate
@@ -80,6 +119,14 @@ task_sizes:
       - security_review
       - verify
     nfr_mode: full
+
+# Token budget per size — used by route_task return and compact_context brief
+token_budgets:
+  XS: 5000
+  S: 25000
+  M: 75000
+  L: 200000
+  XL: 500000
 
 proactive_triggers:
   - id: auth-file-edit
