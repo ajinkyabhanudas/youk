@@ -442,6 +442,73 @@ def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int) -> str:
         return ""
 
 
+def _bootstrap_cold_start(project_dir: str, slug: str, tooling: dict) -> list[str]:
+    """
+    Run when context_level == L1, project_type == unknown, no prior context.
+    Returns a list of detected signal strings. Writes a minimal context.md.
+    Zero API calls — pure file inspection.
+    """
+    p = Path(project_dir)
+    signals: list[str] = []
+
+    # Language markers
+    lang_markers = {
+        "Python": ["requirements.txt", "pyproject.toml", "setup.py", "*.py"],
+        "JavaScript/TypeScript": ["package.json", "tsconfig.json"],
+        "Go": ["go.mod"],
+        "Rust": ["Cargo.toml"],
+        "Ruby": ["Gemfile"],
+        "Java": ["pom.xml", "build.gradle"],
+        "C/C++": ["CMakeLists.txt", "Makefile"],
+    }
+    for lang, markers in lang_markers.items():
+        if any(list(p.glob(m)) for m in markers if "*" in m) or any((p / m).exists() for m in markers if "*" not in m):
+            signals.append(lang)
+            break  # first match wins
+
+    # Key directories
+    for dirname, label in [
+        ("tests", "has tests/"), ("test", "has test/"), ("src", "has src/"),
+        ("docs", "has docs/"), ("scripts", "has scripts/"), ("api", "has api/"),
+    ]:
+        if (p / dirname).is_dir():
+            signals.append(label)
+
+    # Infrastructure
+    for fname, label in [
+        ("Dockerfile", "Docker"), ("docker-compose.yml", "Docker Compose"),
+        ("docker-compose.yaml", "Docker Compose"), (".github/workflows", "GitHub Actions CI"),
+        (".env.example", ".env.example"), ("Makefile", "Makefile"),
+    ]:
+        target = p / fname
+        if (target.is_dir() if fname.endswith("workflows") else target.exists()):
+            signals.append(label)
+
+    # Makefile targets already detected via tooling
+    make_targets = tooling.get("make_targets", [])
+    if make_targets:
+        signals.append(f"Makefile ({len(make_targets)} targets)")
+
+    if not signals:
+        return []
+
+    # Write a bootstrap context.md so future sessions have something to resume from
+    ctx_dir = YOUK_ROOT / "knowledge" / "projects" / slug
+    ctx_dir.mkdir(parents=True, exist_ok=True)
+    ctx_file = ctx_dir / "context.md"
+    if not ctx_file.exists():
+        ctx_file.write_text(
+            f"# Project context: {slug}\n\n"
+            f"project-type: unknown (bootstrap)\n"
+            f"first-seen: {datetime.utcnow().strftime('%Y-%m-%d')}\n"
+            f"last-seen: {datetime.utcnow().strftime('%Y-%m-%d')}\n"
+            f"bootstrap-signals: {', '.join(signals)}\n"
+            f"resume-from: First session — detected {', '.join(signals[:3])}\n"
+        )
+
+    return signals
+
+
 def _generate_session_plan(
     slug: str,
     resume_point: str,
@@ -614,11 +681,22 @@ def start_session(project_dir: str) -> SessionState:
     if existing_ctx and context_health == "NONE":
         context_health = "L1"
 
-    # Priority-ordered resume point: L3 > L2 > external context.md > README snippet > git log
+    # Cold-start bootstrap: when context is truly empty, run heuristic scan and
+    # write a minimal context.md so the next session has something to resume from.
+    # Zero API cost — pure file inspection.
+    bootstrap_signals: list[str] = []
+    if context_health in ("NONE", "L1") and project_type == "unknown" and not l2_resume:
+        bootstrap_signals = _bootstrap_cold_start(project_dir, slug, project_scan.get("tooling", {}))
+        if bootstrap_signals:
+            context_health = "L1-bootstrap"
+
+    # Priority-ordered resume point: L3 > L2 > external context.md > README snippet > bootstrap > git log
     if l2_resume:
         resume_point = l2_resume
     elif project_scan["readme_snippet"]:
         resume_point = f"Project: {project_scan['readme_snippet'][:120]}"
+    elif bootstrap_signals:
+        resume_point = f"First session — detected {', '.join(bootstrap_signals[:4])}"
     elif git_log:
         first_commit = git_log.splitlines()[0]
         resume_point = f"Last commit: {first_commit}"
