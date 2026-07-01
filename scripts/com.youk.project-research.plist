@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.youk.project-research</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>PYTHON_PATH</string>
+        <string>YOUK_DIR/scripts/project-research.py</string>
+        <string>--youk-dir</string>
+        <string>YOUK_DIR</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>ANTHROPIC_API_KEY</key>
+        <string>ANTHROPIC_API_KEY_VALUE</string>
+    </dict>
+
+    <!-- Every Wednesday at 09:00 local time (offset from Monday CCR to spread load) -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>3</integer>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>YOUK_DIR/state/project-research.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>YOUK_DIR/state/project-research.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

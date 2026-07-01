@@ -39,27 +39,37 @@ def _is_generalizable(contract: str) -> bool:
     return has_method and not has_specific
 
 
-def _scan_research_inbox() -> list[str]:
-    """Scan knowledge/research-inbox/ for .md files modified in the last 14 days.
-    Returns pattern names extracted from ## headings."""
-    inbox = YOUK_ROOT / "knowledge" / "research-inbox"
-    if not inbox.exists():
-        return []
+def _scan_research_inbox(slug: str = "") -> list[str]:
+    """Scan global and project-specific research inboxes for recent findings.
+    Returns pattern names extracted from ## headings, newest first."""
     cutoff = datetime.utcnow().timestamp() - (14 * 24 * 3600)
     patterns: list[str] = []
-    try:
-        for f in sorted(inbox.iterdir()):
-            if f.suffix != ".md" or f.name in (".gitkeep", "README.md"):
-                continue
-            if f.stat().st_mtime < cutoff:
-                continue
-            for line in f.read_text().splitlines():
-                stripped = line.strip()
-                if stripped.startswith("## ") and "Research Scan" not in stripped:
-                    patterns.append(stripped[3:].strip())
-    except Exception:
-        pass
-    return patterns[:6]
+
+    inboxes = [YOUK_ROOT / "knowledge" / "research-inbox"]
+    if slug:
+        project_inbox = YOUK_ROOT / "knowledge" / "projects" / slug / "research-inbox"
+        if project_inbox.exists():
+            inboxes.insert(0, project_inbox)  # project findings surface first
+
+    for inbox in inboxes:
+        if not inbox.exists():
+            continue
+        try:
+            for f in sorted(inbox.iterdir(), reverse=True):
+                if f.suffix != ".md" or f.name in (".gitkeep", "README.md"):
+                    continue
+                if f.stat().st_mtime < cutoff:
+                    continue
+                for line in f.read_text().splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("## ") and "Research Scan" not in stripped:
+                        patterns.append(stripped[3:].strip())
+        except Exception:
+            pass
+
+    seen: set[str] = set()
+    deduped = [p for p in patterns if not (p in seen or seen.add(p))]  # type: ignore[func-returns-value]
+    return deduped[:8]
 
 
 def _last_token_overhead() -> tuple[int | None, int | None]:
@@ -676,6 +686,8 @@ def _generate_session_plan(
     docs_available: list[str] | None = None,
     has_project_claude_md: bool = False,
     tooling: dict | None = None,
+    session_counter: int = 0,
+    bootstrap_signals: list[str] | None = None,
 ) -> list[str]:
     """
     Generate a forward-looking session plan from structured context.
@@ -685,13 +697,28 @@ def _generate_session_plan(
     plan: list[str] = []
 
     # 1. Current priority — what the resume point signals
-    if resume_point and resume_point != "No prior context found — fresh session.":
-        if resume_point.startswith("Last commit:"):
-            plan.append(f"Continue from: {resume_point}")
-        else:
-            plan.append(f"Resume: {resume_point}")
+    is_cold_start = resume_point in ("No prior context found — fresh session.", "") or not resume_point
+    is_new_install = session_counter <= 1
+
+    if is_cold_start:
+        # True first session — no knowledge anywhere
+        signals_str = ", ".join((bootstrap_signals or [])[:4]) or project_type
+        plan.append(
+            f"First session on {slug}"
+            + (f" — detected {signals_str}" if signals_str and signals_str != "unknown" else "")
+            + ". Use /build to start work; /done at the end saves context for next time."
+        )
+    elif is_new_install and contracts:
+        # New install on a project with existing history (dev joining mid-project)
+        plan.append(
+            f"Joining {slug} — {len(contracts)} contract(s) loaded from prior sessions. "
+            f"Resume: {resume_point[:120]}"
+        )
+    elif resume_point.startswith("Last commit:"):
+        plan.append(f"Continue from: {resume_point}")
     else:
-        plan.append(f"New session on {slug} — establish context before coding")
+        clean = resume_point.removeprefix("Resume: ")
+        plan.append(f"Resume: {clean}")
 
     # 2. Pending proposals surface
     if pending_proposals > 0:
@@ -894,6 +921,8 @@ def start_session(project_dir: str) -> SessionState:
         docs_available=project_scan["docs_available"],
         has_project_claude_md=bool(project_scan["claude_md"]),
         tooling=project_scan.get("tooling"),
+        session_counter=counter,
+        bootstrap_signals=bootstrap_signals,
     )
 
     # Staleness awareness — surface when returning after a significant gap
@@ -902,8 +931,8 @@ def start_session(project_dir: str) -> SessionState:
         commits_note = f" — {new_commits} commit(s) since last session" if new_commits else ""
         session_plan.append(f"Returning after {days_since_last} days{commits_note}")
 
-    # 3C — Surface research-inbox findings so weekly CCR output is actually seen
-    research_patterns = _scan_research_inbox()
+    # 3C — Surface research-inbox findings (global + project-specific)
+    research_patterns = _scan_research_inbox(slug=slug)
     if research_patterns:
         count = len(research_patterns)
         names = ", ".join(research_patterns[:3])

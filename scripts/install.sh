@@ -191,7 +191,38 @@ else
   ok "Audit log already seeded"
 fi
 
-# ── Step 8: Validate ─────────────────────────────────────────────────────────
+# ── Step 8: Project research scheduler ──────────────────────────────────────
+step "Project research scheduler"
+
+PYTHON_BIN="$(command -v python3 || command -v python)"
+if [[ -z "$PYTHON_BIN" ]]; then
+  warn "python3 not found — skipping project research scheduler"
+elif [[ "$(uname)" == "Darwin" ]]; then
+  PLIST_SRC="$YOUK_DIR/scripts/com.youk.project-research.plist"
+  PLIST_DST="$HOME/Library/LaunchAgents/com.youk.project-research.plist"
+  API_KEY_VALUE="${ANTHROPIC_API_KEY:-$(cat "$CLAUDE_DIR/.anthropic/api_key" 2>/dev/null || echo "")}"
+
+  # Render plist with actual paths
+  sed \
+    -e "s|PYTHON_PATH|$PYTHON_BIN|g" \
+    -e "s|YOUK_DIR|$YOUK_DIR|g" \
+    -e "s|ANTHROPIC_API_KEY_VALUE|$API_KEY_VALUE|g" \
+    "$PLIST_SRC" > "$PLIST_DST"
+
+  # Unload stale job if present, load the new one
+  launchctl unload "$PLIST_DST" 2>/dev/null || true
+  launchctl load "$PLIST_DST" 2>/dev/null && ok "Project research scheduled (every Wednesday 09:00)" \
+    || warn "launchctl load failed — check $PLIST_DST"
+elif command -v crontab &>/dev/null; then
+  CRON_LINE="0 9 * * 3 $PYTHON_BIN $YOUK_DIR/scripts/project-research.py >> $YOUK_DIR/state/project-research.log 2>&1"
+  # Idempotent: remove old entry then add new
+  ( crontab -l 2>/dev/null | grep -v "project-research.py"; echo "$CRON_LINE" ) | crontab -
+  ok "Project research scheduled via cron (every Wednesday 09:00)"
+else
+  warn "No scheduler available — run manually: python3 $YOUK_DIR/scripts/project-research.py"
+fi
+
+# ── Step 9: Validate ─────────────────────────────────────────────────────────
 step "Validation"
 bash "$YOUK_DIR/scripts/doctor.sh"
 
