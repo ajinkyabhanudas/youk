@@ -253,18 +253,33 @@ def _analyze_promotion_candidates(audit_texts: list[str]) -> list[dict]:
     for slug, skill, gap in gap_records:
         by_skill[skill].append((slug, gap))
 
+    _CODE_SIGNALS = (".py", ".sh", "def ", "()", "function", "session_start", "route_task",
+                     "session.py", "health.py", "routing.py", "compaction.py")
+
     candidates = []
     for skill, occurrences in by_skill.items():
         count = len(occurrences)
         projects = {slug for slug, _ in occurrences if slug}
         if count >= 3:
+            # Detect code-level gaps: gap text mentions source files or function names
+            all_gap_text = " ".join(gap for _, gap in occurrences).lower()
+            is_code_gap = any(sig in all_gap_text for sig in _CODE_SIGNALS)
+            if is_code_gap:
+                change_type = "CODE_EDIT"
+                promotion_target = f"servers/core/src/{skill}.py"
+            elif len(projects) >= 2:
+                change_type = "FILE_CREATE"
+                promotion_target = "cross-project.md"
+            else:
+                change_type = "SKILL_EDIT"
+                promotion_target = f"skills/{skill}/SKILL.md"
             candidates.append({
                 "skill": skill,
                 "occurrence_count": count,
                 "distinct_projects": len(projects),
                 "sample_gaps": list({gap for _, gap in occurrences})[:3],
-                "promotion_target": "cross-project.md" if len(projects) >= 2 else f"skills/{skill}/SKILL.md",
-                "change_type": "FILE_CREATE" if len(projects) >= 2 else "SKILL_EDIT",
+                "promotion_target": promotion_target,
+                "change_type": change_type,
             })
     return sorted(candidates, key=lambda x: -x["occurrence_count"])
 
@@ -274,6 +289,7 @@ def _queue_promotion_proposals(candidates: list[dict]) -> int:
     from datetime import datetime
     queued = 0
     for c in candidates:
+        is_code_edit = c["change_type"] == "CODE_EDIT"
         proposal = Proposal(
             id=f"PENDING-PROMO-{c['skill'].upper()}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
             target=c["promotion_target"],
@@ -281,7 +297,11 @@ def _queue_promotion_proposals(candidates: list[dict]) -> int:
             reason=(
                 f"SkillGap '{c['skill']}' appeared {c['occurrence_count']} times in audit logs. "
                 f"Sample gaps: {'; '.join(c['sample_gaps'])}. "
-                "Review and expand the skill or add to cross-project.md."
+                + (
+                    "Code-level gap detected — set target_section to the function name and synthesize content before apply_proposal(confirmed=True)."
+                    if is_code_edit else
+                    "Review and expand the skill or add to cross-project.md."
+                )
             ),
             before="",
             after="",
@@ -436,6 +456,31 @@ def _compute_diff_preview(proposal: Proposal) -> dict:
             "diff_lines": len(proposal.content.splitlines()),
         }
 
+    if ct == "CODE_EDIT":
+        code_path = YOUK_ROOT / proposal.target
+        if not code_path.exists():
+            return {"error": f"File not found: {code_path}"}
+        current = code_path.read_text()
+        section = proposal.target_section
+        match = None
+        if section:
+            pattern = rf"^def {re.escape(section)}\b.*?(?=^def |\nclass |\Z)"
+            match = re.search(pattern, current, re.DOTALL | re.MULTILINE)
+            before = match.group(0) if match else "(function not found)"
+        else:
+            before = current[:400] + ("..." if len(current) > 400 else "")
+        after = proposal.content if proposal.content else "(content not yet set — synthesize replacement function first)"
+        before_trunc = before[:500] + "..." if len(before) > 500 else before
+        after_trunc = after[:500] + "..." if len(after) > 500 else after
+        return {
+            "target": str(code_path),
+            "change_type": ct,
+            "section": section,
+            "before": before_trunc,
+            "after": after_trunc,
+            "diff_lines": len(after.splitlines()) - (len(before.splitlines()) if match else 0),
+        }
+
     return {
         "target": proposal.target,
         "change_type": ct or "UNKNOWN",
@@ -493,6 +538,27 @@ def _execute_proposal(proposal: Proposal) -> dict:
             return {"applied": True, "target_file": str(config_path), "change_type": ct}
         except yaml.YAMLError as e:
             return {"applied": False, "error": f"YAML parse error: {e}"}
+
+    if ct == "CODE_EDIT":
+        # Restricted to YOUK_ROOT only — SKILL_EDIT handles skills/, CONFIG_EDIT handles config/
+        code_path = YOUK_ROOT / proposal.target
+        if not str(code_path).startswith(str(YOUK_ROOT)):
+            return {"applied": False, "error": f"CODE_EDIT blocked: {code_path} is outside YOUK_ROOT."}
+        if not code_path.exists():
+            return {"applied": False, "error": f"File not found: {code_path}"}
+        if not proposal.content:
+            return {"applied": False, "error": "CODE_EDIT requires content — synthesize replacement function before applying."}
+        section = proposal.target_section
+        if not section:
+            return {"applied": False, "error": "CODE_EDIT requires target_section (function name to replace)."}
+        current = code_path.read_text()
+        pattern = rf"^def {re.escape(section)}\b.*?(?=^def |\nclass |\Z)"
+        replacement = proposal.content.rstrip() + "\n"
+        new_content, count = re.subn(pattern, replacement, current, flags=re.DOTALL | re.MULTILINE)
+        if count == 0:
+            return {"applied": False, "error": f"Function '{section}' not found in {code_path}"}
+        code_path.write_text(new_content)
+        return {"applied": True, "target_file": str(code_path), "change_type": ct, "section": section}
 
     return {
         "applied": False,

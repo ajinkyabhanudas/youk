@@ -55,3 +55,4 @@ skills:
   - {skill: adr, refs: [README.md]}
   - {skill: write-spec, refs: [README.md]}
   - {skill: youk-research, refs: [README.md]}
+  - {skill: simulate-experience, refs: [README.md]}
