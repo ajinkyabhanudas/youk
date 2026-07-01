@@ -12,8 +12,9 @@ venv/
 # Docker
 .dockerignore
 
-# Runtime state (local only, not committed)
-state/
+# Runtime state (local only, not committed — state/.gitkeep IS committed for fresh clones)
+state/*
+!state/.gitkeep
 
 # Per-project session context (personal, local only — not shared across installs)
 knowledge/projects/

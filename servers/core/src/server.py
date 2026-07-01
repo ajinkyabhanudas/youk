@@ -272,15 +272,21 @@ def compact_context(project_dir: str) -> dict:
 
 
 @mcp.tool()
-def track_tokens(input_tokens: int, output_tokens: int, note: str = "") -> dict:
+def track_tokens(
+    input_tokens: int,
+    output_tokens: int,
+    note: str = "",
+    token_budget: int = 0,
+) -> dict:
     """
     Record token usage at a checkpoint in the current session.
 
     Call this after each significant work unit:
+    - Right after route_task returns: pass token_budget from its response to register the
+      session budget (input_tokens=0, output_tokens=0, note="route_task", token_budget=<value>)
     - After a route_to_skill call returns (note = skill name)
     - After a commit is made (note = "commit")
-    - After an Agent spawn (note = "agent_spawn: {role}")
-    - Before session_end as the final tally
+    - Before session_end as the final tally (note = "final")
 
     Token counts are estimates from your context window usage indicator —
     rough figures are fine. The goal is trend detection across sessions,
@@ -289,10 +295,12 @@ def track_tokens(input_tokens: int, output_tokens: int, note: str = "") -> dict:
     input_tokens: approximate tokens in this exchange (prompt + context)
     output_tokens: approximate tokens generated in this exchange
     note: optional label for this checkpoint
+    token_budget: pass route_task's token_budget here on the first call to register
+                  the session budget; ignored (0) on subsequent calls
 
-    Returns: session_total_input, session_total_output, vs_budget_pct (if budget set).
+    Returns: session_total_input, session_total_output, token_budget, vs_budget_pct.
     """
-    return record_checkpoint(input_tokens, output_tokens, note)
+    return record_checkpoint(input_tokens, output_tokens, note, token_budget)
 
 
 @mcp.resource("youk://session/state")

@@ -27,7 +27,7 @@ def _read_recent_audit_logs(days: int = 30) -> list[str]:
             parts = f.stem.split("-")
             if len(parts) == 2:
                 file_date = datetime(int(parts[0]), int(parts[1]), 1)
-                if file_date >= cutoff.replace(day=1):
+                if file_date >= cutoff.replace(day=1, hour=0, minute=0, second=0, microsecond=0):
                     entries.append(f.read_text())
         except (ValueError, IndexError):
             continue
@@ -222,14 +222,95 @@ def run_health_check() -> HealthReport:
     )
 
 
+def _analyze_promotion_candidates(audit_texts: list[str]) -> list[dict]:
+    """
+    Scan SkillGap: lines across all audit sessions.
+    A gap appearing 3+ times for the same skill → propose a SKILL_EDIT.
+    A gap appearing across 2+ distinct projects → flag for cross-project.md addition.
+    Returns a list of candidates; callers queue them as proposals (never auto-apply).
+    """
+    from collections import defaultdict
+
+    # Extract (project_slug, skill, gap_description) tuples from audit blocks
+    gap_records: list[tuple[str, str, str]] = []
+    for text in audit_texts:
+        current_slug = ""
+        for line in text.splitlines():
+            if line.startswith("### Session —"):
+                current_slug = ""  # reset; project slug not directly in session header
+            if "Project:" in line or "project:" in line:
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    current_slug = parts[1].strip().split()[0]
+            if line.startswith("SkillGap:"):
+                rest = line[len("SkillGap:"):].strip()
+                if " — " in rest:
+                    skill, gap = rest.split(" — ", 1)
+                    gap_records.append((current_slug, skill.strip(), gap.strip()))
+
+    # Group by skill
+    by_skill: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for slug, skill, gap in gap_records:
+        by_skill[skill].append((slug, gap))
+
+    candidates = []
+    for skill, occurrences in by_skill.items():
+        count = len(occurrences)
+        projects = {slug for slug, _ in occurrences if slug}
+        if count >= 3:
+            candidates.append({
+                "skill": skill,
+                "occurrence_count": count,
+                "distinct_projects": len(projects),
+                "sample_gaps": list({gap for _, gap in occurrences})[:3],
+                "promotion_target": "cross-project.md" if len(projects) >= 2 else f"skills/{skill}/SKILL.md",
+                "change_type": "FILE_CREATE" if len(projects) >= 2 else "SKILL_EDIT",
+            })
+    return sorted(candidates, key=lambda x: -x["occurrence_count"])
+
+
+def _queue_promotion_proposals(candidates: list[dict]) -> int:
+    """Auto-queue proposals for promotion candidates. Returns count queued."""
+    from datetime import datetime
+    queued = 0
+    for c in candidates:
+        proposal = Proposal(
+            id=f"PENDING-PROMO-{c['skill'].upper()}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            target=c["promotion_target"],
+            change_description=f"Promote recurring gap pattern: {c['skill']} ({c['occurrence_count']} occurrences across {c['distinct_projects']} project(s))",
+            reason=(
+                f"SkillGap '{c['skill']}' appeared {c['occurrence_count']} times in audit logs. "
+                f"Sample gaps: {'; '.join(c['sample_gaps'])}. "
+                "Review and expand the skill or add to cross-project.md."
+            ),
+            before="",
+            after="",
+            status="PENDING",
+            proposed_date=datetime.utcnow().strftime("%Y-%m-%d"),
+            change_type=c["change_type"],
+            target_section="",
+            content="",
+        )
+        try:
+            add_proposal(proposal)
+            queued += 1
+        except Exception:
+            pass
+    return queued
+
+
 def run_health_check_with_skill_signals() -> dict:
     """
-    Extended health check that also returns skill gap signals for evolution.
-    Used by the self_heal MCP tool to surface what skills need assess_skill() called.
+    Extended health check that also returns skill gap signals for evolution
+    and queues promotion proposals for skills with 3+ recurring gap occurrences.
     """
     report = run_health_check()
     audit_texts = _read_recent_audit_logs(days=60)
     skill_gap_signals = _parse_skill_gap_signals(audit_texts)
+
+    # Auto-queue proposals for skills that have crossed the promotion threshold
+    promotion_candidates = _analyze_promotion_candidates(audit_texts)
+    promotion_queued = _queue_promotion_proposals(promotion_candidates) if promotion_candidates else 0
 
     base = {
         "org_score": report.org_score,
@@ -245,6 +326,13 @@ def run_health_check_with_skill_signals() -> dict:
             "Skills with recurring gap signals detected. "
             "Call youk-code.assess_skill(skill_name) for each, then add_proposal() "
             "with the returned proposed_additions."
+        )
+
+    if promotion_queued:
+        base["promotion_proposals_queued"] = promotion_queued
+        base["promotion_note"] = (
+            f"{promotion_queued} skill(s) crossed the 3-occurrence threshold — "
+            "proposals queued in PENDING.md for review."
         )
 
     return base

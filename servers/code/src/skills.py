@@ -3,11 +3,19 @@ import os
 import sys
 sys.path.insert(0, "/shared")
 
+from pathlib import Path
 from skill_loader import load_skill, list_skills, load_skill_fast_path
+
+def _resolve_api_key() -> str:
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if key:
+        return key
+    fallback = Path("/claude/.anthropic/api_key")
+    return fallback.read_text().strip() if fallback.exists() else ""
 
 try:
     import anthropic
-    _client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    _client = anthropic.Anthropic(api_key=_resolve_api_key())
 except Exception:
     _client = None
 

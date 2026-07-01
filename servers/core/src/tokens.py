@@ -30,7 +30,12 @@ def init_token_tracker(session_id: str, task_size: str | None = None, token_budg
     }, indent=2))
 
 
-def record_checkpoint(input_tokens: int, output_tokens: int, note: str = "") -> dict:
+def record_checkpoint(
+    input_tokens: int,
+    output_tokens: int,
+    note: str = "",
+    token_budget: int = 0,
+) -> dict:
     if not TOKEN_FILE.exists():
         return {"error": "no active token tracker — call session_start first"}
     try:
@@ -40,6 +45,9 @@ def record_checkpoint(input_tokens: int, output_tokens: int, note: str = "") -> 
 
     data["total_input"] += input_tokens
     data["total_output"] += output_tokens
+    # Register the budget when first provided (e.g. right after route_task)
+    if token_budget > 0:
+        data["token_budget"] = token_budget
     data["checkpoints"].append({
         "ts": datetime.utcnow().isoformat(),
         "input": input_tokens,
@@ -57,6 +65,7 @@ def record_checkpoint(input_tokens: int, output_tokens: int, note: str = "") -> 
         "session_total_input": data["total_input"],
         "session_total_output": data["total_output"],
         "session_total": total,
+        "token_budget": budget,
         "vs_budget_pct": vs_budget_pct,
         "checkpoints_recorded": len(data["checkpoints"]),
     }

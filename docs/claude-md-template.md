@@ -83,7 +83,8 @@ Contract phrases to detect mid-conversation (offer to save to contracts.md when 
 
 ## Token tracking (call at session checkpoints)
 
-Call `youk-core.track_tokens(approx_input, approx_output, note)` at:
+Call `youk-core.track_tokens(approx_input, approx_output, note, token_budget)` at:
+- Right after `route_task` returns: `track_tokens(0, 0, "route_task", token_budget=<budget from route_task response>)` — registers the session budget so `vs_budget_pct` is computed on all subsequent checkpoints
 - After each `route_to_skill` call returns (note = skill name)
 - After each commit (note = "commit")
 - Before `session_end` as the final tally (note = "final")

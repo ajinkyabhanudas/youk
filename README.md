@@ -289,7 +289,7 @@ knowledge/
     └── PENDING.md          ← self-heal proposals awaiting review
 ```
 
-A correction that happens 3+ times in one project gets promoted to domain-level knowledge. The same pattern across 2+ projects promotes to global. Confidence scoring (+0.05 on reference, -0.1 on contradiction) keeps the knowledge base calibrated over time.
+`knowledge/cross-project.md` contains best-practice patterns that feed `generate_skill()` and `assess_skill()` at generation time. `self_heal()` surfaces recurring `SkillGap:` signals from audit logs as proposals — these become `cross-project.md` additions after you review and approve them via `apply_proposal(confirmed=True)`.
 
 **Zero footprint in your repo.** All knowledge writes to `~/.claude/youk/knowledge/`. Your project's git history is untouched. youk reads your project (project type detection, git log for resume point), never writes to it.
 
