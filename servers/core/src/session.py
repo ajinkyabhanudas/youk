@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -290,6 +291,88 @@ def _scan_project_context_files(project_dir: str) -> dict:
         except Exception:
             pass
 
+    # Tooling detection — surface existing project mechanisms so youk adapts to the
+    # project's workflow rather than assuming generic commands or standards.
+    tooling: dict = {
+        "make_targets": [],   # Makefile target names + inline comments
+        "npm_scripts": [],    # package.json script names
+        "ci_providers": [],   # detected CI/CD providers
+        "pre_commit": False,  # .pre-commit-config.yaml present
+        "test_configs": [],   # detected test runner config files
+        "containers": [],     # Dockerfile / docker-compose files
+        "ai_context": [],     # AI instruction files from other tools (Cursor, Aider, etc.)
+    }
+
+    # Makefile — parse targets with ## comments; also detect bare common targets
+    makefile = p / "Makefile"
+    if makefile.exists():
+        try:
+            lines = makefile.read_text().splitlines()
+            for line in lines:
+                # Commented targets: "target: ## description"
+                m = re.match(r"^([a-zA-Z_-]+):.*?##\s*(.+)", line)
+                if m:
+                    tooling["make_targets"].append(f"make {m.group(1)}: {m.group(2).strip()[:60]}")
+                    continue
+                # Bare common targets without comments
+                m2 = re.match(r"^(test|build|run|dev|deploy|lint|install|clean|start|check)\s*:", line)
+                if m2 and f"make {m2.group(1)}" not in " ".join(tooling["make_targets"]):
+                    tooling["make_targets"].append(f"make {m2.group(1)}")
+            tooling["make_targets"] = tooling["make_targets"][:12]
+        except Exception:
+            pass
+
+    # package.json scripts
+    pkg_json = p / "package.json"
+    if pkg_json.exists():
+        try:
+            pkg = json.loads(pkg_json.read_text())
+            scripts = pkg.get("scripts", {})
+            tooling["npm_scripts"] = [f"npm run {k}" for k in list(scripts)[:10]]
+        except Exception:
+            pass
+
+    # CI providers
+    for ci_path, ci_name in [
+        (".github/workflows", "github-actions"),
+        (".circleci", "circleci"),
+        (".gitlab-ci.yml", "gitlab-ci"),
+        ("Jenkinsfile", "jenkins"),
+        (".buildkite", "buildkite"),
+    ]:
+        if (p / ci_path).exists():
+            tooling["ci_providers"].append(ci_name)
+
+    # Pre-commit hooks
+    if (p / ".pre-commit-config.yaml").exists():
+        tooling["pre_commit"] = True
+
+    # Test runner config files
+    for test_file in [
+        "pytest.ini", "pyproject.toml", "setup.cfg",
+        "jest.config.js", "jest.config.ts", "vitest.config.ts",
+        ".rspec", "karma.conf.js",
+    ]:
+        if (p / test_file).exists():
+            tooling["test_configs"].append(test_file)
+
+    # Container setup
+    for container_file in ["Dockerfile", "docker-compose.yml", "docker-compose.yaml"]:
+        if (p / container_file).exists():
+            tooling["containers"].append(container_file)
+
+    # AI instruction files from other tools — read a snippet so Claude can check for
+    # conflicts or complementary conventions with youk's own CLAUDE.md.
+    for ai_file in ["AGENTS.md", ".cursorrules", ".aider.conf.yml", "copilot-instructions.md"]:
+        candidate = p / ai_file
+        if candidate.exists():
+            try:
+                snippet = candidate.read_text()[:300].strip()
+                tooling["ai_context"].append({"file": ai_file, "snippet": snippet[:250]})
+            except Exception:
+                tooling["ai_context"].append({"file": ai_file, "snippet": ""})
+
+    result["tooling"] = tooling
     return result
 
 
@@ -334,6 +417,7 @@ def _generate_session_plan(
     doc_gaps: list[str] | None = None,
     docs_available: list[str] | None = None,
     has_project_claude_md: bool = False,
+    tooling: dict | None = None,
 ) -> list[str]:
     """
     Generate a forward-looking session plan from structured context.
@@ -365,25 +449,42 @@ def _generate_session_plan(
             "call session_end with explicit_contracts before new work piles up"
         )
 
-    # 4. Project-type-specific nudge
+    # 4. Project-type-specific nudge — use detected commands when available
+    t = tooling or {}
+    make_targets = t.get("make_targets", [])
+    npm_scripts = t.get("npm_scripts", [])
+    test_cmd = next(
+        (cmd for cmd in make_targets if "test" in cmd.lower()),
+        next((cmd for cmd in npm_scripts if "test" in cmd.lower()), None),
+    )
     type_nudges = {
-        "python_postgresql": "DB changes this session? Run nfr_check before touching schema.",
-        "js_react": "UI changes? verify dark mode + error states (nfr_check → /done).",
+        "python_postgresql": f"DB changes? Run nfr_check before touching schema. Verify: {test_cmd or 'run tests'}.",
+        "js_react": f"UI changes? verify dark mode + error states (nfr_check → /done). Test: {test_cmd or 'run tests'}.",
         "python": "Adding new dependency? Flag for dependency check.",
     }
     nudge = type_nudges.get(project_type, "")
     if nudge:
         plan.append(nudge)
 
-    # 5. Contract reminder if contracts exist (first one only — most load-bearing)
+    # 5. Pre-commit hooks — surface once so Claude knows commits go through them
+    if t.get("pre_commit"):
+        plan.append("Pre-commit hooks active — commits run checks automatically before staging")
+
+    # 6. Other AI instruction files — surface for conflict awareness
+    ai_ctx = t.get("ai_context", [])
+    if ai_ctx:
+        names = ", ".join(entry["file"] for entry in ai_ctx if isinstance(entry, dict))
+        plan.append(f"Other AI context found: {names} — check for conflicts with youk contracts")
+
+    # 7. Contract reminder if contracts exist (first one only — most load-bearing)
     if contracts:
         plan.append(f"Active contract: {contracts[0]}")
 
-    # 6. Available spec/design docs (first session only hint — low priority)
+    # 8. Available spec/design docs (first session only hint — low priority)
     if docs_available and not resume_point.startswith("Resume:"):
         plan.append(f"Specs available: {', '.join(docs_available[:3])}")
 
-    # 7. Doc-freshness gaps (up to 2 — surface before any new work starts)
+    # 9. Doc-freshness gaps (up to 2 — surface before any new work starts)
     for gap in (doc_gaps or [])[:2]:
         plan.append(f"Doc sync: {gap}")
 
@@ -509,6 +610,7 @@ def start_session(project_dir: str) -> SessionState:
         doc_gaps=doc_gaps,
         docs_available=project_scan["docs_available"],
         has_project_claude_md=bool(project_scan["claude_md"]),
+        tooling=project_scan.get("tooling"),
     )
 
     # Persist session plan so compact_context can include it in briefs
@@ -541,6 +643,7 @@ def start_session(project_dir: str) -> SessionState:
             "readme_snippet": project_scan["readme_snippet"],
             "docs_available": project_scan["docs_available"],
             "context_level": project_scan["context_level"],
+            "tooling": project_scan.get("tooling", {}),
         },
     )
 

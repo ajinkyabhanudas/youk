@@ -90,6 +90,8 @@ class SessionState:
     session_plan: list[str] = field(default_factory=list)
     # context files found in project dir during startup scan (CLAUDE.md, README snippet, docs/)
     project_context_files: dict = field(default_factory=dict)
+    # one-line trend hint from audit logs — surfaced in session card footer
+    dashboard_summary: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -107,6 +109,7 @@ class SessionState:
             "mcp_recommendations": self.mcp_recommendations,
             "session_plan": self.session_plan,
             "project_context_files": self.project_context_files,
+            "dashboard_summary": self.dashboard_summary,
         }
 
 
