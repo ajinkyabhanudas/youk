@@ -95,7 +95,28 @@ def _save_state(state: dict) -> None:
 
 
 def _slug(project_dir: str) -> str:
-    return Path(project_dir).name or "unknown"
+    """Return a filesystem-safe slug for project_dir.
+
+    Uses basename alone when it's unique across known projects. Appends a 6-char
+    path hash when another project with the same basename already exists under a
+    different path — avoids silently mixing knowledge stores for "api", "backend", etc.
+    """
+    import hashlib
+    name = Path(project_dir).name or "unknown"
+    projects_dir = YOUK_ROOT / "knowledge" / "projects"
+    if not projects_dir.exists():
+        return name
+
+    # Check if an existing slug directory was registered to a different host path
+    slug_dir = projects_dir / name
+    marker = slug_dir / "project-path.txt"
+    if marker.exists():
+        registered = marker.read_text().strip()
+        # Normalise: strip trailing slash, compare basename-only as fallback
+        if registered and registered != project_dir and Path(registered).name != name:
+            short_hash = hashlib.sha1(project_dir.encode()).hexdigest()[:6]
+            return f"{name}-{short_hash}"
+    return name
 
 
 def _resolve_project_path(host_path: str) -> Path:
@@ -225,10 +246,15 @@ def _load_project_context(slug: str) -> str | None:
         return None
 
 
-def _write_project_context(slug: str, project_type: str, git_log: str, first_seen: str) -> None:
+def _write_project_context(slug: str, project_type: str, git_log: str, first_seen: str, project_dir: str = "") -> None:
     ctx_dir = YOUK_ROOT / "knowledge" / "projects" / slug
     ctx_dir.mkdir(parents=True, exist_ok=True)
     ctx_file = ctx_dir / "context.md"
+
+    # Write path marker on first creation so _slug() can detect collisions later
+    marker = ctx_dir / "project-path.txt"
+    if not marker.exists() and project_dir:
+        marker.write_text(project_dir)
 
     # Preserve first-seen date and resume-from point across rewrites
     existing_first_seen = first_seen
@@ -578,7 +604,7 @@ def _bootstrap_cold_start(project_dir: str, slug: str, tooling: dict) -> list[st
     Returns a list of detected signal strings. Writes a minimal context.md.
     Zero API calls — pure file inspection.
     """
-    p = Path(project_dir)
+    p = _resolve_project_path(project_dir)
     signals: list[str] = []
 
     # Language markers
@@ -784,7 +810,20 @@ def start_session(project_dir: str) -> SessionState:
     git_log = _read_git_log(project_dir)
     today = datetime.utcnow().strftime("%Y-%m-%d")
 
-    _write_project_context(slug, project_type, git_log, first_seen=today)
+    # Read last-seen BEFORE writing (write will update it to today)
+    days_since_last: int | None = None
+    _pre_ctx = _load_project_context(slug)
+    if _pre_ctx:
+        for _line in _pre_ctx.splitlines():
+            if _line.startswith("last-seen:"):
+                try:
+                    _last_date = datetime.strptime(_line.split(":", 1)[1].strip(), "%Y-%m-%d")
+                    days_since_last = (datetime.utcnow() - _last_date).days
+                except Exception:
+                    pass
+                break
+
+    _write_project_context(slug, project_type, git_log, first_seen=today, project_dir=project_dir)
 
     l2_resume, context_health = _load_l2_context(project_dir)
     existing_ctx = _load_project_context(slug)
@@ -856,6 +895,12 @@ def start_session(project_dir: str) -> SessionState:
         has_project_claude_md=bool(project_scan["claude_md"]),
         tooling=project_scan.get("tooling"),
     )
+
+    # Staleness awareness — surface when returning after a significant gap
+    if days_since_last is not None and days_since_last >= 7:
+        new_commits = len([ln for ln in git_log.splitlines() if ln.strip()]) if git_log else 0
+        commits_note = f" — {new_commits} commit(s) since last session" if new_commits else ""
+        session_plan.append(f"Returning after {days_since_last} days{commits_note}")
 
     # 3C — Surface research-inbox findings so weekly CCR output is actually seen
     research_patterns = _scan_research_inbox()

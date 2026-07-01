@@ -361,11 +361,15 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
 
 
 def add_proposal(proposal: Proposal) -> None:
-    """Append a new proposal to PENDING.md. Never auto-applies."""
+    """Append a new proposal to PENDING.md. Never auto-applies. Deduplicates by change_description."""
     PROPOSALS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     if not PROPOSALS_FILE.exists():
         PROPOSALS_FILE.write_text("# youk Self-Heal Proposals\n\nPending founder review.\n\n")
+    else:
+        existing = PROPOSALS_FILE.read_text()
+        if proposal.change_description and proposal.change_description in existing:
+            return  # already queued — don't append a duplicate
 
     with open(PROPOSALS_FILE, "a") as f:
         f.write("\n" + proposal.to_markdown())
