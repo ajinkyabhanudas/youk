@@ -65,12 +65,22 @@ def nfr_check_quick(task: str) -> NFRBlock:
         "Keep total output under 400 words."
     )
 
-    response = _client.messages.create(
-        model=_MODEL,
-        max_tokens=1024,
-        system=skill_content,
-        messages=[{"role": "user", "content": user_msg}],
-    )
+    try:
+        response = _client.messages.create(
+            model=_MODEL,
+            max_tokens=1024,
+            system=skill_content,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+    except Exception as e:
+        return NFRBlock(
+            task=task,
+            size=TaskSize.M,
+            mode="quick_4q",
+            decisions=[f"NFR check unavailable — set ANTHROPIC_API_KEY and run make install ({type(e).__name__})"],
+            connections=[],
+            raw_output="",
+        )
     raw = response.content[0].text
 
     decisions = _extract_section(raw, "NFR")
@@ -106,12 +116,22 @@ def nfr_check_full(task: str, size: TaskSize) -> NFRBlock:
         "Keep total output under 800 words."
     )
 
-    response = _client.messages.create(
-        model=_MODEL,
-        max_tokens=2048,
-        system=skill_content,
-        messages=[{"role": "user", "content": user_msg}],
-    )
+    try:
+        response = _client.messages.create(
+            model=_MODEL,
+            max_tokens=2048,
+            system=skill_content,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+    except Exception as e:
+        return NFRBlock(
+            task=task,
+            size=size,
+            mode="full",
+            decisions=[f"NFR check unavailable — set ANTHROPIC_API_KEY and run make install ({type(e).__name__})"],
+            connections=[],
+            raw_output="",
+        )
     raw = response.content[0].text
 
     return NFRBlock(

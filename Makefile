@@ -26,13 +26,16 @@ update: ## Pull latest + rebuild images
 build: ## Build both Docker images
 	docker build -t youk-core:latest -f servers/core/Dockerfile .
 	docker build -t youk-code:latest -f servers/code/Dockerfile .
+	@docker image prune -f --filter label!=keep 2>/dev/null | grep -v "^Total" || true
 
 .PHONY: rebuild
 rebuild: clean build ## Full rebuild from scratch (removes cached layers)
 
 .PHONY: clean
-clean: ## Remove Docker images
+clean: ## Remove Docker images and stopped containers
 	docker rmi youk-core:latest youk-code:latest 2>/dev/null || true
+	@docker container prune -f 2>/dev/null || true
+	@docker image prune -f 2>/dev/null || true
 
 # ── Verification ───────────────────────────────────────────────────────────────
 
