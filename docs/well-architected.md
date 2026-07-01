@@ -1,4 +1,17 @@
-# youk — AWS Well-Architected Framework
+# youk — Well-Architected Design
+
+## Framework choice
+
+This document uses the **AWS Well-Architected Framework (WAF)** as the organizing structure — six pillars: Operational Excellence, Security, Reliability, Performance Efficiency, Cost Optimization, Sustainability. It's widely understood, covers all dimensions of an operational system, and maps cleanly to youk's concerns.
+
+Other frameworks exist and are valid:
+- **Anthropic Responsible Scaling Policy (RSP)** — AI safety commitments, model capability thresholds, and deployment criteria. Relevant if youk were deployed at scale or used to train models. Not applicable here: youk is a local engineering system with no model training or public API exposure.
+- **Google MERL / AI-ready infrastructure** — Focuses on ML pipelines, experiment tracking, and model serving. Not applicable here: youk routes to skills, it doesn't run ML workloads.
+- **NIST AI RMF** — Risk management framework for AI systems. Partially applicable: the guardrails.yaml hard rules and `confirmed=True` gates address the governance requirements. Not formally mapped here but traceable.
+
+**Why WAF and not the others:** youk is an operational platform, not an AI safety system or ML infrastructure project. WAF covers the six dimensions that actually matter for youk's reliability and cost. The WAF document is a **reference** — it is never loaded into session context at startup (that would be overhead for every session). It's loaded lazily: nfr_check injects 2 targeted WAF questions for M+ tasks on the youk repo itself, nothing more.
+
+---
 
 youk's design maps directly to the six AWS Well-Architected Framework pillars. This document makes that mapping explicit so contributors can trace why each mechanism exists and what invariant it protects.
 
@@ -108,3 +121,47 @@ youk's design maps directly to the six AWS Well-Architected Framework pillars. T
 | Proposals require `confirmed=True` | Security (no auto-apply), Operational Excellence (founder in loop), Cost (no wasted token spend) |
 | `session_end` extracts, not logs | Security (no transcripts), Reliability (structured audit), Operational Excellence (machine-readable) |
 | `knowledge/projects/` gitignored | Security (no accidental exposure), Reliability (no cross-install contamination), Sustainability (zero footprint) |
+
+---
+
+## MCP access hierarchy
+
+youk enforces access control at the Docker volume layer, not just in code. This is the only trustworthy boundary — code-level checks can be bypassed, but a container without a write mount cannot write.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Access level    │  Container     │  Mounts                 │
+│──────────────────┼────────────────┼─────────────────────────│
+│  Read-write      │  youk-core     │  ~/.claude (rw)         │
+│                  │                │  project dir (ro)       │
+│──────────────────┼────────────────┼─────────────────────────│
+│  Read-only       │  youk-code     │  ~/.claude (ro)         │
+│                  │                │  project dir (ro)       │
+│──────────────────┼────────────────┼─────────────────────────│
+│  No access       │  either        │  ~/   (not mounted)     │
+│                  │                │  /etc, /tmp, /usr       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Hard constraints (tool-level enforcement):**
+- `apply_proposal(confirmed=True)` required — no auto-apply, ever
+- `check_knowledge_write(content)` blocks transcript storage at `session_end`
+- `check_command(command)` blocks destructive shell ops without confirmation
+- `check_commit_quality(...)` blocks credential files at commit time
+
+**Soft constraints (surfaced once, deferred to founder):**
+- NFR check before M+ tasks
+- Spec before L/XL tasks
+- Session-close cluster (context-sync + learn + humanize) at session end
+- ADR for decisions with real alternatives
+
+Soft constraints appear in `route_task().warnings` and `session_plan`. They are never enforced — the founder has final say. Hard constraints return `blocked: True` from the tool and stop execution.
+
+**Within-session write scope for youk-core:**
+
+| Path | What writes there | Cleared when |
+|---|---|---|
+| `~/.claude/youk/state/` | session.json, session-plan.json, current-session-tokens.json | session_start (reset), session_end (clear tokens) |
+| `~/.claude/youk/knowledge/projects/{slug}/` | context.md, contracts.md, decisions.md | Accumulates; pruned manually |
+| `~/.claude/audit/` | YYYY-MM.md audit log | Accumulates; feeds self_heal for 30-day window |
+| `~/.claude/youk/knowledge/proposals/` | PENDING.md | Cleared by apply_proposal |

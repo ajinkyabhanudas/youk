@@ -139,6 +139,8 @@ Guard rails are machine-readable contracts in `config/guardrails.yaml`. Hard rul
 
 To add or change a rule: edit `config/guardrails.yaml` and commit. Guard rails are not prompt instructions — they're versioned code.
 
+For the full access hierarchy (volume mounts, tool-level enforcement, soft vs hard constraint taxonomy) see [docs/well-architected.md](docs/well-architected.md#mcp-access-hierarchy).
+
 ---
 
 ## Living knowledge
