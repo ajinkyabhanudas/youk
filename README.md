@@ -14,33 +14,22 @@
 
 ---
 
-youk turns Claude Code from a chat assistant into an engineering system with persistent memory, structured task routing, live guard rails, and domain-specialized variants. It runs in Docker containers, speaks the Model Context Protocol, and learns across sessions without ever storing raw conversation transcripts.
+## The compounding engineer
 
-> **Status:** Active development — v0.1.0. Core variant (youk-core + youk-code) is live.
+youk makes every Claude Code session smarter than the last. Working agreements you set verbally today are loaded automatically six months from now. Lessons from this project improve every project that follows. Skills evolve to catch your specific patterns, not generic ones.
 
----
-
-## What youk does
-
-| Problem | youk mechanism |
+| Without youk | With youk |
 |---|---|
-| Context resets every session (15 min re-establishment tax) | `session_start()` detects project type, loads contracts + decisions, gives you a resume point |
-| Behavioral contracts get blurred by Claude's auto-compaction | `compact_context()` runs at 25+ exchanges — tiers content, preserves contracts verbatim |
-| Ceremony mismatch (too much process for a typo, too little for a migration) | `route_task()` sizes the task and returns the right ceremony level and skill list |
-| Working agreements aren't durable (live in conversation, not files) | `session_end(explicit_contracts=[...])` writes them to `contracts.md`; every future session loads them first |
-| No guard rails — Claude can commit credentials | `check_commit_quality()` blocks credential files at tool level (hard rule, not suggestion) |
-| Self-improvement is manual | `self_heal()` reads 30 days of audit logs, generates improvement proposals — never auto-applies |
-| Sessions start reactive with no plan | `session_start()` returns `session_plan` — a 3-5 item forward-looking proposal built from contracts + context, not a question |
-| Skills are static and generic | `generate_skill()` + `assess_skill()` — signal-driven skill generation and evolution from repo context, audit gaps, and best-practices knowledge |
+| Re-explain the project every session | Picks up where you left off — automatically |
+| Working agreements live in chat, then vanish | Written to files, loaded at every future session |
+| Generic AI regardless of task size or stack | Routed to the right ceremony for your context |
+| Lessons lost when the session ends | Accumulated in audit log, feeding skill evolution |
+| Same gaps recur across projects | Detected, promoted to cross-project knowledge |
+| No institutional memory | Architecture decisions from six months ago still present today |
 
----
+**What changes about your workflow: the install. Nothing else.**
 
-## Prerequisites
-
-- **Claude Code** (the Anthropic CLI) — [install guide](https://docs.anthropic.com/en/claude-code)
-- **Docker Desktop** 24+ (must be running)
-- **Python 3.11+** (for local validation scripts)
-- **Anthropic API key** in your environment: `export ANTHROPIC_API_KEY=sk-...`
+> **Status:** Active development — v0.1.0. Compounding begins immediately. Gains become visible around session 10-20 as the audit log fills and skills get tuned to your patterns.
 
 ---
 
@@ -50,17 +39,11 @@ youk turns Claude Code from a chat assistant into an engineering system with per
 curl -sL https://raw.githubusercontent.com/ajinkyabhanudas/youk/main/scripts/install.sh | bash
 ```
 
-The installer handles everything: preflight checks, Docker build, MCP server registration, CLAUDE.md patch, and a validation run. First install takes ~2 minutes (Docker image build). Re-runs are safe — all steps are idempotent.
+One command. The installer handles Docker build, MCP server registration, and CLAUDE.md patch. First run takes ~2 minutes (Docker image build). Re-runs are idempotent.
 
-**Prerequisites:** Docker Desktop running · Claude Code installed · `ANTHROPIC_API_KEY` in your shell profile.
+**Prerequisites:** Docker Desktop running · Claude Code installed · `ANTHROPIC_API_KEY` in your shell profile · Python 3.11+
 
-After the installer exits, open a new Claude Code session and type:
-
-```
-/start
-```
-
-youk displays a session card: what it found (project type, prior work, pending tasks), today's plan, and the command cheatsheet. Works on first run (fresh install orientation) and every session after (picks up where you left off).
+Open any Claude Code session and start working. youk activates automatically. Type `/start` if you want to see the session card explicitly. By your second session, youk picks up where you left off without being asked.
 
 **Verify the install:**
 
