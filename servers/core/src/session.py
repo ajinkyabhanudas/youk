@@ -13,6 +13,7 @@ from tokens import read_and_clear as _read_and_clear_tokens
 
 CLAUDE_ROOT = Path("/claude")
 YOUK_ROOT = Path("/youk")
+HOST_HOME = Path("/host-home")   # $HOME mounted :ro when install.sh adds -v $HOME:/host-home:ro
 STATE_FILE = YOUK_ROOT / "state" / "session.json"
 
 _CONTRACT_PHRASES = [
@@ -97,8 +98,65 @@ def _slug(project_dir: str) -> str:
     return Path(project_dir).name or "unknown"
 
 
+def _resolve_project_path(host_path: str) -> Path:
+    """Translate a host-absolute project path to a path accessible inside this container.
+
+    The container has fixed mount points:
+      /youk  = host YOUK_DIR  (e.g. ~/.claude/youk)
+      /claude = host CLAUDE_DIR (e.g. ~/.claude)
+
+    Two fallback mechanisms (tried in order):
+    1. state/path-map.env — written by install.sh; maps YOUK_HOST_DIR and CLAUDE_HOST_DIR
+    2. /host-home         — host $HOME mounted :ro (requires updated install.sh re-run)
+    """
+    p = Path(host_path)
+    if p.exists():
+        return p  # already accessible (local dev, or running outside Docker)
+
+    # Mechanism 1: path-map.env written by install.sh
+    path_map_file = YOUK_ROOT / "state" / "path-map.env"
+    if path_map_file.exists():
+        try:
+            mapping: dict[str, str] = {}
+            for line in path_map_file.read_text().splitlines():
+                if "=" in line and not line.startswith("#"):
+                    key, _, val = line.partition("=")
+                    mapping[key.strip()] = val.strip()
+
+            youk_host = mapping.get("YOUK_HOST_DIR", "")
+            claude_host = mapping.get("CLAUDE_HOST_DIR", "")
+
+            if youk_host and host_path.startswith(youk_host):
+                relative = host_path[len(youk_host):].lstrip("/")
+                candidate = YOUK_ROOT / relative if relative else YOUK_ROOT
+                if candidate.exists():
+                    return candidate
+
+            if claude_host and host_path.startswith(claude_host):
+                relative = host_path[len(claude_host):].lstrip("/")
+                candidate = CLAUDE_ROOT / relative if relative else CLAUDE_ROOT
+                if candidate.exists():
+                    return candidate
+        except Exception:
+            pass
+
+    # Mechanism 2: /host-home mount (added by install.sh -v $HOME:/host-home:ro)
+    if HOST_HOME.exists():
+        for prefix in ("/Users/", "/home/"):
+            if host_path.startswith(prefix):
+                rest = host_path[len(prefix):]
+                rest_parts = Path(rest).parts  # ("username", "subdir", ...)
+                if len(rest_parts) > 1:
+                    relative = Path(*rest_parts[1:])  # strip the username segment
+                    candidate = HOST_HOME / relative
+                    if candidate.exists():
+                        return candidate
+
+    return p  # return as-is; callers check .exists() and degrade gracefully
+
+
 def _detect_project_type(project_dir: str) -> str:
-    p = Path(project_dir)
+    p = _resolve_project_path(project_dir)
     if not p.exists():
         return "unknown"
 
@@ -107,9 +165,10 @@ def _detect_project_type(project_dir: str) -> str:
     if (p / "Cargo.toml").exists():
         return "rust"
 
-    has_python = any((p / f).exists() for f in ["requirements.txt", "pyproject.toml", "setup.py"])
-    if has_python:
-        for candidate in [p / "requirements.txt", p / "pyproject.toml"]:
+    def _check_python(base: Path) -> str | None:
+        if not any((base / f).exists() for f in ["requirements.txt", "pyproject.toml", "setup.py"]):
+            return None
+        for candidate in [base / "requirements.txt", base / "pyproject.toml"]:
             if candidate.exists():
                 try:
                     content = candidate.read_text().lower()
@@ -118,6 +177,18 @@ def _detect_project_type(project_dir: str) -> str:
                 except Exception:
                     pass
         return "python"
+
+    py_type = _check_python(p)
+    if py_type:
+        return py_type
+
+    # Nested Python: check common source subdirectories (e.g. servers/, src/, backend/)
+    for sub in ["servers", "src", "app", "backend", "api"]:
+        sub_path = p / sub
+        if sub_path.is_dir():
+            py_type = _check_python(sub_path)
+            if py_type:
+                return py_type
 
     if (p / "package.json").exists():
         try:
@@ -133,9 +204,10 @@ def _detect_project_type(project_dir: str) -> str:
 
 
 def _read_git_log(project_dir: str, n: int = 5) -> str:
+    resolved = str(_resolve_project_path(project_dir))
     try:
         result = subprocess.run(
-            ["git", "-C", project_dir, "log", "--oneline", f"-{n}"],
+            ["git", "-C", resolved, "log", "--oneline", f"-{n}"],
             capture_output=True, text=True, timeout=5
         )
         return result.stdout.strip()
@@ -209,7 +281,7 @@ def _load_contracts(slug: str) -> list[str]:
 
 def _load_l2_context(project_dir: str) -> tuple[str, str]:
     """Returns (resume_point, context_health) from project's .claude/ dir."""
-    p = Path(project_dir)
+    p = _resolve_project_path(project_dir)
     claude_dir = p / ".claude"
     resume_point = ""
     context_health = "NONE"
@@ -252,7 +324,7 @@ def _scan_project_context_files(project_dir: str) -> dict:
 
     Returns a dict with keys: claude_md, readme_snippet, docs_available, context_level
     """
-    p = Path(project_dir)
+    p = _resolve_project_path(project_dir)
     result: dict = {
         "claude_md": "",
         "readme_snippet": "",

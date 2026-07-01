@@ -74,6 +74,16 @@ mkdir -p \
   "$CLAUDE_DIR/audit"
 ok "Directories ready"
 
+# Write host→container path map so the Docker containers can translate paths passed
+# by Claude Code (which uses host-absolute paths) to their mounted equivalents.
+# The containers mount YOUK_DIR → /youk and CLAUDE_DIR → /claude.
+cat > "$YOUK_DIR/state/path-map.env" <<EOF
+# Host→container path mappings — written by install.sh, read by session.py
+YOUK_HOST_DIR=$YOUK_DIR
+CLAUDE_HOST_DIR=$CLAUDE_DIR
+EOF
+ok "path-map.env written to state/"
+
 # ── Step 3: Symlinks ─────────────────────────────────────────────────────────
 step "Symlinks"
 
@@ -127,6 +137,7 @@ claude mcp add --scope user youk-core --transport stdio -- \
   docker run -i --rm \
     -v "$CLAUDE_DIR:/claude" \
     -v "$YOUK_DIR:/youk" \
+    -v "$HOME:/host-home:ro" \
     -e ANTHROPIC_API_KEY \
     youk-core:latest
 ok "youk-core registered"
@@ -135,6 +146,7 @@ claude mcp add --scope user youk-code --transport stdio -- \
   docker run -i --rm \
     -v "$CLAUDE_DIR:/claude:ro" \
     -v "$YOUK_DIR:/youk:ro" \
+    -v "$HOME:/host-home:ro" \
     -e ANTHROPIC_API_KEY \
     youk-code:latest
 ok "youk-code registered"
