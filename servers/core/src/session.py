@@ -180,6 +180,119 @@ def _load_l2_context(project_dir: str) -> tuple[str, str]:
     return resume_point, context_health
 
 
+def _scan_project_context_files(project_dir: str) -> dict:
+    """
+    Scan the project directory for standard context files that can inform
+    session_start without requiring any youk-specific setup in the project repo.
+
+    Reads — but caps aggressively to avoid overloading initial context:
+    - CLAUDE.md (root) — full, max 1200 chars (project system instructions)
+    - README.md — first description paragraph only (max 400 chars)
+    - docs/ — filenames only, no content (surface availability, not dump content)
+    - .claude/CLAUDE.md — project-local youk instructions (max 1200 chars)
+
+    Returns a dict with keys: claude_md, readme_snippet, docs_available, context_level
+    """
+    p = Path(project_dir)
+    result: dict = {
+        "claude_md": "",
+        "readme_snippet": "",
+        "docs_available": [],
+        "context_level": "L1",  # upgraded as each source is found
+    }
+
+    # Root CLAUDE.md — highest priority, project system instructions
+    for candidate in [p / "CLAUDE.md", p / ".claude" / "CLAUDE.md"]:
+        if candidate.exists():
+            try:
+                text = candidate.read_text()[:1200]
+                result["claude_md"] = text
+                result["context_level"] = "L5"
+            except Exception:
+                pass
+            break
+
+    # README.md — first prose paragraph (skip HTML, badges, dividers)
+    readme = p / "README.md"
+    if readme.exists():
+        try:
+            lines = readme.read_text().splitlines()
+            snippet_lines = []
+            for ln in lines[:80]:
+                stripped = ln.strip()
+                if not stripped or stripped == "---":
+                    if snippet_lines:
+                        break  # end of first prose paragraph
+                    continue
+                # skip HTML blocks, badges, and markdown headers/image tags
+                if (stripped.startswith("<")
+                        or stripped.startswith("[![")
+                        or stripped.startswith("![")
+                        or stripped.startswith("#")
+                        or stripped.startswith("|")
+                        or stripped.startswith(">")):
+                    if snippet_lines:
+                        break
+                    continue
+                snippet_lines.append(stripped)
+                if len(" ".join(snippet_lines)) > 400:
+                    break
+            if snippet_lines:
+                result["readme_snippet"] = " ".join(snippet_lines)[:400]
+                if result["context_level"] == "L1":
+                    result["context_level"] = "L4"
+        except Exception:
+            pass
+
+    # API fallback: if README exists but crude extraction yielded nothing useful,
+    # use a one-shot Claude call to extract a project description sentence.
+    # Uses the user's API credits intentionally — better than returning nothing.
+    if readme.exists() and not result["readme_snippet"]:
+        try:
+            import os
+            import anthropic as _anthropic
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if not api_key:
+                key_file = Path("/claude/.anthropic/api_key")
+                if key_file.exists():
+                    api_key = key_file.read_text().strip()
+            if api_key:
+                _c = _anthropic.Anthropic(api_key=api_key)
+                readme_head = readme.read_text()[:2000]
+                msg = _c.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=80,
+                    messages=[{
+                        "role": "user",
+                        "content": (
+                            f"In one sentence (max 120 chars), what does this project do?\n\n{readme_head}"
+                        ),
+                    }],
+                )
+                snippet = msg.content[0].text.strip()
+                if snippet:
+                    result["readme_snippet"] = snippet[:200]
+                    if result["context_level"] == "L1":
+                        result["context_level"] = "L4"
+        except Exception:
+            pass
+
+    # docs/ directory — scan for spec/PRD/architecture files (names only)
+    docs_dir = p / "docs"
+    if docs_dir.exists():
+        try:
+            spec_keywords = {"spec", "prd", "arch", "design", "requirements", "rfc", "adr"}
+            result["docs_available"] = [
+                f.name for f in sorted(docs_dir.iterdir())
+                if f.suffix in {".md", ".txt", ".rst"}
+                and any(kw in f.name.lower() for kw in spec_keywords)
+            ][:8]  # cap at 8 filenames
+        except Exception:
+            pass
+
+    return result
+
+
 def _parse_last_session_flags(audit_dir: Path) -> tuple[bool, bool]:
     """Returns (close_cluster_missed, orchestrate_pending) from last session entry."""
     close_cluster_missed = False
@@ -219,6 +332,8 @@ def _generate_session_plan(
     close_cluster_missed: bool,
     project_type: str,
     doc_gaps: list[str] | None = None,
+    docs_available: list[str] | None = None,
+    has_project_claude_md: bool = False,
 ) -> list[str]:
     """
     Generate a forward-looking session plan from structured context.
@@ -264,11 +379,15 @@ def _generate_session_plan(
     if contracts:
         plan.append(f"Active contract: {contracts[0]}")
 
-    # 6. Doc-freshness gaps (up to 2 — surface before any new work starts)
+    # 6. Available spec/design docs (first session only hint — low priority)
+    if docs_available and not resume_point.startswith("Resume:"):
+        plan.append(f"Specs available: {', '.join(docs_available[:3])}")
+
+    # 7. Doc-freshness gaps (up to 2 — surface before any new work starts)
     for gap in (doc_gaps or [])[:2]:
         plan.append(f"Doc sync: {gap}")
 
-    return plan[:6]  # hard cap raised to 6 to fit doc-sync items
+    return plan[:7]  # hard cap
 
 
 def _check_doc_freshness() -> list[str]:
@@ -337,6 +456,14 @@ def start_session(project_dir: str) -> SessionState:
     l2_resume, context_health = _load_l2_context(project_dir)
     existing_ctx = _load_project_context(slug)
 
+    # Scan the project directory for standard context files (README, CLAUDE.md, docs/).
+    # Capped reads — description snippets only, not full file dumps.
+    project_scan = _scan_project_context_files(project_dir)
+
+    # Merge context_health: in-project .claude/ files take precedence over scan-level
+    if context_health == "NONE" and project_scan["context_level"] != "L1":
+        context_health = project_scan["context_level"]
+
     # If no in-project context, check youk's external context.md for a resume point.
     # This is the zero-footprint path: no files needed in the project repo.
     if not l2_resume and existing_ctx:
@@ -344,15 +471,18 @@ def start_session(project_dir: str) -> SessionState:
             if line.startswith("resume-from:"):
                 l2_resume = line[len("resume-from:"):].strip()
                 if l2_resume:
-                    context_health = "L1"
+                    if context_health == "NONE":
+                        context_health = "L1"
                 break
 
     if existing_ctx and context_health == "NONE":
         context_health = "L1"
 
-    # Priority-ordered resume point: L3 > L2 > external context.md > git log > fresh session
+    # Priority-ordered resume point: L3 > L2 > external context.md > README snippet > git log
     if l2_resume:
         resume_point = l2_resume
+    elif project_scan["readme_snippet"]:
+        resume_point = f"Project: {project_scan['readme_snippet'][:120]}"
     elif git_log:
         first_commit = git_log.splitlines()[0]
         resume_point = f"Last commit: {first_commit}"
@@ -377,6 +507,8 @@ def start_session(project_dir: str) -> SessionState:
         close_cluster_missed=close_cluster_missed,
         project_type=project_type,
         doc_gaps=doc_gaps,
+        docs_available=project_scan["docs_available"],
+        has_project_claude_md=bool(project_scan["claude_md"]),
     )
 
     # Persist session plan so compact_context can include it in briefs
@@ -404,6 +536,12 @@ def start_session(project_dir: str) -> SessionState:
         close_cluster_missed=close_cluster_missed,
         orchestrate_pending=orchestrate_pending,
         session_plan=session_plan,
+        project_context_files={
+            "claude_md_found": bool(project_scan["claude_md"]),
+            "readme_snippet": project_scan["readme_snippet"],
+            "docs_available": project_scan["docs_available"],
+            "context_level": project_scan["context_level"],
+        },
     )
 
 

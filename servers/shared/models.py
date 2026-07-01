@@ -88,6 +88,8 @@ class SessionState:
     mcp_recommendations: list[dict] = field(default_factory=list)
     # forward-looking session plan (3-5 items, generated from context at session_start)
     session_plan: list[str] = field(default_factory=list)
+    # context files found in project dir during startup scan (CLAUDE.md, README snippet, docs/)
+    project_context_files: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -104,6 +106,7 @@ class SessionState:
             "contracts": self.contracts,
             "mcp_recommendations": self.mcp_recommendations,
             "session_plan": self.session_plan,
+            "project_context_files": self.project_context_files,
         }
 
 
