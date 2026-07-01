@@ -42,6 +42,7 @@ src_files:
   - {file: servers/code/src/server.py, refs: [README.md]}
   - {file: servers/code/src/nfr.py, refs: [README.md]}
   - {file: servers/code/src/skills.py, refs: [README.md]}
+  - {file: scripts/dashboard.py, refs: [README.md, Makefile]}
 
 skills:
   - {skill: start, refs: [README.md, docs/claude-md-template.md]}

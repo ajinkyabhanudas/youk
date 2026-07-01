@@ -16,6 +16,9 @@ venv/
 state/*
 !state/.gitkeep
 
+# Generated dashboard reports (local only — regenerate with make report)
+reports/
+
 # Per-project session context (personal, local only — not shared across installs)
 knowledge/projects/
 

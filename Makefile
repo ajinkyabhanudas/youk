@@ -67,6 +67,16 @@ test-code: ## Test youk-code MCP handshake
 	    youk-code:latest 2>/dev/null | python3 scripts/parse_mcp_tools.py
 	@echo "    OK"
 
+.PHONY: dashboard
+dashboard: ## Terminal dashboard — org score, session history, skill gaps, proposals
+	@python3 scripts/dashboard.py
+
+.PHONY: report
+report: ## Write HTML dashboard to ~/.claude/youk/reports/dashboard-YYYY-MM-DD.html
+	@python3 scripts/dashboard.py --html
+
+# ── Code quality ──────────────────────────────────────────────────────────────
+
 .PHONY: lint
 lint: ## Run ruff on servers/
 	ruff check servers/
