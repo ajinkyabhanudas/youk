@@ -54,11 +54,11 @@ echo "API key"
 
 if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
   pass "ANTHROPIC_API_KEY: set in environment"
-elif [[ -f "$HOME/.anthropic/api_key" ]]; then
-  pass "api_key: found at ~/.anthropic/api_key (fallback)"
+elif [[ -f "$CLAUDE_DIR/.anthropic/api_key" ]]; then
+  pass "api_key: found at ~/.claude/.anthropic/api_key (Docker volume fallback)"
 else
-  warn "api_key: ANTHROPIC_API_KEY not set in shell (Claude Code manages it — this is OK if installed via Claude Code UI)" \
-    "Only needed if calling youk MCP tools directly outside Claude Code"
+  fail "api_key: not found in environment or at ~/.claude/.anthropic/api_key" \
+    "re-run install.sh with ANTHROPIC_API_KEY set: export ANTHROPIC_API_KEY=sk-ant-... && bash $YOUK_DIR/scripts/install.sh"
 fi
 echo ""
 

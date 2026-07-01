@@ -35,10 +35,16 @@ fi
 ok "Claude Code found ($(claude --version 2>/dev/null | head -1))"
 
 if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-  warn "ANTHROPIC_API_KEY not set. youk-core API calls will fall back to ~/.anthropic/api_key."
+  warn "ANTHROPIC_API_KEY not set. youk-core API calls will fall back to ~/.claude/.anthropic/api_key."
   warn "Set it in your shell profile for best results: export ANTHROPIC_API_KEY=sk-ant-..."
 else
   ok "ANTHROPIC_API_KEY found"
+  # Persist to volume-accessible fallback so Docker containers can read it even
+  # when Claude Code is launched as a desktop app (no shell env inheritance).
+  mkdir -p "$CLAUDE_DIR/.anthropic"
+  echo "$ANTHROPIC_API_KEY" > "$CLAUDE_DIR/.anthropic/api_key"
+  chmod 600 "$CLAUDE_DIR/.anthropic/api_key"
+  ok "API key persisted to ~/.claude/.anthropic/api_key (Docker fallback)"
 fi
 
 # ── Step 1: Clone or pull ────────────────────────────────────────────────────
