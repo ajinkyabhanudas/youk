@@ -41,6 +41,7 @@ update your working priority and continue. Never ask "what do you want to do tod
 
 ## Workflow commands (user types these — compose underlying skills silently)
 
+/start  → session activation card — call this (or say "activate youk") to begin any session
 /build  → call route_task first; M+: nfr_check(quick) then dev-loop; S-: dev-loop only
 /done   → code-review + verify + humanize, in that order; report findings per skill
 /check  → code-review; add security-review if auth/creds/endpoints in scope

@@ -54,7 +54,13 @@ The installer handles everything: preflight checks, Docker build, MCP server reg
 
 **Prerequisites:** Docker Desktop running · Claude Code installed · `ANTHROPIC_API_KEY` in your shell profile.
 
-After the installer exits, open a new Claude Code session. youk starts automatically — no activation phrase.
+After the installer exits, open a new Claude Code session and type:
+
+```
+/start
+```
+
+youk displays a session card: what it found (project type, prior work, pending tasks), today's plan, and the command cheatsheet. Works on first run (fresh install orientation) and every session after (picks up where you left off).
 
 **Verify the install:**
 
@@ -228,6 +234,7 @@ Five commands compose the underlying skills. Type them in Claude Code — youk r
 
 | Command | Composes | When |
 |---------|---------|------|
+| `/start` | session_start → get_proposals → welcome card | Beginning any session — also "activate youk" |
 | `/build` | route_task → nfr_check (M+) → dev-loop | Implementing a feature |
 | `/done` | code-review → verify → humanize | Just finished implementing |
 | `/check` | code-review → security-review (if auth in scope) | Before committing |

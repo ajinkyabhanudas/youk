@@ -5,6 +5,28 @@
 
 ---
 
+## Pattern: "activate youk / where were we / what's the plan"
+
+**Surface forms:** "activate youk", "youk", "/start", "where were we", "what are we working on", "what's the plan", "let's start", "what's next"
+
+**Initial interpretation (wrong):** Answer the question conversationally, or summarise recent conversation context.
+
+**Actual intent:** Run the start skill — call session_start, get pending proposals, format the activation card. The card is the answer. Do not narrate, do not start tasks.
+
+**Key signals:**
+- First message of a session (before any task has been described)
+- Explicit invocation: "activate youk", "/start"
+- Orientation questions at session open: "where were we", "what's pending"
+
+**Confidence:** HIGH
+**Observations:** 1 (2026-07-01 — start skill created)
+
+**Routing implication:** First message + orientation phrase → route_to_skill("start", cwd). Do not call optimize_intent first — this is not a vague task, it is a known activation pattern.
+
+**Added:** 2026-07-01 | Source: start skill design session
+
+---
+
 ## Pattern: "make it a repo / build a repo"
 
 **Surface forms:** "can we build a repo out of this", "let's make this a repo", "turn this into a project", "build a repo for this"

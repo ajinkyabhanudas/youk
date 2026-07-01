@@ -44,6 +44,7 @@ src_files:
   - {file: servers/code/src/skills.py, refs: [README.md]}
 
 skills:
+  - {skill: start, refs: [README.md, docs/claude-md-template.md]}
   - {skill: code-review, refs: [README.md]}
   - {skill: security-review, refs: [README.md]}
   - {skill: dev-loop, refs: [README.md]}
