@@ -7,7 +7,7 @@ from pathlib import Path
 
 import sys
 sys.path.insert(0, "/shared")
-from models import SessionState
+from models import SessionState, Proposal
 from compaction import write_contracts
 from tokens import read_and_clear as _read_and_clear_tokens
 
@@ -19,6 +19,64 @@ _CONTRACT_PHRASES = [
     "always ", "never ", "from now on", "remember to", "make sure you",
     "every time", "don't forget", "commit format", "test after", "before committing",
 ]
+
+_GENERALIZABLE_PHRASES = [
+    "always ", "never ", "prefer ", "before every", "after every",
+    "use ", " instead of ", "make sure ", "keep ", "ensure ",
+]
+_PROJECT_SPECIFIC_MARKERS = [
+    "/src/", "/tests/", ".py", ".ts", ".js", ".go", ".rs",
+    "this project", "in our", "our codebase", "our repo",
+]
+
+
+def _is_generalizable(contract: str) -> bool:
+    """True if contract expresses a cross-project methodology, not a project-specific path."""
+    lower = contract.lower()
+    has_method = any(phrase in lower for phrase in _GENERALIZABLE_PHRASES)
+    has_specific = any(marker in contract for marker in _PROJECT_SPECIFIC_MARKERS)
+    return has_method and not has_specific
+
+
+def _scan_research_inbox() -> list[str]:
+    """Scan knowledge/research-inbox/ for .md files modified in the last 14 days.
+    Returns pattern names extracted from ## headings."""
+    inbox = YOUK_ROOT / "knowledge" / "research-inbox"
+    if not inbox.exists():
+        return []
+    cutoff = datetime.utcnow().timestamp() - (14 * 24 * 3600)
+    patterns: list[str] = []
+    try:
+        for f in sorted(inbox.iterdir()):
+            if f.suffix != ".md" or f.name in (".gitkeep", "README.md"):
+                continue
+            if f.stat().st_mtime < cutoff:
+                continue
+            for line in f.read_text().splitlines():
+                stripped = line.strip()
+                if stripped.startswith("## ") and "Research Scan" not in stripped:
+                    patterns.append(stripped[3:].strip())
+    except Exception:
+        pass
+    return patterns[:6]
+
+
+def _last_token_overhead() -> tuple[int | None, int | None]:
+    """Read the most recent Tokens: N/B (P%) line from the current month's audit.
+    Returns (pct, budget) or (None, None) if no token data yet."""
+    audit_dir = CLAUDE_ROOT / "audit"
+    month = datetime.utcnow().strftime("%Y-%m")
+    audit_file = audit_dir / f"{month}.md"
+    if not audit_file.exists():
+        return None, None
+    try:
+        for line in reversed(audit_file.read_text().splitlines()):
+            m = re.search(r"Tokens:\s*\d+/(\d+)\s*\((\d+)%\)", line)
+            if m:
+                return int(m.group(2)), int(m.group(1))  # (pct, budget)
+    except Exception:
+        pass
+    return None, None
 
 
 def _load_state() -> dict:
@@ -727,6 +785,30 @@ def start_session(project_dir: str) -> SessionState:
         tooling=project_scan.get("tooling"),
     )
 
+    # 3C — Surface research-inbox findings so weekly CCR output is actually seen
+    research_patterns = _scan_research_inbox()
+    if research_patterns:
+        count = len(research_patterns)
+        names = ", ".join(research_patterns[:3])
+        suffix = f" (+{count - 3} more)" if count > 3 else ""
+        session_plan.append(
+            f"{count} research finding(s) in knowledge/research-inbox/ — "
+            f"{names}{suffix}. Call add_proposal() to queue each one."
+        )
+
+    # 3D — Token overhead from last session (proves NFR-1 compliance session-to-session)
+    overhead_pct, _overhead_budget = _last_token_overhead()
+    if overhead_pct is not None:
+        if overhead_pct > 20:
+            session_plan.append(
+                f"⚠ Last session: {overhead_pct}% overhead (target ≤20%) — "
+                "consider splitting large tasks"
+            )
+        else:
+            session_plan.append(
+                f"Last session: {overhead_pct}% overhead — within target"
+            )
+
     # Persist session plan so compact_context can include it in briefs
     plan_file = YOUK_ROOT / "state" / "session-plan.json"
     try:
@@ -778,6 +860,26 @@ def end_session(
     conversation by Claude before calling session_end). These take priority over
     the phrase-detected ones and are written verbatim to contracts.md.
     """
+    # 3B — Auto-draft summary when developer passes empty string or "done"
+    # Reads the session plan written by session_start so the audit entry is useful
+    # even without a full summary. Structural fix for the 0% close-cluster rate.
+    if not summary or summary.strip().lower() in ("done", ""):
+        plan_file = YOUK_ROOT / "state" / "session-plan.json"
+        try:
+            plan_data = json.loads(plan_file.read_text())
+            plan_items = plan_data.get("plan", [])
+            plan_slug = plan_data.get("slug", "unknown")
+            if plan_items:
+                summary = (
+                    f"## Session on {plan_slug}\n\n"
+                    + "\n".join(f"- {item}" for item in plan_items[:5])
+                    + "\n\n(Auto-drafted from session plan.)"
+                )
+            else:
+                summary = "Session completed."
+        except Exception:
+            summary = "Session completed."
+
     from guardrails import check_knowledge_write
     check_knowledge_write(summary)
 
@@ -854,9 +956,46 @@ def end_session(
         for marker in ["FLUSHED", "[MENTAL MODEL UPDATE", "context-sync end", "learn complete"]
     )
 
+    # 3A — Extract generalizable contracts as cross-project proposals.
+    # Project-specific contracts already went to contracts.md above.
+    # Generalizable ones (no file paths, expresses a methodology) go to cross-project.md
+    # via the proposal queue so the founder can review before they become global knowledge.
+    cross_project_queued = 0
+    all_contracts_for_xp = explicit_contracts or detected_contracts
+    if all_contracts_for_xp and slug:
+        try:
+            from health import add_proposal as _queue_proposal
+            for i, contract in enumerate(all_contracts_for_xp):
+                if _is_generalizable(contract):
+                    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+                    xp_proposal = Proposal(
+                        id=f"PENDING-{ts}-xp{i}",
+                        target=str(YOUK_ROOT / "knowledge" / "cross-project.md"),
+                        change_description=f"Cross-project: {contract[:60]}",
+                        reason=(
+                            f"Extracted from {slug} session on "
+                            f"{datetime.utcnow().strftime('%Y-%m-%d')}. "
+                            "Generalizable pattern — not project-specific."
+                        ),
+                        before="(append to cross-project.md)",
+                        after=f"\n## {contract}\nSource project: {slug}\n",
+                        status="PENDING",
+                        proposed_date=datetime.utcnow().strftime("%Y-%m-%d"),
+                        change_type="FILE_CREATE",
+                        content=(
+                            f"\n## {contract}\n"
+                            f"Source project: {slug}\n"
+                            f"Extracted: {datetime.utcnow().strftime('%Y-%m-%d')}\n"
+                        ),
+                    )
+                    _queue_proposal(xp_proposal)
+                    cross_project_queued += 1
+        except Exception:
+            pass
+
     return {
         "knowledge_extracted": summary.count("##"),
-        "proposals_added": 0,
+        "proposals_added": cross_project_queued,
         "audit_written": True,
         "session_close_cluster_detected": session_close_detected,
         "contract_phrases_detected": detected_contracts,

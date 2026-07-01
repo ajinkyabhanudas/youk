@@ -5,4 +5,4 @@
 
 ---
 
-<!-- Proposals are appended here by youk-core.self_heal() -->
+<!-- Proposals are appended here by youk-core.self_heal() and session_end() -->
