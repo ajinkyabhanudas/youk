@@ -92,6 +92,10 @@ class SessionState:
     project_context_files: dict = field(default_factory=dict)
     # one-line trend hint from audit logs — surfaced in session card footer
     dashboard_summary: str = ""
+    # compact context brief — paste this VERBATIM in your first response to anchor
+    # contracts before any context pressure exists. Eliminates the need for a separate
+    # compact_context call at session open.
+    brief: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -110,6 +114,7 @@ class SessionState:
             "session_plan": self.session_plan,
             "project_context_files": self.project_context_files,
             "dashboard_summary": self.dashboard_summary,
+            "brief": self.brief,
         }
 
 

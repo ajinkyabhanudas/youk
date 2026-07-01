@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, "/shared")
 from models import SessionState, Proposal
-from compaction import write_contracts
+from compaction import write_contracts, build_brief as _build_brief
 from tokens import read_and_clear as _read_and_clear_tokens
 
 CLAUDE_ROOT = Path("/claude")
@@ -822,6 +822,16 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass  # non-critical — compact_context degrades gracefully without it
 
+    # Build compact brief inline so Claude can paste it verbatim in the first response.
+    # This anchors contracts before any context pressure, eliminating the need for a
+    # separate compact_context call at session open (saves 1 MCP round-trip per session).
+    # Correct sequencing: session-plan.json was just written above, so build_brief reads
+    # fresh data.
+    try:
+        brief = _build_brief(project_dir).get("brief", "")
+    except Exception:
+        brief = ""
+
     return SessionState(
         project=slug,
         resume_point=resume_point,
@@ -842,6 +852,7 @@ def start_session(project_dir: str) -> SessionState:
             "tooling": project_scan.get("tooling", {}),
         },
         dashboard_summary=dashboard_summary,
+        brief=brief,
     )
 
 
