@@ -299,10 +299,14 @@ def _queue_promotion_proposals(candidates: list[dict]) -> int:
     return queued
 
 
-def run_health_check_with_skill_signals() -> dict:
+def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     """
     Extended health check that also returns skill gap signals for evolution
     and queues promotion proposals for skills with 3+ recurring gap occurrences.
+
+    research_mode: when True, surfaces suggested research topics for each gap signal
+    so the caller can invoke youk-research with targeted queries. Does not perform
+    web research itself — keeps this function on the zero-API hot path.
     """
     report = run_health_check()
     audit_texts = _read_recent_audit_logs(days=60)
@@ -334,6 +338,24 @@ def run_health_check_with_skill_signals() -> dict:
             f"{promotion_queued} skill(s) crossed the 3-occurrence threshold — "
             "proposals queued in PENDING.md for review."
         )
+
+    if research_mode and skill_gap_signals:
+        # Derive search topics from gap descriptions — one topic per top gap signal.
+        # These are passed back to the caller to feed into youk-research.
+        # No web calls here — this function stays zero-API.
+        research_topics = []
+        for signal in skill_gap_signals[:3]:
+            skill = signal.get("skill", "")
+            gaps = signal.get("gaps", [])
+            if gaps:
+                topic = f"{skill}: {gaps[0]}"
+                research_topics.append(topic[:80])
+        if research_topics:
+            base["research_topics"] = research_topics
+            base["research_note"] = (
+                "Run /research on these topics to find external solutions: "
+                + "; ".join(research_topics)
+            )
 
     return base
 

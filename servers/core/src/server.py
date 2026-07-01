@@ -143,7 +143,7 @@ def check_command(command: str) -> dict:
 
 
 @mcp.tool()
-def self_heal() -> dict:
+def self_heal(research_mode: bool = False) -> dict:
     """
     Run a health analysis on the last 30 days of audit logs.
     Identifies skill usage patterns, skipped sessions, and improvement signals.
@@ -153,10 +153,15 @@ def self_heal() -> dict:
     For each signal: call youk-code.assess_skill(skill_name) to get proposed_additions,
     then call add_proposal() here for each one you approve.
 
+    research_mode: when True, also returns research_topics — suggested search queries
+    derived from gap signals. Pass these to the youk-research skill (/research [topic])
+    to find external solutions. Does not perform web research itself.
+
     Returns: org_score, sessions_analyzed, findings, proposals_count,
-             skill_gap_signals (if any — skills needing evolution).
+             skill_gap_signals (if any — skills needing evolution),
+             research_topics (if research_mode=True and gaps exist).
     """
-    return run_health_check_with_skill_signals()
+    return run_health_check_with_skill_signals(research_mode=research_mode)
 
 
 @mcp.tool()

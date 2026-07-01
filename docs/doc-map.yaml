@@ -54,3 +54,4 @@ skills:
   - {skill: nfr-check, refs: [README.md]}
   - {skill: adr, refs: [README.md]}
   - {skill: write-spec, refs: [README.md]}
+  - {skill: youk-research, refs: [README.md]}
