@@ -144,6 +144,10 @@ Today's plan
   Health: {org_score}/10 — {first finding, one line}
 {END IF}
 
+{IF dashboard_summary is non-empty}
+  Trend: {dashboard_summary}
+{END IF}
+
 Commands: /build · /done · /check · /health · /plan · /decide
 
 Ready. What's first?

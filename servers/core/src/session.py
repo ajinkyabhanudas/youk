@@ -407,6 +407,41 @@ def _parse_last_session_flags(audit_dir: Path) -> tuple[bool, bool]:
     return close_cluster_missed, orchestrate_pending
 
 
+def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int) -> str:
+    """One-line trend hint for the session card footer. Returns '' on any failure."""
+    try:
+        texts = [f.read_text() for f in sorted(audit_dir.glob("*.md")) if f.is_file()]
+        if not texts:
+            return ""
+        full = "\n".join(texts)
+
+        scores = [float(s) for s in re.findall(r"Org score:\s*([\d.]+)/10", full)]
+        spark = ""
+        last_score = ""
+        if scores:
+            last_score = f"org: {scores[-1]}/10"
+            if len(scores) >= 2:
+                _S = " ▁▂▃▄▅▆▇█"
+                n = len(_S) - 1
+                spark = "".join(_S[round(v / 10 * n)] for v in scores[-5:])
+
+        session_count = len(re.findall(r"^### Session —", full, re.MULTILINE))
+        gap_count = len(re.findall(r"^SkillGap:", full, re.MULTILINE))
+
+        parts: list[str] = []
+        if last_score:
+            parts.append(last_score + (f" {spark}" if spark else ""))
+        if session_count:
+            parts.append(f"{session_count} session{'s' if session_count != 1 else ''}")
+        if gap_count:
+            parts.append(f"{gap_count} gap{'s' if gap_count != 1 else ''} logged")
+        if pending_proposals:
+            parts.append(f"{pending_proposals} proposal{'s' if pending_proposals != 1 else ''} pending")
+        return "  ·  ".join(parts)
+    except Exception:
+        return ""
+
+
 def _generate_session_plan(
     slug: str,
     resume_point: str,
@@ -597,6 +632,7 @@ def start_session(project_dir: str) -> SessionState:
     pending = _count_pending_proposals()
     counter = state["session_counter"]
     health_check_due = counter % 3 == 0
+    dashboard_summary = _compute_dashboard_summary(audit_dir, pending)
 
     doc_gaps = _check_doc_freshness()
 
@@ -645,6 +681,7 @@ def start_session(project_dir: str) -> SessionState:
             "context_level": project_scan["context_level"],
             "tooling": project_scan.get("tooling", {}),
         },
+        dashboard_summary=dashboard_summary,
     )
 
 
