@@ -28,8 +28,17 @@ youk's design maps directly to the six AWS Well-Architected Framework pillars. T
 | `self_heal()` | Reads 30 days of audit logs, generates improvement proposals — never auto-applies |
 | `compact_context` | Proactive context management; fires on events (new analysis, commit, plan shift) not exchange count |
 | `doc-map.yaml` + session_plan doc-freshness | Surfaces documentation drift at session start before it accumulates |
+| `task_checkpoint(session_learnings)` | Per-task learning accumulator — pattern_trigger fires when same gap appears 2+ times in session, enabling immediate mid-session adaptation rather than deferring to session end |
+| `end_session` M+ skill gate | Returns skill_gate_warning when close_cluster=True but no capability skill was invoked — surfaces the gap at the moment it can still be corrected |
+| Org_score discipline gate | Caps org_score at 6.5 when 3+ consecutive sessions skip /done — creates a forcing function for the PRD 7.5 target |
 
 **Key invariant:** `session_end` is the only path through which improvement proposals are generated. No implicit side-effects.
+
+### Knowledge Coherence
+
+Every concept defined in PRD.md or well-architected.md has exactly one authority file. Derived files (README, PHILOSOPHY, CLAUDE.md) reference and align to the authority — they do not redefine it. When the authority file changes, the drift surfaces within one session via `_check_doc_freshness()`.
+
+**Key invariant:** No concept diverges silently across more than one session. Planned: `check_doc_graph()` MCP tool (see ADR-007) will make this queryable and enforce it automatically.
 
 ---
 
