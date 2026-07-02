@@ -41,3 +41,11 @@ Phase 1 is not a prototype. It's the permanent foundation. The MCP server patter
 ## 9. Adapt within the session, not between them
 
 The failure mode of batch self-improvement is lag: observe a gap today, fix it in two sessions. An adaptive system fixes within the session where the gap is observed. When a skill fails, `assess_skill` runs immediately. When a route is wrong, the correction is saved as a contract now, not at session end. The audit log accumulates what couldn't be fixed in-session — structural changes that need human review. Everything else closes the loop before the conversation ends.
+
+## 10. Compound the developer, not just the context
+
+A memory system that makes Claude smarter without making the developer smarter is solving the wrong problem. The failure mode is dependency: the developer needs youk to perform well, rather than performing better because of youk.
+
+`/learn` exists to prevent this. At every `/done`, it extracts the session's teachable patterns — bridging what was done to what the developer already knows, naming the concepts they encountered, flagging what was genuinely new. The output is not a file Claude reads next time. It is a structured explanation the developer can internalize.
+
+The test: after 20 sessions, does the developer catch NFR gaps before nfr_check does? Do they structure decisions before /adr prompts them? Do they write code that gets fewer review flags? If yes, youk is compounding the developer. If not, youk is compounding the context — which is useful, but not the north star.

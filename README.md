@@ -14,9 +14,11 @@
 
 ---
 
-## The compounding engineer
+## The compounding developer
 
-youk makes every Claude Code session smarter than the last. Working agreements you set verbally today are loaded automatically six months from now. Lessons from this project improve every project that follows. Skills evolve to catch your specific patterns, not generic ones.
+youk makes you a better engineer with every session — not just Claude. Working agreements you set verbally today are loaded automatically six months from now. Lessons from this project improve every project that follows. Skills evolve to catch your specific patterns, not generic ones.
+
+**The north star:** after 20 sessions, you catch NFR gaps before nfr_check does, structure decisions before /adr prompts you, and write code that gets fewer review flags. youk makes that happen. If session 33 doesn't feel faster than session 1, the loop isn't closed.
 
 | Without youk | With youk |
 |---|---|
@@ -24,6 +26,7 @@ youk makes every Claude Code session smarter than the last. Working agreements y
 | Working agreements live in chat, then vanish | Written to files, loaded at every future session |
 | Generic AI regardless of task size or stack | Routed to the right ceremony for your context |
 | Lessons lost when the session ends | Accumulated in audit log, feeding skill evolution |
+| Same gaps recur despite correction | /learn extracts patterns you internalize — not just files Claude reads |
 | Same gaps recur across projects | Detected, promoted to cross-project knowledge |
 | No institutional memory | Architecture decisions from six months ago still present today |
 
@@ -45,7 +48,7 @@ Run `/health` at any point. It returns an `org_score` (0–10) and a `loop_verdi
 | **COLD** | Fewer than 3 sessions — not enough data yet |
 | **REGRESSING** | Score falling — review recent proposals and skipped skills |
 
-The score is driven by three signals: close_cluster_rate (did you type `/done`?), session tracking rate, and token efficiency trend. The biggest lever is `/done` — every session you close the tab without it, the close_cluster_rate stays at 0% and org_score cannot exceed 6.0 regardless of everything else.
+The score is driven by three signals: close_cluster_rate (did you type `/done`?), skill_invocation_rate (did a capability skill fire?), and token efficiency. The biggest lever is `/done` — every session you close the tab without it, the close_cluster_rate stays at 0% and org_score cannot exceed 6.0. A discipline gate caps org_score at 6.5 if 3+ consecutive sessions skip `/done` — the gate lifts the moment you fire `/done` again. The 7.5 target requires both `/done` discipline and regular capability skill invocations.
 
 **What to do when STALLED:** type `/done` at the end of the next 3 sessions. The score moves within one `/health` cycle after that.
 
@@ -256,7 +259,7 @@ Five commands compose the underlying skills. Type them in Claude Code — youk r
 |---------|---------|------|
 | `/start` | session_start → get_proposals → welcome card | Beginning any session — also "activate youk" |
 | `/build` | route_task → nfr_check (M+) → dev-loop | Implementing a feature |
-| `/done` | code-review → verify → humanize | Just finished implementing |
+| `/done` | code-review → verify → humanize → learn | Just finished implementing |
 | `/check` | code-review → security-review (if auth in scope) | Before committing |
 | `/decide` | adr | Making an architectural choice |
 | `/health` | self_heal() | "How is the system doing?" |
@@ -413,7 +416,7 @@ Build must run from the repo root. The Makefile handles this — use `make build
 
 ## Philosophy
 
-Eight principles drive every design decision in youk. The full document is [PHILOSOPHY.md](PHILOSOPHY.md). The short version:
+Ten principles drive every design decision in youk. The full document is [PHILOSOPHY.md](PHILOSOPHY.md). The short version:
 
 1. **Ambient over activated** — no "activate" phrase, always on
 2. **Extract, don't log** — knowledge is insights, not transcripts
@@ -423,6 +426,8 @@ Eight principles drive every design decision in youk. The full document is [PHIL
 6. **Variants are forms of intelligence** — specialization, not sprawl
 7. **The repo is the truth** — everything important is in git
 8. **Build the foundation right, then build fast** — Phase 1 is permanent
+9. **Adapt within the session, not between them** — gaps fixed now, not next time
+10. **Compound the developer, not just the context** — /learn exists to make patterns explicit enough to internalize; the failure mode is making Claude smarter while leaving you unchanged
 
 ---
 
