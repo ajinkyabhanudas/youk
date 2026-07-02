@@ -146,9 +146,11 @@ MCP_LIST='{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 _handshake_tool_count() {
   local image="$1"; shift
   local mount_opts=("$@")
-  printf '%s\n%s\n%s\n' "$MCP_INIT" "$MCP_DONE" "$MCP_LIST" | \
-    docker run -i --rm "${mount_opts[@]}" "$image" 2>/dev/null | \
-    python3 -c "
+  local count=0 attempt
+  for attempt in 1 2 3; do
+    count=$(printf '%s\n%s\n%s\n' "$MCP_INIT" "$MCP_DONE" "$MCP_LIST" | \
+      docker run -i --rm "${mount_opts[@]}" "$image" 2>/dev/null | \
+      python3 -c "
 import sys, json
 count = 0
 for line in sys.stdin:
@@ -163,7 +165,11 @@ for line in sys.stdin:
     except Exception:
         pass
 print(count)
-" 2>/dev/null || echo "0"
+" 2>/dev/null || echo "0")
+    [[ "${count:-0}" -gt 0 ]] && break
+    sleep 1
+  done
+  echo "${count:-0}"
 }
 
 if docker image inspect youk-core:latest &>/dev/null 2>&1; then
