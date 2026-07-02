@@ -197,6 +197,11 @@ echo ""
 
 if [[ $FAIL -eq 0 ]]; then
   echo "  youk is healthy."
+  echo ""
+  echo "  Workflow note:"
+  echo "  • servers/ code changes are live immediately (no rebuild needed)."
+  echo "  • After changing requirements.txt or servers/shared/, run: make build"
+  echo "  • After make build, restart Claude Code to pick up new dependencies."
   exit 0
 else
   echo "  $FAIL check(s) failed. Fix the items above, then re-run:"

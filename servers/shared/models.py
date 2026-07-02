@@ -175,6 +175,21 @@ class Proposal:
     target_section: str = ""  # heading or key within the target file
     content: str = ""         # the new content to write
 
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "target": self.target,
+            "change_description": self.change_description,
+            "reason": self.reason,
+            "before": self.before,
+            "after": self.after,
+            "status": self.status,
+            "proposed_date": self.proposed_date,
+            "change_type": self.change_type,
+            "target_section": self.target_section,
+            "content": self.content,
+        }
+
     def to_markdown(self) -> str:
         lines = [
             f"## {self.id} — {self.proposed_date}",

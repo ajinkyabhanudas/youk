@@ -598,25 +598,53 @@ def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int) -> str:
         scores = [float(s) for s in re.findall(r"Org score:\s*([\d.]+)/10", full)]
         spark = ""
         last_score = ""
+        velocity_str = ""
         if scores:
             last_score = f"org: {scores[-1]}/10"
             if len(scores) >= 2:
                 _S = " ▁▂▃▄▅▆▇█"
                 n = len(_S) - 1
                 spark = "".join(_S[round(v / 10 * n)] for v in scores[-5:])
+                delta = round(scores[-1] - scores[-2], 1)
+                if delta > 0:
+                    velocity_str = f"▲{delta}"
+                elif delta < 0:
+                    velocity_str = f"▼{abs(delta)}"
 
         session_count = len(re.findall(r"^### Session —", full, re.MULTILINE))
         gap_count = len(re.findall(r"^SkillGap:", full, re.MULTILINE))
 
+        # Read improvement-metrics.json for close-cluster rate
+        metrics_file = YOUK_ROOT / "state" / "improvement-metrics.json"
+        close_rate_str = ""
+        try:
+            import json as _j
+            if metrics_file.exists():
+                entries = _j.loads(metrics_file.read_text()).get("entries", [])
+                if entries:
+                    last = entries[-1]
+                    rate = last.get("close_cluster_rate", None)
+                    if rate is not None:
+                        close_rate_str = f"/done: {int(rate * 100)}%"
+        except Exception:
+            pass
+
         parts: list[str] = []
-        if last_score:
-            parts.append(last_score + (f" {spark}" if spark else ""))
+        score_part = last_score
+        if velocity_str:
+            score_part += f" {velocity_str}"
+        if spark:
+            score_part += f" {spark}"
+        if score_part:
+            parts.append(score_part)
         if session_count:
             parts.append(f"{session_count} session{'s' if session_count != 1 else ''}")
         if gap_count:
             parts.append(f"{gap_count} gap{'s' if gap_count != 1 else ''} logged")
         if pending_proposals:
             parts.append(f"{pending_proposals} proposal{'s' if pending_proposals != 1 else ''} pending")
+        if close_rate_str:
+            parts.append(close_rate_str)
         return "  ·  ".join(parts)
     except Exception:
         return ""
@@ -850,49 +878,59 @@ def _count_pending_proposals() -> int:
 
 def _merge_stale_checkpoint() -> None:
     """
-    If compact_context ran in a previous session but /done was never called,
-    a session-checkpoint.json exists with no matching audit entry.
-    Auto-write a checkpoint audit entry so the session isn't completely invisible
-    to self_heal and org_score calculations.
-    Skips checkpoints written within the last 5 minutes (same-session race guard).
-    Always deletes the checkpoint file regardless of whether we merged.
-    """
-    checkpoint_file = YOUK_ROOT / "state" / "session-checkpoint.json"
-    if not checkpoint_file.exists():
-        return
-    try:
-        cp = json.loads(checkpoint_file.read_text())
-        cp_timestamp = cp.get("timestamp", "")
-        cp_slug = cp.get("slug", "unknown")
-        cp_plan = cp.get("plan_items", [])
+    Recover audit entries for sessions that ended without /done.
+    Checks two recovery sources (most-complete wins per session):
 
-        if cp_timestamp:
-            cp_dt = datetime.strptime(cp_timestamp, "%Y-%m-%dT%H:%M:%SZ")
-            age_minutes = (datetime.utcnow() - cp_dt).total_seconds() / 60
-            if age_minutes > 5:
-                audit_dir = CLAUDE_ROOT / "audit"
-                audit_dir.mkdir(parents=True, exist_ok=True)
-                month = cp_timestamp[:7]
-                audit_file = audit_dir / f"{month}.md"
-                plan_text = "\n".join(f"- {item}" for item in cp_plan[:3]) if cp_plan else ""
-                entry = (
-                    f"\n### Session — {cp_timestamp} (checkpoint)\n"
-                    f"Project: {cp_slug}\n"
-                    f"Session ended without /done — compact_context checkpoint recovered.\n"
-                    f"{plan_text}\n"
-                    f"Skills: none\n"
-                    f"CloseCluster: no\n"
-                    f"Commits: unknown\n"
-                )
-                with open(audit_file, "a") as f:
-                    f.write(entry)
-    except Exception:
-        pass  # never block session_start for checkpoint errors
-    finally:
+    1. session-open.json — written at every session_start, cleared at session_end.
+       Covers ALL sessions, even those that never called compact_context.
+
+    2. session-checkpoint.json — written by compact_context. Cleared at session_end
+       and superseded by session-open.json (compact always clears session-open).
+
+    Both files are deleted after being merged. Age guard: skip files < 5 min old
+    (same-session race: session_start just wrote the file for THIS session).
+    """
+    audit_dir = CLAUDE_ROOT / "audit"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+
+    for fname, label in [
+        ("session-open.json", "tab-close"),
+        ("session-checkpoint.json", "compact-checkpoint"),
+    ]:
+        stale_file = YOUK_ROOT / "state" / fname
+        if not stale_file.exists():
+            continue
         try:
-            checkpoint_file.unlink()
+            cp = json.loads(stale_file.read_text())
+            cp_timestamp = cp.get("timestamp", "")
+            cp_slug = cp.get("slug", "unknown")
+            cp_plan = cp.get("plan_items", [])
+
+            if cp_timestamp:
+                cp_dt = datetime.strptime(cp_timestamp, "%Y-%m-%dT%H:%M:%SZ")
+                age_minutes = (datetime.utcnow() - cp_dt).total_seconds() / 60
+                if age_minutes > 5:
+                    month = cp_timestamp[:7]
+                    audit_file = audit_dir / f"{month}.md"
+                    plan_text = "\n".join(f"- {item}" for item in cp_plan[:3]) if cp_plan else ""
+                    entry = (
+                        f"\n### Session — {cp_timestamp} ({label})\n"
+                        f"Project: {cp_slug}\n"
+                        f"Session ended without /done.\n"
+                        f"{plan_text}\n"
+                        f"Skills: none\n"
+                        f"CloseCluster: no\n"
+                        f"Commits: unknown\n"
+                    )
+                    with open(audit_file, "a") as f:
+                        f.write(entry)
         except Exception:
-            pass
+            pass  # never block session_start for recovery errors
+        finally:
+            try:
+                stale_file.unlink()
+            except Exception:
+                pass
 
 
 def start_session(project_dir: str) -> SessionState:
@@ -1069,6 +1107,20 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass  # non-critical — compact_context degrades gracefully without it
 
+    # Write session-open.json so every session leaves an audit trail even if the tab
+    # is closed without /done or compact_context ever firing.
+    # _merge_stale_checkpoint() reads this at the NEXT session_start and writes the entry.
+    # session_end() and compact_context() clear it so closed sessions don't double-count.
+    open_file = YOUK_ROOT / "state" / "session-open.json"
+    try:
+        open_file.write_text(json.dumps({
+            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "slug": slug,
+            "plan_items": session_plan[:3],
+        }, indent=2))
+    except Exception:
+        pass
+
     # Build compact brief inline so Claude can paste it verbatim in the first response.
     # This anchors contracts before any context pressure, eliminating the need for a
     # separate compact_context call at session open (saves 1 MCP round-trip per session).
@@ -1185,14 +1237,17 @@ def end_session(
     with open(audit_file, "a") as f:
         f.write(entry)
 
-    # Clear the compact_context checkpoint — session_end is the authoritative audit entry.
-    # If the checkpoint isn't cleared, next session_start would write a duplicate entry.
-    _checkpoint = YOUK_ROOT / "state" / "session-checkpoint.json"
-    if _checkpoint.exists():
-        try:
-            _checkpoint.unlink()
-        except Exception:
-            pass
+    # Clear both recovery files — session_end is the authoritative audit entry.
+    # If these aren't cleared, next session_start would write duplicate entries.
+    for _recovery_file in [
+        YOUK_ROOT / "state" / "session-checkpoint.json",
+        YOUK_ROOT / "state" / "session-open.json",
+    ]:
+        if _recovery_file.exists():
+            try:
+                _recovery_file.unlink()
+            except Exception:
+                pass
 
     # Write contracts to disk so they survive future sessions and compact_context can pin them
     current_state = _load_state()

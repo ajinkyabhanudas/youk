@@ -31,6 +31,12 @@ build: ## Build both Docker images
 .PHONY: rebuild
 rebuild: clean build ## Full rebuild from scratch (removes cached layers)
 
+# Note: servers/ source code is live from the volume mount — no rebuild needed for code changes.
+# Only rebuild when requirements.txt or servers/shared/ changes.
+# After rebuild, restart Claude Code to pick up new dependencies.
+
+
+
 .PHONY: clean
 clean: ## Remove Docker images and stopped containers
 	docker rmi youk-core:latest youk-code:latest 2>/dev/null || true

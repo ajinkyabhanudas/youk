@@ -352,6 +352,97 @@ def _queue_promotion_proposals(candidates: list[dict]) -> int:
     return queued
 
 
+def _compute_improvement_velocity(audit_texts: list[str], current_score: float) -> dict:
+    """
+    Measure whether youk is getting better each health cycle.
+
+    North star: "youk should figure out what it needs to improve and build further."
+    This metric answers: is the self-improvement loop actually running and converging?
+
+    Returns a dict with:
+    - org_score_history: last 5 org_score values (oldest → newest)
+    - velocity: current_score - previous_score (+ = improving, - = regressing)
+    - proposals_applied_total: count of APPLIED entries in PENDING.md (work completed)
+    - gaps_detected_last30: SkillGap count from last 30 days (awareness signal)
+    - close_cluster_rate: pct of sessions that called /done (loop closure rate)
+    - evolution_loop_active: True when gaps are detected AND proposals exist
+    - loop_verdict: one-line summary of loop health
+    """
+    full_text = "\n".join(audit_texts)
+
+    # Parse historical org_scores from audit entries ("Org score: X/10")
+    hist_matches = re.findall(r"Org score:\s*([\d.]+)/10", full_text)
+    score_history = [float(s) for s in hist_matches]
+    score_history.append(current_score)  # include current
+    score_history = score_history[-5:]  # keep last 5
+
+    velocity = round(current_score - score_history[-2], 1) if len(score_history) >= 2 else 0.0
+
+    # Count APPLIED proposals (completed improvement work)
+    proposals_applied = 0
+    if PROPOSALS_FILE.exists():
+        for line in PROPOSALS_FILE.read_text().splitlines():
+            if "**Status:** APPLIED" in line:
+                proposals_applied += 1
+
+    # Count SkillGaps in last 30 days (awareness — system is detecting issues)
+    gaps_last30 = full_text.count("SkillGap:")
+
+    # Close-cluster rate (loop-closure — sessions that fully closed)
+    sessions = _parse_audit_sessions(audit_texts)
+    total = len(sessions)
+    close_count = sum(1 for s in sessions if s["close_cluster"])
+    close_rate = round(close_count / total, 2) if total else 0.0
+
+    # Loop health verdict
+    evolution_active = gaps_last30 > 0 or proposals_applied > 0
+    if close_rate == 0.0:
+        verdict = "STALLED — /done never fires; audit data is thin; loop is not closing"
+    elif velocity > 0:
+        verdict = f"IMPROVING — org_score +{velocity} from last cycle"
+    elif velocity < 0:
+        verdict = f"REGRESSING — org_score {velocity} from last cycle; review skipped skills"
+    elif evolution_active:
+        verdict = "STEADY — no score change this cycle; gaps being logged, proposals building"
+    else:
+        verdict = "COLD — no gaps, no proposals; loop starved"
+
+    # Persist metrics for dashboard trend view
+    metrics_file = YOUK_ROOT / "state" / "improvement-metrics.json"
+    try:
+        import json
+        existing_entries = []
+        if metrics_file.exists():
+            try:
+                existing_entries = json.loads(metrics_file.read_text()).get("entries", [])
+            except Exception:
+                pass
+        entry = {
+            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "org_score": current_score,
+            "velocity": velocity,
+            "proposals_applied": proposals_applied,
+            "gaps_last30": gaps_last30,
+            "close_cluster_rate": close_rate,
+        }
+        existing_entries.append(entry)
+        existing_entries = existing_entries[-20:]  # keep last 20 health cycles
+        metrics_file.parent.mkdir(parents=True, exist_ok=True)
+        metrics_file.write_text(json.dumps({"entries": existing_entries}, indent=2))
+    except Exception:
+        pass
+
+    return {
+        "org_score_history": score_history,
+        "velocity": velocity,
+        "proposals_applied_total": proposals_applied,
+        "gaps_detected_last30": gaps_last30,
+        "close_cluster_rate": close_rate,
+        "evolution_loop_active": evolution_active,
+        "loop_verdict": verdict,
+    }
+
+
 def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     """
     Extended health check that also returns skill gap signals for evolution
@@ -364,6 +455,7 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     report = run_health_check()
     audit_texts = _read_recent_audit_logs(days=60)
     skill_gap_signals = _parse_skill_gap_signals(audit_texts)
+    velocity = _compute_improvement_velocity(audit_texts, report.org_score)
 
     # Auto-queue proposals for skills that have crossed the promotion threshold
     promotion_candidates = _analyze_promotion_candidates(audit_texts)
@@ -375,6 +467,7 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         "findings": report.findings,
         "proposals": [p.to_dict() for p in report.proposals],
         "proposals_count": len(report.proposals),
+        "improvement_velocity": velocity,
     }
 
     if skill_gap_signals:
