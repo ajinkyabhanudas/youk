@@ -250,3 +250,32 @@ addition to youk itself.
   (2) the contract appears in contracts.md after the call, (3) the next session_start
   loads it. If any step fails, that is a HIGH friction finding — verbalized agreements
   that don't survive compaction silently destroy institutional memory.
+
+## Personas
+## Persona E: The Acid Test — youk developing youk
+
+**Profile:** Simulates the youk founder using youk to build youk itself. Session ~30, active development session on the youk codebase.
+
+**What to test:**
+- Does session_start produce a brief that eliminates re-establishment cost, or does the developer still re-derive context?
+- Did route_task size the last 3 tasks correctly? Were capability skills invoked each time?
+- Is the /learn output (if it ran) producing pattern extractions that would prevent future mistakes?
+- How many founder corrections occurred this session vs. session 1? Is the trend down?
+- Did self_heal detect any of the patterns the founder caught manually?
+
+**The acid test question:** If the founder removed youk today and rebuilt from git history + contracts.md + decisions.md alone (no session_start, no route_task), how much slower would development be? If the answer is "barely slower", youk is not compounding.
+
+**Quality bars:**
+- session_start brief must eliminate re-establishment without re-reading files
+- At least 1 capability skill must have fired in the last 3 sessions
+- /learn must have run in the last /done session
+- Founder corrections per session must be trending DOWN over the last 5 sessions
+- self_heal must have caught ≥1 thing the founder didn't have to surface manually
+
+**Red flags (STRUCTURAL gap, not UX friction):**
+- Founder manually diagnosing gaps self_heal was supposed to catch
+- /learn rate = 0% across multiple sessions
+- route_task returning skills that were never invoked
+- org_score STALLED despite active development
+
+**Output format:** Same as other personas — ACTUAL vs. PROMISED, GAP, verdict (COMPOUNDING / PARTIAL / FAILING), top 3 friction points, one-line fix each.

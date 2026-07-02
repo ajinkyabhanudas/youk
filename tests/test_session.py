@@ -266,6 +266,106 @@ class TestTaskCheckpoint:
         entry = json.loads(cp_file.read_text().splitlines()[0])
         assert len(entry["task"]) <= 200
 
+    def test_session_learnings_written_to_checkpoint(self, youk_root, tmp_path):
+        """session_learnings dict is persisted in checkpoint entry."""
+        import json
+        import session
+        session.task_checkpoint(
+            str(tmp_path), "add auth", size="M",
+            session_learnings={"skill_gap": "nfr_check skipped", "contract_unsaved": "always async"},
+        )
+        cp_file = youk_root / "state" / "task-checkpoints.jsonl"
+        entry = json.loads(cp_file.read_text().splitlines()[0])
+        assert entry["learnings"]["skill_gap"] == "nfr_check skipped"
+        assert entry["learnings"]["contract_unsaved"] == "always async"
+
+    def test_no_pattern_trigger_on_first_occurrence(self, youk_root, tmp_path):
+        """A gap appearing once does NOT trigger pattern_trigger."""
+        import session
+        result = session.task_checkpoint(
+            str(tmp_path), "task 1", size="M",
+            session_learnings={"skill_gap": "nfr_check skipped"},
+        )
+        assert "pattern_trigger" not in result
+
+    def test_pattern_trigger_on_second_occurrence(self, youk_root, tmp_path):
+        """Same gap type appearing in 2 checkpoints returns pattern_trigger."""
+        import session
+        session.task_checkpoint(
+            str(tmp_path), "task 1", size="M",
+            session_learnings={"skill_gap": "nfr_check skipped"},
+        )
+        result = session.task_checkpoint(
+            str(tmp_path), "task 2", size="M",
+            session_learnings={"skill_gap": "nfr_check skipped again"},
+        )
+        assert "pattern_trigger" in result
+        assert any("skill_gap" in t for t in result["pattern_trigger"])
+
+    def test_pattern_action_present_when_trigger_fires(self, youk_root, tmp_path):
+        """pattern_action guidance included alongside pattern_trigger."""
+        import session
+        session.task_checkpoint(str(tmp_path), "t1", size="M",
+                                session_learnings={"route_correction": "S→M"})
+        result = session.task_checkpoint(str(tmp_path), "t2", size="M",
+                                         session_learnings={"route_correction": "S→M again"})
+        assert "pattern_action" in result
+
+    def test_xs_ignores_session_learnings(self, youk_root, tmp_path):
+        """XS tasks do not write checkpoint or accumulate patterns."""
+        import session
+        result = session.task_checkpoint(
+            str(tmp_path), "tiny fix", size="XS",
+            session_learnings={"skill_gap": "something"},
+        )
+        cp_file = youk_root / "state" / "task-checkpoints.jsonl"
+        assert not cp_file.exists()
+        assert "pattern_trigger" not in result
+
+
+class TestEndSessionSkillGate:
+    """end_session warns when close_cluster=True but no capability skill invoked."""
+
+    def test_skill_gate_warning_when_no_capability_skill(self, youk_root, tmp_path, monkeypatch):
+        """Warning returned when closing with no capability skill."""
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        result = session.end_session(
+            summary="did some work",
+            commits_made=False,
+            skills_used=["self_heal"],  # meta skill only
+            close_cluster=True,
+        )
+        assert "skill_gate_warning" in result
+        assert result["skill_gate_warning"]
+
+    def test_no_skill_gate_warning_when_capability_used(self, youk_root, tmp_path, monkeypatch):
+        """No warning when a capability skill was invoked."""
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        result = session.end_session(
+            summary="did some work",
+            commits_made=False,
+            skills_used=["code-review"],
+            close_cluster=True,
+        )
+        assert "skill_gate_warning" not in result
+
+    def test_no_skill_gate_warning_when_not_closing(self, youk_root, tmp_path, monkeypatch):
+        """Gate only fires when close_cluster=True — /close without skills is fine."""
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        result = session.end_session(
+            summary="quick close",
+            commits_made=False,
+            skills_used=[],
+            close_cluster=False,
+        )
+        assert "skill_gate_warning" not in result
+
 
 class TestEndSessionCheckpointRollup:
     """end_session rolls up task-checkpoints.jsonl into the audit entry."""

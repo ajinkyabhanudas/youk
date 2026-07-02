@@ -1248,7 +1248,12 @@ def start_session(project_dir: str) -> SessionState:
     )
 
 
-def task_checkpoint(project_dir: str, task_label: str, size: str = "M") -> dict:
+def task_checkpoint(
+    project_dir: str,
+    task_label: str,
+    size: str = "M",
+    session_learnings: dict | None = None,
+) -> dict:
     """
     Write a mid-session checkpoint when a task completes.
 
@@ -1256,10 +1261,17 @@ def task_checkpoint(project_dir: str, task_label: str, size: str = "M") -> dict:
     M+: compact + appends one line to state/task-checkpoints.jsonl so session_end
     can roll up a structured task history in the final audit entry.
 
-    Returns: brief (paste verbatim), checkpoint_written.
+    session_learnings: optional observations from the current sub-task, e.g.
+      {"contract_unsaved": "always use async", "skill_gap": "nfr_check skipped",
+       "route_correction": "S→M override"}
+    When the same gap_type appears 2+ times across checkpoints, returns
+    pattern_trigger so Claude can act immediately (mid-session adaptation).
+
+    Returns: brief (paste verbatim), checkpoint_written, pattern_trigger (if any).
     """
     brief_result = _build_brief(project_dir)
     checkpoint_written = False
+    pattern_trigger: list[str] = []
 
     if size.upper() not in ("XS", "S"):
         cp = {
@@ -1267,6 +1279,9 @@ def task_checkpoint(project_dir: str, task_label: str, size: str = "M") -> dict:
             "task": task_label[:200],
             "size": size.upper(),
         }
+        if session_learnings:
+            cp["learnings"] = {k: str(v)[:200] for k, v in session_learnings.items()}
+
         cp_file = YOUK_ROOT / "state" / "task-checkpoints.jsonl"
         try:
             cp_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1276,11 +1291,41 @@ def task_checkpoint(project_dir: str, task_label: str, size: str = "M") -> dict:
         except Exception:
             pass
 
-    return {
+        # Pattern accumulator: count gap types across all checkpoints this session.
+        # When the same gap type appears 2+ times, surface it as a pattern_trigger
+        # so Claude can act immediately (mid-session adaptation) without waiting for /done.
+        if checkpoint_written:
+            try:
+                all_lines = [
+                    json.loads(ln)
+                    for ln in cp_file.read_text().splitlines()
+                    if ln.strip()
+                ]
+                gap_counts: dict[str, int] = {}
+                for entry in all_lines:
+                    for gap_type in entry.get("learnings", {}):
+                        gap_counts[gap_type] = gap_counts.get(gap_type, 0) + 1
+                pattern_trigger = [
+                    f"{gap_type} (seen {count}x this session)"
+                    for gap_type, count in gap_counts.items()
+                    if count >= 2
+                ]
+            except Exception:
+                pass
+
+    result = {
         "brief": brief_result.get("brief", ""),
         "checkpoint_written": checkpoint_written,
         "instruction": "Paste the 'brief' verbatim in your response to anchor context.",
     }
+    if pattern_trigger:
+        result["pattern_trigger"] = pattern_trigger
+        result["pattern_action"] = (
+            "Recurring pattern detected — act now per mid-session adaptation rules: "
+            "assess_skill → add_proposal → apply_proposal(confirmed=True) for SKILL_EDIT gaps. "
+            "Do not defer to /done."
+        )
+    return result
 
 
 def end_session(
@@ -1467,6 +1512,16 @@ def end_session(
         except Exception:
             pass
 
+    # M+ skill gate: if close_cluster requested but no capability skill was used,
+    # surface a warning so Claude can invoke one retroactively before the loop closes.
+    skill_gate_warning = ""
+    if close_cluster and not _has_capability_skill(skills_used or []):
+        skill_gate_warning = (
+            "No capability skill invoked this session. "
+            "Invoke one retroactively (code-review at minimum) or pass "
+            "skill_gaps={'skill': ['reason']} to document the miss."
+        )
+
     return {
         "knowledge_extracted": summary.count("##"),
         "proposals_added": cross_project_queued,
@@ -1475,4 +1530,5 @@ def end_session(
         "contract_phrases_detected": detected_contracts,
         "contracts_saved": contracts_saved,
         "add_to_contracts_prompt": len(detected_contracts) > 0 and contracts_saved == 0,
+        **({"skill_gate_warning": skill_gate_warning} if skill_gate_warning else {}),
     }
