@@ -44,7 +44,11 @@ doctor: ## Health check — every failure includes a Fix: line
 	@bash scripts/doctor.sh
 
 .PHONY: test
-test: test-core test-code ## Run MCP handshake tests on both servers
+test: test-unit test-core test-code ## Run all tests: unit + MCP handshakes
+
+.PHONY: test-unit
+test-unit: ## Run unit tests (no Docker required)
+	pytest tests/ -v
 
 MCP_INIT = {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}
 MCP_DONE = {"jsonrpc":"2.0","method":"notifications/initialized","params":{}}

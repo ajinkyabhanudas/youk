@@ -19,10 +19,13 @@ jobs:
           cache: pip
 
       - name: Install lint dependencies
-        run: pip install ruff pyyaml
+        run: pip install ruff pyyaml pytest
 
       - name: Ruff check
         run: ruff check servers/
+
+      - name: Unit tests
+        run: pytest tests/ -v
 
       - name: Validate config YAML
         run: |

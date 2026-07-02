@@ -220,6 +220,20 @@ def _detect_project_type(project_dir: str) -> str:
             py_type = _check_python(sub_path)
             if py_type:
                 return py_type
+            # One level deeper: e.g. servers/core/, servers/code/
+            for nested in sorted(sub_path.iterdir()):
+                if nested.is_dir():
+                    py_type = _check_python(nested)
+                    if py_type:
+                        return py_type
+
+    # Dockerfile-based Python: deps inside Docker, no requirements.txt at known paths
+    for df in sorted(p.glob("**/Dockerfile"))[:10]:
+        try:
+            if "FROM python:" in df.read_text():
+                return "python"
+        except Exception:
+            pass
 
     if (p / "package.json").exists():
         try:
@@ -822,7 +836,16 @@ def _count_pending_proposals() -> int:
     pending_file = YOUK_ROOT / "knowledge" / "proposals" / "PENDING.md"
     if not pending_file.exists():
         return 0
-    return pending_file.read_text().count("## PENDING-")
+    content = pending_file.read_text()
+    count = 0
+    for block in content.split("## PENDING-")[1:]:
+        status_line = next(
+            (ln for ln in block.splitlines() if "**Status:**" in ln),
+            "",
+        )
+        if "APPLIED" not in status_line:
+            count += 1
+    return count
 
 
 def _merge_stale_checkpoint() -> None:
