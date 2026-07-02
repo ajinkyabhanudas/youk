@@ -70,6 +70,7 @@ because a senior teammate said to. Doesn't know what MCP servers are.
 - First message is longer than they'll read
 - No explanation of what just happened (youk loaded context, but how would they know?)
 - They'd need to type /done and don't know it — default tab-close loses everything
+- They say "always use TypeScript" mid-session — does save_contract fire immediately? If not, that agreement is gone the next time Claude auto-compacts or when the tab closes
 
 **Output format**:
 ```
@@ -243,3 +244,9 @@ addition to youk itself.
   enough detail that apply_proposal could execute it without further input.
 - **Team gap honesty**: Persona C always surfaces the shared-knowledge-store gap. This
   is a structural limitation, not a bug. Surface it accurately rather than eliding it.
+- **Contract capture check (required for every persona)**: At some point during each
+  persona's simulation, they must verbalize a working agreement ("always X", "never Y",
+  "from now on Z"). Verify: (1) save_contract fires immediately, not at /done,
+  (2) the contract appears in contracts.md after the call, (3) the next session_start
+  loads it. If any step fails, that is a HIGH friction finding — verbalized agreements
+  that don't survive compaction silently destroy institutional memory.

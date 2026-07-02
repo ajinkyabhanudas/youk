@@ -89,6 +89,7 @@ youk is two Docker containers registered as MCP servers in Claude Code:
 - `route_task(task)` — sizes the task (XS→XL), returns skill list and ceremony level
 - `optimize_intent(raw_input)` — compresses vague/multi-part input into a structured intent brief before routing
 - `check_command(command)` — enforces the no-destructive hard rule at tool level
+- `save_contract(contract, project_dir)` — **immediately** writes a working agreement to `contracts.md`; call this at the moment a contract phrase is detected, not at session end — contracts in conversation are erased by auto-compaction, contracts in the file are permanent
 - `self_heal()` — analyzes audit logs, generates improvement proposals
 - `add_proposal(title, rationale, action, target, content)` — queue an improvement proposal to PENDING.md (called by skills and by Claude directly)
 - `get_proposals()` / `apply_proposal(id, confirmed)` — proposal review and two-step apply; `apply_proposal` supports `CODE_EDIT` change_type to replace named functions in `.py` files within the youk repo

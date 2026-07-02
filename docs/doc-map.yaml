@@ -15,6 +15,7 @@ mcp_tools:
     - {tool: optimize_intent, refs: [README.md]}
     - {tool: route_task, refs: [README.md, docs/claude-md-template.md]}
     - {tool: check_command, refs: [README.md]}
+    - {tool: save_contract, refs: [README.md, docs/claude-md-template.md]}
     - {tool: self_heal, refs: [README.md, docs/claude-md-template.md]}
     - {tool: add_proposal, refs: [README.md]}
     - {tool: get_proposals, refs: [README.md]}

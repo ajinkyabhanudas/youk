@@ -16,7 +16,7 @@ from health import (
 )
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
 from intent import optimize_intent as _optimize_intent
-from compaction import build_brief
+from compaction import build_brief, write_contracts
 from tokens import init_token_tracker, record_checkpoint
 
 YOUK_ROOT = Path("/youk")
@@ -252,6 +252,32 @@ def apply_proposal(proposal_id: str, confirmed: bool = False) -> dict:
         return _apply_proposal(proposal_id, confirmed)
     except ValueError as e:
         return {"applied": False, "error": str(e), "rule_id": "no-auto-apply-proposals"}
+
+
+@mcp.tool()
+def save_contract(contract: str, project_dir: str) -> dict:
+    """
+    Immediately write a working agreement to contracts.md.
+
+    Call this the moment a contract phrase is detected in conversation —
+    do NOT wait for session_end. Contracts held only in conversation context
+    are lost to Claude's auto-compaction. Once written here, compact_context
+    pins them verbatim in every future brief and session_start loads them first.
+
+    contract: The verbatim agreement (e.g. "always run ruff before committing").
+    project_dir: Current project directory (same as session_start).
+
+    Returns: saved, contract, slug, contracts_file, note.
+    """
+    slug = Path(project_dir).name or "unknown"
+    added = write_contracts(slug, [contract])
+    return {
+        "saved": added > 0,
+        "contract": contract,
+        "slug": slug,
+        "contracts_file": f"knowledge/projects/{slug}/contracts.md",
+        "note": "already in contracts.md" if added == 0 else "written — will survive compaction",
+    }
 
 
 @mcp.tool()

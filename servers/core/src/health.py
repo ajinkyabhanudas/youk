@@ -156,6 +156,28 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
             "session_end(skill_gaps=...) to start feeding the loop."
         )
 
+    # Contract capture health: flag when active project has many sessions but no contracts
+    # This catches the silent failure where contracts were verbalized but never persisted
+    projects_dir = YOUK_ROOT / "knowledge" / "projects"
+    if total >= 5 and projects_dir.exists():
+        for proj in projects_dir.iterdir():
+            contracts_file = proj / "contracts.md"
+            has_contracts = (
+                contracts_file.exists()
+                and any(
+                    line.strip().startswith("- ")
+                    for line in contracts_file.read_text().splitlines()
+                )
+            )
+            if not has_contracts:
+                findings.append(
+                    f"Project '{proj.name}' has {total} sessions but no contracts in contracts.md. "
+                    "Working agreements stated in conversation are not surviving compaction. "
+                    "Call save_contract(agreement, cwd) the moment a contract is verbalized — "
+                    "do not wait for /done."
+                )
+                break  # one finding is enough — same root cause
+
     if not findings:
         findings.append(f"Org health nominal. Score: {score}/10.")
 
