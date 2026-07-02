@@ -197,7 +197,7 @@ Before the read -rs ANTHROPIC_API_KEY prompt, add: echo "  youk uses this for qu
 **Reason:** Persona B (senior) and D (returning): project_type returns "unknown" for every session in a Python/Docker project with Makefile, requirements.txt, and pytest — make_targets and ci_providers are also empty, eroding trust in youk's routing intelligence.
 **Before:** 
 **After:** In _scan_project_tooling() and project_type detection, extend the Makefile search to check both project_dir and project_dir/.. (one level up), and scan for Python markers (requirements.txt, pyproject.toml, setup.py, *.py files in src/) in addition to package.json. When Dockerfile is present with FRO
-**Status:** PENDING
+**Status:** APPLIED — 2026-07-02
 **ChangeType:** CODE_EDIT
 **TargetSection:** _scan_project_tooling
 **Content:**
@@ -213,7 +213,7 @@ In _scan_project_tooling() and project_type detection, extend the Makefile searc
 **After:** In _generate_session_plan(), when session_counter <= 3, replace internal jargon items with plain-English equivalents:
 - "session_end with explicit_contracts" → "Type /done when you're finished so I remember this session next time"
 - "Review N pending self-heal proposal(s)" → omit entirely for sessio
-**Status:** PENDING
+**Status:** APPLIED — 2026-07-02
 **ChangeType:** CODE_EDIT
 **TargetSection:** _generate_session_plan
 **Content:**
@@ -234,7 +234,7 @@ Add as first item when session_counter == 1: "Welcome — I'm youk. I track your
 **After:** In start_session(), when computing session_plan and days_since_last >= 14 and new_commits > 10, prepend to the resume_point string before adding to session_plan:
 f"[{days_since_last}d stale — {new_commits} commits since — verify before resuming] {resume_point}"
 This makes staleness explicit in the p
-**Status:** PENDING
+**Status:** APPLIED — 2026-07-02
 **ChangeType:** CODE_EDIT
 **TargetSection:** start_session staleness block
 **Content:**
@@ -252,7 +252,7 @@ This makes staleness explicit in the plan item itself rather than requiring the 
 **After:** In _generate_session_plan(), when close_cluster_missed is True, change the plan item from the generic "Last session wasn't saved..." to include the score feedback:
 "Last session wasn't saved (impacts org score — currently {score}/10). Type /done before closing to raise it."
 Where score comes from th
-**Status:** PENDING
+**Status:** APPLIED — 2026-07-02
 **ChangeType:** CODE_EDIT
 **TargetSection:** _generate_session_plan close_cluster_missed
 **Content:**
@@ -272,7 +272,7 @@ Where score comes from the dashboard_summary or improvement-metrics.json. If sco
 2. [existing plan steps]
 3. code-review (run after implementation)"
 If plan_hook is a string field, app
-**Status:** PENDING
+**Status:** APPLIED — 2026-07-02
 **ChangeType:** CONFIG_EDIT
 **TargetSection:** M+ plan_hook
 **Content:**
@@ -294,7 +294,7 @@ echo ""
 echo "  Note: youk stores knowledge on this machine only (~/.claude/youk/)."
 echo "  Teammates using youk on the same project have separate histories."
 echo "  To share context, copy ~/.claude/youk/knowledge/projects/<slug>/ to their m
-**Status:** PENDING
+**Status:** APPLIED — 2026-07-02
 **ChangeType:** CONFIG_EDIT
 **TargetSection:** success block
 **Content:**
@@ -314,7 +314,7 @@ echo "  To share context, copy ~/.claude/youk/knowledge/projects/<slug>/ to thei
 **After:** In start_session(), in the staleness block where days_since_last >= 30 and contracts exist, replace the current session_plan.insert(0, ...) content with:
 f"Returning after {days_since_last} days — {len(contracts)} saved rule(s) may be stale. Say 'show my contracts' to review them before we start."
 (
-**Status:** PENDING
+**Status:** APPLIED — 2026-07-02
 **ChangeType:** CODE_EDIT
 **TargetSection:** start_session staleness block
 **Content:**
@@ -323,3 +323,21 @@ In start_session(), in the staleness block where days_since_last >= 30 and contr
 f"Returning after {days_since_last} days — {len(contracts)} saved rule(s) may be stale. Say 'show my contracts' to review them before we start."
 (Remove the cat command reference — it's not in-session actionable and reads as a terminal instruction.)
 ```
+
+## PENDING-PROMO-SESSION-20260702101246 — 2026-07-02
+**Target:** skills/session/SKILL.md
+**Change:** Promote recurring gap pattern: session (3 occurrences across 0 project(s))
+**Reason:** SkillGap 'session' appeared 3 times in audit logs. Sample gaps: _detect_project_type returned unknown for the youk repo itself — Docker-based Python projects not detected without requirements.txt at expected paths; no unit tests existed — bugs in _count_pending_proposals and _detect_project_type were invisible for multiple sessions; _count_pending_proposals included APPLIED entries — pending count was wrong on every session_start for sessions with prior applied proposals. Review and expand the skill or add to cross-project.md.
+**Before:** 
+**After:** 
+**Status:** APPLIED — 2026-07-02
+**ChangeType:** SKILL_EDIT
+
+## PENDING-PROMO-COMPACTION-20260702101246 — 2026-07-02
+**Target:** skills/compaction/SKILL.md
+**Change:** Promote recurring gap pattern: compaction (3 occurrences across 0 project(s))
+**Reason:** SkillGap 'compaction' appeared 3 times in audit logs. Sample gaps: contracts verbalized mid-session existed only in conversation context until session_end — auto-compaction erased them silently, session_end had 0% fire rate; build_brief mkdir was outside try/except — checkpoint write failure could propagate as an exception instead of degrading silently; compact_context verbatim-paste framing implied it protected contracts from auto-compaction — it only improves odds via recency, actual durability required writing to file. Review and expand the skill or add to cross-project.md.
+**Before:** 
+**After:** 
+**Status:** APPLIED — 2026-07-02
+**ChangeType:** SKILL_EDIT
