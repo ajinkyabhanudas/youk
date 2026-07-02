@@ -48,9 +48,9 @@ Run `/health` at any point. It returns an `org_score` (0–10) and a `loop_verdi
 | **COLD** | Fewer than 3 sessions — not enough data yet |
 | **REGRESSING** | Score falling — review recent proposals and skipped skills |
 
-The score is driven by three signals: close_cluster_rate (did you type `/done`?), skill_invocation_rate (did a capability skill fire?), and token efficiency. The biggest lever is `/done` — every session you close the tab without it, the close_cluster_rate stays at 0% and org_score cannot exceed 6.0. A discipline gate caps org_score at 6.5 if 3+ consecutive sessions skip `/done` — the gate lifts the moment you fire `/done` again. The 7.5 target requires both `/done` discipline and regular capability skill invocations.
+The score is driven by three signals: skill_invocation_rate (did a capability skill fire? — primary, 2.0 weight), close_cluster_rate (did you type `/done`? — completion bonus, 0.5 weight), and gap_resolution_rate (are recurring gaps being fixed?). The primary lever is **capability skill invocation** — a session where you used `/build`, `/review`, or `/done` (includes `/learn`) compounds your ability. Close rate matters but doesn't dominate. A discipline gate caps org_score at 6.5 if 3+ consecutive sessions have zero capability skills — the gate lifts when you next invoke one. The 7.5 target requires ≥85% capability skill rate and regular session close.
 
-**What to do when STALLED:** type `/done` at the end of the next 3 sessions. The score moves within one `/health` cycle after that.
+**What to do when STALLED:** use `/build` for code tasks and `/done` at session end. The score responds to capability skill invocation first, close rate second.
 
 **What does the self-improvement loop look like?** Skills that are observed failing or being silently skipped are assessed and patched *within the same session* — not deferred to the next one. Structural code changes still go through `PENDING.md` for your review. Every `/health` run writes to `state/improvement-metrics.json`, which tracks up to 20 health cycles so trend direction is visible over time.
 
