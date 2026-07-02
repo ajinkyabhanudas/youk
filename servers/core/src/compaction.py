@@ -128,6 +128,20 @@ def build_brief(project_dir: str) -> dict:
 
     brief = "\n\n".join(sections)
 
+    # Write session checkpoint so next session_start can recover audit state
+    # if the developer closes the tab without calling /done.
+    checkpoint_file = YOUK_ROOT / "state" / "session-checkpoint.json"
+    checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        checkpoint_file.write_text(json.dumps({
+            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "slug": slug,
+            "plan_items": session_plan,
+            "contracts_count": len(contracts),
+        }, indent=2))
+    except Exception:
+        pass  # checkpoint write failure must never block compact_context
+
     return {
         "brief": brief,
         "contracts_count": len(contracts),

@@ -825,7 +825,59 @@ def _count_pending_proposals() -> int:
     return pending_file.read_text().count("## PENDING-")
 
 
+def _merge_stale_checkpoint() -> None:
+    """
+    If compact_context ran in a previous session but /done was never called,
+    a session-checkpoint.json exists with no matching audit entry.
+    Auto-write a checkpoint audit entry so the session isn't completely invisible
+    to self_heal and org_score calculations.
+    Skips checkpoints written within the last 5 minutes (same-session race guard).
+    Always deletes the checkpoint file regardless of whether we merged.
+    """
+    checkpoint_file = YOUK_ROOT / "state" / "session-checkpoint.json"
+    if not checkpoint_file.exists():
+        return
+    try:
+        cp = json.loads(checkpoint_file.read_text())
+        cp_timestamp = cp.get("timestamp", "")
+        cp_slug = cp.get("slug", "unknown")
+        cp_plan = cp.get("plan_items", [])
+
+        if cp_timestamp:
+            cp_dt = datetime.strptime(cp_timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            age_minutes = (datetime.utcnow() - cp_dt).total_seconds() / 60
+            if age_minutes > 5:
+                audit_dir = CLAUDE_ROOT / "audit"
+                audit_dir.mkdir(parents=True, exist_ok=True)
+                month = cp_timestamp[:7]
+                audit_file = audit_dir / f"{month}.md"
+                plan_text = "\n".join(f"- {item}" for item in cp_plan[:3]) if cp_plan else ""
+                entry = (
+                    f"\n### Session — {cp_timestamp} (checkpoint)\n"
+                    f"Project: {cp_slug}\n"
+                    f"Session ended without /done — compact_context checkpoint recovered.\n"
+                    f"{plan_text}\n"
+                    f"Skills: none\n"
+                    f"CloseCluster: no\n"
+                    f"Commits: unknown\n"
+                )
+                with open(audit_file, "a") as f:
+                    f.write(entry)
+    except Exception:
+        pass  # never block session_start for checkpoint errors
+    finally:
+        try:
+            checkpoint_file.unlink()
+        except Exception:
+            pass
+
+
 def start_session(project_dir: str) -> SessionState:
+    # Recover stale checkpoint from a previous session that ended without /done.
+    # This runs before any other work so the audit entry is written even if
+    # session_start itself fails partway through.
+    _merge_stale_checkpoint()
+
     state = _load_state()
     state["session_counter"] = state.get("session_counter", 0) + 1
     state["last_project"] = project_dir
@@ -1083,6 +1135,15 @@ def end_session(
 
     with open(audit_file, "a") as f:
         f.write(entry)
+
+    # Clear the compact_context checkpoint — session_end is the authoritative audit entry.
+    # If the checkpoint isn't cleared, next session_start would write a duplicate entry.
+    _checkpoint = YOUK_ROOT / "state" / "session-checkpoint.json"
+    if _checkpoint.exists():
+        try:
+            _checkpoint.unlink()
+        except Exception:
+            pass
 
     # Write contracts to disk so they survive future sessions and compact_context can pin them
     current_state = _load_state()
