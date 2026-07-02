@@ -46,6 +46,8 @@ elif [[ -s "$_api_key_file" ]]; then
   ANTHROPIC_API_KEY="$(cat "$_api_key_file")"
 else
   # Interactive prompt — no pre-exported key needed
+  echo "  youk uses this key for quality checks (nfr_check) and skill execution."
+  echo "  Without it, basic session tracking still works — you can add it later by re-running this script."
   echo -n "  Enter your ANTHROPIC_API_KEY (sk-ant-..., blank to skip): "
   read -rs ANTHROPIC_API_KEY
   echo ""

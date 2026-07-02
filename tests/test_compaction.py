@@ -8,38 +8,54 @@ import pytest
 class TestWriteContracts:
     def test_creates_file_and_returns_count(self, youk_root):
         from compaction import write_contracts
-        added = write_contracts("myproj", ["always run ruff before committing"])
+        result = write_contracts("myproj", ["always run ruff before committing"])
         f = youk_root / "knowledge" / "projects" / "myproj" / "contracts.md"
-        assert added == 1
+        assert result["added"] == 1
         assert f.exists()
         assert "always run ruff" in f.read_text()
 
     def test_deduplicates_exact_match(self, youk_root):
         from compaction import write_contracts
         write_contracts("myproj", ["never skip tests"])
-        added = write_contracts("myproj", ["never skip tests"])
-        assert added == 0
+        result = write_contracts("myproj", ["never skip tests"])
+        assert result["added"] == 0
 
     def test_deduplicates_with_dash_prefix(self, youk_root):
         """Contracts stored as '- rule' must deduplicate against 'rule'."""
         from compaction import write_contracts
         write_contracts("myproj", ["always use ruff"])
-        added = write_contracts("myproj", ["- always use ruff"])
-        assert added == 0
+        result = write_contracts("myproj", ["- always use ruff"])
+        assert result["added"] == 0
 
     def test_adds_only_new_entries(self, youk_root):
         from compaction import write_contracts
         write_contracts("myproj", ["rule A"])
-        added = write_contracts("myproj", ["rule A", "rule B"])
-        assert added == 1
+        result = write_contracts("myproj", ["rule A", "rule B"])
+        assert result["added"] == 1
         text = (youk_root / "knowledge" / "projects" / "myproj" / "contracts.md").read_text()
         assert "rule A" in text
         assert "rule B" in text
 
     def test_multiple_contracts_at_once(self, youk_root):
         from compaction import write_contracts
-        added = write_contracts("myproj", ["rule X", "rule Y", "rule Z"])
-        assert added == 3
+        result = write_contracts("myproj", ["rule X", "rule Y", "rule Z"])
+        assert result["added"] == 3
+
+    def test_detects_contradictory_contracts(self, youk_root):
+        """New contract with keyword overlap triggers conflict detection."""
+        from compaction import write_contracts
+        write_contracts("myproj", ["always use class components for React"])
+        result = write_contracts("myproj", ["prefer hook components for React"])
+        # "components" and "react" overlap — should surface conflict
+        assert result["conflicts"], "Expected conflict for contradicting component style"
+        assert any("class components" in c for c in result["conflicts"])
+
+    def test_no_conflicts_for_distinct_contracts(self, youk_root):
+        """Unrelated contracts must not trigger conflicts."""
+        from compaction import write_contracts
+        write_contracts("myproj", ["always run tests before committing"])
+        result = write_contracts("myproj", ["prefer short commit messages"])
+        assert result["conflicts"] == []
 
 
 class TestBuildBrief:

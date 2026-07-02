@@ -157,10 +157,27 @@ def build_brief(project_dir: str) -> dict:
     }
 
 
-def write_contracts(slug: str, new_contracts: list[str]) -> int:
+_STOP_WORDS = {
+    "always", "never", "use", "the", "a", "an", "and", "or", "not",
+    "in", "on", "at", "from", "to", "with", "by", "for", "of", "it", "is",
+}
+
+
+def _conflict_check(new_contract: str, existing: set[str]) -> list[str]:
+    new_words = {w for w in new_contract.lower().split() if w not in _STOP_WORDS and len(w) > 2}
+    conflicts = []
+    for ex in existing:
+        ex_words = {w for w in ex.lower().split() if w not in _STOP_WORDS and len(w) > 2}
+        if len(new_words & ex_words) >= 2:
+            conflicts.append(ex)
+    return conflicts
+
+
+def write_contracts(slug: str, new_contracts: list[str]) -> dict:
     """
     Append new contract lines to knowledge/projects/{slug}/contracts.md.
-    Returns count of lines added (deduplicates against existing).
+    Returns {"added": int, "conflicts": list[str]} — conflicts are existing contracts
+    whose keywords overlap significantly with any of the new ones.
     """
     contracts_file = YOUK_ROOT / "knowledge" / "projects" / slug / "contracts.md"
     contracts_file.parent.mkdir(parents=True, exist_ok=True)
@@ -174,8 +191,12 @@ def write_contracts(slug: str, new_contracts: list[str]) -> int:
         }
 
     to_add = [c for c in new_contracts if c.strip().lstrip("- ") not in existing]
+    all_conflicts: list[str] = []
+    for c in to_add:
+        all_conflicts.extend(_conflict_check(c, existing))
+
     if not to_add:
-        return 0
+        return {"added": 0, "conflicts": all_conflicts}
 
     with open(contracts_file, "a") as f:
         if not contracts_file.read_text().strip() if contracts_file.exists() else True:
@@ -183,4 +204,4 @@ def write_contracts(slug: str, new_contracts: list[str]) -> int:
         for c in to_add:
             f.write(f"- {c}\n")
 
-    return len(to_add)
+    return {"added": len(to_add), "conflicts": all_conflicts}

@@ -88,3 +88,87 @@ youk knowledge is per-user (`~/.claude/youk/knowledge/`). A developer joining a 
 
 **Surface this explicitly** in Persona C output so product decisions about team knowledge sharing are made with the full picture.
 ```
+
+## PENDING-20260702061710 — 2026-07-02
+**Target:** CLAUDE.md
+**Change:** Contract save: confirm to user immediately after save_contract
+**Reason:** Persona A: junior dev says "always use TypeScript", save_contract fires silently — they have no idea if the agreement was captured or dropped. Without confirmation, contract capture is invisible and unverifiable.
+**Before:** 
+**After:** After calling save_contract(), if result.saved is true, append one sentence inline: "Saved — 'always use TypeScript' will load at the start of every future session." If result.saved is false (already exists), say: "Already in contracts — this agreement is already saved." This must appear in the resp
+**Status:** APPLIED — 2026-07-02
+**ChangeType:** CLAUDE_MD_EDIT
+**TargetSection:** Contract phrase triggers
+**Content:**
+```
+After calling save_contract(), if result.saved is true, append one sentence inline: "Saved — 'always use TypeScript' will load at the start of every future session." If result.saved is false (already exists), say: "Already in contracts — this agreement is already saved." This must appear in the response where the contract was verbalized, not as a separate turn.
+```
+
+## PENDING-20260702061714 — 2026-07-02
+**Target:** servers/core/src/session.py
+**Change:** close_cluster_missed: plain English, not jargon
+**Reason:** Persona A: "Last session ended without context-sync + learn" is MCP-layer jargon a junior dev skips. They miss the actionable signal that their prior work wasn't persisted.
+**Before:** 
+**After:** Replace the close_cluster_missed plan item text from "Last session ended without context-sync + learn — call session_end with explicit_contracts before new work piles up" to "Last session wasn't saved — run /done at the end of this session so your work compounds into the next one."
+**Status:** APPLIED — 2026-07-02
+**ChangeType:** CODE_EDIT
+**TargetSection:** _generate_session_plan
+**Content:**
+```
+Replace the close_cluster_missed plan item text from "Last session ended without context-sync + learn — call session_end with explicit_contracts before new work piles up" to "Last session wasn't saved — run /done at the end of this session so your work compounds into the next one."
+```
+
+## PENDING-20260702061719 — 2026-07-02
+**Target:** servers/core/src/session.py
+**Change:** Stale contract warning when returning after 30+ days
+**Reason:** Persona D: contracts from 8 weeks ago load unconditionally — team may have switched patterns entirely. Returning dev starts session with actively wrong behavioral constraints, no warning.
+**Before:** 
+**After:** In _generate_session_plan(), after the staleness block where days_since_last >= 7 is detected, check if contracts exist and days_since_last >= 30. If so, prepend to session_plan: f"Returning after {days_since_last} days — your {len(contracts)} contracts were written before you left. Verify they're s
+**Status:** APPLIED — 2026-07-02
+**ChangeType:** CODE_EDIT
+**TargetSection:** _generate_session_plan
+**Content:**
+```
+In _generate_session_plan(), after the staleness block where days_since_last >= 7 is detected, check if contracts exist and days_since_last >= 30. If so, prepend to session_plan: f"Returning after {days_since_last} days — your {len(contracts)} contracts were written before you left. Verify they're still valid before relying on them (run: cat ~/.claude/youk/knowledge/projects/{slug}/contracts.md)."
+```
+
+## PENDING-20260702061723 — 2026-07-02
+**Target:** servers/core/src/session.py
+**Change:** Include last 3 commit subjects in staleness plan item
+**Reason:** Persona D: "Returning after 56 days — 63 commits" is surfaced but not actionable. Dev still has to run git log manually to understand what changed while away.
+**Before:** 
+**After:** In _generate_session_plan(), when days_since_last >= 7, call _read_git_log(project_dir, n=3) and append the commit subjects to the staleness plan item. Format: "Returning after {N} days — {commits} commit(s) since last session. Recent: {commit1_subject} / {commit2_subject} / {commit3_subject}"
+**Status:** APPLIED — 2026-07-02
+**ChangeType:** CODE_EDIT
+**TargetSection:** _generate_session_plan
+**Content:**
+```
+In _generate_session_plan(), when days_since_last >= 7, call _read_git_log(project_dir, n=3) and append the commit subjects to the staleness plan item. Format: "Returning after {N} days — {commits} commit(s) since last session. Recent: {commit1_subject} / {commit2_subject} / {commit3_subject}"
+```
+
+## PENDING-20260702061727 — 2026-07-02
+**Target:** servers/core/src/compaction.py
+**Change:** Detect contradictory contracts on save_contract call
+**Reason:** Persona D: returning dev saves "from now on use hook-based components" but old contract "always use class components" is still in contracts.md. youk loads both silently, giving Claude contradictory instructions.
+**Before:** 
+**After:** In write_contracts(), after deduplication, check each new contract against existing ones for keyword overlap (split both into words, check intersection excluding stop words like 'always', 'never', 'use', 'the'). If overlap found, include a 'conflicts' list in the return value: {"added": 1, "conflict
+**Status:** APPLIED — 2026-07-02
+**ChangeType:** CODE_EDIT
+**TargetSection:** write_contracts
+**Content:**
+```
+In write_contracts(), after deduplication, check each new contract against existing ones for keyword overlap (split both into words, check intersection excluding stop words like 'always', 'never', 'use', 'the'). If overlap found, include a 'conflicts' list in the return value: {"added": 1, "conflicts": ["existing contract that may contradict: always use class components"]}. Caller (save_contract tool in server.py) surfaces conflicts in the tool response so Claude can flag them.
+```
+
+## PENDING-20260702061732 — 2026-07-02
+**Target:** scripts/install.sh
+**Change:** install.sh: explain value before prompting for API key
+**Reason:** Persona C: joining dev hits "Enter your ANTHROPIC_API_KEY" prompt before understanding what youk uses it for. No context = likely to skip it, silently losing nfr_check and skill execution.
+**Before:** 
+**After:** Before the read -rs ANTHROPIC_API_KEY prompt, add: echo "  youk uses this for quality checks (nfr_check) and skill execution." / echo "  Without it, basic session tracking still works — you can add it later by re-running this script." This prints above the prompt line so the dev understands the choi
+**Status:** APPLIED — 2026-07-02
+**ChangeType:** CONFIG_EDIT
+**TargetSection:** API key prompt
+**Content:**
+```
+Before the read -rs ANTHROPIC_API_KEY prompt, add: echo "  youk uses this for quality checks (nfr_check) and skill execution." / echo "  Without it, basic session tracking still works — you can add it later by re-running this script." This prints above the prompt line so the dev understands the choice they're making.
+```

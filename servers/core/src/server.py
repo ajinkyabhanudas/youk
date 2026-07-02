@@ -270,12 +270,15 @@ def save_contract(contract: str, project_dir: str) -> dict:
     Returns: saved, contract, slug, contracts_file, note.
     """
     slug = Path(project_dir).name or "unknown"
-    added = write_contracts(slug, [contract])
+    result = write_contracts(slug, [contract])
+    added = result["added"]
+    conflicts = result.get("conflicts", [])
     return {
         "saved": added > 0,
         "contract": contract,
         "slug": slug,
         "contracts_file": f"knowledge/projects/{slug}/contracts.md",
+        "conflicts": conflicts,
         "note": "already in contracts.md" if added == 0 else "written — will survive compaction",
     }
 

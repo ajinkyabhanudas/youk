@@ -744,8 +744,8 @@ def _generate_session_plan(
     # 3. Missed close-cluster from last session
     if close_cluster_missed:
         plan.append(
-            "Last session ended without /done — context was not saved. "
-            "Run /done at end of this session to start compounding."
+            "Last session wasn't saved — run /done at the end of this session "
+            "so your work compounds into the next one."
         )
 
     # 4. Project-type-specific nudge — use detected commands when available
@@ -1003,8 +1003,20 @@ def start_session(project_dir: str) -> SessionState:
     # Staleness awareness — surface when returning after a significant gap
     new_commits = len([ln for ln in git_log.splitlines() if ln.strip()]) if git_log else 0
     if days_since_last is not None and days_since_last >= 7:
-        commits_note = f" — {new_commits} commit(s) since last session" if new_commits else ""
+        recent_lines = git_log.splitlines()[:3] if git_log else []
+        recent_subjects = [ln.split(" ", 1)[1] if " " in ln else ln for ln in recent_lines]
+        subjects_str = " / ".join(s.strip() for s in recent_subjects if s.strip())
+        commits_note = (
+            f" — {new_commits} commit(s). Recent: {subjects_str}"
+            if subjects_str else f" — {new_commits} commit(s) since last session"
+        )
         session_plan.append(f"Returning after {days_since_last} days{commits_note}")
+        if days_since_last >= 30 and contracts:
+            session_plan.insert(0,
+                f"Returning after {days_since_last} days — your {len(contracts)} contract(s) were written "
+                f"before you left. Verify they're still valid before relying on them "
+                f"(run: cat ~/.claude/youk/knowledge/projects/{slug}/contracts.md)."
+            )
     elif close_cluster_missed and new_commits > 0 and days_since_last != 0:
         # Commits exist from last session but no /done was called — surface the loss
         session_plan.append(
@@ -1186,7 +1198,8 @@ def end_session(
     current_state = _load_state()
     slug = _slug(current_state.get("last_project", ""))
     contracts_to_save = explicit_contracts or detected_contracts
-    contracts_saved = write_contracts(slug, contracts_to_save) if slug and contracts_to_save else 0
+    _wc = write_contracts(slug, contracts_to_save) if slug and contracts_to_save else {"added": 0, "conflicts": []}
+    contracts_saved = _wc["added"]
 
     # Write the resume point for the next session into external context.md (zero footprint).
     # Extract: first non-empty line after a ## heading, or first non-empty line of summary.
