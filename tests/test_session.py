@@ -1,4 +1,4 @@
-"""Tests for session.py — pending count, project type detection."""
+"""Tests for session.py — pending count, project type detection, task_checkpoint."""
 from __future__ import annotations
 from pathlib import Path
 import pytest
@@ -195,3 +195,140 @@ class TestMidSessionAdaptations:
         month = datetime.utcnow().strftime("%Y-%m")
         content = (self._audit_dir / f"{month}.md").read_text()
         assert "MidSessionAdaptations: 0" not in content
+
+
+# ── task_checkpoint ──────────────────────────────────────────────────────────
+
+class TestTaskCheckpoint:
+    """task_checkpoint: compact brief + proportional audit write."""
+
+    def test_xs_does_not_write_checkpoint(self, youk_root, tmp_path):
+        """XS tasks skip the .jsonl write — brief rebuild only."""
+        import session
+        result = session.task_checkpoint(str(tmp_path), "fix typo", size="XS")
+        cp_file = youk_root / "state" / "task-checkpoints.jsonl"
+        assert not cp_file.exists()
+        assert result["checkpoint_written"] is False
+
+    def test_s_does_not_write_checkpoint(self, youk_root, tmp_path):
+        """S tasks also skip the .jsonl write."""
+        import session
+        result = session.task_checkpoint(str(tmp_path), "small fix", size="S")
+        cp_file = youk_root / "state" / "task-checkpoints.jsonl"
+        assert not cp_file.exists()
+        assert result["checkpoint_written"] is False
+
+    def test_m_writes_checkpoint(self, youk_root, tmp_path):
+        """M tasks write one line to task-checkpoints.jsonl."""
+        import json
+        import session
+        result = session.task_checkpoint(str(tmp_path), "add login endpoint", size="M")
+        cp_file = youk_root / "state" / "task-checkpoints.jsonl"
+        assert cp_file.exists()
+        assert result["checkpoint_written"] is True
+        entries = [json.loads(l) for l in cp_file.read_text().splitlines() if l.strip()]
+        assert len(entries) == 1
+        assert entries[0]["task"] == "add login endpoint"
+        assert entries[0]["size"] == "M"
+
+    def test_l_writes_checkpoint(self, youk_root, tmp_path):
+        """L tasks also write to .jsonl."""
+        import session
+        session.task_checkpoint(str(tmp_path), "refactor auth module", size="L")
+        cp_file = youk_root / "state" / "task-checkpoints.jsonl"
+        assert cp_file.exists()
+
+    def test_multiple_checkpoints_accumulate(self, youk_root, tmp_path):
+        """Multiple task_checkpoint calls append lines; rollup reads all of them."""
+        import json
+        import session
+        session.task_checkpoint(str(tmp_path), "task one", size="M")
+        session.task_checkpoint(str(tmp_path), "task two", size="L")
+        cp_file = youk_root / "state" / "task-checkpoints.jsonl"
+        entries = [json.loads(l) for l in cp_file.read_text().splitlines() if l.strip()]
+        assert len(entries) == 2
+        assert entries[0]["task"] == "task one"
+        assert entries[1]["task"] == "task two"
+
+    def test_returns_brief_key(self, youk_root, tmp_path):
+        """Result always contains a 'brief' key (may be empty if no context files)."""
+        import session
+        result = session.task_checkpoint(str(tmp_path), "any task", size="M")
+        assert "brief" in result
+
+    def test_label_truncated_to_200(self, youk_root, tmp_path):
+        """Labels longer than 200 chars are truncated in the checkpoint entry."""
+        import json
+        import session
+        long_label = "x" * 300
+        session.task_checkpoint(str(tmp_path), long_label, size="M")
+        cp_file = youk_root / "state" / "task-checkpoints.jsonl"
+        entry = json.loads(cp_file.read_text().splitlines()[0])
+        assert len(entry["task"]) <= 200
+
+
+class TestEndSessionCheckpointRollup:
+    """end_session rolls up task-checkpoints.jsonl into the audit entry."""
+
+    def setup_method(self, method):
+        pass
+
+    def test_rollup_appears_in_audit(self, youk_root, tmp_path, monkeypatch):
+        """TaskCheckpoints line written to audit when .jsonl exists."""
+        import json
+        import session
+        from datetime import datetime
+
+        claude_root = tmp_path / "claude"
+        (claude_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+
+        # Pre-write two checkpoint entries
+        cp_file = youk_root / "state" / "task-checkpoints.jsonl"
+        cp_file.write_text(
+            json.dumps({"timestamp": "2026-07-02T10:00:00", "task": "implement login", "size": "M"}) + "\n"
+            + json.dumps({"timestamp": "2026-07-02T11:00:00", "task": "add tests", "size": "S"}) + "\n"
+        )
+
+        (youk_root / "state" / "session.json").write_text(
+            '{"session_counter": 1, "last_project": "proj", "last_seen": "2026-07-01"}'
+        )
+        session.end_session(summary="session done", commits_made=False)
+
+        month = datetime.utcnow().strftime("%Y-%m")
+        audit_text = (claude_root / "audit" / f"{month}.md").read_text()
+        assert "TaskCheckpoints: 2" in audit_text
+        assert "implement login" in audit_text
+
+    def test_checkpoint_file_deleted_after_rollup(self, youk_root, tmp_path, monkeypatch):
+        """task-checkpoints.jsonl is cleared after session_end reads it."""
+        import json
+        import session
+
+        claude_root = tmp_path / "claude"
+        (claude_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+
+        cp_file = youk_root / "state" / "task-checkpoints.jsonl"
+        cp_file.write_text(
+            json.dumps({"timestamp": "2026-07-02T10:00:00", "task": "do thing", "size": "M"}) + "\n"
+        )
+        (youk_root / "state" / "session.json").write_text(
+            '{"session_counter": 1, "last_project": "proj2", "last_seen": "2026-07-01"}'
+        )
+        session.end_session(summary="done", commits_made=False)
+        assert not cp_file.exists()
+
+    def test_no_checkpoint_file_no_error(self, youk_root, tmp_path, monkeypatch):
+        """end_session works normally when no task-checkpoints.jsonl exists."""
+        import session
+
+        claude_root = tmp_path / "claude"
+        (claude_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+
+        (youk_root / "state" / "session.json").write_text(
+            '{"session_counter": 1, "last_project": "proj3", "last_seen": "2026-07-01"}'
+        )
+        result = session.end_session(summary="no checkpoints session", commits_made=False)
+        assert result["audit_written"] is True
