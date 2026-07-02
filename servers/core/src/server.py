@@ -275,6 +275,21 @@ def save_contract(contract: str, project_dir: str) -> dict:
 
     Returns: saved, contract, slug, contracts_file, note.
     """
+    # Guard: reject bare trigger phrases with no specific behavior attached.
+    # "always" alone is noise from phrase detection on the contracts.md header text.
+    # A valid contract must name a specific action (≥ 20 chars, ≥ 3 words).
+    stripped = contract.strip().rstrip(".,;:")
+    words = stripped.split()
+    if len(stripped) < 20 or len(words) < 3:
+        return {
+            "saved": False,
+            "contract": contract,
+            "slug": "",
+            "contracts_file": "",
+            "conflicts": [],
+            "note": f"contract too vague — include specific behavior (e.g. 'always run ruff before committing'). Got: {repr(contract)}",
+        }
+
     slug = Path(project_dir).name or "unknown"
     result = write_contracts(slug, [contract])
     added = result["added"]
