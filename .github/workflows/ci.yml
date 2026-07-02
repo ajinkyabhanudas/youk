@@ -59,9 +59,9 @@ jobs:
         run: make build
 
       - name: Test MCP server handshakes
-        # Override YOUK_DIR to point to the repo checkout so config files are in place.
-        # CLAUDE_DIR only needs audit/ to exist for a tools/list handshake.
+        # Unit tests run in the Lint job (no Docker needed).
+        # This job runs only the Docker-based MCP handshake tests.
         run: |
-          make test \
+          make test-core test-code \
             YOUK_DIR=$GITHUB_WORKSPACE \
             CLAUDE_DIR=$HOME/.claude
