@@ -359,3 +359,23 @@ f"Returning after {days_since_last} days — {len(contracts)} saved rule(s) may 
 **After:** Created skills/compaction/SKILL.md with 3 gap patterns: mid-session contracts not written to file, mkdir outside try/except in build_brief, and verbatim-paste framing being probabilistic not deterministic.
 **Status:** APPLIED — 2026-07-02
 **ChangeType:** SKILL_EDIT
+
+## PENDING-20260702115501-xp2 — 2026-07-02
+**Target:** /youk/knowledge/cross-project.md
+**Change:** Cross-project: make sure we have tests built in for all of these — oversigh
+**Reason:** Extracted from youk session on 2026-07-02. Generalizable pattern — not project-specific.
+**Before:** (append to cross-project.md)
+**After:** 
+## make sure we have tests built in for all of these — oversight of any of this sort needs to be avoided at all circumstances
+Source project: youk
+
+**Status:** APPLIED — 2026-07-02
+**ChangeType:** FILE_CREATE
+**Content:**
+```
+
+## make sure we have tests built in for all of these — oversight of any of this sort needs to be avoided at all circumstances
+Source project: youk
+Extracted: 2026-07-02
+
+```

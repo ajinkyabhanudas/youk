@@ -79,6 +79,25 @@ Relying on only one layer creates bypass risks and silent failures.
 
 ---
 
+## Tests are mandatory — oversight creates invisible bugs
+
+**Pattern (from youk):** Bugs in `_count_pending_proposals` and `_detect_project_type`
+ran silently for 10+ sessions because no unit tests existed. Visible in behavior (wrong
+pending count, unknown project type) but undiagnosed — no failure signal.
+
+**Rule:** Any function that parses file content, makes a routing decision, or produces
+output another tool depends on must have a unit test covering the happy path and the
+historically-failed edge case.
+
+**How youk encodes this:**
+- Contract: "make sure we have tests built in for all of these"
+- CI: `make test-unit` (pytest) runs before MCP handshakes — parsing regressions fail before deployment
+- skills/session/SKILL.md: every gap pattern includes a "Test guard" section
+
+Source project: youk | Extracted: 2026-07-02
+
+---
+
 ## When to reference this file
 
 - session_start: _generate_session_plan reads project_type and close_cluster_missed,
