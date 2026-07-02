@@ -341,3 +341,21 @@ f"Returning after {days_since_last} days — {len(contracts)} saved rule(s) may 
 **After:** 
 **Status:** APPLIED — 2026-07-02
 **ChangeType:** SKILL_EDIT
+
+## PENDING-PROMO-SESSION-20260702110028 — 2026-07-02
+**Target:** skills/session/SKILL.md
+**Change:** Promote recurring gap pattern: session (3 occurrences across 0 project(s))
+**Reason:** SkillGap 'session' appeared 3 times in audit logs. Sample gaps: _detect_project_type returned unknown for the youk repo itself — Docker-based Python projects not detected without requirements.txt at expected paths; no unit tests existed — bugs in _count_pending_proposals and _detect_project_type were invisible for multiple sessions; _count_pending_proposals included APPLIED entries — pending count was wrong on every session_start for sessions with prior applied proposals. Review and expand the skill or add to cross-project.md.
+**Before:** 
+**After:** Created skills/session/SKILL.md with 3 gap patterns: project type detection, pending count including APPLIED entries, and missing unit tests.
+**Status:** APPLIED — 2026-07-02
+**ChangeType:** SKILL_EDIT
+
+## PENDING-PROMO-COMPACTION-20260702110028 — 2026-07-02
+**Target:** skills/compaction/SKILL.md
+**Change:** Promote recurring gap pattern: compaction (3 occurrences across 0 project(s))
+**Reason:** SkillGap 'compaction' appeared 3 times in audit logs. Sample gaps: contracts verbalized mid-session existed only in conversation context until session_end — auto-compaction erased them silently, session_end had 0% fire rate; build_brief mkdir was outside try/except — checkpoint write failure could propagate as an exception instead of degrading silently; compact_context verbatim-paste framing implied it protected contracts from auto-compaction — it only improves odds via recency, actual durability required writing to file. Review and expand the skill or add to cross-project.md.
+**Before:** 
+**After:** Created skills/compaction/SKILL.md with 3 gap patterns: mid-session contracts not written to file, mkdir outside try/except in build_brief, and verbatim-paste framing being probabilistic not deterministic.
+**Status:** APPLIED — 2026-07-02
+**ChangeType:** SKILL_EDIT

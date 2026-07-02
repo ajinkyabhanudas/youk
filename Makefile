@@ -43,6 +43,24 @@ clean: ## Remove Docker images and stopped containers
 	@docker container prune -f 2>/dev/null || true
 	@docker image prune -f 2>/dev/null || true
 
+.PHONY: prune
+prune: ## Stop orphaned youk containers (old image SHAs) and remove dangling layers
+	@echo "==> Stopping orphaned youk containers..."
+	@CORE_SHA=$$(docker image inspect youk-core:latest --format '{{.Id}}' 2>/dev/null); \
+	 CODE_SHA=$$(docker image inspect youk-code:latest --format '{{.Id}}' 2>/dev/null); \
+	 docker ps --format '{{.ID}} {{.Image}}' | grep -E 'youk-(core|code)' | \
+	 while read id img; do \
+	   sha=$$(docker inspect $$id --format '{{.Image}}'); \
+	   if [ "$$sha" != "$$CORE_SHA" ] && [ "$$sha" != "$$CODE_SHA" ]; then \
+	     echo "    stopping $$id ($$img, stale SHA)"; \
+	     docker stop $$id >/dev/null; \
+	   fi; \
+	 done
+	@docker container prune -f >/dev/null
+	@docker image prune -f
+	@echo "==> Done. Active youk containers:"
+	@docker ps --format "  {{.Names}} ({{.Status}}) {{.Image}}" | grep youk || echo "  none"
+
 # ── Verification ───────────────────────────────────────────────────────────────
 
 .PHONY: doctor
