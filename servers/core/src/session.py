@@ -917,13 +917,18 @@ def _generate_session_plan(
 
 def _check_doc_freshness() -> list[str]:
     """
-    Read docs/doc-map.yaml. Extract public MCP tool names from both server.py files.
-    Return list of undocumented tools — in server.py but absent from the doc-map.
-    Called at session_start so gaps surface in session_plan before any work begins.
+    Two-part check called at session_start:
+    1. Read docs/doc-map.yaml — flag any @mcp.tool() absent from the doc-map.
+    2. Read concepts: block from doc-map — flag authority files newer than derived.
+    Returns a combined list of gap strings (capped at 2 concept warnings).
     """
     doc_map_file = YOUK_ROOT / "docs" / "doc-map.yaml"
     if not doc_map_file.exists():
         return []
+
+    undocumented: list[str] = []
+
+    # Part 1: undocumented MCP tools
     try:
         import re
         import yaml  # already a dep (health.py uses it)
@@ -935,7 +940,6 @@ def _check_doc_freshness() -> list[str]:
                 if isinstance(entry, dict) and "tool" in entry:
                     mapped_tools.add(entry["tool"])
 
-        undocumented = []
         for server_file in [
             YOUK_ROOT / "servers" / "core" / "src" / "server.py",
             YOUK_ROOT / "servers" / "code" / "src" / "server.py",
@@ -943,7 +947,6 @@ def _check_doc_freshness() -> list[str]:
             if not server_file.exists():
                 continue
             source = server_file.read_text()
-            # collect names of @mcp.tool()-decorated functions
             decorated = set(re.findall(
                 r'@mcp\.tool\(\)\s+def (\w+)\s*\(', source, re.DOTALL
             ))
@@ -952,9 +955,23 @@ def _check_doc_freshness() -> list[str]:
                     f"tool '{name}' missing from docs/doc-map.yaml — "
                     "add it (and update README.md + docs/claude-md-template.md if needed)"
                 )
-        return undocumented
     except Exception:
-        return []
+        pass
+
+    # Part 2: concept coherence — authority file newer than derived files
+    try:
+        from doc_graph import (
+            load_concept_graph,
+            check_concept_staleness,
+            format_staleness_warnings,
+        )
+        concepts = load_concept_graph(YOUK_ROOT)
+        stale = check_concept_staleness(concepts, YOUK_ROOT, CLAUDE_ROOT)
+        undocumented.extend(format_staleness_warnings(stale, cap=2))
+    except Exception:
+        pass
+
+    return undocumented
 
 
 def _count_pending_proposals() -> int:

@@ -23,6 +23,7 @@ mcp_tools:
     - {tool: task_checkpoint, refs: [README.md, docs/claude-md-template.md]}
     - {tool: compact_context, refs: [README.md, docs/claude-md-template.md]}
     - {tool: track_tokens, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: check_doc_graph, refs: [README.md, docs/doc-map.yaml]}
 
   youk-code:
     - {tool: nfr_check, refs: [README.md, docs/claude-md-template.md]}
@@ -58,3 +59,37 @@ skills:
   - {skill: write-spec, refs: [README.md]}
   - {skill: youk-research, refs: [README.md]}
   - {skill: simulate-experience, refs: [README.md]}
+
+# Concept coherence graph — each concept has exactly one authority file.
+# Derived files implement the concept; they must not redefine it.
+# check_doc_graph() and session_start._check_doc_freshness() use this
+# to surface drift within one session of the authority file changing.
+concepts:
+  - concept: north_star
+    description: "What youk is fundamentally for — compounds user ability, not just tool context"
+    authority: knowledge/projects/youk/PRD.md
+    derived_in:
+      - README.md
+      - PHILOSOPHY.md
+      - ~/.claude/CLAUDE.md
+
+  - concept: org_score_definition
+    description: "org_score formula: capability_skill_rate (2.0) + close_rate (0.5) + gap_resolution (0.5)"
+    authority: docs/well-architected.md
+    derived_in:
+      - README.md
+      - servers/core/src/health.py
+
+  - concept: compounding_mechanism
+    description: "How sessions compound: capability skills + close_cluster + /learn"
+    authority: knowledge/projects/youk/PRD.md
+    derived_in:
+      - README.md
+      - ~/.claude/CLAUDE.md
+
+  - concept: guardrail_contract
+    description: "Hard vs soft rules — what is enforced at tool level vs surfaced as nudge"
+    authority: config/guardrails.yaml
+    derived_in:
+      - PHILOSOPHY.md
+      - docs/well-architected.md

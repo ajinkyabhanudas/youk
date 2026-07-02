@@ -20,6 +20,7 @@ from compaction import build_brief, write_contracts
 from tokens import init_token_tracker, record_checkpoint
 
 YOUK_ROOT = Path("/youk")
+CLAUDE_ROOT = Path("/claude")
 
 mcp = FastMCP("youk-core")
 
@@ -378,6 +379,36 @@ def track_tokens(
     Returns: session_total_input, session_total_output, token_budget, vs_budget_pct.
     """
     return record_checkpoint(input_tokens, output_tokens, note, token_budget)
+
+
+@mcp.tool()
+def check_doc_graph() -> dict:
+    """
+    Audit the concept coherence graph declared in docs/doc-map.yaml.
+
+    For each concept in the `concepts:` block, checks whether the authority
+    file has been updated more recently than its derived files. Uses git commit
+    timestamps (stable across clones) with mtime fallback.
+
+    Returns: concepts_checked, stale_concepts (list of {concept, authority,
+             stale_in}), clean_concepts, verdict.
+
+    Call explicitly for a full audit. session_start also consults this
+    automatically (capped at 2 warnings to avoid flooding session_plan).
+    """
+    from doc_graph import load_concept_graph, check_concept_staleness
+    concepts = load_concept_graph(YOUK_ROOT)
+    stale = check_concept_staleness(concepts, YOUK_ROOT, CLAUDE_ROOT)
+    return {
+        "concepts_checked": len(concepts),
+        "stale_concepts": stale,
+        "clean_concepts": len(concepts) - len(stale),
+        "verdict": (
+            "COHERENT — all derived files are up-to-date with their authorities"
+            if not stale
+            else f"DRIFT DETECTED — {len(stale)} concept(s) need review"
+        ),
+    }
 
 
 @mcp.resource("youk://session/state")
