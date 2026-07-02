@@ -12,9 +12,11 @@ JARVIS doesn't need to be turned on. youk is the same. No "activate youk" phrase
 
 The worst AI memory system is an ever-growing transcript. youk never logs what was said. It extracts what was learned — structured insights with analogy, break points, and routing implications. An entry that doesn't improve future routing or prevent future misinterpretation has no place in `knowledge/`.
 
-## 3. Propose, never auto-apply
+## 3. Propose, never auto-apply — except for skill text
 
-youk can observe patterns, generate health reports, and propose improvements to its own skills, guard rails, and routing logic. It never applies those improvements without founder approval. The hard rule `no-auto-apply-proposals` is not optional. The system that upgrades itself without oversight is not an assistant — it's a liability.
+youk can observe patterns, generate health reports, and propose improvements to its own skills, guard rails, and routing logic. Code changes and config changes never apply without founder approval — the hard rule `no-auto-apply-proposals` is not optional for those. The system that rewrites itself without oversight is not an assistant — it's a liability.
+
+The exception is skill text (SKILL.md files). When a skill fails mid-session and the gap has a concrete fix, Claude may patch the SKILL.md immediately — within the same session, before continuing. This is deliberate: a skill that silently fails is worse than one that self-corrects. The patch is to instruction text, not to code that runs — the risk profile is different. If the patch is wrong, the next `assess_skill()` will surface it.
 
 ## 4. Guard rails are versioned contracts
 
@@ -35,3 +37,7 @@ Skills, guard rails, routing logic, and knowledge all live in the repo. Changes 
 ## 8. Build the foundation right, then build fast
 
 Phase 1 is not a prototype. It's the permanent foundation. The MCP server pattern, the knowledge types, the guard rail structure, the Docker volume strategy — these don't get refactored in Phase 2. Phase 2 adds memory extraction and health reporting. Phase 3 adds variants. Each phase is additive. Nothing structural changes.
+
+## 9. Adapt within the session, not between them
+
+The failure mode of batch self-improvement is lag: observe a gap today, fix it in two sessions. An adaptive system fixes within the session where the gap is observed. When a skill fails, `assess_skill` runs immediately. When a route is wrong, the correction is saved as a contract now, not at session end. The audit log accumulates what couldn't be fixed in-session — structural changes that need human review. Everything else closes the loop before the conversation ends.

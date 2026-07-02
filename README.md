@@ -33,6 +33,26 @@ youk makes every Claude Code session smarter than the last. Working agreements y
 
 ---
 
+## Is youk getting better?
+
+Run `/health` at any point. It returns an `org_score` (0–10) and a `loop_verdict`:
+
+| Verdict | Meaning |
+|---|---|
+| **IMPROVING** | org_score rising session over session; loop is closing |
+| **STEADY** | Score stable; maintaining but not accelerating |
+| **STALLED** | Loop not closing — most likely `/done` is not firing at session end |
+| **COLD** | Fewer than 3 sessions — not enough data yet |
+| **REGRESSING** | Score falling — review recent proposals and skipped skills |
+
+The score is driven by three signals: close_cluster_rate (did you type `/done`?), session tracking rate, and token efficiency trend. The biggest lever is `/done` — every session you close the tab without it, the close_cluster_rate stays at 0% and org_score cannot exceed 6.0 regardless of everything else.
+
+**What to do when STALLED:** type `/done` at the end of the next 3 sessions. The score moves within one `/health` cycle after that.
+
+**What does the self-improvement loop look like?** Skills that are observed failing or being silently skipped are assessed and patched *within the same session* — not deferred to the next one. Structural code changes still go through `PENDING.md` for your review. Every `/health` run writes to `state/improvement-metrics.json`, which tracks up to 20 health cycles so trend direction is visible over time.
+
+---
+
 ## Quick start
 
 ```bash
@@ -85,12 +105,12 @@ youk is two Docker containers registered as MCP servers in Claude Code:
 **youk-core** (read-write access):
 - `session_start(project_dir)` — detects project type (Python/JS/Go/Rust), loads contracts + decisions, returns resume point
 - `compact_context(project_dir)` — builds a tiered context brief from structured files; call at 25+ exchanges to preempt Claude's generic auto-compaction
-- `session_end(summary, commits_made, explicit_contracts)` — writes audit log, saves working agreements to `contracts.md`
+- `session_end(summary, commits_made, explicit_contracts, mid_session_adaptations_applied)` — writes audit log, saves working agreements to `contracts.md`. Pass `mid_session_adaptations_applied=N` when skill patches were applied within this session so `self_heal` doesn't re-flag them
 - `route_task(task)` — sizes the task (XS→XL), returns skill list and ceremony level
 - `optimize_intent(raw_input)` — compresses vague/multi-part input into a structured intent brief before routing
 - `check_command(command)` — enforces the no-destructive hard rule at tool level
-- `save_contract(contract, project_dir)` — **immediately** writes a working agreement to `contracts.md`; call this at the moment a contract phrase is detected, not at session end — contracts in conversation are erased by auto-compaction, contracts in the file are permanent
-- `self_heal()` — analyzes audit logs, generates improvement proposals
+- `save_contract(contract, project_dir)` — **immediately** writes a working agreement to `contracts.md`; call this at the moment a contract phrase is detected, not at session end — contracts in conversation are erased by auto-compaction, contracts in the file are permanent. Returns `saved: bool`, `conflicts: list` (keyword-overlap with existing contracts), and confirms inline: "Saved — '{contract}' will load at the start of every future session."
+- `self_heal()` — analyzes audit logs, generates improvement proposals; returns `loop_verdict` (IMPROVING / STEADY / STALLED / COLD / REGRESSING) and `org_score` (0–10)
 - `add_proposal(title, rationale, action, target, content)` — queue an improvement proposal to PENDING.md (called by skills and by Claude directly)
 - `get_proposals()` / `apply_proposal(id, confirmed)` — proposal review and two-step apply; `apply_proposal` supports `CODE_EDIT` change_type to replace named functions in `.py` files within the youk repo
 - `track_tokens(input_tokens, output_tokens, note)` — record token usage at a session checkpoint; `session_end` writes a `Tokens:` line to the audit log; `self_heal` uses this for cost trend detection across sessions
@@ -161,7 +181,9 @@ knowledge/
     └── PENDING.md              ← self-heal proposals awaiting review
 ```
 
-Each session, `compact_context` writes a checkpoint to `state/session-checkpoint.json`. The next `session_start` merges it as an audit entry automatically — so context is never lost even if you close the tab without typing `/done`. Raw transcripts are never stored — that's enforced by the `knowledge-extraction-not-logging` hard rule.
+Every `session_start` writes `state/session-open.json` — a lightweight record that the session opened. If you close the tab without `/done`, the next `session_start` detects the stale file and writes the audit entry automatically. Combined with `state/session-checkpoint.json` (written on every `compact_context` call), no session is ever fully lost. Raw transcripts are never stored — enforced by the `knowledge-extraction-not-logging` hard rule.
+
+**Type `/done` before closing.** The automatic recovery captures that a session happened; `/done` is what captures what happened — code-review, verify, contracts saved, and a `CloseCluster: yes` audit line that feeds the org_score.
 
 `self_heal` reads the last 30 days of audit logs and generates improvement proposals. Proposals sit in `PENDING.md` until you review and approve them via `apply_proposal(id, confirmed=True)`. `apply_proposal` supports `CODE_EDIT` (replace a named Python function in-repo), `SKILL_EDIT` (add or replace a section in a SKILL.md), and `CONFIG_EDIT` (patch YAML config files).
 
@@ -179,20 +201,24 @@ Skills are not static files — they generate and evolve from signals.
 
 **Evolution triggers:**
 - `self_heal()` returns `skill_gap_signals` — skills with recurring `SkillGap:` lines in audit logs
-- Session ends with `skill_gaps={"skill-name": ["what was missed"]}` in `session_end()`
+- A skill fails or is silently skipped mid-session → immediate `assess_skill()` + `apply_proposal()` within the same session
 - `assess_skill()` called directly reveals coverage gaps
 
-**The loop:**
+**Two speeds of evolution:**
+
+*Within-session (event-driven):* When a skill fails or is skipped, `assess_skill` runs immediately. SKILL_EDIT proposals with concrete content are applied in the same session — no waiting for session_end. The next skill invocation uses the patched SKILL.md.
+
+*Cross-session (audit-driven):* Structural gaps (CODE_EDIT, CONFIG_EDIT) queue to PENDING.md and wait for your review. `self_heal()` surfaces recurring patterns across sessions. `apply_proposal(confirmed=True)` applies after you review.
+
 ```
-repo context / audit signals
+Skill fails or is skipped mid-session
         ↓
-generate_skill() or assess_skill()
+assess_skill() — immediate, same session
         ↓
-add_proposal()          ← queued to PENDING.md, never auto-applied
+SKILL_EDIT with content → apply_proposal() now    ← patched in-session
+CODE_EDIT / CONFIG_EDIT → add_proposal()          ← queued for your review
         ↓
-apply_proposal(confirmed=True)   ← founder reviews and approves
-        ↓
-updated SKILL.md        ← read at runtime via volume mount, no rebuild
+updated SKILL.md / PENDING.md
 ```
 
 `knowledge/skill-schema.md` is the canonical template that drives generation — it defines required sections, phase structure, quality bar conventions, and anti-patterns. Generated skills follow the same structure as hand-written ones.
@@ -294,23 +320,27 @@ knowledge/
 
 **Zero footprint in your repo.** All knowledge writes to `~/.claude/youk/knowledge/`. Your project's git history is untouched. youk reads your project (project type detection, git log for resume point), never writes to it.
 
+**Knowledge is per-developer, not per-project.** A teammate joining with their own youk install starts from zero — no contracts, decisions, or resume points transfer automatically. To share context: copy `~/.claude/youk/knowledge/projects/{slug}/` to their machine. Team-wide shared knowledge stores are a planned future feature.
+
 ---
 
 ## Development commands
 
 ```bash
-# Build both images
-make build
-
-# Run tests (tools/list handshake)
+# Run all tests: unit tests + MCP handshakes
 make test
-
-# Full rebuild from scratch
-make rebuild
 
 # Health check with actionable Fix: lines
 bash scripts/doctor.sh
+
+# Build both images (needed when requirements.txt or servers/shared/ change)
+make build
+
+# Full rebuild from scratch
+make rebuild
 ```
+
+**Live source:** `servers/core/src/` and `servers/code/src/` are mounted as Docker volumes — code changes there take effect on next Claude Code restart without `make build`. Only rebuild when `requirements.txt` or `servers/shared/` changes, then restart Claude Code.
 
 ---
 

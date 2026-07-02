@@ -51,22 +51,23 @@ This takes about 2 minutes on first run (downloading Python packages for the Doc
 
 What the installer does:
 1. Creates `~/.claude/youk/state/` (session state files)
-2. Creates `~/.claude/briefs/` (task brief scratch space)
-3. Symlinks `~/.claude/youk/skills` → `~/.claude/skills/` (if you have Claude skills installed)
-4. Builds the `youk-core:latest` Docker image
-5. Builds the `youk-code:latest` Docker image
-6. Runs `validate.sh` to confirm everything works
+2. Creates `~/.claude/audit/` (session audit logs)
+3. Builds the `youk-core:latest` Docker image
+4. Builds the `youk-code:latest` Docker image
+5. Registers both as MCP servers in Claude Code
+6. Writes `state/path-map.env` so containers can resolve your host paths
+7. Runs `doctor.sh` to confirm everything works
 
-If install fails, check the error and run `make build` manually to see Docker build output.
+If install fails, run `make doctor` to see specific Fix: lines for each failure.
 
 ---
 
-## Step 4: Register MCP servers
+## Steps 4–5: Register MCP servers + patch CLAUDE.md
 
-youk registers as MCP servers in Claude Code so its tools are available in every session.
+`install.sh` handles both of these automatically. If you need to run them manually:
 
 ```bash
-# youk-core: session management, routing, self-healing (read-write)
+# MCP server registration
 claude mcp add --scope user youk-core --transport stdio -- \
   docker run -i --rm \
   -v "$HOME/.claude:/claude" \
@@ -74,7 +75,6 @@ claude mcp add --scope user youk-core --transport stdio -- \
   -e ANTHROPIC_API_KEY \
   youk-core:latest
 
-# youk-code: skills, NFR checks, commit review (read-only)
 claude mcp add --scope user youk-code --transport stdio -- \
   docker run -i --rm \
   -v "$HOME/.claude:/claude:ro" \
@@ -83,30 +83,9 @@ claude mcp add --scope user youk-code --transport stdio -- \
   youk-code:latest
 ```
 
-The `--scope user` flag makes these available in all your Claude Code sessions, not just the current project.
+Verify with `claude mcp list` — both should show `✔ Connected`.
 
-Verify:
-```bash
-claude mcp list
-```
-
-Expected output:
-```
-youk-core: docker run ... - ✔ Connected
-youk-code: docker run ... - ✔ Connected
-```
-
----
-
-## Step 5: Add youk identity to CLAUDE.md
-
-Create or update `~/.claude/CLAUDE.md` with the youk instructions. A template is at `docs/claude-md-template.md` — copy it:
-
-```bash
-cp ~/.claude/youk/docs/claude-md-template.md ~/.claude/CLAUDE.md
-```
-
-If you already have a `CLAUDE.md`, append the youk block to the bottom of it.
+`install.sh` also patches `~/.claude/CLAUDE.md` with the youk identity block. If you already have a CLAUDE.md, it appends without overwriting existing content.
 
 ---
 
@@ -132,50 +111,35 @@ youk routes silently based on task size. Small tasks get no ceremony. Large task
 
 ## Verifying the full setup
 
-Run the built-in validation:
 ```bash
-cd ~/.claude/youk && bash scripts/validate.sh
+bash ~/.claude/youk/scripts/doctor.sh
 ```
 
-Expected output:
-```
-Validating youk installation...
-  [OK] youk-core image exists
-  [OK] youk-code image exists
-  [OK] skills directory accessible
-  [OK] youk state directory exists
-  [OK] knowledge directory exists
-  [OK] config files present
-  Testing youk-core MCP response...
-  [OK] youk-core responds to MCP
-  Testing youk-code MCP response...
-  [OK] youk-code responds to MCP
-
-All checks passed. youk is ready.
-```
+Every check prints `PASS`, `WARN`, or `FAIL`. Every `FAIL` has a `Fix:` line. Re-run after fixing until all checks pass.
 
 ---
 
 ## Keeping youk updated
 
 ```bash
-cd ~/.claude/youk
-bash scripts/update.sh
+cd ~/.claude/youk && make update
 ```
 
-This pulls the latest version, rebuilds Docker images, and validates the installation. The MCP server registrations don't need to change — Claude Code always starts a fresh container from the image on each session.
+This pulls the latest code and rebuilds Docker images. Restart Claude Code afterward to pick up the new images.
 
 ---
 
 ## What to expect in a session
 
-**Session start:** youk-core loads context from the project you're in. If there are pending improvement proposals, it surfaces them once.
+**Session start:** youk-core loads contracts, resume point, and session plan from the project you're in. Pending improvement proposals surface once: "youk flagged N proposals — review them?"
 
-**During the session:** Route_task runs for every non-trivial task. You won't see the routing — it happens silently and shapes how Claude approaches the task.
+**During the session:** `route_task` runs silently for every non-trivial task. Small tasks get no ceremony. M+ tasks get an nfr_check before implementation starts. If a skill fails mid-session, youk patches it immediately rather than deferring to the next session.
 
-**Session end:** When you say "done", "stopping", or "that's it", youk-core calls session_end, which validates the session summary and writes structured knowledge entries.
+**Session end — type `/done`:** This is the most important habit. `/done` runs code-review + verify, saves contracts, and writes a `CloseCluster: yes` audit entry. That entry feeds org_score. Without it, the self-improvement loop can detect what happened but not confirm quality — and org_score stays capped.
 
-**Every 3 sessions:** A self-health check runs. If it finds patterns (skipped sessions, inconsistent skill usage), it writes proposals to `knowledge/proposals/PENDING.md`. On the next session start, it surfaces these: "youk flagged N proposals — review them?"
+If you close the tab without `/done`: youk detects the stale session at next open and writes a recovery entry. You won't lose context entirely, but the session won't count toward the quality score.
+
+**Checking system health:** Type `/health` at any point. It returns `org_score` (0–10) and `loop_verdict` (IMPROVING / STALLED / etc.). The single biggest factor in score: did `/done` fire? Three consecutive `/done` sessions move the needle visibly.
 
 ---
 
