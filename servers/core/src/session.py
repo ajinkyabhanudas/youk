@@ -652,7 +652,7 @@ def _parse_last_session_flags(audit_dir: Path) -> tuple[bool, bool]:
     return close_cluster_missed, orchestrate_pending
 
 
-def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int) -> str:
+def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int, slug: str = "") -> str:
     """One-line trend hint for the session card footer. Returns '' on any failure."""
     try:
         texts = [f.read_text() for f in sorted(audit_dir.glob("*.md")) if f.is_file()]
@@ -688,6 +688,17 @@ def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int) -> str:
         except Exception:
             pass
 
+        # Per-project score: surfaced alongside system-wide score when available.
+        project_score_str = ""
+        if slug:
+            try:
+                data = _j.loads(metrics_file.read_text()) if metrics_file.exists() else {}
+                proj = data.get("projects", {}).get(slug, {})
+                if proj.get("org_score") is not None:
+                    project_score_str = f"{slug}: {proj['org_score']}/10"
+            except Exception:
+                pass
+
         # Recompute /done rate directly from audit — not the stale metrics snapshot.
         close_rate_str = ""
         if session_count:
@@ -702,6 +713,8 @@ def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int) -> str:
             score_part += f" {spark}"
         if score_part:
             parts.append(score_part)
+        if project_score_str:
+            parts.append(project_score_str)
         if session_count:
             parts.append(f"{session_count} session{'s' if session_count != 1 else ''}")
         if skill_rate_pct is not None:
@@ -1103,7 +1116,7 @@ def start_session(project_dir: str) -> SessionState:
     pending = _count_pending_proposals()
     counter = state["session_counter"]
     health_check_due = counter % 3 == 0
-    dashboard_summary = _compute_dashboard_summary(audit_dir, pending)
+    dashboard_summary = _compute_dashboard_summary(audit_dir, pending, slug=slug)
 
     doc_gaps = _check_doc_freshness()
 
