@@ -1161,10 +1161,10 @@ def start_session(project_dir: str) -> SessionState:
             "run /done at end of this session so work compounds."
         )
 
-    # API key warning — surfaces before the developer hits a cryptic error mid-task
+    # API key warning — surfaces FIRST so the developer sees it before any skill fails
     import os as _os
     if not _os.environ.get("ANTHROPIC_API_KEY") and not Path("/claude/.anthropic/api_key").exists():
-        session_plan.append(
+        session_plan.insert(0,
             "⚠ ANTHROPIC_API_KEY missing — nfr_check and skill execution will fail. "
             "Fix: export ANTHROPIC_API_KEY=sk-ant-... && make install"
         )
