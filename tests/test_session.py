@@ -332,3 +332,93 @@ class TestEndSessionCheckpointRollup:
         )
         result = session.end_session(summary="no checkpoints session", commits_made=False)
         assert result["audit_written"] is True
+
+
+# ── _compute_dashboard_summary ───────────────────────────────────────────────
+
+class TestComputeDashboardSummary:
+    """Dashboard summary: org_score from metrics.json, /done rate from audit."""
+
+    def _write_metrics(self, youk_root, entries):
+        import json
+        (youk_root / "state" / "improvement-metrics.json").write_text(
+            json.dumps({"entries": entries})
+        )
+
+    def _write_audit(self, audit_dir, sessions):
+        """Each session dict: close_cluster (bool), gaps (int)."""
+        lines = []
+        for i, s in enumerate(sessions):
+            lines.append(f"\n### Session — 2026-07-0{i + 1} 10:00 UTC")
+            lines.append("Summary text here")
+            lines.append("Skills: none")
+            lines.append(f"CloseCluster: {'yes' if s.get('close_cluster') else 'no'}")
+            lines.append("Commits: no")
+            for _ in range(s.get("gaps", 0)):
+                lines.append("SkillGap: dev-loop — missing pattern")
+        (audit_dir / "2026-07.md").write_text("\n".join(lines))
+
+    def test_org_score_from_metrics_not_audit(self, youk_root, tmp_path):
+        """org: X/10 reads from improvement-metrics.json, not audit text."""
+        from session import _compute_dashboard_summary
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        # Audit has NO "Org score: X/10" text — that's the old broken pattern
+        self._write_audit(audit_dir, [{"close_cluster": True}])
+        self._write_metrics(youk_root, [{"org_score": 6.1, "close_cluster_rate": 0.11}])
+
+        result = _compute_dashboard_summary(audit_dir, 0)
+        assert "org: 6.1/10" in result
+
+    def test_org_score_absent_when_no_metrics_file(self, youk_root, tmp_path):
+        """No metrics.json → org score omitted from dashboard."""
+        from session import _compute_dashboard_summary
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        self._write_audit(audit_dir, [{"close_cluster": False}])
+
+        result = _compute_dashboard_summary(audit_dir, 0)
+        assert "org:" not in result
+
+    def test_done_rate_computed_from_audit(self, youk_root, tmp_path):
+        """close_cluster_rate is recomputed from audit, not read from stale metrics."""
+        from session import _compute_dashboard_summary
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        # 2 of 4 sessions have CloseCluster: yes → 50%
+        self._write_audit(audit_dir, [
+            {"close_cluster": True},
+            {"close_cluster": False},
+            {"close_cluster": True},
+            {"close_cluster": False},
+        ])
+        # Metrics has stale 0% rate — dashboard should NOT use it
+        self._write_metrics(youk_root, [{"org_score": 6.0, "close_cluster_rate": 0.0}])
+
+        result = _compute_dashboard_summary(audit_dir, 0)
+        assert "/done: 50%" in result
+
+    def test_done_rate_zero_when_no_close_cluster(self, youk_root, tmp_path):
+        """/done: 0% when all sessions have CloseCluster: no."""
+        from session import _compute_dashboard_summary
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        self._write_audit(audit_dir, [{"close_cluster": False}, {"close_cluster": False}])
+        self._write_metrics(youk_root, [{"org_score": 5.8}])
+
+        result = _compute_dashboard_summary(audit_dir, 0)
+        assert "/done: 0%" in result
+
+    def test_velocity_shown_when_two_metrics_entries(self, youk_root, tmp_path):
+        """▲delta velocity shown when improvement-metrics has multiple entries."""
+        from session import _compute_dashboard_summary
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        self._write_audit(audit_dir, [{"close_cluster": True}])
+        self._write_metrics(youk_root, [
+            {"org_score": 5.8, "close_cluster_rate": 0.0},
+            {"org_score": 6.1, "close_cluster_rate": 0.11},
+        ])
+
+        result = _compute_dashboard_summary(audit_dir, 0)
+        assert "▲0.3" in result

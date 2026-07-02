@@ -595,39 +595,39 @@ def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int) -> str:
             return ""
         full = "\n".join(texts)
 
-        scores = [float(s) for s in re.findall(r"Org score:\s*([\d.]+)/10", full)]
-        spark = ""
-        last_score = ""
-        velocity_str = ""
-        if scores:
-            last_score = f"org: {scores[-1]}/10"
-            if len(scores) >= 2:
-                _S = " ▁▂▃▄▅▆▇█"
-                n = len(_S) - 1
-                spark = "".join(_S[round(v / 10 * n)] for v in scores[-5:])
-                delta = round(scores[-1] - scores[-2], 1)
-                if delta > 0:
-                    velocity_str = f"▲{delta}"
-                elif delta < 0:
-                    velocity_str = f"▼{abs(delta)}"
-
         session_count = len(re.findall(r"^### Session —", full, re.MULTILINE))
         gap_count = len(re.findall(r"^SkillGap:", full, re.MULTILINE))
 
-        # Read improvement-metrics.json for close-cluster rate
+        # Read org_score history from improvement-metrics.json — the authoritative source.
+        # Audit text never contains "Org score: X/10" so regex-scanning audit always returns [].
         metrics_file = YOUK_ROOT / "state" / "improvement-metrics.json"
-        close_rate_str = ""
+        last_score = ""
+        velocity_str = ""
+        spark = ""
         try:
             import json as _j
             if metrics_file.exists():
                 entries = _j.loads(metrics_file.read_text()).get("entries", [])
-                if entries:
-                    last = entries[-1]
-                    rate = last.get("close_cluster_rate", None)
-                    if rate is not None:
-                        close_rate_str = f"/done: {int(rate * 100)}%"
+                scores = [e["org_score"] for e in entries if "org_score" in e]
+                if scores:
+                    last_score = f"org: {scores[-1]}/10"
+                    if len(scores) >= 2:
+                        _S = " ▁▂▃▄▅▆▇█"
+                        n = len(_S) - 1
+                        spark = "".join(_S[round(v / 10 * n)] for v in scores[-5:])
+                        delta = round(scores[-1] - scores[-2], 1)
+                        if delta > 0:
+                            velocity_str = f"▲{delta}"
+                        elif delta < 0:
+                            velocity_str = f"▼{abs(delta)}"
         except Exception:
             pass
+
+        # Recompute /done rate directly from audit — not the stale metrics snapshot.
+        close_rate_str = ""
+        if session_count:
+            done_count = len(re.findall(r"^CloseCluster: yes", full, re.MULTILINE))
+            close_rate_str = f"/done: {int(done_count / session_count * 100)}%"
 
         parts: list[str] = []
         score_part = last_score
@@ -1102,17 +1102,17 @@ def start_session(project_dir: str) -> SessionState:
             f"{names}{suffix}. Call add_proposal() to queue each one."
         )
 
-    # 3D — Token overhead from last session (proves NFR-1 compliance session-to-session)
-    overhead_pct, _overhead_budget = _last_token_overhead()
-    if overhead_pct is not None:
-        if overhead_pct > 20:
+    # 3D — Token budget used last session (budget utilization, not youk overhead ratio)
+    budget_pct, _budget_limit = _last_token_overhead()
+    if budget_pct is not None:
+        if budget_pct > 90:
             session_plan.append(
-                f"⚠ Last session: {overhead_pct}% overhead (target ≤20%) — "
-                "consider splitting large tasks"
+                f"⚠ Last session used {budget_pct}% of token budget — "
+                "consider splitting large tasks or using /close earlier"
             )
         else:
             session_plan.append(
-                f"Last session: {overhead_pct}% overhead — within target"
+                f"Last session: {budget_pct}% of token budget used"
             )
 
     # Persist session plan so compact_context can include it in briefs
