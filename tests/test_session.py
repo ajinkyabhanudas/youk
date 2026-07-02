@@ -100,3 +100,51 @@ class TestDetectProjectType:
     def test_nonexistent_dir_returns_unknown(self, tmp_path):
         from session import _detect_project_type
         assert _detect_project_type(str(tmp_path / "nonexistent")) == "unknown"
+
+
+# ── Session plan generation ──────────────────────────────────────────────────
+
+class TestGenerateSessionPlan:
+    def _plan(self, **kwargs):
+        from session import _generate_session_plan
+        defaults = dict(
+            slug="test",
+            resume_point="Fix the login bug",
+            contracts=[],
+            pending_proposals=0,
+            close_cluster_missed=False,
+            project_type="python",
+            session_counter=10,
+        )
+        defaults.update(kwargs)
+        return _generate_session_plan(**defaults)
+
+    def test_stale_resume_point_tagged_when_old_and_many_commits(self):
+        plan = self._plan(days_since_last=20, new_commits=15)
+        assert any("20d stale" in item and "15 commits since" in item for item in plan)
+
+    def test_resume_point_not_tagged_when_recent(self):
+        plan = self._plan(days_since_last=3, new_commits=5)
+        assert not any("stale" in item.lower() for item in plan)
+
+    def test_resume_point_not_tagged_when_few_commits(self):
+        plan = self._plan(days_since_last=20, new_commits=5)
+        assert not any("stale" in item.lower() for item in plan)
+
+    def test_close_cluster_missed_plain_english_for_early_session(self):
+        plan = self._plan(close_cluster_missed=True, session_counter=2)
+        assert any("Type /done" in item for item in plan)
+        assert not any("org score" in item.lower() for item in plan)
+
+    def test_close_cluster_missed_mentions_org_score_for_veteran(self):
+        plan = self._plan(close_cluster_missed=True, session_counter=15)
+        assert any("org score" in item.lower() for item in plan)
+
+    def test_pending_proposals_plain_english_for_early_session(self):
+        plan = self._plan(pending_proposals=3, session_counter=2)
+        assert any("/health" in item for item in plan)
+        assert not any("self-heal" in item.lower() for item in plan)
+
+    def test_pending_proposals_technical_for_veteran(self):
+        plan = self._plan(pending_proposals=3, session_counter=10)
+        assert any("self-heal" in item.lower() or "get_proposals" in item for item in plan)

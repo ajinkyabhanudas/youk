@@ -730,6 +730,8 @@ def _generate_session_plan(
     tooling: dict | None = None,
     session_counter: int = 0,
     bootstrap_signals: list[str] | None = None,
+    days_since_last: int | None = None,
+    new_commits: int = 0,
 ) -> list[str]:
     """
     Generate a forward-looking session plan from structured context.
@@ -741,6 +743,7 @@ def _generate_session_plan(
     # 1. Current priority — what the resume point signals
     is_cold_start = resume_point in ("No prior context found — fresh session.", "") or not resume_point
     is_new_install = session_counter <= 1
+    is_stale_resume = (days_since_last is not None and days_since_last >= 14 and new_commits > 10)
 
     if is_cold_start:
         # True first session — no knowledge anywhere
@@ -760,21 +763,37 @@ def _generate_session_plan(
         plan.append(f"Continue from: {resume_point}")
     else:
         clean = resume_point.removeprefix("Resume: ")
-        plan.append(f"Resume: {clean}")
+        if is_stale_resume:
+            plan.append(f"Resume [{days_since_last}d stale — {new_commits} commits since — verify before picking up]: {clean}")
+        else:
+            plan.append(f"Resume: {clean}")
 
     # 2. Pending proposals surface
     if pending_proposals > 0:
-        plan.append(
-            f"Review {pending_proposals} pending self-heal proposal(s) "
-            f"before major changes (call get_proposals)"
-        )
+        if session_counter <= 3:
+            # Plain English for new users — no jargon
+            plan.append(
+                f"{pending_proposals} suggested improvement(s) queued — "
+                f"type /health to review them"
+            )
+        else:
+            plan.append(
+                f"Review {pending_proposals} pending self-heal proposal(s) "
+                f"before major changes (call get_proposals)"
+            )
 
     # 3. Missed close-cluster from last session
     if close_cluster_missed:
-        plan.append(
-            "Last session wasn't saved — run /done at the end of this session "
-            "so your work compounds into the next one."
-        )
+        if session_counter <= 3:
+            plan.append(
+                "Last session wasn't saved. Type /done before closing "
+                "so I remember what you were working on."
+            )
+        else:
+            plan.append(
+                "Last session wasn't saved (impacts org score). "
+                "Run /done at the end of this session so your work compounds."
+            )
 
     # 4. Project-type-specific nudge — use detected commands when available
     t = tooling or {}
@@ -1023,6 +1042,8 @@ def start_session(project_dir: str) -> SessionState:
 
     doc_gaps = _check_doc_freshness()
 
+    new_commits = len([ln for ln in git_log.splitlines() if ln.strip()]) if git_log else 0
+
     session_plan = _generate_session_plan(
         slug=slug,
         resume_point=resume_point,
@@ -1036,10 +1057,11 @@ def start_session(project_dir: str) -> SessionState:
         tooling=project_scan.get("tooling"),
         session_counter=counter,
         bootstrap_signals=bootstrap_signals,
+        days_since_last=days_since_last,
+        new_commits=new_commits,
     )
 
     # Staleness awareness — surface when returning after a significant gap
-    new_commits = len([ln for ln in git_log.splitlines() if ln.strip()]) if git_log else 0
     if days_since_last is not None and days_since_last >= 7:
         recent_lines = git_log.splitlines()[:3] if git_log else []
         recent_subjects = [ln.split(" ", 1)[1] if " " in ln else ln for ln in recent_lines]
@@ -1051,9 +1073,8 @@ def start_session(project_dir: str) -> SessionState:
         session_plan.append(f"Returning after {days_since_last} days{commits_note}")
         if days_since_last >= 30 and contracts:
             session_plan.insert(0,
-                f"Returning after {days_since_last} days — your {len(contracts)} contract(s) were written "
-                f"before you left. Verify they're still valid before relying on them "
-                f"(run: cat ~/.claude/youk/knowledge/projects/{slug}/contracts.md)."
+                f"Returning after {days_since_last} days — {len(contracts)} saved rule(s) may be stale. "
+                f"Say 'show my contracts' to review them before we start."
             )
     elif close_cluster_missed and new_commits > 0 and days_since_last != 0:
         # Commits exist from last session but no /done was called — surface the loss
@@ -1107,20 +1128,6 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass  # non-critical — compact_context degrades gracefully without it
 
-    # Write session-open.json so every session leaves an audit trail even if the tab
-    # is closed without /done or compact_context ever firing.
-    # _merge_stale_checkpoint() reads this at the NEXT session_start and writes the entry.
-    # session_end() and compact_context() clear it so closed sessions don't double-count.
-    open_file = YOUK_ROOT / "state" / "session-open.json"
-    try:
-        open_file.write_text(json.dumps({
-            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "slug": slug,
-            "plan_items": session_plan[:3],
-        }, indent=2))
-    except Exception:
-        pass
-
     # Build compact brief inline so Claude can paste it verbatim in the first response.
     # This anchors contracts before any context pressure, eliminating the need for a
     # separate compact_context call at session open (saves 1 MCP round-trip per session).
@@ -1130,6 +1137,18 @@ def start_session(project_dir: str) -> SessionState:
         brief = _build_brief(project_dir).get("brief", "")
     except Exception:
         brief = ""
+
+    # Write session-open.json AFTER build_brief — build_brief deletes this file
+    # (because compact_context supersedes it), so we must write it last.
+    open_file = YOUK_ROOT / "state" / "session-open.json"
+    try:
+        open_file.write_text(json.dumps({
+            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "slug": slug,
+            "plan_items": session_plan[:3],
+        }, indent=2))
+    except Exception:
+        pass
 
     return SessionState(
         project=slug,
