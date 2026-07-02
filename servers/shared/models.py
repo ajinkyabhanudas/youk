@@ -96,6 +96,10 @@ class SessionState:
     # contracts before any context pressure exists. Eliminates the need for a separate
     # compact_context call at session open.
     brief: str = ""
+    # count of mid-session skill adaptations applied this session (via assess_skill +
+    # apply_proposal within the session, before session_end). Lets self_heal know that
+    # some gaps were already addressed and shouldn't be re-flagged.
+    mid_session_adaptations_applied: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -115,6 +119,7 @@ class SessionState:
             "project_context_files": self.project_context_files,
             "dashboard_summary": self.dashboard_summary,
             "brief": self.brief,
+            "mid_session_adaptations_applied": self.mid_session_adaptations_applied,
         }
 
 

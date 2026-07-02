@@ -1181,6 +1181,7 @@ def end_session(
     skills_used: list[str] | None = None,
     close_cluster: bool = False,
     skill_gaps: dict[str, list[str]] | None = None,
+    mid_session_adaptations_applied: int = 0,
 ) -> dict:
     """
     Write structured audit log entry, detect and save contract phrases.
@@ -1231,6 +1232,7 @@ def end_session(
         for skill_name, gaps in skill_gaps.items():
             for gap in gaps:
                 gap_lines += f"SkillGap: {skill_name} — {gap}\n"
+    adaptations_line = f"MidSessionAdaptations: {mid_session_adaptations_applied}\n" if mid_session_adaptations_applied > 0 else ""
 
     token_data = _read_and_clear_tokens()
     total_tokens = token_data["total_input"] + token_data["total_output"]
@@ -1250,6 +1252,7 @@ def end_session(
         f"CloseCluster: {close_line}\n"
         f"Commits: {'yes' if commits_made else 'no'}\n"
         f"{tokens_line}"
+        f"{adaptations_line}"
         f"{gap_lines}"
     )
 

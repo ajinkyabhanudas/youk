@@ -48,6 +48,7 @@ def session_end(
     skills_used: list[str] | None = None,
     close_cluster: bool = False,
     skill_gaps: dict | None = None,
+    mid_session_adaptations_applied: int = 0,
 ) -> dict:
     """
     End a youk session. Writes audit log entry, saves contracts, checks session-close cluster.
@@ -76,6 +77,11 @@ def session_end(
     Written as SkillGap: lines in the audit log. These accumulate across sessions and
     feed into self_heal() skill_gap_signals → assess_skill() evolution loop.
 
+    mid_session_adaptations_applied: Count of skill adaptations applied within this
+    session via assess_skill + apply_proposal (not deferred to session_end). Written
+    as MidSessionAdaptations: N in the audit log so self_heal can skip re-flagging
+    gaps that were already fixed this session.
+
     Returns: knowledge_extracted, proposals_added, audit_written,
              session_close_cluster_detected, contracts_saved.
     """
@@ -84,7 +90,7 @@ def session_end(
     except HardRuleViolation as e:
         return {"error": str(e), "blocked": True, "rule_id": e.rule_id}
 
-    return end_session(summary, commits_made, explicit_contracts, skills_used, close_cluster, skill_gaps)
+    return end_session(summary, commits_made, explicit_contracts, skills_used, close_cluster, skill_gaps, mid_session_adaptations_applied)
 
 
 @mcp.tool()

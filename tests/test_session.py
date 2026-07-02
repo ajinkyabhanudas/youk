@@ -148,3 +148,50 @@ class TestGenerateSessionPlan:
     def test_pending_proposals_technical_for_veteran(self):
         plan = self._plan(pending_proposals=3, session_counter=10)
         assert any("self-heal" in item.lower() or "get_proposals" in item for item in plan)
+
+
+# ── Mid-session adaptations audit line ───────────────────────────────────────
+
+class TestMidSessionAdaptations:
+    @pytest.fixture(autouse=True)
+    def patch_claude_root(self, tmp_path, monkeypatch):
+        import session
+        claude_root = tmp_path / "claude"
+        (claude_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        self._audit_dir = claude_root / "audit"
+
+    def _write_state(self, youk_root, slug="testslug"):
+        (youk_root / "state" / "session.json").write_text(
+            f'{{"session_counter": 5, "last_project": "{slug}", "last_seen": "2026-07-01"}}'
+        )
+
+    def test_adaptations_written_to_audit_when_nonzero(self, youk_root):
+        """MidSessionAdaptations: N line appears in audit when adaptations were applied."""
+        import session
+        self._write_state(youk_root)
+        session.end_session(
+            summary="Test session",
+            commits_made=False,
+            close_cluster=False,
+            mid_session_adaptations_applied=3,
+        )
+        from datetime import datetime
+        month = datetime.utcnow().strftime("%Y-%m")
+        content = (self._audit_dir / f"{month}.md").read_text()
+        assert "MidSessionAdaptations: 3" in content
+
+    def test_adaptations_line_absent_when_zero(self, youk_root):
+        """MidSessionAdaptations line is omitted entirely when count is 0."""
+        import session
+        self._write_state(youk_root, slug="testslug2")
+        session.end_session(
+            summary="Test session no adaptations",
+            commits_made=False,
+            close_cluster=False,
+            mid_session_adaptations_applied=0,
+        )
+        from datetime import datetime
+        month = datetime.utcnow().strftime("%Y-%m")
+        content = (self._audit_dir / f"{month}.md").read_text()
+        assert "MidSessionAdaptations: 0" not in content
