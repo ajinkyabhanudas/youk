@@ -379,3 +379,174 @@ Source project: youk
 Extracted: 2026-07-02
 
 ```
+
+## PENDING-20260702170334 — 2026-07-02
+**Target:** ~/.claude/CLAUDE.md
+**Change:** Wire /learn into /done — close the learning loop
+**Reason:** Simulation confirmed /learn has NEVER been invoked across 33 sessions. It is a skill that exists (skills/learn/SKILL.md) but was never added to the /done ceremony sequence in CLAUDE.md. The learning loop literally cannot close without this wire. Every session that ends without /learn is a session that compounds context but not developer ability — which is the wrong north star. Acid test simulation: youk developing youk showed /learn as "missed catch #1", with responsible mechanism listed as "CLAUDE.md behavioral trigger + dev-loop skill". Fix: add /learn to the /done sequence immediately after humanize. CLAUDE.md line ~46 currently reads "code-review + verify + humanize in sequence" — must become "code-review + verify + humanize + learn in sequence".
+**Before:** 
+**After:** Change /done line to: /done → code-review + verify + humanize + learn in sequence, then: (1) scan conversation for any contracts not yet saved (save_contract fires immediately mid-session, this is a safety-net sweep for any missed), collect as explicit_contracts=[...], (2) session_end("done", commit
+**Status:** PENDING
+**ChangeType:** CONFIG_EDIT
+**TargetSection:** Workflow commands — /done
+**Content:**
+```
+Change /done line to: /done → code-review + verify + humanize + learn in sequence, then: (1) scan conversation for any contracts not yet saved (save_contract fires immediately mid-session, this is a safety-net sweep for any missed), collect as explicit_contracts=[...], (2) session_end("done", commits_made=<bool>, explicit_contracts=[...], close_cluster=True)
+
+Also add to the M+ task rules: "M+ task completing without /learn at /done = incomplete loop".
+```
+
+## PENDING-20260702170345 — 2026-07-02
+**Target:** session
+**Change:** Add M+ capability skill enforcement gate at session_end
+**Reason:** Simulation finding (all 3 personas): ceremony is advisory, not enforced. route_task returns M ceremony with skills=[nfr_check, dev_loop, ...] but Claude can skip every skill with no consequence. skill_invocation_rate sits at ~25% because there is no gate. The CLAUDE.md already has the text "M+ task completing without capability skill = incomplete" but this is prose, not enforced behavior. Fix: session_end() in session.py should emit a WARNING (not block) when audit would show M+ route_task was called but zero capability skills appear in the session. Surface this as: "⚠ No capability skill invoked this session — route_task returned [skills]. If this was an M+ task, invoke one retroactively or add skill_gap note." This makes the gap visible at the moment it can still be corrected (before session_end commits the audit line).
+**Before:** 
+**After:** In session_end(), after writing audit line, check: if session had route_task result with size M/L/XL and no capability skill was invoked in the session log (Skills: none or Skills: self_heal/simulate-experience only), return a warning in the session_end result: {"skill_gate_warning": "M+ task comple
+**Status:** PENDING
+**ChangeType:** SKILL_EDIT
+**TargetSection:** session_end — skill gate
+**Content:**
+```
+In session_end(), after writing audit line, check: if session had route_task result with size M/L/XL and no capability skill was invoked in the session log (Skills: none or Skills: self_heal/simulate-experience only), return a warning in the session_end result: {"skill_gate_warning": "M+ task completed without capability skill invocation. Invoke one retroactively or pass skill_gap={'skill': ['reason']} to document the miss."}. This is a WARNING, not a hard block — founders can override. But it must be visible.
+```
+
+## PENDING-20260702170401 — 2026-07-02
+**Target:** simulate-experience
+**Change:** Add Persona E (youk developing youk) to simulate-experience SKILL.md
+**Reason:** The acid test for youk is whether it makes its own development faster. This is the most honest signal for the north star ("every session compounds developer ability"). The current simulate-experience SKILL.md has 4 personas (Junior/Day 1, Senior/power user, Joining/new team member, Returning/after gap) but NONE of them test "is youk actually getting faster at building youk itself?" Persona E catches: does session 33 feel measurably faster than session 1? Are the same gaps recurring? Is the founder doing manual audit work that self_heal was supposed to do? Acid test simulation (2026-07-02) found 8 missed catches that should have been caught by existing skills. This persona needs to be in simulate-experience so it runs automatically, not just when the founder manually requests it.
+**Before:** 
+**After:** ## Persona E: The Acid Test — youk developing youk
+
+**Profile:** Simulates the youk founder using youk to build youk itself. Session ~30, active development session on the youk codebase.
+
+**What to test:**
+- Does session_start produce a brief that eliminates re-establishment cost, or does the develo
+**Status:** PENDING
+**ChangeType:** SKILL_EDIT
+**TargetSection:** Personas
+**Content:**
+```
+## Persona E: The Acid Test — youk developing youk
+
+**Profile:** Simulates the youk founder using youk to build youk itself. Session ~30, active development session on the youk codebase.
+
+**What to test:**
+- Does session_start produce a brief that eliminates re-establishment cost, or does the developer still re-derive context?
+- Did route_task size the last 3 tasks correctly? Were capability skills invoked each time?
+- Is the /learn output (if it ran) producing pattern extractions that would prevent future mistakes?
+- How many founder corrections occurred this session vs. session 1? Is the trend down?
+- Did self_heal detect any of the patterns the founder caught manually?
+
+**The acid test question:** If the founder removed youk today and rebuilt from git history + contracts.md + decisions.md alone (no session_start, no route_task), how much slower would development be? If the answer is "barely slower", youk is not compounding.
+
+**Quality bars:**
+- session_start brief must eliminate re-establishment without re-reading files
+- At least 1 capability skill must have fired in the last 3 sessions
+- /learn must have run in the last /done session
+- Founder corrections per session must be trending DOWN over the last 5 sessions
+- self_heal must have caught ≥1 thing the founder didn't have to surface manually
+
+**Red flags (STRUCTURAL gap, not UX friction):**
+- Founder manually diagnosing gaps self_heal was supposed to catch
+- /learn rate = 0% across multiple sessions
+- route_task returning skills that were never invoked
+- org_score STALLED despite active development
+
+**Output format:** Same as other personas — ACTUAL vs. PROMISED, GAP, verdict (COMPOUNDING / PARTIAL / FAILING), top 3 friction points, one-line fix each.
+```
+
+## PENDING-20260702170416 — 2026-07-02
+**Target:** servers/core/src/health.py
+**Change:** Per-project org_score tracking in improvement-metrics.json
+**Reason:** Simulation finding (Priya, Month 3): when she runs /health, she sees youk's org_score (6.1/10), not canopy's. She has no visibility into whether canopy is compounding. The PRD targets org_score ≥7.5 at session 20, but this is unmeasurable at project level — the metric only exists system-wide. Fix: improvement-metrics.json should store org_score per project as separate keys ("youk": {...}, "canopy": {...}). session_start should surface "canopy: 7.0 ▲+0.1" so the developer sees project-level health, not just system health. self_heal should compute per-project trends alongside system trends.
+**Before:** 
+**After:** Extend improvement-metrics.json to store per-project org_score. Structure: {"system": {"org_score": 6.1, "velocity": 0.3}, "projects": {"youk": {"org_score": 6.1, "sessions": 33}, "canopy": {"org_score": 7.0, "sessions": 1}}}. session_end() writes the project-specific entry. session_start loads and 
+**Status:** PENDING
+**ChangeType:** CONFIG_EDIT
+**TargetSection:** _score_org — per-project tracking
+**Content:**
+```
+Extend improvement-metrics.json to store per-project org_score. Structure: {"system": {"org_score": 6.1, "velocity": 0.3}, "projects": {"youk": {"org_score": 6.1, "sessions": 33}, "canopy": {"org_score": 7.0, "sessions": 1}}}. session_end() writes the project-specific entry. session_start loads and surfaces the project entry ("canopy: 7.0/10 ▲+0.1") in the brief alongside system health.
+```
+
+## PENDING-20260702170426 — 2026-07-02
+**Target:** session
+**Change:** Proactive contract capture: surface unsaved contracts at session_end
+**Reason:** Simulation finding (Aarav, Week 1): "always use async for database operations" was spoken but never saved because save_contract requires explicit Claude action. Next session it was gone. This breaks the core promise of youk. The current mechanism relies on Claude recognizing contract trigger phrases mid-conversation and calling save_contract immediately. This works when Claude is disciplined but silently fails when Claude is focused on task completion. Fix: session_end() should scan the conversation summary (or session context) for unmatched contract trigger phrases — "always", "never", "from now on", "remember to" — and return them as "unsaved_contracts": ["always use async"...] in the session_end result. This gives a final opportunity to save before the session closes. The developer sees: "⚠ Possible unsaved agreements detected — save them?"
+**Before:** 
+**After:** The existing /done workflow already has a "safety-net sweep for any missed contracts" step (CLAUDE.md line ~46). This proposal makes that sweep more systematic: session_end() should check whether any contract trigger phrases appeared in the session that were not followed by a save_contract call, and
+**Status:** PENDING
+**ChangeType:** SKILL_EDIT
+**TargetSection:** session_end — contract sweep
+**Content:**
+```
+The existing /done workflow already has a "safety-net sweep for any missed contracts" step (CLAUDE.md line ~46). This proposal makes that sweep more systematic: session_end() should check whether any contract trigger phrases appeared in the session that were not followed by a save_contract call, and surface them explicitly in the result. Implementation: scan audit entry being written for contract-phrase markers (currently done heuristically in CLAUDE.md). Make it machine-readable so Claude can't miss it.
+```
+
+## PENDING-20260702170433 — 2026-07-02
+**Target:** session
+**Change:** Proactive API key validation at session_start
+**Reason:** Acid test finding: API key missing silently broke nfr_check, stress_test, and all research tools for 20+ sessions. The error only surfaced inline when tools were invoked, not at session open. Proposal PENDING-20260702044456 added this for Docker, but the session_start brief should surface it prominently: if ANTHROPIC_API_KEY is not accessible from inside youk-code container, session_plan should include "⚠ API key not set — nfr_check, stress_test, and research tools will fail silently. Run: source .env && bash scripts/install.sh". This one check would have prevented the 20-session gap in skill invocations.
+**Before:** 
+**After:** In session_start(), add a check: attempt to read ~/.claude/.anthropic/api_key. If missing or empty, add to session_plan: "⚠ API key not configured — capability skills (nfr_check, stress_test, research) will fail. Run: source .env && bash scripts/install.sh to fix." Surface this as the FIRST item in 
+**Status:** PENDING
+**ChangeType:** SKILL_EDIT
+**TargetSection:** session_start — API key health check
+**Content:**
+```
+In session_start(), add a check: attempt to read ~/.claude/.anthropic/api_key. If missing or empty, add to session_plan: "⚠ API key not configured — capability skills (nfr_check, stress_test, research) will fail. Run: source .env && bash scripts/install.sh to fix." Surface this as the FIRST item in session_plan when key is missing, before project-specific items. The check must be zero-API (just file read) and must not block the rest of session_start on failure.
+```
+
+## PENDING-20260702170440 — 2026-07-02
+**Target:** health
+**Change:** org_score ceiling at 6.5 until 3+ consecutive /done sessions proven
+**Reason:** Simulation finding (acid test): /done rate was 0% for sessions 1–24, then jumped to 23% after manual course correction. The org_score formula currently allows the score to creep up even with low /done rates (close_cluster_rate weight 2.0 × 0.23 = 0.46, enough to show "IMPROVING"). This creates a false sense of progress. A developer who has never established the /done habit in 3+ consecutive sessions should see org_score capped at 6.5 — clearly below the 7.5 target — to create a forcing function. Once they demonstrate 3+ consecutive /done sessions, the cap lifts and org_score can reach 7.5+. This is the "minimum discipline threshold" gate.
+**Before:** 
+**After:** In _score_org(), after computing the base score, check: if consecutive_skips >= 3 (3+ sessions without /done), cap the returned score at 6.5 regardless of other signals. Add a field to the return: {"score": min(computed, 6.5), "discipline_gate": "LOCKED — 3+ consecutive sessions without /done. Compl
+**Status:** PENDING
+**ChangeType:** SKILL_EDIT
+**TargetSection:** _score_org — discipline gate
+**Content:**
+```
+In _score_org(), after computing the base score, check: if consecutive_skips >= 3 (3+ sessions without /done), cap the returned score at 6.5 regardless of other signals. Add a field to the return: {"score": min(computed, 6.5), "discipline_gate": "LOCKED — 3+ consecutive sessions without /done. Complete 3 consecutive /done sessions to unlock 7.0+"}. The discipline_gate field should surface in session_start brief and self_heal findings.
+```
+
+## PENDING-20260702170500 — 2026-07-02
+**Target:** cron/youk-research-weekly
+**Change:** youk-research scheduled cron — weekly external pattern capture
+**Reason:** Acid test finding: youk-research skill exists (skills/youk-research/) and is described in FR-6 and the v0.2.0 roadmap, but has NEVER run across 33 sessions. Zero external patterns have been surfaced. Zero proposals have come from external sources. The skill is designed to scan 4+ external sources weekly and generate add_proposal() calls — but no trigger exists. Without a cron, it only runs if the founder manually invokes it, which hasn't happened. Fix: add a scheduled CronCreate() trigger for youk-research to run weekly (e.g., Sundays). This is a STRUCTURAL gap — it cannot be fixed by SKILL_EDIT alone; requires a CronCreate call to wire up the trigger.
+**Before:** 
+**After:** Schedule youk-research skill to run weekly. CronCreate trigger: "0 9 * * 0" (Sundays 9am). Invocation: route_to_skill("youk-research", "weekly external pattern scan"). This is the v0.2.0 roadmap item "weekly scheduled cron" from PRD. Implementation requires CronCreate() call with the schedule and a 
+**Status:** PENDING
+**ChangeType:** CONFIG_EDIT
+**Content:**
+```
+Schedule youk-research skill to run weekly. CronCreate trigger: "0 9 * * 0" (Sundays 9am). Invocation: route_to_skill("youk-research", "weekly external pattern scan"). This is the v0.2.0 roadmap item "weekly scheduled cron" from PRD. Implementation requires CronCreate() call with the schedule and a minimal prompt that fires route_to_skill. Token budget: ≤15k (FR-6 constraint). Run off the hot path — never triggered from session_start or route_task.
+```
+
+## PENDING-20260702170510 — 2026-07-02
+**Target:** servers/core/src/doc_graph.py
+**Change:** doc_graph.py module + check_doc_graph() MCP tool for concept coherence
+**Reason:** Session 33 simulation found 5 files with divergent north star definitions (PRD.md, README.md, PHILOSOPHY.md, CLAUDE.md, well-architected.md). No mechanism detected this — it required manual founder audit. The approved plan (plans/what-was-its-original-idempotent-rainbow.md) specifies: new doc_graph.py module with load_concept_graph(), check_concept_staleness(), format_staleness_warnings(); new check_doc_graph() MCP tool; wire into session_start._check_doc_freshness(); extend doc-map.yaml with concepts: section. This is deferred to v0.3.0 per the updated roadmap — implement after /learn wire and M+ gate are in place and proven.
+**Before:** 
+**After:** See approved plan at knowledge/projects/youk/plans/what-was-its-original-idempotent-rainbow.md for full implementation spec. Key functions: load_concept_graph(youk_root), check_concept_staleness(concepts, youk_root, claude_root), format_staleness_warnings(stale, cap=2). Uses git log commit timestamp
+**Status:** PENDING
+**ChangeType:** FILE_CREATE
+**Content:**
+```
+See approved plan at knowledge/projects/youk/plans/what-was-its-original-idempotent-rainbow.md for full implementation spec. Key functions: load_concept_graph(youk_root), check_concept_staleness(concepts, youk_root, claude_root), format_staleness_warnings(stale, cap=2). Uses git log commit timestamps (cross-clone stable), falls back to mtime. Concepts declared in docs/doc-map.yaml under 'concepts:' block. Also requires: server.py addition (check_doc_graph tool), session.py wire, doc-map.yaml concepts section, tests/test_doc_graph.py (6 tests).
+```
+
+## PENDING-20260702170520 — 2026-07-02
+**Target:** session
+**Change:** Cross-project contract transfer: session_start surfaces other-project contracts
+**Reason:** Simulation finding (Priya, Month 3): youk contracts (behavioral agreements, test-first discipline) don't surface when she opens canopy. Canopy has zero saved contracts after 1 session, but youk has 8–9 entries. The patterns she established on youk (commit format, test cadence, NFR discipline) are directly applicable to canopy but never transferred. Fix: session_start should scan all ~/.claude/*/contracts.md (not just the current project), identify contracts from other projects that are not already in the current project's contracts.md, and surface 1–2 of them as session_plan items: "youk uses: 'always write tests before committing' — adopt for canopy? (save this: [contract])" This is transfer, not duplication — the developer chooses to adopt each one explicitly.
+**Before:** 
+**After:** In _generate_session_plan(), after loading current project contracts, scan other project contract files at ~/.claude/*/contracts.md (or ~/.claude/youk/knowledge/projects/*/contracts.md). For contracts not yet in current project: surface max 1 per session as "Transfer from {project}: '{contract}' — s
+**Status:** PENDING
+**ChangeType:** SKILL_EDIT
+**TargetSection:** session_start — cross-project contract discovery
+**Content:**
+```
+In _generate_session_plan(), after loading current project contracts, scan other project contract files at ~/.claude/*/contracts.md (or ~/.claude/youk/knowledge/projects/*/contracts.md). For contracts not yet in current project: surface max 1 per session as "Transfer from {project}: '{contract}' — say 'save this' to adopt." Cap at 1 to avoid noise. Only surface if current project has <3 contracts (prevents polluting established projects). Implementation: lightweight file scan, no API call, O(n) file reads.
+```
