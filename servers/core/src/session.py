@@ -706,7 +706,7 @@ def _generate_session_plan(
         plan.append(
             f"First session on {slug}"
             + (f" — detected {signals_str}" if signals_str and signals_str != "unknown" else "")
-            + ". Use /build to start work; /done at the end saves context for next time."
+            + ". /build starts work. /done saves context so next session picks up where you left off — skipping /done means this session is forgotten."
         )
     elif is_new_install and contracts:
         # New install on a project with existing history (dev joining mid-project)
@@ -730,8 +730,8 @@ def _generate_session_plan(
     # 3. Missed close-cluster from last session
     if close_cluster_missed:
         plan.append(
-            "Last session ended without context-sync + learn — "
-            "call session_end with explicit_contracts before new work piles up"
+            "Last session ended without /done — context was not saved. "
+            "Run /done at end of this session to start compounding."
         )
 
     # 4. Project-type-specific nudge — use detected commands when available
@@ -978,10 +978,24 @@ def start_session(project_dir: str) -> SessionState:
     )
 
     # Staleness awareness — surface when returning after a significant gap
+    new_commits = len([ln for ln in git_log.splitlines() if ln.strip()]) if git_log else 0
     if days_since_last is not None and days_since_last >= 7:
-        new_commits = len([ln for ln in git_log.splitlines() if ln.strip()]) if git_log else 0
         commits_note = f" — {new_commits} commit(s) since last session" if new_commits else ""
         session_plan.append(f"Returning after {days_since_last} days{commits_note}")
+    elif close_cluster_missed and new_commits > 0 and days_since_last != 0:
+        # Commits exist from last session but no /done was called — surface the loss
+        session_plan.append(
+            f"⚠ {new_commits} commit(s) from last session have no saved context — "
+            "run /done at end of this session so work compounds."
+        )
+
+    # API key warning — surfaces before the developer hits a cryptic error mid-task
+    import os as _os
+    if not _os.environ.get("ANTHROPIC_API_KEY") and not Path("/claude/.anthropic/api_key").exists():
+        session_plan.append(
+            "⚠ ANTHROPIC_API_KEY missing — nfr_check and skill execution will fail. "
+            "Fix: export ANTHROPIC_API_KEY=sk-ant-... && make install"
+        )
 
     # 3C — Surface research-inbox findings (global + project-specific)
     research_patterns = _scan_research_inbox(slug=slug)

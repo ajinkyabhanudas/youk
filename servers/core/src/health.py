@@ -145,6 +145,17 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
             "Call track_tokens(input, output, note) at session checkpoints to enable cost tracking."
         )
 
+    # Self-evolution loop health: flag when PENDING.md and audit SkillGaps are both empty
+    pending_count = PROPOSALS_FILE.read_text().count("## PENDING-") if PROPOSALS_FILE.exists() else 0
+    skill_gap_count = sum(text.count("SkillGap:") for text in audit_texts)
+    if total >= 3 and pending_count == 0 and skill_gap_count == 0:
+        findings.append(
+            f"Self-evolution loop is starved: 0 proposals in PENDING.md, "
+            f"0 SkillGap entries across {total} sessions. "
+            "Run simulate-experience to seed proposals, or end sessions with "
+            "session_end(skill_gaps=...) to start feeding the loop."
+        )
+
     if not findings:
         findings.append(f"Org health nominal. Score: {score}/10.")
 

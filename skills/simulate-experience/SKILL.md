@@ -153,6 +153,26 @@ Codebase has 60+ new commits from the team. Stack may have changed.
 
 ---
 
+## Team Collaboration Gap
+
+youk knowledge is per-user (`~/.claude/youk/knowledge/`). A developer joining a project
+with existing youk history on another team member's machine starts from zero — no contracts,
+no decisions, no resume points transfer automatically.
+
+**Current state:** Each developer maintains an independent youk instance. Projects accumulate
+knowledge independently per user. Persona C always surfaces this.
+
+**What would be needed to share knowledge across a team:**
+1. Commit `knowledge/projects/{slug}/` to the project repo (gitignore exceptions needed)
+2. Conflict resolution when two devs write different contracts.md entries
+3. install.sh change to symlink per-project knowledge/ into the repo rather than ~/.claude/youk/
+
+**When simulating Persona C:** explicitly call out this gap as STRUCTURAL (not a bug, not
+fixable with a simple code change). Do not elide it or soften it — team adoption decisions
+depend on understanding this limitation honestly.
+
+---
+
 ## Synthesis Phase
 
 After all persona simulations:
