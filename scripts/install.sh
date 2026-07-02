@@ -34,17 +34,29 @@ if ! command -v claude &>/dev/null; then
 fi
 ok "Claude Code found ($(claude --version 2>/dev/null | head -1))"
 
-if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-  warn "ANTHROPIC_API_KEY not set. youk-core API calls will fall back to ~/.claude/.anthropic/api_key."
-  warn "Set it in your shell profile for best results: export ANTHROPIC_API_KEY=sk-ant-..."
-else
-  ok "ANTHROPIC_API_KEY found"
-  # Persist to volume-accessible fallback so Docker containers can read it even
-  # when Claude Code is launched as a desktop app (no shell env inheritance).
+_api_key_file="$CLAUDE_DIR/.anthropic/api_key"
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  ok "ANTHROPIC_API_KEY found in environment"
   mkdir -p "$CLAUDE_DIR/.anthropic"
-  echo "$ANTHROPIC_API_KEY" > "$CLAUDE_DIR/.anthropic/api_key"
-  chmod 600 "$CLAUDE_DIR/.anthropic/api_key"
-  ok "API key persisted to ~/.claude/.anthropic/api_key (Docker fallback)"
+  printf '%s' "$ANTHROPIC_API_KEY" > "$_api_key_file"
+  chmod 600 "$_api_key_file"
+  ok "API key persisted to ~/.claude/.anthropic/api_key"
+elif [[ -s "$_api_key_file" ]]; then
+  ok "API key already saved at ~/.claude/.anthropic/api_key — reusing"
+  ANTHROPIC_API_KEY="$(cat "$_api_key_file")"
+else
+  # Interactive prompt — no pre-exported key needed
+  echo -n "  Enter your ANTHROPIC_API_KEY (sk-ant-..., blank to skip): "
+  read -rs ANTHROPIC_API_KEY
+  echo ""
+  if [[ -n "$ANTHROPIC_API_KEY" ]]; then
+    mkdir -p "$CLAUDE_DIR/.anthropic"
+    printf '%s' "$ANTHROPIC_API_KEY" > "$_api_key_file"
+    chmod 600 "$_api_key_file"
+    ok "API key saved to ~/.claude/.anthropic/api_key"
+  else
+    warn "No API key — nfr_check and skill execution unavailable until you re-run with the key set."
+  fi
 fi
 
 # ── Step 1: Clone or pull ────────────────────────────────────────────────────

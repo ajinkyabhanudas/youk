@@ -1,10 +1,45 @@
 from __future__ import annotations
 import re
 import sys
+from pathlib import Path
 sys.path.insert(0, "/shared")
+
+import yaml  # type: ignore[import]
 
 from models import CommitQualityResult
 from guardrails import check_credential_file, HardRuleViolation
+
+_DOC_MAP_PATH = Path("/youk/docs/doc-map.yaml")
+
+
+def _stale_doc_refs(file_paths: list[str]) -> list[str]:
+    """Return ref files that should be updated given the committed file_paths."""
+    if not _DOC_MAP_PATH.exists():
+        return []
+    try:
+        data = yaml.safe_load(_DOC_MAP_PATH.read_text())
+    except Exception:
+        return []
+
+    committed = {Path(fp).name for fp in file_paths}
+    committed_full = set(file_paths)
+    stale: set[str] = set()
+
+    for entry in data.get("src_files", []):
+        src = entry.get("file", "")
+        if src in committed_full or Path(src).name in committed:
+            for ref in entry.get("refs", []):
+                if ref not in committed_full and Path(ref).name not in committed:
+                    stale.add(ref)
+
+    for entry in data.get("skills", []):
+        skill_dir = f"skills/{entry.get('skill', '')}"
+        if any(fp.startswith(skill_dir) for fp in committed_full):
+            for ref in entry.get("refs", []):
+                if ref not in committed_full:
+                    stale.add(ref)
+
+    return sorted(stale)
 
 _EM_DASH_PATTERN = re.compile(r"—|–")
 _FILLER_PATTERNS = [
@@ -74,6 +109,12 @@ def check_commit_quality(message: str, file_paths: list[str] | None = None) -> C
     suggested = None
     if violations:
         suggested = _suggest_rewrite(message)
+
+    stale_refs = _stale_doc_refs(file_paths or [])
+    if stale_refs:
+        violations.append(
+            f"Doc sync: changed files have doc refs that may need updating — {', '.join(stale_refs)}"
+        )
 
     return CommitQualityResult(
         score=score,

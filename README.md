@@ -41,7 +41,9 @@ curl -sL https://raw.githubusercontent.com/ajinkyabhanudas/youk/main/scripts/ins
 
 One command. The installer handles Docker build, MCP server registration, and CLAUDE.md patch. First run takes ~2 minutes (Docker image build). Re-runs are idempotent.
 
-**Prerequisites:** Docker Desktop running · Claude Code installed · `ANTHROPIC_API_KEY` in your shell profile · Python 3.11+
+**Prerequisites:** Docker Desktop running · Claude Code installed · Python 3.11+
+
+The installer prompts for your `ANTHROPIC_API_KEY` if it's not already in your environment — no pre-export needed.
 
 Open any Claude Code session and start working. youk activates automatically. Type `/start` if you want to see the session card explicitly. By your second session, youk picks up where you left off without being asked.
 
@@ -88,7 +90,8 @@ youk is two Docker containers registered as MCP servers in Claude Code:
 - `optimize_intent(raw_input)` — compresses vague/multi-part input into a structured intent brief before routing
 - `check_command(command)` — enforces the no-destructive hard rule at tool level
 - `self_heal()` — analyzes audit logs, generates improvement proposals
-- `get_proposals()` / `apply_proposal(id, confirmed)` — proposal review and two-step apply
+- `add_proposal(title, rationale, action, target, content)` — queue an improvement proposal to PENDING.md (called by skills and by Claude directly)
+- `get_proposals()` / `apply_proposal(id, confirmed)` — proposal review and two-step apply; `apply_proposal` supports `CODE_EDIT` change_type to replace named functions in `.py` files within the youk repo
 - `track_tokens(input_tokens, output_tokens, note)` — record token usage at a session checkpoint; `session_end` writes a `Tokens:` line to the audit log; `self_heal` uses this for cost trend detection across sessions
 
 **youk-code** (read-only access):
@@ -145,14 +148,21 @@ knowledge/
 ├── clarifications/
 │   └── YYYY-MM/
 │       └── YYYY-MM-DD-{slug}.md   ← one entry per intent-resolution case
+├── projects/
+│   └── {slug}/
+│       ├── contracts.md        ← working agreements (loaded first every session)
+│       ├── decisions.md        ← architectural decisions + rationale
+│       ├── context.md          ← project type, tech stack, gate progress
+│       └── research-inbox/     ← weekly stack briefings from project-research.py
+│           └── YYYY-MM-DD-research.md
 ├── domain/                     ← symlink to your existing skill knowledge base
 └── proposals/
     └── PENDING.md              ← self-heal proposals awaiting review
 ```
 
-Each session, `session_end` extracts structured insights and writes them here. Raw transcripts are never stored — that's enforced by the `knowledge-extraction-not-logging` hard rule.
+Each session, `compact_context` writes a checkpoint to `state/session-checkpoint.json`. The next `session_start` merges it as an audit entry automatically — so context is never lost even if you close the tab without typing `/done`. Raw transcripts are never stored — that's enforced by the `knowledge-extraction-not-logging` hard rule.
 
-Every 3 sessions, `self_heal` reads the last 30 days of audit logs and generates improvement proposals. Proposals sit in `PENDING.md` until you review and approve them via `apply_proposal(id, confirmed=True)`.
+`self_heal` reads the last 30 days of audit logs and generates improvement proposals. Proposals sit in `PENDING.md` until you review and approve them via `apply_proposal(id, confirmed=True)`. `apply_proposal` supports `CODE_EDIT` (replace a named Python function in-repo), `SKILL_EDIT` (add or replace a section in a SKILL.md), and `CONFIG_EDIT` (patch YAML config files).
 
 ---
 
@@ -322,14 +332,21 @@ youk/
 │   └── code/               ← youk-code container
 │       ├── Dockerfile
 │       └── src/            ← server.py, nfr.py, skills.py, review.py, skill_gen.py
+├── skills/                 ← all SKILL.md files (symlinked from ~/.claude/skills)
+│   ├── simulate-experience/SKILL.md   ← dev experience audit → self-evolution proposals
+│   ├── youk-research/SKILL.md         ← external source scanning → proposals
+│   ├── code-review/SKILL.md
+│   └── ...
 ├── knowledge/              ← living knowledge base (committed to repo)
 │   ├── skill-schema.md     ← canonical SKILL.md template (drives generate_skill)
 │   └── cross-project.md    ← best-practices patterns (feeds generation + assessment)
 ├── scripts/
-│   ├── install.sh          ← one-command idempotent setup (curl | bash)
-│   └── doctor.sh           ← health check with Fix: lines per failure
+│   ├── install.sh                          ← one-command idempotent setup (curl | bash); prompts for API key
+│   ├── doctor.sh                           ← health check with Fix: lines per failure
+│   ├── project-research.py                 ← weekly per-project stack briefing (runs via scheduler)
+│   └── com.youk.project-research.plist    ← launchd plist (macOS scheduler, registered by install.sh)
 ├── docs/
-│   ├── doc-map.yaml        ← maps tools + src files to their doc refs; session_start flags gaps
+│   ├── doc-map.yaml        ← maps tools + src files to their doc refs; check_commit_quality flags stale refs
 │   ├── well-architected.md ← how youk satisfies the 6 AWS Well-Architected Framework pillars
 │   ├── getting-started.md
 │   ├── guardrails.md
