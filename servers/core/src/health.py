@@ -13,6 +13,20 @@ YOUK_ROOT = Path("/youk")
 AUDIT_DIR = CLAUDE_ROOT / "audit"
 PROPOSALS_FILE = YOUK_ROOT / "knowledge" / "proposals" / "PENDING.md"
 
+# Skills that directly compound developer capability — excludes meta/session-management skills
+_CAPABILITY_SKILLS = frozenset({
+    "pm-review", "pm_review",
+    "write-spec", "write_spec",
+    "nfr-check", "nfr_check",
+    "stress-test", "stress_test",
+    "adr",
+    "dev-loop", "dev_loop",
+    "code-review", "code_review",
+    "security-review", "security_review",
+    "verify",
+    "learn",
+})
+
 # Paths that FILE_CREATE proposals are permitted to write to
 _ALLOWED_WRITE_ROOTS = [YOUK_ROOT, CLAUDE_ROOT / "skills"]
 
@@ -44,7 +58,15 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
             continue
         s: dict = {"raw": block}
         skills_match = re.search(r"^Skills:\s*(.+)$", block, re.MULTILINE)
-        s["skills"] = [sk.strip() for sk in skills_match.group(1).split(",")] if skills_match else []
+        if skills_match:
+            raw_skills = skills_match.group(1).strip()
+            s["skills"] = [] if raw_skills.lower() == "none" else [sk.strip() for sk in raw_skills.split(",") if sk.strip()]
+        else:
+            s["skills"] = []
+        s["capability_skills"] = [
+            sk for sk in s["skills"]
+            if sk.lower().replace("-", "_") in _CAPABILITY_SKILLS or sk.lower() in _CAPABILITY_SKILLS
+        ]
         close_match = re.search(r"^CloseCluster:\s*(\w+)$", block, re.MULTILINE)
         s["close_cluster"] = (close_match.group(1).lower() == "yes") if close_match else False
         # Tokens: actual/budget (pct%) or Tokens: actual (no budget set)
@@ -71,17 +93,19 @@ def _score_org(audit_texts: list[str]) -> float:
 
     total = len(sessions)
     close_count = sum(1 for s in sessions if s["close_cluster"])
-    tracked_count = sum(1 for s in sessions if s["skills"])
+    capability_count = sum(1 for s in sessions if s.get("capability_skills"))
 
     close_rate = close_count / total
-    tracked_rate = tracked_count / total
+    capability_skill_rate = capability_count / total
 
     # Token efficiency: sessions consistently >2× budget lose 1 point
     token_sessions = [s for s in sessions if s["tokens_ratio"] is not None]
     over_budget_count = sum(1 for s in token_sessions if s["tokens_ratio"] > 2.0)
     token_penalty = -1.0 if len(token_sessions) >= 2 and over_budget_count / max(len(token_sessions), 1) > 0.5 else 0.0
 
-    score = 5.0 + (close_rate * 2.0) + (tracked_rate * 1.0) + token_penalty
+    # close_cluster_rate (2.0 weight): did the session loop close?
+    # capability_skill_rate (1.0 weight): did at least one capability skill fire?
+    score = 5.0 + (close_rate * 2.0) + (capability_skill_rate * 1.0) + token_penalty
     return min(round(score, 1), 10.0)
 
 
@@ -98,7 +122,23 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
 
     total = len(sessions)
     close_count = sum(1 for s in sessions if s["close_cluster"])
+    capability_count = sum(1 for s in sessions if s.get("capability_skills"))
     skip_rate = 1 - (close_count / total)
+    capability_skip_rate = 1 - (capability_count / total)
+
+    # Capability skill invocation — north star signal
+    if capability_skip_rate > 0.75:
+        findings.append(
+            f"Capability skills absent in {capability_skip_rate:.0%} of sessions "
+            f"({capability_count}/{total} used them). "
+            "No compounding of developer ability. Use /build for code tasks, "
+            "/review before commits, /done (includes /learn) at session end."
+        )
+    elif capability_skip_rate > 0.5:
+        findings.append(
+            f"Capability skills used in only {capability_count}/{total} sessions ({1 - capability_skip_rate:.0%}). "
+            "Aim for ≥50% of sessions invoking at least one capability skill."
+        )
 
     if skip_rate > 0.5:
         findings.append(

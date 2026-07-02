@@ -422,3 +422,111 @@ class TestComputeDashboardSummary:
 
         result = _compute_dashboard_summary(audit_dir, 0)
         assert "▲0.3" in result
+
+    def test_skill_rate_shown_in_dashboard(self, youk_root, tmp_path):
+        """Dashboard shows 'skills: N%' from capability skill invocations."""
+        from session import _compute_dashboard_summary
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        lines = [
+            "\n### Session — 2026-07-01 10:00 UTC",
+            "Skills: code-review",
+            "CloseCluster: yes",
+            "\n### Session — 2026-07-02 10:00 UTC",
+            "Skills: none",
+            "CloseCluster: no",
+        ]
+        (audit_dir / "2026-07.md").write_text("\n".join(lines))
+        self._write_metrics(youk_root, [{"org_score": 6.0}])
+        result = _compute_dashboard_summary(audit_dir, 0)
+        assert "skills: 50%" in result
+
+    def test_gap_count_not_shown_in_dashboard(self, youk_root, tmp_path):
+        """'gaps logged' no longer appears in dashboard — replaced by 'skills: N%'."""
+        from session import _compute_dashboard_summary
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        lines = [
+            "\n### Session — 2026-07-01 10:00 UTC",
+            "Skills: none",
+            "SkillGap: dev-loop — missing pattern",
+            "CloseCluster: no",
+        ]
+        (audit_dir / "2026-07.md").write_text("\n".join(lines))
+        result = _compute_dashboard_summary(audit_dir, 0)
+        assert "gaps" not in result
+
+
+# ── _compute_skill_invocation_rate ───────────────────────────────────────────
+
+class TestComputeSkillInvocationRate:
+    def _write_audit(self, audit_dir, sessions):
+        lines = []
+        for i, s in enumerate(sessions):
+            lines.append(f"\n### Session — 2026-07-0{i + 1} 10:00 UTC")
+            lines.append(f"Skills: {s.get('skills', 'none')}")
+            lines.append(f"CloseCluster: {'yes' if s.get('close_cluster') else 'no'}")
+        (audit_dir / "2026-07.md").write_text("\n".join(lines))
+
+    def test_all_none_returns_zero_rate_and_full_skip_count(self, tmp_path):
+        """All Sessions: none → rate=0%, consecutive_skips=N."""
+        from session import _compute_skill_invocation_rate
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        self._write_audit(audit_dir, [
+            {"skills": "none"}, {"skills": "none"}, {"skills": "none"}
+        ])
+        rate, consec = _compute_skill_invocation_rate(audit_dir)
+        assert rate == 0
+        assert consec == 3
+
+    def test_half_capability_sessions(self, tmp_path):
+        """2 of 4 sessions with capability skills → 50%, 1 trailing skip."""
+        from session import _compute_skill_invocation_rate
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        self._write_audit(audit_dir, [
+            {"skills": "code-review"},
+            {"skills": "none"},
+            {"skills": "learn"},
+            {"skills": "none"},
+        ])
+        rate, consec = _compute_skill_invocation_rate(audit_dir)
+        assert rate == 50
+        assert consec == 1
+
+    def test_meta_only_skills_not_counted_as_capability(self, tmp_path):
+        """self_heal and simulate-experience are meta skills — do not count toward rate."""
+        from session import _compute_skill_invocation_rate
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        self._write_audit(audit_dir, [
+            {"skills": "self_heal"},
+            {"skills": "simulate-experience"},
+        ])
+        rate, consec = _compute_skill_invocation_rate(audit_dir)
+        assert rate == 0
+        assert consec == 2
+
+    def test_empty_audit_returns_none_rate_zero_skips(self, tmp_path):
+        """No audit files → None rate, 0 consecutive skips."""
+        from session import _compute_skill_invocation_rate
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        rate, consec = _compute_skill_invocation_rate(audit_dir)
+        assert rate is None
+        assert consec == 0
+
+    def test_all_capability_skills_returns_100(self, tmp_path):
+        """All sessions with capability skills → 100%, 0 consecutive skips."""
+        from session import _compute_skill_invocation_rate
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        self._write_audit(audit_dir, [
+            {"skills": "nfr_check, code-review"},
+            {"skills": "learn"},
+            {"skills": "verify"},
+        ])
+        rate, consec = _compute_skill_invocation_rate(audit_dir)
+        assert rate == 100
+        assert consec == 0

@@ -95,3 +95,66 @@ class TestGenerateFindings:
         findings = self._run(claude_root, youk_root, audit)
         skip_findings = [f for f in findings if "skipped" in f.lower() or "cluster" in f.lower()]
         assert skip_findings, f"Expected skip-rate finding. Got: {findings}"
+
+    def test_capability_skill_absent_finding(self, youk_root, claude_root):
+        """When >75% of sessions have no capability skill, surfaces a finding."""
+        # All sessions use only 'self_heal' — a meta skill, not a capability skill
+        audit = "\n".join(_audit_block(i, skills="self_heal") for i in range(1, 7))
+        findings = self._run(claude_root, youk_root, audit)
+        cap_findings = [f for f in findings if "capability" in f.lower() or "compounding" in f.lower()]
+        assert cap_findings, f"Expected capability-skill finding. Got: {findings}"
+
+    def test_capability_skill_present_no_spurious_finding(self, youk_root, claude_root):
+        """When ≥50% of sessions use a capability skill, no capability finding."""
+        # All sessions use code-review — a real capability skill
+        audit = "\n".join(_audit_block(i, skills="code-review") for i in range(1, 5))
+        findings = self._run(claude_root, youk_root, audit)
+        cap_findings = [f for f in findings if "capability skills absent" in f.lower()]
+        assert not cap_findings, f"Unexpected capability-absent finding: {cap_findings}"
+
+
+class TestScoreOrg:
+    def _score(self, sessions: list[dict]) -> float:
+        from health import _score_org
+        blocks = []
+        for i, s in enumerate(sessions):
+            skills = s.get("skills", "none")
+            close = "yes" if s.get("close_cluster") else "no"
+            blocks.append(
+                f"### Session — 2026-07-0{i + 1} 10:00 UTC\n"
+                f"Skills: {skills}\nCloseCluster: {close}\nCommits: yes\n"
+            )
+        return _score_org(["\n".join(blocks)])
+
+    def test_capability_skills_boost_score(self):
+        """Sessions with capability skills score higher than sessions with only meta skills."""
+        score_with_skills = self._score([
+            {"skills": "code-review, learn", "close_cluster": True},
+            {"skills": "nfr_check", "close_cluster": True},
+        ])
+        score_meta_only = self._score([
+            {"skills": "self_heal", "close_cluster": True},
+            {"skills": "simulate-experience", "close_cluster": True},
+        ])
+        assert score_with_skills > score_meta_only
+
+    def test_zero_close_cluster_caps_score(self):
+        """No /done usage means close_rate=0 — even with good capability skills, score stays low."""
+        score = self._score([
+            {"skills": "code-review", "close_cluster": False},
+            {"skills": "learn", "close_cluster": False},
+        ])
+        # close_rate=0 means: 5.0 + 0*2.0 + 1.0*1.0 = 6.0 at best (with full capability rate)
+        assert score <= 6.0
+
+    def test_skills_none_does_not_count_as_capability(self):
+        """'Skills: none' written literally must not be counted as a capability skill."""
+        score_no_skills = self._score([
+            {"skills": "none", "close_cluster": True},
+            {"skills": "none", "close_cluster": True},
+        ])
+        score_with_skills = self._score([
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "learn", "close_cluster": True},
+        ])
+        assert score_with_skills > score_no_skills
