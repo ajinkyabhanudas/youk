@@ -20,6 +20,7 @@ mcp_tools:
     - {tool: add_proposal, refs: [README.md]}
     - {tool: get_proposals, refs: [README.md]}
     - {tool: apply_proposal, refs: [README.md]}
+    - {tool: task_checkpoint, refs: [README.md, docs/claude-md-template.md]}
     - {tool: compact_context, refs: [README.md, docs/claude-md-template.md]}
     - {tool: track_tokens, refs: [README.md, docs/claude-md-template.md]}
 

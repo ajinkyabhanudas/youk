@@ -6,7 +6,7 @@ sys.path.insert(0, "/shared")
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
-from session import start_session, end_session
+from session import start_session, end_session, task_checkpoint as _task_checkpoint
 from routing import route_task as _route_task
 from health import (
     run_health_check_with_skill_signals,
@@ -287,6 +287,28 @@ def save_contract(contract: str, project_dir: str) -> dict:
         "conflicts": conflicts,
         "note": "already in contracts.md" if added == 0 else "written — will survive compaction",
     }
+
+
+@mcp.tool()
+def task_checkpoint(project_dir: str, task_label: str, size: str = "M") -> dict:
+    """
+    Write a mid-session checkpoint when a task completes and the user moves on.
+
+    Call this when the user signals task completion ("done", "ok", "next", or topic
+    shifts after a multi-exchange task). Proportional to task size:
+    - XS/S: rebuilds context brief only — lightweight compact, zero audit overhead.
+    - M+: compact + appends a structured entry to state/task-checkpoints.jsonl,
+      which session_end rolls up into the final audit entry.
+
+    Paste the returned 'brief' verbatim in your response to anchor context.
+
+    project_dir: Current project directory (same as session_start).
+    task_label: Short description of the completed task (e.g. "fixed login bug").
+    size: Task size — XS, S, M, L, or XL (defaults to M).
+
+    Returns: brief (paste verbatim), checkpoint_written.
+    """
+    return _task_checkpoint(project_dir, task_label, size)
 
 
 @mcp.tool()

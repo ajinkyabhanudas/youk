@@ -1174,6 +1174,41 @@ def start_session(project_dir: str) -> SessionState:
     )
 
 
+def task_checkpoint(project_dir: str, task_label: str, size: str = "M") -> dict:
+    """
+    Write a mid-session checkpoint when a task completes.
+
+    XS/S: rebuilds context brief only (same as compact_context — zero audit overhead).
+    M+: compact + appends one line to state/task-checkpoints.jsonl so session_end
+    can roll up a structured task history in the final audit entry.
+
+    Returns: brief (paste verbatim), checkpoint_written.
+    """
+    brief_result = _build_brief(project_dir)
+    checkpoint_written = False
+
+    if size.upper() not in ("XS", "S"):
+        cp = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "task": task_label[:200],
+            "size": size.upper(),
+        }
+        cp_file = YOUK_ROOT / "state" / "task-checkpoints.jsonl"
+        try:
+            cp_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(cp_file, "a") as f:
+                f.write(json.dumps(cp) + "\n")
+            checkpoint_written = True
+        except Exception:
+            pass
+
+    return {
+        "brief": brief_result.get("brief", ""),
+        "checkpoint_written": checkpoint_written,
+        "instruction": "Paste the 'brief' verbatim in your response to anchor context.",
+    }
+
+
 def end_session(
     summary: str,
     commits_made: bool,
@@ -1258,6 +1293,26 @@ def end_session(
 
     with open(audit_file, "a") as f:
         f.write(entry)
+
+    # Roll up mid-session task checkpoints (written by task_checkpoint tool).
+    # Appended as a single structured line so self_heal can parse task history.
+    cp_file = YOUK_ROOT / "state" / "task-checkpoints.jsonl"
+    if cp_file.exists():
+        try:
+            cp_lines = [json.loads(ln) for ln in cp_file.read_text().splitlines() if ln.strip()]
+            if cp_lines:
+                task_summary = "; ".join(
+                    f"{cp.get('task', '?')[:50]} ({cp.get('size', '?')})"
+                    for cp in cp_lines[:5]
+                )
+                with open(audit_file, "a") as f:
+                    f.write(f"TaskCheckpoints: {len(cp_lines)} — {task_summary}\n")
+        except Exception:
+            pass
+        try:
+            cp_file.unlink()
+        except Exception:
+            pass
 
     # Clear both recovery files — session_end is the authoritative audit entry.
     # If these aren't cleared, next session_start would write duplicate entries.
