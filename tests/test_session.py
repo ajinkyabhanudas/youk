@@ -1,6 +1,5 @@
 """Tests for session.py — pending count, project type detection, task_checkpoint."""
 from __future__ import annotations
-from pathlib import Path
 import pytest
 
 
@@ -226,7 +225,7 @@ class TestTaskCheckpoint:
         cp_file = youk_root / "state" / "task-checkpoints.jsonl"
         assert cp_file.exists()
         assert result["checkpoint_written"] is True
-        entries = [json.loads(l) for l in cp_file.read_text().splitlines() if l.strip()]
+        entries = [json.loads(line) for line in cp_file.read_text().splitlines() if line.strip()]
         assert len(entries) == 1
         assert entries[0]["task"] == "add login endpoint"
         assert entries[0]["size"] == "M"
@@ -245,7 +244,7 @@ class TestTaskCheckpoint:
         session.task_checkpoint(str(tmp_path), "task one", size="M")
         session.task_checkpoint(str(tmp_path), "task two", size="L")
         cp_file = youk_root / "state" / "task-checkpoints.jsonl"
-        entries = [json.loads(l) for l in cp_file.read_text().splitlines() if l.strip()]
+        entries = [json.loads(line) for line in cp_file.read_text().splitlines() if line.strip()]
         assert len(entries) == 2
         assert entries[0]["task"] == "task one"
         assert entries[1]["task"] == "task two"
@@ -630,3 +629,42 @@ class TestComputeSkillInvocationRate:
         rate, consec = _compute_skill_invocation_rate(audit_dir)
         assert rate == 100
         assert consec == 0
+
+
+class TestFindCrossProjectContract:
+    def _write_contracts(self, youk_root, slug: str, contracts: list[str]) -> None:
+        proj = youk_root / "knowledge" / "projects" / slug
+        proj.mkdir(parents=True, exist_ok=True)
+        lines = "\n".join(f"- {c}" for c in contracts)
+        (proj / "contracts.md").write_text(f"# contracts: {slug}\n\n{lines}\n")
+
+    def test_surfaces_contract_from_other_project(self, youk_root):
+        """Returns a contract from another project when current has <3."""
+        self._write_contracts(youk_root, "youk", ["always run ruff before committing"])
+        from session import _find_cross_project_contract
+        result = _find_cross_project_contract("canopy", [])
+        assert result is not None
+        src_slug, contract = result
+        assert src_slug == "youk"
+        assert "ruff" in contract
+
+    def test_no_transfer_when_current_has_3_plus(self, youk_root):
+        """No suggestion when current project already has ≥3 contracts."""
+        self._write_contracts(youk_root, "youk", ["always run ruff before committing"])
+        from session import _find_cross_project_contract
+        current = ["commit small", "test first", "review before merge"]
+        result = _find_cross_project_contract("canopy", current)
+        assert result is None
+
+    def test_skips_current_project_contracts(self, youk_root):
+        """Does not suggest contracts already in current project."""
+        self._write_contracts(youk_root, "youk", ["always run ruff before committing"])
+        from session import _find_cross_project_contract
+        # Current project has the same contract — should not suggest it
+        result = _find_cross_project_contract("canopy", ["always run ruff before committing"])
+        assert result is None
+
+    def test_no_other_projects_returns_none(self, youk_root):
+        from session import _find_cross_project_contract
+        result = _find_cross_project_contract("canopy", [])
+        assert result is None

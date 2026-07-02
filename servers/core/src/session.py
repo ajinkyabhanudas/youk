@@ -795,6 +795,55 @@ def _bootstrap_cold_start(project_dir: str, slug: str, tooling: dict) -> list[st
     return signals
 
 
+def _find_cross_project_contract(current_slug: str, current_contracts: list[str]) -> tuple[str, str] | None:
+    """
+    Scan other projects' contracts.md files for behavioural agreements not yet in
+    the current project. Returns (source_slug, contract_text) for the first match,
+    or None.
+
+    Only fires when current project has <3 contracts (new project still forming habits).
+    Capped at 1 suggestion per session to avoid noise.
+    """
+    if len(current_contracts) >= 3:
+        return None
+    projects_dir = YOUK_ROOT / "knowledge" / "projects"
+    if not projects_dir.exists():
+        return None
+
+    # Words to exclude from similarity check (too common to be meaningful)
+    _STOP = frozenset({"always", "never", "make", "sure", "that", "this", "have", "with", "from", "before", "after", "each", "every"})
+
+    def _words(text: str) -> set[str]:
+        return {w.lower() for w in text.split() if len(w) > 3 and w.lower() not in _STOP}
+
+    current_words = {w for c in current_contracts for w in _words(c)}
+
+    try:
+        for proj_dir in sorted(projects_dir.iterdir()):
+            if not proj_dir.is_dir() or proj_dir.name == current_slug:
+                continue
+            cf = proj_dir / "contracts.md"
+            if not cf.exists():
+                continue
+            for line in cf.read_text().splitlines():
+                line = line.strip()
+                if not line.startswith("- "):
+                    continue
+                contract = line[2:].strip()
+                if not contract or len(contract) < 20:
+                    continue
+                # Skip if already covered by current contracts: ≥50% of meaningful
+                # words from this contract appear in current-project contracts
+                contract_words = _words(contract)
+                overlap = len(contract_words & current_words)
+                if contract_words and overlap >= max(1, len(contract_words) // 2):
+                    continue
+                return (proj_dir.name, contract)
+    except Exception:
+        pass
+    return None
+
+
 def _generate_session_plan(
     slug: str,
     resume_point: str,
@@ -1218,6 +1267,17 @@ def start_session(project_dir: str) -> SessionState:
             session_plan.append(
                 f"Last session: {budget_pct}% of token budget used"
             )
+
+    # Cross-project contract transfer: surface 1 contract from another project when
+    # current project is new (< 3 contracts). Transfer is opt-in — developer says
+    # 'save this contract' to adopt it. Never auto-saves.
+    xp = _find_cross_project_contract(slug, contracts)
+    if xp:
+        src_slug, xp_contract = xp
+        session_plan.append(
+            f"From {src_slug}: '{xp_contract}' — "
+            "say 'save this contract' to adopt for this project."
+        )
 
     # Persist session plan so compact_context can include it in briefs
     plan_file = YOUK_ROOT / "state" / "session-plan.json"
