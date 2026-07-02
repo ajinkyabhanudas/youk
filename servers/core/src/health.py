@@ -83,15 +83,40 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
     return sessions
 
 
-def _consecutive_close_skips(sessions: list[dict]) -> int:
-    """Count how many trailing sessions (most recent first) had close_cluster=False."""
+def _consecutive_skill_skips(sessions: list[dict]) -> int:
+    """Count trailing sessions (most recent first) with zero capability skills invoked."""
     count = 0
     for s in reversed(sessions):
-        if not s["close_cluster"]:
+        if not s.get("capability_skills"):
             count += 1
         else:
             break
     return count
+
+
+def _compute_gap_resolution_rate(sessions: list[dict]) -> float:
+    """
+    Ratio of unique gap types that appear in only one session (new) vs total unique types.
+    Returns 0.5 when no gap data available (neutral signal).
+    High rate = system detecting fresh gaps; low rate = same gaps recurring (not being fixed).
+    """
+    gap_session_count: dict[str, int] = {}
+    for s in sessions:
+        seen: set[str] = set()
+        for line in s.get("raw", "").splitlines():
+            if line.startswith("SkillGap:"):
+                rest = line[len("SkillGap:"):].strip()
+                if " — " in rest:
+                    seen.add(rest.split(" — ", 1)[0].strip())
+        for gap_type in seen:
+            gap_session_count[gap_type] = gap_session_count.get(gap_type, 0) + 1
+
+    if not gap_session_count:
+        return 0.5  # neutral — no gap data yet
+
+    unique_total = len(gap_session_count)
+    recurring = sum(1 for count in gap_session_count.values() if count >= 2)
+    return (unique_total - recurring) / unique_total
 
 
 def _score_org(audit_texts: list[str]) -> float:
@@ -108,20 +133,21 @@ def _score_org(audit_texts: list[str]) -> float:
 
     close_rate = close_count / total
     capability_skill_rate = capability_count / total
+    gap_resolution_rate = _compute_gap_resolution_rate(sessions)
 
     # Token efficiency: sessions consistently >2× budget lose 1 point
     token_sessions = [s for s in sessions if s["tokens_ratio"] is not None]
     over_budget_count = sum(1 for s in token_sessions if s["tokens_ratio"] > 2.0)
     token_penalty = -1.0 if len(token_sessions) >= 2 and over_budget_count / max(len(token_sessions), 1) > 0.5 else 0.0
 
-    # close_cluster_rate (2.0 weight): did the session loop close?
-    # capability_skill_rate (1.0 weight): did at least one capability skill fire?
-    score = 5.0 + (close_rate * 2.0) + (capability_skill_rate * 1.0) + token_penalty
+    # capability_skill_rate (2.0 weight): primary signal — did developer ability compound?
+    # close_rate (0.5 weight): completion bonus only — /done matters but doesn't dominate
+    # gap_resolution_rate (0.5 weight): are gaps being detected as new (not recurring)?
+    score = 5.0 + (capability_skill_rate * 2.0) + (close_rate * 0.5) + (gap_resolution_rate * 0.5) + token_penalty
 
-    # Discipline gate: if the last 3+ sessions all skipped /done, cap at 6.5.
-    # Creates a forcing function — discipline must be demonstrated before org_score
-    # can reach 7.0+, which is the PRD target.
-    consecutive_skips = _consecutive_close_skips(sessions)
+    # Discipline gate: 3+ consecutive sessions with zero capability skills → cap at 6.5.
+    # Reaching 7.0+ requires demonstrated use of capability skills, not just /done ritual.
+    consecutive_skips = _consecutive_skill_skips(sessions)
     if consecutive_skips >= 3:
         score = min(score, 6.5)
 
@@ -145,12 +171,13 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     skip_rate = 1 - (close_count / total)
     capability_skip_rate = 1 - (capability_count / total)
 
-    # Discipline gate finding — surfaces when score is capped
-    consecutive_skips = _consecutive_close_skips(sessions)
+    # Discipline gate finding — surfaces when score is capped due to capability skill absence
+    consecutive_skips = _consecutive_skill_skips(sessions)
     if consecutive_skips >= 3:
         findings.append(
-            f"Discipline gate LOCKED — {consecutive_skips} consecutive sessions without /done. "
-            "Org score capped at 6.5. Type /done at the end of 3 consecutive sessions to unlock 7.0+."
+            f"Discipline gate LOCKED — {consecutive_skips} consecutive sessions without any capability skill "
+            "(code-review, nfr-check, learn, etc.). "
+            "Org score capped at 6.5. Use /build or /review to invoke a capability skill before 7.0+ is reachable."
         )
 
     # Capability skill invocation — north star signal

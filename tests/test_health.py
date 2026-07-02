@@ -1,7 +1,5 @@
 """Tests for health.py — proposal filtering, 0-contracts finding, self-heal signals."""
 from __future__ import annotations
-from pathlib import Path
-import pytest
 
 
 def _audit_block(n: int, close: bool = True, skills: str = "code-review") -> str:
@@ -46,7 +44,7 @@ class TestLoadPendingProposals:
 class TestGenerateFindings:
     def _run(self, claude_root, youk_root, audit_text: str) -> list[str]:
         (claude_root / "audit" / "2026-07.md").write_text(audit_text)
-        from health import _generate_findings, _parse_audit_sessions, _score_org
+        from health import _generate_findings, _score_org
         audit_texts = [audit_text]
         score = _score_org(audit_texts)
         return _generate_findings(audit_texts, score)
@@ -138,14 +136,15 @@ class TestScoreOrg:
         ])
         assert score_with_skills > score_meta_only
 
-    def test_zero_close_cluster_caps_score(self):
-        """No /done usage means close_rate=0 — even with good capability skills, score stays low."""
+    def test_close_rate_is_completion_bonus_not_primary(self):
+        """Capability skills dominate; close_rate is just a bonus. High skills + no /done = high score."""
         score = self._score([
             {"skills": "code-review", "close_cluster": False},
             {"skills": "learn", "close_cluster": False},
         ])
-        # close_rate=0 means: 5.0 + 0*2.0 + 1.0*1.0 = 6.0 at best (with full capability rate)
-        assert score <= 6.0
+        # capability_rate=1.0, close_rate=0.0, gap_resolution=0.5 (neutral)
+        # → 5.0 + 2.0 + 0 + 0.25 = 7.25
+        assert score >= 7.0
 
     def test_skills_none_does_not_count_as_capability(self):
         """'Skills: none' written literally must not be counted as a capability skill."""
@@ -160,36 +159,42 @@ class TestScoreOrg:
         assert score_with_skills > score_no_skills
 
     def test_discipline_gate_caps_score_at_6_5(self):
-        """3+ consecutive sessions without /done caps org_score at 6.5."""
+        """3+ consecutive sessions without any capability skill caps org_score at 6.5."""
+        # Without gate: capability_rate=2/5=0.4, close_rate=1.0, gap_resolution=0.5
+        # → 5.0 + 0.8 + 0.5 + 0.25 = 6.55 → rounds to 6.6 > 6.5
+        # With gate (3 consecutive skill-skips): min(6.55, 6.5) = 6.5
         score = self._score([
-            {"skills": "code-review", "close_cluster": True},   # one good session
-            {"skills": "code-review", "close_cluster": False},  # then 3 consecutive skips
-            {"skills": "code-review", "close_cluster": False},
-            {"skills": "code-review", "close_cluster": False},
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "self_heal", "close_cluster": True},   # 3 consecutive: no capability skill
+            {"skills": "self_heal", "close_cluster": True},
+            {"skills": "self_heal", "close_cluster": True},
         ])
         assert score <= 6.5
 
     def test_discipline_gate_not_applied_below_threshold(self):
-        """2 consecutive /done skips does NOT trigger the gate."""
+        """2 consecutive sessions without capability skills does NOT trigger the gate."""
+        # consecutive_skill_skips=2, gate threshold is 3
+        # capability_rate=0.5, close_rate=1.0, gap_resolution=0.5
+        # → 5.0 + 1.0 + 0.5 + 0.25 = 6.75 > 6.5
         score = self._score([
             {"skills": "code-review", "close_cluster": True},
             {"skills": "code-review", "close_cluster": True},
-            {"skills": "code-review", "close_cluster": False},
-            {"skills": "code-review", "close_cluster": False},
+            {"skills": "self_heal", "close_cluster": True},
+            {"skills": "self_heal", "close_cluster": True},
         ])
-        # close_rate=0.5, capability=1.0 → 5.0 + 1.0 + 1.0 = 7.0; gate not triggered
         assert score > 6.5
 
-    def test_discipline_gate_unlocked_when_recent_done(self):
-        """Gate does NOT apply if the most recent session used /done."""
-        # 3 good sessions + 2 skips + 1 good at end → consecutive_skips=0, gate lifts
-        # close_rate=4/6=0.67, capability=1.0 → 5.0+1.33+1.0=7.33 > 6.5
+    def test_discipline_gate_unlocked_when_recent_skill(self):
+        """Gate does NOT apply if the most recent session invoked a capability skill."""
+        # 3 good + 2 no-skill + 1 good at end → consecutive_skill_skips=0, gate lifts
+        # capability_rate=4/6=0.67, close_rate=1.0 → 5.0+1.33+0.5+0.25=7.08 > 6.5
         score = self._score([
             {"skills": "code-review", "close_cluster": True},
             {"skills": "code-review", "close_cluster": True},
             {"skills": "code-review", "close_cluster": True},
-            {"skills": "code-review", "close_cluster": False},
-            {"skills": "code-review", "close_cluster": False},
+            {"skills": "self_heal", "close_cluster": True},
+            {"skills": "self_heal", "close_cluster": True},
             {"skills": "code-review", "close_cluster": True},  # most recent: gate lifts
         ])
         assert score > 6.5
@@ -200,9 +205,10 @@ class TestGenerateFindingsDisciplineGate:
         blocks = []
         for i, s in enumerate(sessions):
             close = "yes" if s.get("close_cluster") else "no"
+            skills = s.get("skills", "code-review")
             blocks.append(
                 f"### Session — 2026-07-0{i+1} 10:00 UTC\n"
-                f"Skills: code-review\nCloseCluster: {close}\nCommits: yes\n"
+                f"Skills: {skills}\nCloseCluster: {close}\nCommits: yes\n"
             )
         audit = "\n".join(blocks)
         (claude_root / "audit" / "2026-07.md").write_text(audit)
@@ -210,22 +216,69 @@ class TestGenerateFindingsDisciplineGate:
         score = _score_org([audit])
         return _generate_findings([audit], score)
 
-    def test_discipline_gate_finding_when_3_consecutive_skips(self, youk_root, claude_root):
+    def test_discipline_gate_finding_when_3_consecutive_skill_skips(self, youk_root, claude_root):
+        """Gate finding appears when 3+ consecutive sessions have no capability skill."""
         findings = self._run(claude_root, youk_root, [
-            {"close_cluster": True},
-            {"close_cluster": False},
-            {"close_cluster": False},
-            {"close_cluster": False},
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "self_heal", "close_cluster": True},
+            {"skills": "self_heal", "close_cluster": True},
+            {"skills": "self_heal", "close_cluster": True},
         ])
         gate_findings = [f for f in findings if "discipline gate" in f.lower()]
         assert gate_findings, f"Expected discipline gate finding. Got: {findings}"
 
-    def test_no_discipline_gate_finding_when_recent_done(self, youk_root, claude_root):
+    def test_no_discipline_gate_finding_when_recent_skill(self, youk_root, claude_root):
+        """No gate finding when most recent session invoked a capability skill."""
         findings = self._run(claude_root, youk_root, [
-            {"close_cluster": False},
-            {"close_cluster": False},
-            {"close_cluster": False},
-            {"close_cluster": True},  # most recent: gate lifts
+            {"skills": "self_heal", "close_cluster": True},
+            {"skills": "self_heal", "close_cluster": True},
+            {"skills": "self_heal", "close_cluster": True},
+            {"skills": "code-review", "close_cluster": True},  # most recent: gate lifts
         ])
         gate_findings = [f for f in findings if "discipline gate" in f.lower()]
         assert not gate_findings, f"Unexpected gate finding: {gate_findings}"
+
+
+class TestGapResolutionRate:
+    def _sessions_with_gaps(self, gap_lines_per_session: list[list[str]]) -> list[dict]:
+        """Build fake parsed sessions with SkillGap: lines embedded in 'raw'."""
+        sessions = []
+        for i, gaps in enumerate(gap_lines_per_session):
+            raw_lines = [f"### Session — 2026-07-0{i+1} 10:00 UTC"]
+            raw_lines.extend(f"SkillGap: {g}" for g in gaps)
+            sessions.append({"raw": "\n".join(raw_lines), "capability_skills": [], "close_cluster": True})
+        return sessions
+
+    def test_no_gaps_returns_neutral(self):
+        """Sessions with no SkillGap lines return 0.5 (neutral)."""
+        from health import _compute_gap_resolution_rate
+        sessions = [{"raw": "### Session — no gaps", "capability_skills": [], "close_cluster": True}]
+        assert _compute_gap_resolution_rate(sessions) == 0.5
+
+    def test_all_new_gaps_returns_1_0(self):
+        """Each gap type appears in exactly one session → rate = 1.0."""
+        from health import _compute_gap_resolution_rate
+        sessions = self._sessions_with_gaps([
+            ["nfr-check — dark mode not checked"],
+            ["code-review — missing test coverage"],
+        ])
+        assert _compute_gap_resolution_rate(sessions) == 1.0
+
+    def test_all_recurring_gaps_returns_0_0(self):
+        """Same gap type appears in 2 sessions → recurring → rate = 0.0."""
+        from health import _compute_gap_resolution_rate
+        sessions = self._sessions_with_gaps([
+            ["nfr-check — dark mode not checked"],
+            ["nfr-check — dark mode not checked"],
+        ])
+        assert _compute_gap_resolution_rate(sessions) == 0.0
+
+    def test_mixed_gaps_partial_rate(self):
+        """One recurring + one new gap → rate = 0.5."""
+        from health import _compute_gap_resolution_rate
+        sessions = self._sessions_with_gaps([
+            ["nfr-check — dark mode", "code-review — test coverage"],
+            ["nfr-check — dark mode"],  # nfr-check recurs; code-review is new
+        ])
+        # 2 unique gap types: nfr-check (recurring), code-review (new) → 1/2 = 0.5
+        assert _compute_gap_resolution_rate(sessions) == 0.5
