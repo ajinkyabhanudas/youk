@@ -556,6 +556,71 @@ def _scan_project_context_files(project_dir: str) -> dict:
     return result
 
 
+_CAPABILITY_SKILLS = frozenset({
+    "pm-review", "pm_review",
+    "write-spec", "write_spec",
+    "nfr-check", "nfr_check",
+    "stress-test", "stress_test",
+    "adr",
+    "dev-loop", "dev_loop",
+    "code-review", "code_review",
+    "security-review", "security_review",
+    "verify",
+    "learn",
+})
+
+
+def _parse_skills_line(line: str) -> list[str]:
+    """Parse a 'Skills: ...' audit line into a list of skill name tokens."""
+    raw = line[len("Skills:"):].strip()
+    if not raw or raw.lower() == "none":
+        return []
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def _has_capability_skill(skills: list[str]) -> bool:
+    return any(s.lower().replace("-", "_") in _CAPABILITY_SKILLS or s.lower() in _CAPABILITY_SKILLS for s in skills)
+
+
+def _compute_skill_invocation_rate(audit_dir: Path) -> tuple[int | None, int]:
+    """
+    Returns (rate_pct, consecutive_skips).
+    rate_pct: % of sessions with at least one capability skill invoked (None if no sessions).
+    consecutive_skips: how many of the most-recent sessions have zero capability skills.
+    """
+    try:
+        texts = [f.read_text() for f in sorted(audit_dir.glob("*.md")) if f.is_file()]
+        if not texts:
+            return None, 0
+        full = "\n".join(texts)
+        entries = full.split("### Session —")[1:]  # skip preamble
+        if not entries:
+            return None, 0
+
+        hit = []  # True if session had a capability skill
+        for entry in entries:
+            skills_found: list[str] = []
+            for line in entry.splitlines():
+                if line.startswith("Skills:"):
+                    skills_found = _parse_skills_line(line)
+                    break
+            hit.append(_has_capability_skill(skills_found))
+
+        total = len(hit)
+        rate_pct = int(sum(hit) / total * 100) if total else None
+
+        # Count trailing skips (most recent sessions with no capability skill)
+        consecutive_skips = 0
+        for had_skill in reversed(hit):
+            if had_skill:
+                break
+            consecutive_skips += 1
+
+        return rate_pct, consecutive_skips
+    except Exception:
+        return None, 0
+
+
 def _parse_last_session_flags(audit_dir: Path) -> tuple[bool, bool]:
     """Returns (close_cluster_missed, orchestrate_pending) from last session entry."""
     close_cluster_missed = False
@@ -596,7 +661,7 @@ def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int) -> str:
         full = "\n".join(texts)
 
         session_count = len(re.findall(r"^### Session —", full, re.MULTILINE))
-        gap_count = len(re.findall(r"^SkillGap:", full, re.MULTILINE))
+        skill_rate_pct, _ = _compute_skill_invocation_rate(audit_dir)
 
         # Read org_score history from improvement-metrics.json — the authoritative source.
         # Audit text never contains "Org score: X/10" so regex-scanning audit always returns [].
@@ -639,8 +704,8 @@ def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int) -> str:
             parts.append(score_part)
         if session_count:
             parts.append(f"{session_count} session{'s' if session_count != 1 else ''}")
-        if gap_count:
-            parts.append(f"{gap_count} gap{'s' if gap_count != 1 else ''} logged")
+        if skill_rate_pct is not None:
+            parts.append(f"skills: {skill_rate_pct}%")
         if pending_proposals:
             parts.append(f"{pending_proposals} proposal{'s' if pending_proposals != 1 else ''} pending")
         if close_rate_str:
@@ -1089,6 +1154,15 @@ def start_session(project_dir: str) -> SessionState:
         session_plan.append(
             "⚠ ANTHROPIC_API_KEY missing — nfr_check and skill execution will fail. "
             "Fix: export ANTHROPIC_API_KEY=sk-ant-... && make install"
+        )
+
+    # 3B2 — Skill-skip warning: capability skills unused for 3+ consecutive sessions
+    _, consecutive_skill_skips = _compute_skill_invocation_rate(audit_dir)
+    if consecutive_skill_skips >= 3:
+        session_plan.append(
+            f"⚠ No capability skill invoked in last {consecutive_skill_skips} sessions — "
+            "compounding has stalled. Today: use /build for code tasks, /review before commits, "
+            "/done at end (includes /learn). Skills are what make sessions compound."
         )
 
     # 3C — Surface research-inbox findings (global + project-specific)
