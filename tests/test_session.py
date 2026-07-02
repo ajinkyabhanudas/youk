@@ -39,6 +39,15 @@ class TestCountPendingProposals:
         from session import _count_pending_proposals
         assert _count_pending_proposals() == 2
 
+    def test_excludes_superseded(self, youk_root):
+        """SUPERSEDED entries must not count toward pending_proposals_count."""
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(
+            "## PENDING-001 — 2026-07-01\n**Status:** SUPERSEDED — 2026-07-02 (replaced by X)\n"
+            "## PENDING-002 — 2026-07-01\n**Status:** PENDING\n"
+        )
+        from session import _count_pending_proposals
+        assert _count_pending_proposals() == 1
+
 
 # ── Project type detection ───────────────────────────────────────────────────
 

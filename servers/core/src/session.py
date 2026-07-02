@@ -1034,7 +1034,7 @@ def _count_pending_proposals() -> int:
             (ln for ln in block.splitlines() if "**Status:**" in ln),
             "",
         )
-        if "APPLIED" not in status_line:
+        if "APPLIED" not in status_line and "SUPERSEDED" not in status_line:
             count += 1
     return count
 
