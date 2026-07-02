@@ -158,3 +158,74 @@ class TestScoreOrg:
             {"skills": "learn", "close_cluster": True},
         ])
         assert score_with_skills > score_no_skills
+
+    def test_discipline_gate_caps_score_at_6_5(self):
+        """3+ consecutive sessions without /done caps org_score at 6.5."""
+        score = self._score([
+            {"skills": "code-review", "close_cluster": True},   # one good session
+            {"skills": "code-review", "close_cluster": False},  # then 3 consecutive skips
+            {"skills": "code-review", "close_cluster": False},
+            {"skills": "code-review", "close_cluster": False},
+        ])
+        assert score <= 6.5
+
+    def test_discipline_gate_not_applied_below_threshold(self):
+        """2 consecutive /done skips does NOT trigger the gate."""
+        score = self._score([
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "code-review", "close_cluster": False},
+            {"skills": "code-review", "close_cluster": False},
+        ])
+        # close_rate=0.5, capability=1.0 → 5.0 + 1.0 + 1.0 = 7.0; gate not triggered
+        assert score > 6.5
+
+    def test_discipline_gate_unlocked_when_recent_done(self):
+        """Gate does NOT apply if the most recent session used /done."""
+        # 3 good sessions + 2 skips + 1 good at end → consecutive_skips=0, gate lifts
+        # close_rate=4/6=0.67, capability=1.0 → 5.0+1.33+1.0=7.33 > 6.5
+        score = self._score([
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "code-review", "close_cluster": False},
+            {"skills": "code-review", "close_cluster": False},
+            {"skills": "code-review", "close_cluster": True},  # most recent: gate lifts
+        ])
+        assert score > 6.5
+
+
+class TestGenerateFindingsDisciplineGate:
+    def _run(self, claude_root, youk_root, sessions: list[dict]) -> list[str]:
+        blocks = []
+        for i, s in enumerate(sessions):
+            close = "yes" if s.get("close_cluster") else "no"
+            blocks.append(
+                f"### Session — 2026-07-0{i+1} 10:00 UTC\n"
+                f"Skills: code-review\nCloseCluster: {close}\nCommits: yes\n"
+            )
+        audit = "\n".join(blocks)
+        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        from health import _generate_findings, _score_org
+        score = _score_org([audit])
+        return _generate_findings([audit], score)
+
+    def test_discipline_gate_finding_when_3_consecutive_skips(self, youk_root, claude_root):
+        findings = self._run(claude_root, youk_root, [
+            {"close_cluster": True},
+            {"close_cluster": False},
+            {"close_cluster": False},
+            {"close_cluster": False},
+        ])
+        gate_findings = [f for f in findings if "discipline gate" in f.lower()]
+        assert gate_findings, f"Expected discipline gate finding. Got: {findings}"
+
+    def test_no_discipline_gate_finding_when_recent_done(self, youk_root, claude_root):
+        findings = self._run(claude_root, youk_root, [
+            {"close_cluster": False},
+            {"close_cluster": False},
+            {"close_cluster": False},
+            {"close_cluster": True},  # most recent: gate lifts
+        ])
+        gate_findings = [f for f in findings if "discipline gate" in f.lower()]
+        assert not gate_findings, f"Unexpected gate finding: {gate_findings}"

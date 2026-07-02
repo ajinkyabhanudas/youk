@@ -83,6 +83,17 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
     return sessions
 
 
+def _consecutive_close_skips(sessions: list[dict]) -> int:
+    """Count how many trailing sessions (most recent first) had close_cluster=False."""
+    count = 0
+    for s in reversed(sessions):
+        if not s["close_cluster"]:
+            count += 1
+        else:
+            break
+    return count
+
+
 def _score_org(audit_texts: list[str]) -> float:
     if not audit_texts:
         return 5.0
@@ -106,6 +117,14 @@ def _score_org(audit_texts: list[str]) -> float:
     # close_cluster_rate (2.0 weight): did the session loop close?
     # capability_skill_rate (1.0 weight): did at least one capability skill fire?
     score = 5.0 + (close_rate * 2.0) + (capability_skill_rate * 1.0) + token_penalty
+
+    # Discipline gate: if the last 3+ sessions all skipped /done, cap at 6.5.
+    # Creates a forcing function — discipline must be demonstrated before org_score
+    # can reach 7.0+, which is the PRD target.
+    consecutive_skips = _consecutive_close_skips(sessions)
+    if consecutive_skips >= 3:
+        score = min(score, 6.5)
+
     return min(round(score, 1), 10.0)
 
 
@@ -125,6 +144,14 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     capability_count = sum(1 for s in sessions if s.get("capability_skills"))
     skip_rate = 1 - (close_count / total)
     capability_skip_rate = 1 - (capability_count / total)
+
+    # Discipline gate finding — surfaces when score is capped
+    consecutive_skips = _consecutive_close_skips(sessions)
+    if consecutive_skips >= 3:
+        findings.append(
+            f"Discipline gate LOCKED — {consecutive_skips} consecutive sessions without /done. "
+            "Org score capped at 6.5. Type /done at the end of 3 consecutive sessions to unlock 7.0+."
+        )
 
     # Capability skill invocation — north star signal
     if capability_skip_rate > 0.75:
@@ -467,8 +494,34 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
         }
         existing_entries.append(entry)
         existing_entries = existing_entries[-20:]  # keep last 20 health cycles
+
+        # Per-project org_score: read current slug from state, store under "projects" key.
+        # Enables session_start to surface "canopy: 7.0/10 ▲+0.1" vs system-wide score.
+        existing_data = {}
+        if metrics_file.exists():
+            try:
+                existing_data = json.loads(metrics_file.read_text())
+            except Exception:
+                pass
+        per_project = existing_data.get("projects", {})
+        state_file = YOUK_ROOT / "state" / "session.json"
+        if state_file.exists():
+            try:
+                slug = json.loads(state_file.read_text()).get("last_project", "")
+                if slug:
+                    per_project[slug] = {
+                        "org_score": current_score,
+                        "sessions": total,
+                        "close_rate": close_rate,
+                        "updated": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    }
+            except Exception:
+                pass
+
         metrics_file.parent.mkdir(parents=True, exist_ok=True)
-        metrics_file.write_text(json.dumps({"entries": existing_entries}, indent=2))
+        metrics_file.write_text(json.dumps(
+            {"entries": existing_entries, "projects": per_project}, indent=2
+        ))
     except Exception:
         pass
 
