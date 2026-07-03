@@ -1,7 +1,5 @@
 """Skill generation and assessment — signal-driven SKILL.md lifecycle."""
 from __future__ import annotations
-import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -9,20 +7,6 @@ from pathlib import Path
 sys.path.insert(0, "/shared")
 from skill_loader import load_skill, list_skills
 
-def _resolve_api_key() -> str:
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if key:
-        return key
-    fallback = Path("/claude/.anthropic/api_key")
-    return fallback.read_text().strip() if fallback.exists() else ""
-
-try:
-    import anthropic
-    _client = anthropic.Anthropic(api_key=_resolve_api_key())
-except Exception:
-    _client = None
-
-_MODEL = "claude-sonnet-4-6"
 YOUK_ROOT = Path("/youk")
 CLAUDE_ROOT = Path("/claude")
 SKILLS_DIR = CLAUDE_ROOT / "skills"
@@ -164,22 +148,16 @@ def generate_skill(
     signal_type: str = "engineer_request",
 ) -> dict:
     """
-    Generate a new SKILL.md from signals (project context, audit gaps, best practices).
+    Assemble context for in-session SKILL.md generation by Claude Code.
+
+    Returns schema + examples + cross-project knowledge so the active Claude Code
+    session generates the SKILL.md with full conversation context. No API call.
 
     signal_type: "engineer_request" | "demand_gap" | "project_type_gap" | "best_practices_gap"
-
-    Returns draft content + proposal dict. Does NOT write to disk.
     """
-    if not _client:
-        return {"error": "API client not available — check ANTHROPIC_API_KEY"}
-
     schema = _load_skill_schema()
     cross_project = _load_cross_project_knowledge()
     examples = _sample_example_skills()
-
-    context_str = ""
-    if project_context:
-        context_str = "\n".join(f"  {k}: {v}" for k, v in project_context.items())
 
     signal_guidance = {
         "demand_gap": (
@@ -197,67 +175,39 @@ def generate_skill(
         "engineer_request": "Skill requested directly by the engineer.",
     }.get(signal_type, "")
 
-    system = f"""You are generating a youk SKILL.md. Every word either directs behavior or wastes tokens.
-Write as if it is code, not documentation. Be specific and concrete — not aspirational.
-
-=== SKILL SCHEMA (follow exactly) ===
-{schema}
-
-=== BEST-PRACTICES KNOWLEDGE (encode relevant patterns) ===
-{cross_project}
-
-=== STRUCTURAL EXAMPLES (follow this structure) ===
-{examples}
-
-Signal type: {signal_type}
-{signal_guidance}
-
-Output ONLY the SKILL.md content. No preamble, no explanation, no markdown fence."""
-
-    context_block = f"\nProject context:\n{context_str}" if context_str else ""
-    user = f"Generate a SKILL.md for skill: {name}\n\nPurpose: {purpose}{context_block}"
-
-    response = _client.messages.create(
-        model=_MODEL,
-        max_tokens=4096,
-        system=system,
-        messages=[{"role": "user", "content": user}],
-    )
-
-    content = response.content[0].text.strip()
-    # Strip accidental markdown code fences
-    if content.startswith("```"):
-        content = re.sub(r"^```[^\n]*\n", "", content)
-        content = re.sub(r"\n```$", "", content)
-
     return {
-        "content": content,
-        "write_path": f"{name}/SKILL.md",
+        "mode": "in_session",
+        "name": name,
+        "purpose": purpose,
         "signal_type": signal_type,
-        "proposal": {
-            "title": f"Generate skill: {name}",
-            "rationale": f"Signal: {signal_type}. Purpose: {purpose}",
-            "change_type": "FILE_CREATE",
-            "target": f"{name}/SKILL.md",
-            "content": content,
-            "target_section": "",
-        },
-        "note": (
-            "Review content before writing. "
-            "Call youk-core.add_proposal(proposal) then apply_proposal(id, confirmed=True) to write."
+        "signal_guidance": signal_guidance,
+        "project_context": project_context or {},
+        "skill_schema": schema,
+        "cross_project_knowledge": cross_project,
+        "example_skills": examples,
+        "write_path": f"{name}/SKILL.md",
+        "instruction": (
+            f"Generate a SKILL.md for skill '{name}'. "
+            "Follow skill_schema exactly. Encode patterns from cross_project_knowledge. "
+            "Use example_skills for structure. Every line must direct behavior — not document it. "
+            "Output ONLY the SKILL.md content, no preamble or markdown fence. "
+            "Then call youk-core.add_proposal() with change_type=FILE_CREATE and apply_proposal(confirmed=True) to write it."
         ),
     }
 
 
 def assess_skill(skill_name: str) -> dict:
     """
-    Assess a skill against audit evidence and best-practices knowledge.
-    Returns coverage score, strengths, gaps, and proposed SKILL_EDIT additions.
-    Each proposed_addition maps directly to an add_proposal() call.
-    """
-    if not _client:
-        return {"error": "API client not available — check ANTHROPIC_API_KEY"}
+    Assemble context for in-session skill assessment by Claude Code.
 
+    Returns SKILL.md content + audit evidence + gap signals so the active
+    Claude Code session performs the assessment with full conversation context.
+    No API call.
+
+    The returned dict instructs Claude Code to produce:
+      coverage_score, strengths, gaps, proposed_additions
+    Each proposed_addition maps directly to a youk-core.add_proposal() call.
+    """
     try:
         skill_content = load_skill(skill_name)
     except FileNotFoundError:
@@ -265,68 +215,31 @@ def assess_skill(skill_name: str) -> dict:
 
     cross_project = _load_cross_project_knowledge()
     audit_evidence = _read_audit_for_skill(skill_name)
+    all_gap_signals = _read_audit_skill_gap_signals()
+    skill_gaps = [s for s in all_gap_signals if s["skill"] == skill_name]
 
-    system = f"""You are assessing a youk SKILL.md for coverage gaps and improvement opportunities.
-
-=== BEST-PRACTICES KNOWLEDGE ===
-{cross_project}
-
-=== AUDIT EVIDENCE ===
-{audit_evidence}
-
-Assess the skill against:
-1. Does it encode the best-practices patterns above?
-2. Does audit evidence show recurring misses?
-3. Are quality bars specific and testable (not aspirational)?
-4. Does each phase have clear numbered steps and a compact output summary?
-5. Are reference files listed and used at specific phases?
-
-Return ONLY valid JSON — no markdown fence, no explanation:
-{{
-  "coverage_score": <integer 0-10>,
-  "strengths": ["what the skill covers well — be specific"],
-  "gaps": [
-    {{
-      "section": "<section name>",
-      "gap": "<specific gap — not vague>",
-      "evidence": "<from audit / deduced from best practices / schema requirement>"
-    }}
-  ],
-  "proposed_additions": [
-    {{
-      "section": "<exact section heading from SKILL.md>",
-      "content": "<the exact text to insert>",
-      "change_type": "SKILL_EDIT",
-      "target": "{skill_name}",
-      "target_section": "<exact section heading>"
-    }}
-  ]
-}}"""
-
-    user = f"Assess this SKILL.md:\n\n=== {skill_name}/SKILL.md ===\n{skill_content}"
-
-    response = _client.messages.create(
-        model=_MODEL,
-        max_tokens=2048,
-        system=system,
-        messages=[{"role": "user", "content": user}],
-    )
-
-    text = response.content[0].text.strip()
-    # Strip markdown fences if present
-    text = re.sub(r"^```[^\n]*\n", "", text)
-    text = re.sub(r"\n```$", "", text)
-
-    try:
-        result = json.loads(text)
-        result["skill"] = skill_name
-        return result
-    except json.JSONDecodeError:
-        return {
-            "skill": skill_name,
-            "raw_assessment": text,
-            "error": "Could not parse structured JSON — check raw_assessment for content",
-        }
+    return {
+        "mode": "in_session",
+        "skill_name": skill_name,
+        "skill_content": skill_content,
+        "cross_project_knowledge": cross_project,
+        "audit_evidence": audit_evidence,
+        "gap_signals": skill_gaps,
+        "assessment_criteria": [
+            "Does it encode the best-practices patterns from cross_project_knowledge?",
+            "Does audit evidence show recurring misses that the skill didn't catch?",
+            "Are quality bars specific and testable — not aspirational?",
+            "Does each phase have clear numbered steps and a compact output summary?",
+            "Are reference files listed and used at specific phases?",
+        ],
+        "instruction": (
+            "Assess this skill against the criteria above. "
+            "Return coverage_score (0-10), strengths (list), gaps (list of {section, gap, evidence}), "
+            "and proposed_additions (list of {section, content, change_type: 'SKILL_EDIT', "
+            f"target: '{skill_name}', target_section, rationale}}). "
+            "For each proposed_addition call youk-core.add_proposal() then apply_proposal(confirmed=True)."
+        ),
+    }
 
 
 def detect_skill_gaps() -> dict:

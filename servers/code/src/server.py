@@ -22,16 +22,19 @@ def nfr_check(task: str, size: str = "M") -> dict:
     """
     Run an NFR (Non-Functional Requirements) check on a task.
 
-    XS/S: 2-question fast path, no API call, instant.
-    M: 4-question block via API (~10-15s).
-    L/XL: Full 5-phase check via API (~20-30s).
+    XS/S: 2-question fast path, instant, no API call.
+    M/L/XL: Returns in_session context — Claude Code answers the questions
+             using full session context (no separate API call or credits needed).
 
     task: What you're about to build.
     size: XS, S, M, L, or XL. Defaults to M.
 
-    Returns: size, mode, decisions, connections, raw_output.
+    XS/S returns: size, mode, decisions, connections, markdown.
+    M+ returns: mode="in_session", skill_content, questions, instruction.
     """
     result = run_nfr_check(task, size)
+    if isinstance(result, dict):
+        return result  # in_session — Claude Code executes with full context
     return {
         "task": result.task,
         "size": result.size.value,
@@ -43,16 +46,19 @@ def nfr_check(task: str, size: str = "M") -> dict:
 
 
 @mcp.tool()
-def route_to_skill(skill: str, task: str, context: dict | None = None) -> str:
+def route_to_skill(skill: str, task: str, context: dict | None = None) -> dict:
     """
-    Run any skill against a task by loading its SKILL.md as the system prompt.
-    Phase tokens are preserved in the output so you can use them for audit.
+    Load a skill and return context for in-session execution by Claude Code.
+
+    Returns skill_content (the SKILL.md) + task + instruction. The active
+    Claude Code session executes the skill using full conversation context,
+    tools, and history — no separate API call or credits needed.
 
     skill: Skill name (e.g. 'pm-review', 'write-spec', 'adr', 'stress-test', 'humanize', 'learn').
     task: Task description for the skill.
-    context: Optional key-value pairs (e.g. {'framework': 'Gradio', 'project': 'canopy'}).
+    context: Optional key-value pairs for additional context.
 
-    Returns: Skill output in native format.
+    Returns: {mode: "in_session", skill_name, skill_content, task, context, instruction}
     """
     return _route_to_skill(skill, task, context)
 
@@ -95,18 +101,19 @@ def generate_skill(
     signal_type: str = "engineer_request",
 ) -> dict:
     """
-    Generate a new SKILL.md from signals — project context, audit gaps, or best-practice patterns.
+    Assemble context for in-session SKILL.md generation by Claude Code.
+
+    Returns skill_schema + cross-project knowledge + example skills so the
+    active Claude Code session writes the SKILL.md with full context.
+    No separate API call or credits needed.
 
     name: kebab-case skill name (e.g. 'security-review', 'python-ml')
     purpose: What the skill does and when it triggers (1-3 sentences)
-    project_context: Optional dict — project type, stack, domain patterns, detected signals
+    project_context: Optional dict — project type, stack, domain patterns
     signal_type: "engineer_request" | "demand_gap" | "project_type_gap" | "best_practices_gap"
-      - demand_gap: route_task referenced this skill but no SKILL.md exists
-      - project_type_gap: project type detected, no domain skill exists
-      - best_practices_gap: cross-project pattern not encoded in any skill
 
-    Returns draft content + proposal dict. Does NOT write to disk.
-    Review content, then call youk-core.add_proposal() + apply_proposal() to write.
+    Returns: {mode: "in_session", skill_schema, cross_project_knowledge, example_skills, instruction}
+    Claude Code writes content, then calls add_proposal() + apply_proposal() to persist.
     """
     return _generate_skill(name, purpose, project_context, signal_type)
 
@@ -114,20 +121,18 @@ def generate_skill(
 @mcp.tool()
 def assess_skill(skill_name: str) -> dict:
     """
-    Assess how well an existing skill covers its domain.
+    Assemble context for in-session skill assessment by Claude Code.
 
-    Reads the skill's SKILL.md, recent audit evidence (sessions where skill was used),
-    and cross-project best-practices knowledge. Returns gaps and proposed SKILL_EDIT additions.
+    Returns SKILL.md + audit evidence + gap signals so the active Claude Code
+    session assesses coverage gaps with full conversation context.
+    No separate API call or credits needed.
 
     skill_name: Name of the skill to assess (e.g. 'dev-loop', 'adr')
 
-    Returns:
-    - coverage_score: 0-10
-    - strengths: what the skill covers well
-    - gaps: specific gaps with evidence
-    - proposed_additions: list of SKILL_EDIT additions ready for add_proposal()
-
-    Each item in proposed_additions maps directly to a youk-core.add_proposal() call.
+    Returns: {mode: "in_session", skill_content, audit_evidence, gap_signals,
+              assessment_criteria, instruction}
+    Claude Code produces coverage_score, strengths, gaps, proposed_additions,
+    then calls add_proposal() + apply_proposal() for each approved addition.
     """
     return _assess_skill(skill_name)
 
