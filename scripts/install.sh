@@ -35,8 +35,16 @@ fi
 ok "Claude Code found ($(claude --version 2>/dev/null | head -1))"
 
 _api_key_file="$CLAUDE_DIR/.anthropic/api_key"
+# Auto-load from .env in repo root if present and key not already set
+_env_file="$REPO_DIR/.env"
+if [[ -z "${ANTHROPIC_API_KEY:-}" && -s "$_env_file" ]]; then
+  # shellcheck source=/dev/null
+  set -a; source "$_env_file"; set +a
+  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && ok "ANTHROPIC_API_KEY loaded from .env"
+fi
+
 if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-  ok "ANTHROPIC_API_KEY found in environment"
+  ok "ANTHROPIC_API_KEY found"
   mkdir -p "$CLAUDE_DIR/.anthropic"
   printf '%s' "$ANTHROPIC_API_KEY" > "$_api_key_file"
   chmod 600 "$_api_key_file"
