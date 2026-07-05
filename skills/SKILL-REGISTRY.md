@@ -12,6 +12,14 @@ The complete map of the skill ecosystem. Every skill that exists, what it does, 
 it tends to miss, and how it connects to others. The hiring committee standard for
 any new skill: it must do something no existing skill does.
 
+**Machine-readable graph:** `~/.claude/youk/knowledge/skill-graph.yaml` — encodes all
+skill dependencies, knowledge reads/writes, trigger conditions, and stack coverage status.
+Consumed by `check_doc_graph()` and `generate_stack_overlay()`.
+
+**Stack overlay schema:** `~/.claude/skills/stack-overlay-schema.md` — canonical structure
+for all generated `references/stacks/{framework}.md` overlays (6 sections, WAF-grounded,
+<600 tokens). New overlays are generated on first encounter, saved for future sessions.
+
 ---
 
 ## Skill Inventory
@@ -191,6 +199,7 @@ Proposed skills that don't yet exist. Evaluated against the hiring bar before cr
 | 2026-06-27 | Rewrote /humanize voice profile: hard rules for no em dashes, no rhetorical buildup | Extracted from Ajinkya's actual writing patterns |
 | 2026-06-27 | Added Playwright MCP protocol to /verify; wired into New Feature Flow | Live browser testing revealed bugs invisible to unit tests — validation mismatches, tab label drift from stale server |
 | 2026-06-27 | /skill-health review — Org score 5.8/10. Added: NFR category 11 (Rendering Environment), ux-designer checklist Rendering Environment section, /verify Test 10 (dark mode rendering check), /adr implicit decisions section, FOUNDER-GUIDE session-close required framing | Rendering environment gap slipped past UX review and reached the user; session-close cluster consistently skipped across multiple sessions |
+| 2026-07-03 | Stack Coverage System added to code-review + nfr-check SKILL.md. generate_stack_overlay() tool added. skill-graph.yaml + stack-overlay-schema.md created. | Generative overlay architecture — skills detect stack gap on first encounter, propose generating overlay, save for future sessions. WAF-grounded schema ensures critical questions > checklists. |
 
 ---
 
