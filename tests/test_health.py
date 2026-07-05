@@ -282,3 +282,60 @@ class TestGapResolutionRate:
         ])
         # 2 unique gap types: nfr-check (recurring), code-review (new) → 1/2 = 0.5
         assert _compute_gap_resolution_rate(sessions) == 0.5
+
+
+class TestApplyProposalSafeTypes:
+    _PENDING = (
+        "# Proposals\n\n"
+        "## PENDING-001 — 2026-07-01\n"
+        "**Target:** skills/dev-loop/SKILL.md\n**Change:** add phase\n**Reason:** r\n"
+        "**Before:** \n**After:** new content\n**Status:** PENDING\n"
+        "**ChangeType:** SKILL_EDIT\n**TargetSection:** Phase 1\n\n"
+        "## PENDING-002 — 2026-07-01\n"
+        "**Target:** servers/core/src/session.py\n**Change:** fix func\n**Reason:** r\n"
+        "**Before:** old_code\n**After:** new_code\n**Status:** PENDING\n"
+        "**ChangeType:** CODE_EDIT\n**TargetSection:** session_start\n"
+    )
+
+    def test_confirmed_false_returns_blocked_true(self, youk_root):
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING)
+        from health import apply_proposal
+        result = apply_proposal("PENDING-001", confirmed=False)
+        assert result["blocked"] is True
+        assert "Preview only" in result["message"]
+
+    def test_skill_edit_passes_safe_types_gate(self, youk_root, monkeypatch):
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING)
+        import health as h
+        captured = {}
+        monkeypatch.setattr(h, "_execute_proposal", lambda p: (captured.update({"p": p}) or {"applied": True}))
+        result = h.apply_proposal("PENDING-001", confirmed=True, safe_types=["SKILL_EDIT", "FILE_CREATE"])
+        assert result.get("blocked") is not True
+        assert captured["p"].change_type == "SKILL_EDIT"
+
+    def test_code_edit_blocked_by_safe_types_gate(self, youk_root, monkeypatch):
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING)
+        import health as h
+        executed = []
+        monkeypatch.setattr(h, "_execute_proposal", lambda p: executed.append(p) or {"applied": True})
+        result = h.apply_proposal("PENDING-002", confirmed=True, safe_types=["SKILL_EDIT", "FILE_CREATE"])
+        assert result["blocked"] is True
+        assert result["change_type"] == "CODE_EDIT"
+        assert "manual review" in result["message"]
+        assert executed == []  # _execute_proposal must NOT be called
+
+    def test_no_safe_types_applies_any_change_type(self, youk_root, monkeypatch):
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING)
+        import health as h
+        executed = []
+        monkeypatch.setattr(h, "_execute_proposal", lambda p: (executed.append(p) or {"applied": True}))
+        result = h.apply_proposal("PENDING-002", confirmed=True)  # no safe_types
+        assert result.get("blocked") is not True
+        assert len(executed) == 1
+
+    def test_missing_proposal_returns_error(self, youk_root):
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING)
+        from health import apply_proposal
+        result = apply_proposal("PENDING-999", confirmed=True, safe_types=["SKILL_EDIT"])
+        assert result["applied"] is False
+        assert "not found" in result["error"]

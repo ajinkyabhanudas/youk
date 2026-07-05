@@ -242,21 +242,31 @@ def get_proposals() -> dict:
 
 
 @mcp.tool()
-def apply_proposal(proposal_id: str, confirmed: bool = False) -> dict:
+def apply_proposal(
+    proposal_id: str,
+    confirmed: bool = False,
+    safe_types: list[str] | None = None,
+) -> dict:
     """
     Apply an approved self-heal proposal.
 
-    HARD RULE: confirmed must be True, set only when the founder has explicitly
-    reviewed and approved this specific proposal. This tool will error if
-    confirmed=False — that is intentional enforcement, not a bug.
+    confirmed must be True to write anything. Pass False to preview what would change.
+
+    safe_types: optional allowlist of change_type values that may be auto-applied.
+    Any proposal whose change_type is NOT in safe_types returns blocked=True and
+    must be reviewed manually. Use safe_types=["SKILL_EDIT","FILE_CREATE"] for
+    autonomous /improve runs. Omit safe_types (or pass None) to apply any type
+    after explicit human review.
+
+    Examples:
+      apply_proposal("PENDING-123", confirmed=True)  # explicit human apply, any type
+      apply_proposal("PENDING-123", confirmed=True, safe_types=["SKILL_EDIT","FILE_CREATE"])  # /improve safe path
 
     proposal_id: The PENDING-XXX identifier from get_proposals().
-    confirmed: Must be True to proceed. Pass False to see what would happen.
-
-    Returns: applied, target_file, change_summary.
+    Returns: applied, blocked, change_type, change_summary, message.
     """
     try:
-        return _apply_proposal(proposal_id, confirmed)
+        return _apply_proposal(proposal_id, confirmed, safe_types)
     except ValueError as e:
         return {"applied": False, "error": str(e), "rule_id": "no-auto-apply-proposals"}
 

@@ -812,11 +812,20 @@ def _execute_proposal(proposal: Proposal) -> dict:
     }
 
 
-def apply_proposal(proposal_id: str, confirmed: bool) -> dict:
+def apply_proposal(
+    proposal_id: str,
+    confirmed: bool,
+    safe_types: list[str] | None = None,
+) -> dict:
     """
-    Two-step proposal application.
+    Two-step proposal application with optional change_type gate.
+
     confirmed=False → returns diff preview, nothing written.
     confirmed=True  → executes write per change_type, marks APPLIED in PENDING.md.
+
+    safe_types: when provided, only change_types in this list are applied.
+    Types not in safe_types return blocked=True — caller must review manually.
+    Use safe_types=["SKILL_EDIT","FILE_CREATE"] for autonomous /improve runs.
     """
     proposals = _load_pending_proposals()
     target = next((p for p in proposals if p.id == proposal_id), None)
@@ -827,8 +836,23 @@ def apply_proposal(proposal_id: str, confirmed: bool) -> dict:
         preview = _compute_diff_preview(target)
         return {
             "preview": preview,
-            "blocked": False,
+            "blocked": True,
             "message": "Preview only — nothing written. Pass confirmed=True to apply.",
+        }
+
+    # change_type gate — enforces safe_types contract for autonomous callers
+    if safe_types is not None and target.change_type not in safe_types:
+        return {
+            "applied": False,
+            "blocked": True,
+            "proposal_id": proposal_id,
+            "change_type": target.change_type,
+            "safe_types": safe_types,
+            "message": (
+                f"Proposal {proposal_id} is change_type='{target.change_type}' which is not in "
+                f"safe_types={safe_types}. This requires manual review. "
+                "Call apply_proposal without safe_types to apply explicitly after reviewing."
+            ),
         }
 
     # confirmed=True path: execute + mark applied
