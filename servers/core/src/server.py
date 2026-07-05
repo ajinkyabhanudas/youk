@@ -338,7 +338,7 @@ def task_checkpoint(project_dir: str, task_label: str, size: str = "M") -> dict:
 
 
 @mcp.tool()
-def compact_context(project_dir: str) -> dict:
+def compact_context(project_dir: str, intent: str = "") -> dict:
     """
     Build a structured context brief from youk's knowledge store.
 
@@ -348,15 +348,21 @@ def compact_context(project_dir: str) -> dict:
     Clarifications entirely. It is generated from structured files, not
     by summarizing conversation, so no information is lost.
 
+    When intent is provided, Decision blocks matching the intent keywords are
+    pinned verbatim instead of compressed. Use this after an NFR decision to
+    keep that decision block intact through subsequent compaction cycles.
+    Example: compact_context(cwd, intent="payment webhook idempotency")
+
     Use the returned 'brief' as your working context anchor: state it
     explicitly in your response so it appears in recent context and
     survives the next compaction cycle.
 
     project_dir: The current project directory (same as session_start).
+    intent: Optional keywords describing the active work (e.g. "payment webhook nfr").
 
     Returns: brief (pin this), contracts_count, decisions_count, instruction.
     """
-    return build_brief(project_dir)
+    return build_brief(project_dir, intent)
 
 
 @mcp.tool()

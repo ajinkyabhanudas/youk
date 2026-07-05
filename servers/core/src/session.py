@@ -216,21 +216,26 @@ def _detect_project_type(project_dir: str) -> str:
     if py_type:
         return py_type
 
-    # Nested Python: check common source subdirectories (e.g. servers/, src/, backend/)
+    has_docker_orchestration = (
+        (p / "Makefile").exists()
+        and any(
+            (p / f).exists()
+            for f in ["Dockerfile", "docker-compose.yml", "docker-compose.yaml"]
+        )
+    )
+
     for sub in ["servers", "src", "app", "backend", "api"]:
         sub_path = p / sub
         if sub_path.is_dir():
             py_type = _check_python(sub_path)
             if py_type:
-                return py_type
-            # One level deeper: e.g. servers/core/, servers/code/
+                return "python/docker" if has_docker_orchestration else py_type
             for nested in sorted(sub_path.iterdir()):
                 if nested.is_dir():
                     py_type = _check_python(nested)
                     if py_type:
-                        return py_type
+                        return "python/docker" if has_docker_orchestration else py_type
 
-    # Dockerfile-based Python: deps inside Docker, no requirements.txt at known paths
     for df in sorted(p.glob("**/Dockerfile"))[:10]:
         try:
             if "FROM python:" in df.read_text():

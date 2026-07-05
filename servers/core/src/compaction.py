@@ -74,14 +74,18 @@ def _load_session_plan() -> list[str]:
         return []
 
 
-def build_brief(project_dir: str) -> dict:
+def build_brief(project_dir: str, intent: str = "") -> dict:
     """
     Build a structured context brief from youk's knowledge store.
 
-    Returns a brief that Claude must paste VERBATIM into its response so it
-    appears in recent context and survives the next compaction cycle.
-    Content is generated from structured files — not conversation summaries —
-    so contracts are immune to paraphrase degradation.
+    When intent is provided, applies Tier priority:
+    - CONTRACT (always verbatim, always first)
+    - DECISION blocks matching intent keywords (verbatim)
+    - DECISION blocks not matching intent (key fact + rationale, compressed)
+    - Session state + plan (summary)
+
+    The brief is built from structured files, not conversation — so contracts
+    survive compaction without paraphrase degradation.
     """
     slug = _slug(project_dir)
     contracts = _load_contracts(slug)
@@ -90,10 +94,11 @@ def build_brief(project_dir: str) -> dict:
     session_plan = _load_session_plan()
 
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    intent_keywords = {w.lower() for w in intent.split() if len(w) > 2} if intent else set()
 
     sections: list[str] = [f"YOUK CONTEXT BRIEF — {timestamp}"]
 
-    # Contracts: always verbatim, always first
+    # Contracts: always verbatim, always first (CONTRACT tier)
     if contracts:
         sections.append("## Pinned Contracts (verbatim — never summarize or paraphrase)")
         for c in contracts:
@@ -101,17 +106,19 @@ def build_brief(project_dir: str) -> dict:
     else:
         sections.append("## Pinned Contracts\n(none saved yet — call session_end to capture working agreements)")
 
-    # Decisions: key fact + rationale only
+    # Decisions: verbatim when they match intent keywords, compressed otherwise (DECISION tier)
     if decisions:
         sections.append("## Active Decisions")
         for d in decisions:
             lines = d.strip().splitlines()
-            # heading + first non-empty body line
             heading = lines[0] if lines else ""
             body = next((ln for ln in lines[1:] if ln.strip()), "")
-            sections.append(f"{heading}: {body}".strip())
+            if intent_keywords and any(kw in d.lower() for kw in intent_keywords):
+                sections.append(d.strip())
+            else:
+                sections.append(f"{heading}: {body}".strip())
 
-    # Task state
+    # Session state (DECISION tier — 1 line)
     project = state.get("last_project", project_dir)
     session_n = state.get("session_counter", "?")
     sections.append(
@@ -119,7 +126,7 @@ def build_brief(project_dir: str) -> dict:
         f"Project: {slug} | Session #{session_n} | Dir: {project}"
     )
 
-    # Session plan: what was in-progress at session_start (survives compaction from files)
+    # Session plan (DECISION tier — from files, survives compaction)
     if session_plan:
         plan_lines = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(session_plan))
         sections.append(f"## Session plan (from last session_start)\n{plan_lines}")
@@ -128,9 +135,6 @@ def build_brief(project_dir: str) -> dict:
 
     brief = "\n\n".join(sections)
 
-    # Write session checkpoint so next session_start can recover audit state
-    # if the developer closes the tab without calling /done.
-    # Also clear session-open.json: checkpoint is more informative and supersedes it.
     checkpoint_file = YOUK_ROOT / "state" / "session-checkpoint.json"
     try:
         checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
@@ -144,7 +148,7 @@ def build_brief(project_dir: str) -> dict:
         if open_file.exists():
             open_file.unlink()
     except Exception:
-        pass  # checkpoint write failure must never block compact_context
+        pass
 
     return {
         "brief": brief,
