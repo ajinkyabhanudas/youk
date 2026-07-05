@@ -1,0 +1,276 @@
+# youk Skill Connection Graph
+# Authority file for skill dependencies, knowledge flows, and stack coverage status.
+# Consumed by: check_doc_graph(), generate_stack_overlay(), SKILL-REGISTRY.md
+# Updated by: skill-health reviews, generate_stack_overlay (auto-updates stack_coverage)
+# Version: 1.0 | Updated: 2026-07-03
+
+---
+
+skills:
+
+  orchestrate:
+    role: "Chief of Staff — new project + sprint routing"
+    trigger_events: ["new project", "feature sprint", "what's next"]
+    precedes: [pm-review]
+    follows: []
+    reads: []
+    stack_aware: false
+    domain_aware: false
+
+  pm-review:
+    role: "AI Product Manager — build/don't-build decision"
+    trigger_events: ["feature request", "prioritization", "should we build X"]
+    trigger_size: [M, L, XL]
+    precedes: [write-spec]
+    follows: [orchestrate]
+    reads: []
+    stack_aware: false
+    domain_aware: true
+
+  write-spec:
+    role: "Technical PM — WHAT to build (PRD quality)"
+    trigger_events: ["after build decision", "define what to build precisely"]
+    trigger_size: [M, L, XL]
+    precedes: [nfr-check]
+    follows: [pm-review]
+    reads_always:
+      - references/spec-quality-bar.md
+    reads_on_domain: "domain/{domain}.md"
+    stack_aware: false
+    domain_aware: true
+    covered_domains: [saas]
+
+  nfr-check:
+    role: "Systems Engineer — pre-build NFR gate"
+    trigger_events: ["before dev-loop on M+", "new module", "new endpoint", "external integration"]
+    trigger_size: [M, L, XL]
+    precedes: [adr, dev-loop]
+    follows: [write-spec, pm-review]
+    reads_always:
+      - references/feature-type-matrix.md
+      - references/nfr-categories.md
+      - references/nfr-decision-format.md
+    reads_on_stack: "references/stacks/{framework}.md"
+    stack_aware: true
+    domain_aware: false
+    generates_stack_overlay: true
+    covered_stacks: [python]
+
+  adr:
+    role: "Staff Architect — architectural decision capture"
+    trigger_events: ["/decide", "decision with real alternatives", "NFR triggers ADR"]
+    trigger_size: [M, L, XL]
+    precedes: [dev-loop]
+    follows: [nfr-check]
+    reads_always:
+      - references/adr-format.md
+      - references/decision-triggers.md
+      - references/common-trade-offs.md
+    stack_aware: false
+    domain_aware: false
+
+  stress-test:
+    role: "Red Team Lead — attack the design before building"
+    trigger_events: ["L/XL feature", "new architecture", "before committing to major design"]
+    trigger_size: [L, XL]
+    precedes: [dev-loop]
+    follows: [nfr-check, adr]
+    reads: []
+    stack_aware: false
+    domain_aware: false
+
+  dev-loop:
+    role: "Senior Engineer — implementation"
+    trigger_events: ["write", "implement", "build", "refactor", "audit", "test"]
+    trigger_size: [S, M, L, XL]
+    precedes: [code-review, verify, learn]
+    follows: [nfr-check, adr, write-spec]
+    calls_internally: [nfr-check]
+    reads_always:
+      - references/audit-checklist.md
+      - references/best-practices.md
+      - references/test-strategies.md
+    reads_on_stack: "references/stacks/{framework}.md"
+    reads_on_domain: "domain/{domain}.md"
+    stack_aware: true
+    domain_aware: true
+    generates_stack_overlay: true
+    covered_stacks: []   # populated on-demand per project
+    covered_domains: [saas]
+
+  ux-designer:
+    role: "UX Researcher — user-facing design decisions"
+    trigger_events: ["user-facing change", "UI design decision", "UX review"]
+    trigger_size: [S, M, L, XL]
+    precedes: [code-review]
+    follows: [dev-loop]
+    reads: []
+    stack_aware: false
+    domain_aware: false
+
+  code-review:
+    role: "Quality Reviewer — diff review"
+    trigger_events: ["/done", "/check", "before commit", "review request"]
+    trigger_size: [XS, S, M, L, XL]
+    precedes: [security-review, verify]
+    follows: [dev-loop, write-spec, ux-designer]
+    reads_always:
+      - references/severity-guide.md
+      - references/security-checklist.md
+    reads_on_stack: "references/stacks/{framework}.md"
+    reads_on_domain: "domain/{domain}.md"
+    stack_aware: true
+    domain_aware: true
+    generates_stack_overlay: true
+    covered_stacks: [python, javascript]
+    covered_domains: [saas]
+
+  security-review:
+    role: "Security Auditor — threat-model-first review"
+    trigger_events: ["/check", "auth change", "credential change", "new external API", "data write"]
+    trigger_size: [M, L, XL]
+    precedes: [verify]
+    follows: [code-review]
+    reads_always:
+      - references/threat-scenarios.md
+    reads_on_stack: "references/stacks/{framework}.md"
+    reads_on_domain: "domain/{domain}.md"
+    stack_aware: true
+    domain_aware: true
+    generates_stack_overlay: false  # future — threat scenarios are currently flat
+    covered_stacks: []
+    covered_domains: []
+
+  verify:
+    role: "QA Tester — confirm live behavior"
+    trigger_events: ["after implementation", "before commit", "/done"]
+    trigger_size: [S, M, L, XL]
+    precedes: [humanize, learn]
+    follows: [code-review, security-review]
+    reads: []
+    stack_aware: false
+    domain_aware: false
+
+  humanize:
+    role: "Technical Writer — commit messages and documentation"
+    trigger_events: ["/done", "before commit", "documentation request"]
+    trigger_size: [XS, S, M, L, XL]
+    precedes: [learn, session_end]
+    follows: [verify, code-review]
+    reads: []
+    stack_aware: false
+    domain_aware: false
+
+  learn:
+    role: "L&D Coach — session-end knowledge capture"
+    trigger_events: ["session end", "/done", "concept deep-dive"]
+    trigger_size: [XS, S, M, L, XL]
+    precedes: [session_end]
+    follows: [humanize, verify, dev-loop]
+    reads: []
+    stack_aware: false
+    domain_aware: false
+
+  context-sync:
+    role: "Context Manager — session state sync"
+    trigger_events: ["session start", "session end", "context stale"]
+    reads: []
+    stack_aware: false
+    domain_aware: false
+
+  skill-health:
+    role: "Engineering Manager — skill ecosystem health"
+    trigger_events: ["periodic review", "post-observed gap"]
+    reads: []
+    stack_aware: false
+    domain_aware: false
+
+  youk-research:
+    role: "Autonomous researcher — weekly pattern extraction"
+    trigger_events: ["weekly cron", "before /improve", "/research"]
+    reads: []
+    stack_aware: false
+    domain_aware: false
+
+  simulate-experience:
+    role: "Persona simulation — youk system testing"
+    trigger_events: ["test youk from a developer persona"]
+    stack_aware: false
+    domain_aware: false
+
+  orchestrate:
+    role: "Chief of Staff — routing and sprint planning"
+    trigger_events: ["new project", "what's next", "sprint planning"]
+    stack_aware: false
+    domain_aware: false
+
+  compaction:
+    role: "Context compaction (internal)"
+    trigger_events: ["internal — context fill threshold"]
+    stack_aware: false
+    domain_aware: false
+
+  session:
+    role: "Session lifecycle management (internal)"
+    trigger_events: ["internal"]
+    stack_aware: false
+    domain_aware: false
+
+  start:
+    role: "Session activator"
+    trigger_events: ["session start", "activate youk", "where were we"]
+    stack_aware: false
+    domain_aware: false
+
+---
+
+knowledge_flows:
+
+  session_start_reads:
+    - source: "knowledge/projects/{slug}/contracts.md"
+      purpose: "behavioral agreements — loaded first, pinned verbatim in every brief"
+    - source: "knowledge/projects/{slug}/decisions.md"
+      purpose: "architecture decisions"
+    - source: "knowledge/projects/{slug}/context.md"
+      purpose: "resume point, project type, detected stack"
+    - source: "knowledge/proposals/PENDING.md"
+      purpose: "pending improvement proposals — surfaced once per session"
+    - source: "audit/YYYY-MM.md"
+      purpose: "last session close_cluster, skill gaps, token usage"
+    - source: "youk/knowledge/cross-project.md"
+      purpose: "cross-project patterns — feeds session_plan nudges"
+
+  session_end_writes:
+    - target: "knowledge/projects/{slug}/contracts.md"
+      what: "new behavioral contracts extracted from session"
+    - target: "knowledge/projects/{slug}/context.md"
+      what: "updated resume point, detected stack, last-seen date"
+    - target: "audit/YYYY-MM.md"
+      what: "session entry: skills, close_cluster, tokens, skill_gaps"
+
+  route_to_skill_reads:
+    - source: "youk/state/session.json"
+      fields: [stack, framework, domain]
+      purpose: "auto-inject stack context into load_skill_with_context()"
+
+  generate_stack_overlay_reads:
+    - source: "skills/stack-overlay-schema.md"
+      purpose: "canonical structure — all overlays must follow this schema"
+    - source: "youk/knowledge/cross-project.md"
+      purpose: "stack-specific patterns from prior sessions"
+    - source: "skills/{skill}/SKILL.md"
+      purpose: "base skill content — overlay must not duplicate what's already there"
+
+---
+
+critical_paths:
+  # The flows that move org_score — must fire every session on M+ tasks
+  new_feature_minimum: [nfr-check, dev-loop, code-review, learn]
+  new_feature_full: [pm-review, write-spec, nfr-check, adr, dev-loop, code-review, security-review, verify, humanize, learn]
+  session_close: [code-review, verify, humanize, learn, session_end]
+
+  # Gaps that keep org_score below 7.0
+  known_blockers:
+    - "close_cluster_rate < 50%: /done skipped — session end has no learn/humanize"
+    - "skill_invocation_rate < 60%: M+ tasks completed without nfr-check or code-review"
+    - "stack_coverage: skills fire but no overlay exists — generic output only"

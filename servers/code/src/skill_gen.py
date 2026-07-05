@@ -25,6 +25,11 @@ def _load_cross_project_knowledge() -> str:
     return path.read_text() if path.exists() else ""
 
 
+def _load_stack_overlay_schema() -> str:
+    path = CLAUDE_ROOT / "skills" / "stack-overlay-schema.md"
+    return path.read_text() if path.exists() else ""
+
+
 def _sample_example_skills(preferred: list[str] | None = None) -> str:
     """Return compact excerpts from 2 well-formed skills as structural examples."""
     names = preferred or ["dev-loop", "adr"]
@@ -238,6 +243,74 @@ def assess_skill(skill_name: str) -> dict:
             "and proposed_additions (list of {section, content, change_type: 'SKILL_EDIT', "
             f"target: '{skill_name}', target_section, rationale}}). "
             "For each proposed_addition call youk-core.add_proposal() then apply_proposal(confirmed=True)."
+        ),
+    }
+
+
+def generate_stack_overlay(
+    skill_name: str,
+    stack: str,
+    framework: str | None = None,
+    domain: str | None = None,
+    project_context: dict | None = None,
+) -> dict:
+    """
+    Assemble context for in-session stack overlay generation.
+
+    Returns the overlay schema + base skill + cross-project knowledge so Claude Code
+    generates the overlay file content in-session without an extra API call.
+
+    After generating, Claude Code calls add_proposal(FILE_CREATE) + apply_proposal(confirmed=True)
+    to save the file at references/stacks/{framework or stack}.md.
+    """
+    try:
+        base_skill = load_skill(skill_name)
+    except FileNotFoundError:
+        return {"error": f"Skill not found: {skill_name}"}
+
+    schema = _load_stack_overlay_schema()
+    cross_project = _load_cross_project_knowledge()
+
+    # Framework is more specific than stack — use it as filename target when available
+    target_label = framework or stack
+    write_path = f"{skill_name}/references/stacks/{target_label}.md"
+
+    # Check if overlay already exists — if so, return early with a pointer
+    existing = SKILLS_DIR / skill_name / "references" / "stacks" / f"{target_label}.md"
+    if existing.exists():
+        return {
+            "status": "already_exists",
+            "write_path": write_path,
+            "message": (
+                f"Overlay already exists at {write_path}. "
+                "It is loaded automatically via load_skill_with_context(). "
+                "To update it, call assess_skill or edit the file directly."
+            ),
+        }
+
+    return {
+        "mode": "in_session",
+        "skill_name": skill_name,
+        "stack": stack,
+        "framework": framework,
+        "domain": domain,
+        "target_label": target_label,
+        "write_path": write_path,
+        "base_skill_content": base_skill,
+        "overlay_schema": schema,
+        "cross_project_knowledge": cross_project,
+        "project_context": project_context or {},
+        "instruction": (
+            f"Generate a stack overlay for the '{skill_name}' skill targeting: {target_label}. "
+            "Rules:\n"
+            "1. Read base_skill_content first — do NOT duplicate what's already checked.\n"
+            "2. Follow overlay_schema exactly — all 6 sections required.\n"
+            "3. Every line must change behavior, not describe a concept.\n"
+            "4. Critical Questions is the highest-value section — do not truncate it.\n"
+            "5. Total output must be under 600 tokens.\n"
+            "6. Output ONLY the overlay content, no preamble.\n"
+            f"7. Then call youk-core.add_proposal(change_type='FILE_CREATE', target='{write_path}') "
+            "and apply_proposal(confirmed=True) to save it."
         ),
     }
 

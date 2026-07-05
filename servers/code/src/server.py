@@ -10,7 +10,7 @@ from nfr import run_nfr_check
 from skills import route_to_skill as _route_to_skill, get_skill_list, get_skill_content, get_skill_fast_path
 from review import check_commit_quality as _check_commit_quality
 from skill_loader import list_skills as _list_skills
-from skill_gen import generate_skill as _generate_skill, assess_skill as _assess_skill, detect_skill_gaps as _detect_skill_gaps
+from skill_gen import generate_skill as _generate_skill, assess_skill as _assess_skill, detect_skill_gaps as _detect_skill_gaps, generate_stack_overlay as _generate_stack_overlay
 
 CLAUDE_ROOT = Path("/claude")
 
@@ -135,6 +135,34 @@ def assess_skill(skill_name: str) -> dict:
     then calls add_proposal() + apply_proposal() for each approved addition.
     """
     return _assess_skill(skill_name)
+
+
+@mcp.tool()
+def generate_stack_overlay(
+    skill_name: str,
+    stack: str,
+    framework: str | None = None,
+    domain: str | None = None,
+    project_context: dict | None = None,
+) -> dict:
+    """
+    Assemble context for in-session stack overlay generation.
+
+    Returns the overlay schema + base skill content + cross-project knowledge
+    so the active Claude Code session generates the overlay file in-session.
+    No separate API call or credits needed.
+
+    skill_name: Skill to generate overlay for (e.g. 'code-review', 'nfr-check', 'dev-loop')
+    stack: Language-level stack (e.g. 'python', 'javascript', 'go')
+    framework: Framework within stack (e.g. 'django', 'fastapi', 'nextjs') — takes priority over stack
+    domain: Optional domain (e.g. 'saas', 'data') — used for context only
+    project_context: Optional dict with project-specific context
+
+    Returns: {mode: "in_session", overlay_schema, base_skill_content, cross_project_knowledge,
+              write_path, instruction}
+    Claude Code generates content, then calls add_proposal(FILE_CREATE) + apply_proposal(confirmed=True).
+    """
+    return _generate_stack_overlay(skill_name, stack, framework, domain, project_context)
 
 
 @mcp.tool()
