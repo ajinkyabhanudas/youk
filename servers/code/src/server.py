@@ -7,7 +7,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from nfr import run_nfr_check
-from skills import route_to_skill as _route_to_skill, get_skill_list, get_skill_content, get_skill_fast_path
+from skills import route_to_skill as _route_to_skill, write_skill_handoff as _write_skill_handoff, get_skill_list, get_skill_content, get_skill_fast_path
 from review import check_commit_quality as _check_commit_quality
 from skill_loader import list_skills as _list_skills
 from skill_gen import generate_skill as _generate_skill, assess_skill as _assess_skill, detect_skill_gaps as _detect_skill_gaps, generate_stack_overlay as _generate_stack_overlay
@@ -61,6 +61,23 @@ def route_to_skill(skill: str, task: str, context: dict | None = None) -> dict:
     Returns: {mode: "in_session", skill_name, skill_content, task, context, instruction}
     """
     return _route_to_skill(skill, task, context)
+
+
+@mcp.tool()
+def write_skill_handoff(from_skill: str, content: str) -> dict:
+    """
+    Write the output of a completed skill to session.json so the next skill in the chain can read it.
+
+    After nfr-check completes, call this with from_skill="nfr-check" and a summary of NFR decisions.
+    route_to_skill("dev-loop", ...) will then prepend this context automatically.
+    Which handoffs flow where is governed by skill-graph.yaml precedes edges.
+
+    from_skill: Name of the skill that just completed (e.g. "nfr-check", "code-review").
+    content: Summary or key findings to pass forward (markdown OK).
+
+    Returns: {saved, from_skill, content_length} or {saved: false, error}.
+    """
+    return _write_skill_handoff(from_skill, content)
 
 
 @mcp.tool()

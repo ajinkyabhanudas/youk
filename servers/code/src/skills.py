@@ -4,9 +4,11 @@ import sys
 from pathlib import Path
 sys.path.insert(0, "/shared")
 
+import yaml
 from skill_loader import load_skill, load_skill_with_context, list_skills, load_skill_fast_path
 
 _SESSION_STATE = Path("/youk/state/session.json")
+_SKILL_GRAPH = Path("/youk/knowledge/skill-graph.yaml")
 
 
 def _read_session_stack_context() -> dict:
@@ -22,6 +24,56 @@ def _read_session_stack_context() -> dict:
     except Exception:
         pass
     return {"stack": None, "framework": None, "domain": None}
+
+
+def _get_preceding_skills(skill_name: str) -> list[str]:
+    """Return skill names that precede skill_name per skill-graph.yaml."""
+    try:
+        if not _SKILL_GRAPH.exists():
+            return []
+        graph = yaml.safe_load(_SKILL_GRAPH.read_text())
+        return [
+            name
+            for name, meta in (graph.get("skills") or {}).items()
+            if skill_name in (meta.get("precedes") or [])
+        ]
+    except Exception:
+        return []
+
+
+def _read_and_clear_pending_handoff(skill_name: str) -> str | None:
+    """Return handoff content from preceding skills, then clear it from session.json."""
+    try:
+        if not _SESSION_STATE.exists():
+            return None
+        state = json.loads(_SESSION_STATE.read_text())
+        pending = state.get("pending_handoff", {})
+        if not pending:
+            return None
+        preceding = _get_preceding_skills(skill_name)
+        chunks = [
+            f"## Handoff from {skill}\n\n{pending.pop(skill)}"
+            for skill in preceding
+            if skill in pending
+        ]
+        if not chunks:
+            return None
+        state["pending_handoff"] = pending
+        _SESSION_STATE.write_text(json.dumps(state, indent=2))
+        return "\n\n".join(chunks)
+    except Exception:
+        return None
+
+
+def write_skill_handoff(from_skill: str, content: str) -> dict:
+    """Write skill output to pending_handoff in session.json for consumption by successor skills."""
+    try:
+        state = json.loads(_SESSION_STATE.read_text()) if _SESSION_STATE.exists() else {}
+        state.setdefault("pending_handoff", {})[from_skill] = content
+        _SESSION_STATE.write_text(json.dumps(state, indent=2))
+        return {"saved": True, "from_skill": from_skill, "content_length": len(content)}
+    except Exception as e:
+        return {"saved": False, "error": str(e)}
 
 
 def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> dict:
@@ -51,6 +103,10 @@ def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> d
         )
     except FileNotFoundError as e:
         return {"error": str(e)}
+
+    handoff = _read_and_clear_pending_handoff(skill_name)
+    if handoff:
+        skill_content = handoff + "\n\n---\n\n" + skill_content
 
     return {
         "mode": "in_session",
