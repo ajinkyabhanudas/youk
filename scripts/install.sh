@@ -109,24 +109,61 @@ ok "path-map.env written to state/"
 # ── Step 3: Symlinks ─────────────────────────────────────────────────────────
 step "Symlinks"
 
-# Skills are owned by the youk repo (skills/ directory). ~/.claude/skills is a
-# relative symlink into the repo so Docker can follow it inside the container.
-# Relative symlink (not absolute) required for Docker bind-mount compatibility.
-SKILLS_LINK="$CLAUDE_DIR/skills"
+# Skills use per-skill symlinks, not a whole-directory symlink.
+# This lets youk co-exist with skills from other tools — nothing gets clobbered.
+SKILLS_DIR="$CLAUDE_DIR/skills"
 SKILLS_REPO="$YOUK_DIR/skills"
 
-if [[ -L "$SKILLS_LINK" ]] && [[ "$(readlink "$SKILLS_LINK")" == "youk/skills" ]]; then
-  ok "skills symlink already in place (→ youk/skills)"
-elif [[ ! -e "$SKILLS_LINK" ]]; then
-  # Create relative symlink from ~/.claude/skills → youk/skills
-  ln -sf "youk/skills" "$SKILLS_LINK"
-  ok "Linked ~/.claude/skills → youk/skills"
-elif [[ -d "$SKILLS_LINK" ]] && [[ ! -L "$SKILLS_LINK" ]]; then
-  # Real directory exists from old setup — warn, don't overwrite
-  warn "~/.claude/skills is a real directory, not a symlink."
-  warn "To migrate: mv $SKILLS_LINK $SKILLS_LINK.bak && ln -sf youk/skills $SKILLS_LINK"
+# Migrate legacy whole-directory symlink (→ youk/skills) to per-skill symlinks.
+# The old form prevented other tools from adding skills alongside youk's.
+if [[ -L "$SKILLS_DIR" ]] && [[ "$(readlink "$SKILLS_DIR")" == "youk/skills" ]]; then
+  rm "$SKILLS_DIR"
+  mkdir -p "$SKILLS_DIR"
+  ok "Migrated: whole-directory symlink → per-skill symlinks"
+fi
+
+mkdir -p "$SKILLS_DIR"
+
+_conflicts=()
+_installed=0
+
+# Link each skill directory
+for entry in "$SKILLS_REPO"/*/; do
+  [[ -d "$entry" ]] || continue
+  name="$(basename "$entry")"
+  dst="$SKILLS_DIR/$name"
+  if [[ -L "$dst" ]]; then
+    ln -sf "$entry" "$dst"   # Update existing youk symlink (idempotent)
+    (( _installed++ )) || true
+  elif [[ -e "$dst" ]]; then
+    _conflicts+=("$name")    # Real directory — collision, skip
+  else
+    ln -s "$entry" "$dst"
+    (( _installed++ )) || true
+  fi
+done
+
+# Link top-level files (SKILL-REGISTRY.md, FOUNDER-GUIDE.md, etc.)
+for f in "$SKILLS_REPO"/*.md "$SKILLS_REPO"/*.yaml; do
+  [[ -f "$f" ]] || continue
+  name="$(basename "$f")"
+  dst="$SKILLS_DIR/$name"
+  if [[ -L "$dst" ]]; then
+    ln -sf "$f" "$dst"
+  elif [[ ! -e "$dst" ]]; then
+    ln -s "$f" "$dst"
+  fi
+done
+
+if [[ ${#_conflicts[@]} -gt 0 ]]; then
+  warn "Skill name conflicts — youk's version NOT installed for: ${_conflicts[*]}"
+  warn "Your existing skills are untouched. To use youk's version instead:"
+  for c in "${_conflicts[@]}"; do
+    warn "  mv $SKILLS_DIR/$c $SKILLS_DIR/$c.bak"
+  done
+  warn "Then re-run install.sh."
 else
-  ok "skills symlink exists (may point elsewhere — check readlink ~/.claude/skills)"
+  ok "$_installed skills linked → $SKILLS_REPO"
 fi
 
 if [[ -d "$SKILLS_REPO/learn/knowledge" ]]; then
