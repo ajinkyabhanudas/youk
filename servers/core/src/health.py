@@ -154,6 +154,56 @@ def _score_org(audit_texts: list[str]) -> float:
     return min(round(score, 1), 10.0)
 
 
+def _check_project_type_coverage() -> dict | None:
+    """
+    Read the project_purpose stored in session.json (set by session_start) and
+    find skills expected for that project type that don't yet exist in the skills dir.
+
+    Returns {type, description, missing: [{name, purpose}]} or None when no gaps found.
+    Degrades gracefully if session.json is absent or project_purpose is unset.
+    """
+    import json as _json
+
+    state_file = YOUK_ROOT / "state" / "session.json"
+    if not state_file.exists():
+        return None
+
+    try:
+        state = _json.loads(state_file.read_text())
+    except Exception:
+        return None
+
+    purpose = state.get("project_purpose", "general")
+    if not purpose or purpose == "general":
+        return None
+
+    # Import the registry from session.py at runtime to stay in sync with one source.
+    # Fall back to an inline copy if import fails (Docker path issues, cold start).
+    try:
+        import sys
+        sys.path.insert(0, str(YOUK_ROOT / "servers" / "core" / "src"))
+        from session import PROJECT_PURPOSE_EXPECTED_SKILLS, _PURPOSE_DESCRIPTIONS
+        expected = PROJECT_PURPOSE_EXPECTED_SKILLS.get(purpose, [])
+        description = _PURPOSE_DESCRIPTIONS.get(purpose, purpose)
+    except Exception:
+        return None
+
+    if not expected:
+        return None
+
+    skills_dir = CLAUDE_ROOT / "skills"
+    if not skills_dir.exists():
+        skills_dir = YOUK_ROOT / "skills"
+
+    existing = {d.name for d in skills_dir.iterdir() if d.is_dir()} if skills_dir.exists() else set()
+    missing = [s for s in expected if s["name"] not in existing]
+
+    if not missing:
+        return None
+
+    return {"type": purpose, "description": description, "missing": missing}
+
+
 def _audit_skill_quality(skills_dir: Path) -> list[str]:
     """
     Proactively score capability skill SKILL.md files on structural quality.
@@ -330,6 +380,16 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
             f"0 SkillGap entries across {total} sessions. "
             "Run simulate-experience to seed proposals, or end sessions with "
             "session_end(skill_gaps=...) to start feeding the loop."
+        )
+
+    # Project type coverage: surface missing skills for the detected project type
+    coverage_gap = _check_project_type_coverage()
+    if coverage_gap:
+        missing_names = ", ".join(s["name"] for s in coverage_gap["missing"])
+        findings.append(
+            f"Project type '{coverage_gap['description']}' has {len(coverage_gap['missing'])} "
+            f"skill(s) missing for this type: {missing_names}. "
+            "Run /audit to confirm and generate them."
         )
 
     # Contract capture health: flag when active project has many sessions but no contracts
@@ -685,6 +745,19 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         base["promotion_note"] = (
             f"{promotion_queued} skill(s) crossed the 3-occurrence threshold — "
             "proposals queued in PENDING.md for review."
+        )
+
+    # Project type coverage gaps — skills that should exist for this project type but don't
+    coverage_gap = _check_project_type_coverage()
+    if coverage_gap:
+        base["project_type"] = coverage_gap["type"]
+        base["project_type_description"] = coverage_gap["description"]
+        base["coverage_gaps"] = coverage_gap["missing"]
+        base["coverage_note"] = (
+            f"Project type '{coverage_gap['description']}' is missing "
+            f"{len(coverage_gap['missing'])} skill(s). "
+            "Call youk-code.generate_skill(name, purpose, context, signal_type) for each, "
+            "then add_proposal() + apply_proposal(confirmed=True, safe_types=['FILE_CREATE'])."
         )
 
     if research_mode and skill_gap_signals:

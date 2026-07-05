@@ -256,6 +256,71 @@ def _detect_project_type(project_dir: str) -> str:
     return "unknown"
 
 
+# Maps project purpose → list of skills expected for that project type.
+# Used by health._check_project_type_coverage to surface missing coverage.
+# Keep this in sync with _PROJECT_TYPE_EXPECTED_SKILLS in health.py.
+PROJECT_PURPOSE_EXPECTED_SKILLS: dict[str, list[dict]] = {
+    "ai_engineering_system": [
+        {"name": "install-experience", "purpose": "Simulate install and first-run for a new developer"},
+        {"name": "namespace-safety", "purpose": "Detect collision risks in skills, MCP servers, config keys"},
+    ],
+    "mcp_server": [
+        {"name": "install-experience", "purpose": "Review the install flow for a developer new to this tool"},
+        {"name": "namespace-safety", "purpose": "Check for naming conflicts in MCP tools and skills"},
+    ],
+    "installable_cli": [
+        {"name": "install-experience", "purpose": "Review the install flow and first-run experience"},
+    ],
+    "docker_multi_service": [
+        {"name": "docker-ops", "purpose": "Troubleshoot container issues, volume mounts, service networking"},
+    ],
+}
+
+_PURPOSE_DESCRIPTIONS: dict[str, str] = {
+    "ai_engineering_system": "AI engineering system with skill infrastructure",
+    "mcp_server": "MCP server exposing tools to Claude Code",
+    "installable_cli": "CLI tool with an installer",
+    "docker_multi_service": "Multi-service Docker application",
+    "general": "General software project",
+}
+
+
+def _detect_project_purpose(project_dir: str) -> str:
+    """
+    Detect the purpose/domain of the project beyond just its stack/language.
+    Returns a key from PROJECT_PURPOSE_EXPECTED_SKILLS or 'general'.
+    Used to surface skill coverage gaps for the specific project type.
+    """
+    p = _resolve_project_path(project_dir)
+    if not p.exists():
+        return "general"
+
+    # AI engineering system: has a skills/ directory containing SKILL.md files
+    skills_dir = p / "skills"
+    if skills_dir.is_dir() and any(skills_dir.glob("*/SKILL.md")):
+        return "ai_engineering_system"
+
+    # MCP server tool: has server.py files that import the MCP framework
+    for server_file in sorted(p.glob("**/server.py"))[:10]:
+        try:
+            content = server_file.read_text()
+            if "fastmcp" in content or "from mcp" in content or "mcp.server" in content:
+                return "mcp_server"
+        except Exception:
+            pass
+
+    # Multi-service Docker: multiple Dockerfile files in subdirectories
+    dockerfiles = [f for f in p.glob("*/Dockerfile")] + [f for f in p.glob("*/*/Dockerfile")]
+    if len(set(str(f) for f in dockerfiles)) > 1:
+        return "docker_multi_service"
+
+    # Installable CLI: has an install.sh script
+    if (p / "scripts" / "install.sh").exists() or (p / "install.sh").exists():
+        return "installable_cli"
+
+    return "general"
+
+
 def _detect_stack_context(project_dir: str) -> dict:
     """
     Detect stack, framework, and domain from project files.
@@ -1198,6 +1263,7 @@ def start_session(project_dir: str) -> SessionState:
     state["stack"] = stack_ctx["stack"]
     state["framework"] = stack_ctx["framework"]
     state["domain"] = stack_ctx["domain"]
+    state["project_purpose"] = _detect_project_purpose(project_dir)
     _save_state(state)
 
     slug = _slug(project_dir)

@@ -425,3 +425,55 @@ class TestApplyProposalSafeTypes:
         result = apply_proposal("PENDING-999", confirmed=True, safe_types=["SKILL_EDIT"])
         assert result["applied"] is False
         assert "not found" in result["error"]
+
+
+# ── Project type coverage gaps ───────────────────────────────────────────────
+
+class TestCheckProjectTypeCoverage:
+    def _write_session_json(self, youk_root, purpose: str):
+        import json
+        (youk_root / "state").mkdir(parents=True, exist_ok=True)
+        (youk_root / "state" / "session.json").write_text(
+            json.dumps({"last_project": "testproject", "project_purpose": purpose})
+        )
+
+    def test_returns_none_for_general_project(self, youk_root, claude_root):
+        self._write_session_json(youk_root, "general")
+        from health import _check_project_type_coverage
+        assert _check_project_type_coverage() is None
+
+    def test_returns_none_when_session_json_missing(self, youk_root, claude_root):
+        from health import _check_project_type_coverage
+        assert _check_project_type_coverage() is None
+
+    def test_returns_gaps_for_ai_engineering_system(self, youk_root, claude_root):
+        self._write_session_json(youk_root, "ai_engineering_system")
+        # skills dir has no skills yet → both expected skills are missing
+        (claude_root / "skills").mkdir(parents=True, exist_ok=True)
+        from health import _check_project_type_coverage
+        result = _check_project_type_coverage()
+        assert result is not None
+        assert result["type"] == "ai_engineering_system"
+        assert len(result["missing"]) == 2
+        names = {s["name"] for s in result["missing"]}
+        assert "install-experience" in names
+        assert "namespace-safety" in names
+
+    def test_returns_none_when_all_expected_skills_present(self, youk_root, claude_root):
+        self._write_session_json(youk_root, "ai_engineering_system")
+        # Create both expected skills
+        for skill in ["install-experience", "namespace-safety"]:
+            (claude_root / "skills" / skill).mkdir(parents=True)
+        from health import _check_project_type_coverage
+        result = _check_project_type_coverage()
+        assert result is None
+
+    def test_partial_gap_surfaces_only_missing(self, youk_root, claude_root):
+        self._write_session_json(youk_root, "ai_engineering_system")
+        # Only install-experience present → namespace-safety still missing
+        (claude_root / "skills" / "install-experience").mkdir(parents=True)
+        from health import _check_project_type_coverage
+        result = _check_project_type_coverage()
+        assert result is not None
+        assert len(result["missing"]) == 1
+        assert result["missing"][0]["name"] == "namespace-safety"

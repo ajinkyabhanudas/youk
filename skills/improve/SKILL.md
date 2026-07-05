@@ -29,7 +29,7 @@ Report one line: `org_score: {n}/10. Running improvement cycle...`
 If `skill_gap_signals` is empty or no entry has count ≥ 2:
 report "No recurring gaps found — org health nominal." and stop (no session_end).
 
-**Step 2 — Assess each gap**
+**Step 2 — Assess each gap (improve existing skills)**
 
 For each skill in `skill_gap_signals` where count ≥ 2:
 1. Call `youk-code.assess_skill(skill_name)` — read `proposed_additions`
@@ -38,6 +38,17 @@ For each skill in `skill_gap_signals` where count ≥ 2:
    - Call `youk-core.apply_proposal(confirmed=True, safe_types=["SKILL_EDIT", "FILE_CREATE"])`
    - If `blocked=True`: surface the reason, move to next
 3. For CODE_EDIT or CONFIG_EDIT additions: `add_proposal()` only — do NOT apply
+
+**Step 2b — Generate missing skills for this project type**
+
+Also check `coverage_gaps` in the self_heal() response.
+For each gap in `coverage_gaps` (skills expected for this project type but absent):
+1. Call `youk-code.generate_skill(name, purpose, context, signal_type)` where:
+   - `context` = "Project type: {project_type_description}. Stack: {stack from session context}."
+   - `signal_type` = "session_trigger"
+2. Call `youk-core.add_proposal(...)` with FILE_CREATE targeting `skills/{name}/SKILL.md`
+3. Call `youk-core.apply_proposal(confirmed=True, safe_types=["FILE_CREATE"])`
+4. Report inline: "Generated skill '{name}' for {project_type_description}."
 
 **Step 3 — Report and close**
 

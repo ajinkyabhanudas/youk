@@ -677,3 +677,58 @@ class TestFindCrossProjectContract:
         from session import _find_cross_project_contract
         result = _find_cross_project_contract("canopy", [])
         assert result is None
+
+
+# ── Project purpose detection ────────────────────────────────────────────────
+
+class TestDetectProjectPurpose:
+    def test_ai_engineering_system_detected_by_skills_dir(self, tmp_path):
+        """Skills directory with SKILL.md files → ai_engineering_system."""
+        (tmp_path / "skills" / "code-review").mkdir(parents=True)
+        (tmp_path / "skills" / "code-review" / "SKILL.md").write_text("---\nname: code-review\n---\n")
+        from session import _detect_project_purpose
+        assert _detect_project_purpose(str(tmp_path)) == "ai_engineering_system"
+
+    def test_mcp_server_detected_by_fastmcp_import(self, tmp_path):
+        """server.py importing fastmcp → mcp_server."""
+        (tmp_path / "servers" / "core" / "src").mkdir(parents=True)
+        (tmp_path / "servers" / "core" / "src" / "server.py").write_text(
+            "from fastmcp import FastMCP\nmcp = FastMCP('test')\n"
+        )
+        from session import _detect_project_purpose
+        assert _detect_project_purpose(str(tmp_path)) == "mcp_server"
+
+    def test_docker_multi_service_detected_by_multiple_dockerfiles(self, tmp_path):
+        """Two Dockerfiles in subdirectories → docker_multi_service."""
+        (tmp_path / "services" / "api").mkdir(parents=True)
+        (tmp_path / "services" / "worker").mkdir(parents=True)
+        (tmp_path / "services" / "api" / "Dockerfile").write_text("FROM python:3.13\n")
+        (tmp_path / "services" / "worker" / "Dockerfile").write_text("FROM python:3.13\n")
+        from session import _detect_project_purpose
+        assert _detect_project_purpose(str(tmp_path)) == "docker_multi_service"
+
+    def test_installable_cli_detected_by_install_script(self, tmp_path):
+        """scripts/install.sh present → installable_cli."""
+        (tmp_path / "scripts").mkdir()
+        (tmp_path / "scripts" / "install.sh").write_text("#!/usr/bin/env bash\necho hi\n")
+        from session import _detect_project_purpose
+        assert _detect_project_purpose(str(tmp_path)) == "installable_cli"
+
+    def test_general_for_plain_python_project(self, tmp_path):
+        """Plain Python project with no special markers → general."""
+        (tmp_path / "requirements.txt").write_text("requests\n")
+        from session import _detect_project_purpose
+        assert _detect_project_purpose(str(tmp_path)) == "general"
+
+    def test_ai_engineering_system_takes_priority_over_mcp(self, tmp_path):
+        """Skills dir takes priority over MCP detection (youk itself has both)."""
+        (tmp_path / "skills" / "dev-loop").mkdir(parents=True)
+        (tmp_path / "skills" / "dev-loop" / "SKILL.md").write_text("---\nname: dev-loop\n---\n")
+        (tmp_path / "servers" / "src").mkdir(parents=True)
+        (tmp_path / "servers" / "src" / "server.py").write_text("from fastmcp import FastMCP\n")
+        from session import _detect_project_purpose
+        assert _detect_project_purpose(str(tmp_path)) == "ai_engineering_system"
+
+    def test_nonexistent_dir_returns_general(self, tmp_path):
+        from session import _detect_project_purpose
+        assert _detect_project_purpose(str(tmp_path / "nonexistent")) == "general"
