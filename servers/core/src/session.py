@@ -19,6 +19,9 @@ STATE_FILE = YOUK_ROOT / "state" / "session.json"
 _CONTRACT_PHRASES = [
     "always ", "never ", "from now on", "remember to", "make sure you",
     "every time", "don't forget", "commit format", "test after", "before committing",
+    # Implicit corrections — softer phrases that indicate a behavioral contract
+    "don't do that", "wrong approach", "instead of doing", "do it this way",
+    "stop doing", "use this instead", "the right way is",
 ]
 
 _GENERALIZABLE_PHRASES = [
