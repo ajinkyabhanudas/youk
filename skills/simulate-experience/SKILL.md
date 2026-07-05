@@ -227,6 +227,35 @@ After generating proposals, check:
 2. Did any finding match a known SkillGap: entry from recent audit logs?
 3. For compound or recurring findings: bump to HIGH if not already
 
+---
+
+## Machine-Readable Output (Required)
+
+After all persona simulations, emit a `[SIMULATION REPORT]` block. This feeds the
+self-heal loop — the `proposals_queued` count and `structural_gaps` appear in the
+next session's self_heal() output.
+
+```
+[SIMULATION REPORT]
+personas_run: {comma-separated list}
+overall_verdict: COMPOUNDING | PARTIAL | FAILING
+readiness_score: {N}/10
+lowest_readiness: {persona}: {score}/10
+proposals_queued: {total count of add_proposal() calls made}
+structural_gaps: {count of CODE_EDIT proposals — require manual review}
+top_friction: {one-line summary of the highest-impact finding}
+```
+
+**Readiness score rubric:**
+- 8-10: No structural gaps. Minor phrasing issues only. youk is compounding for this persona.
+- 5-7: Partial. Core flow works but ≥1 gap causes measurable value loss (skills skipped, contracts lost).
+- 3-4: Significant. Developer would stop trusting youk within 2 weeks.
+- 1-2: Failing. Experience breaks before first session plan renders correctly.
+
+**After each persona:** call `add_proposal()` for every HIGH/MEDIUM finding immediately —
+do not batch. The proposal count in `[SIMULATION REPORT]` must equal the number of
+`add_proposal()` calls made. Mismatches mean findings were not actioned.
+
 The purpose of this skill is not a one-time audit. It is a recurring signal source for
 the self_heal loop. Run it before each major release or after any significant feature
 addition to youk itself.

@@ -112,6 +112,19 @@ report: ## Write HTML dashboard to ~/.claude/youk/reports/dashboard-YYYY-MM-DD.h
 
 # ── Code quality ──────────────────────────────────────────────────────────────
 
+.PHONY: simulate
+simulate: ## Run simulate-experience skill — developer experience audit, feeds self-heal loop
+	@echo "==> simulate-experience: audit youk from developer perspective"
+	@echo "    Output: [SIMULATION REPORT] block + add_proposal() calls for each finding"
+	@echo "    Run inside a Claude Code session: /simulate or route_to_skill('simulate-experience', 'full audit')"
+	@echo ""
+	@echo "    For automated MCP-based run:"
+	@python3 -c "import json,sys; print(json.dumps({'jsonrpc':'2.0','id':1,'method':'tools/call','params':{'name':'route_to_skill','arguments':{'skill_name':'simulate-experience','task':'full audit — all personas'}}}))" | \
+	  docker run -i --rm \
+	    -v $(CLAUDE_DIR):/claude:ro \
+	    -v $(YOUK_DIR):/youk:ro \
+	    youk-code:latest 2>/dev/null | python3 -m json.tool || true
+
 .PHONY: lint
 lint: ## Run ruff on servers/
 	ruff check servers/
