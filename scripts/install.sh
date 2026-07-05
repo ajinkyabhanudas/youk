@@ -159,6 +159,7 @@ claude mcp add --scope user youk-core --transport stdio -- \
   docker run -i --rm \
     -v "$CLAUDE_DIR:/claude" \
     -v "$YOUK_DIR:/youk" \
+    -v "$YOUK_DIR/servers/shared:/shared" \
     -v "$HOME:/host-home:ro" \
     -e ANTHROPIC_API_KEY \
     youk-core:latest
@@ -168,6 +169,7 @@ claude mcp add --scope user youk-code --transport stdio -- \
   docker run -i --rm \
     -v "$CLAUDE_DIR:/claude:ro" \
     -v "$YOUK_DIR:/youk:ro" \
+    -v "$YOUK_DIR/servers/shared:/shared" \
     -v "$HOME:/host-home:ro" \
     -e ANTHROPIC_API_KEY \
     youk-code:latest
