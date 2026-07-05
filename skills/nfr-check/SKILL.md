@@ -257,6 +257,47 @@ Read on demand — load only the file relevant to the active phase:
 | `references/feature-type-matrix.md` | CLASSIFY phase — routing table for NFR categories |
 | `references/nfr-categories.md` | PROBE phase — questions per NFR category |
 | `references/nfr-decision-format.md` | DOCUMENT phase — exact format templates |
+| `references/stacks/{framework}.md` | PROBE phase — stack-specific NFR questions and failure modes |
+
+---
+
+## Stack Coverage System
+
+During CLASSIFY, detect the stack and framework from the feature description and project context.
+Check whether a stack-specific overlay exists at `references/stacks/{framework}.md`.
+Without it, the PROBE phase asks generic questions — missing the failure modes specific to the stack.
+
+### Step 1 — Detect the stack
+From session context or project files, identify:
+- Language: Python / TypeScript / Go / etc.
+- Framework: Django / FastAPI / Flask / Next.js / etc.
+
+### Step 2 — Check coverage
+Check `references/stacks/{framework}.md` first, then `references/stacks/{stack}.md` as fallback.
+
+### Step 3 — If coverage missing, emit gap and offer to generate
+At the end of CLASSIFY, emit:
+
+```
+[STACK GAP DETECTED]
+Stack: {framework or stack}
+Coverage: none
+
+A stack overlay for {framework} would add:
+- Concurrency + GIL / runtime-specific NFR questions
+- Default timeouts and retry behavior for common libraries
+- Memory and startup NFRs specific to this framework
+
+Generate now? [yes / skip for this session]
+```
+
+If confirmed: call `youk-code.generate_stack_overlay(skill_name="nfr-check", stack=..., framework=...)`.
+Generated overlay is saved to `references/stacks/{framework}.md` and auto-loaded in future sessions.
+
+### Step 4 — Load in PROBE
+Once `references/stacks/{framework}.md` exists, it is appended to base SKILL.md
+by `load_skill_with_context()` automatically. It deepens the PROBE phase with
+stack-specific NFR questions that the generic categories miss.
 
 ---
 

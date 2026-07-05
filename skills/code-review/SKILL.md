@@ -188,6 +188,51 @@ Rules:
 |------|--------------|
 | `references/severity-guide.md` | ANALYZE phase — borderline severity calls |
 | `references/security-checklist.md` | SECURITY phase — full checklist by risk tier |
+| `references/stacks/{framework}.md` | ANALYZE + SECURITY — loaded automatically when stack detected |
+| `domain/{domain}.md` | ANALYZE — loaded automatically when domain detected (e.g. saas) |
+
+---
+
+## Stack Coverage System
+
+During SCOPE, detect the stack and framework from the diff and surrounding code.
+Check whether a stack-specific overlay exists at `references/stacks/{framework}.md`.
+If not, this review runs on base checks only — and the gap compounds every future review.
+
+### Step 1 — Detect the stack
+From the diff context, identify:
+- Language: Python / TypeScript / Go / Rust / etc.
+- Framework: Django / FastAPI / React / Next.js / etc.
+
+### Step 2 — Check coverage
+Check `references/stacks/{framework}.md` (framework-first) or
+`references/stacks/{stack}.md` (language-level fallback).
+Coverage is sufficient if the file exists and has content.
+
+### Step 3 — If coverage missing, emit gap and offer to generate
+At the end of SCOPE, emit:
+
+```
+[STACK GAP DETECTED]
+Stack: {framework or stack}
+Coverage: none
+
+A stack overlay for {framework} would add:
+- Correctness pitfalls specific to this framework
+- Security attack surfaces beyond the base checklist
+- Critical questions a senior engineer asks before shipping {framework} code
+
+Generate now? [yes / skip for this session]
+```
+
+If confirmed: call `youk-code.generate_stack_overlay(skill_name="code-review", stack=..., framework=...)`.
+The returned instruction guides Claude Code to generate the overlay following the schema
+at `skills/stack-overlay-schema.md`, then save it via `add_proposal + apply_proposal`.
+
+### Step 4 — Loaded automatically
+Once `references/stacks/{framework}.md` exists, it is appended to base SKILL.md
+by `load_skill_with_context()` — no manual loading needed. It deepens ANALYZE
+and SECURITY with stack-specific patterns.
 
 ---
 
