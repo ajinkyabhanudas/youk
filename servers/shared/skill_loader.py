@@ -23,6 +23,64 @@ def load_skill_reference(skill_name: str, reference_name: str) -> str:
     return ref_file.read_text()
 
 
+def load_skill_with_context(
+    skill_name: str,
+    stack: Optional[str] = None,
+    framework: Optional[str] = None,
+    domain: Optional[str] = None,
+) -> str:
+    """
+    Load a skill's SKILL.md and append relevant stack/domain overlays.
+
+    Token-efficient: overlays are appended only when their file exists —
+    a missing overlay file is silently skipped. Each overlay adds ~300-500
+    tokens (directive rules only, no tutorial content).
+
+    Lookup order:
+    - Stack: references/stacks/{framework}.md → references/stacks/{stack}.md → references/{stack}.md
+    - Domain: domain/{domain}.md
+
+    Returns the base SKILL.md content plus any matched overlay sections.
+    """
+    base = load_skill(skill_name)
+    skill_dir = SKILLS_DIR / skill_name
+    parts = [base]
+
+    # Stack overlay: try framework first (more specific), then language
+    stack_candidates: list[Path] = []
+    if framework:
+        stack_candidates += [
+            skill_dir / "references" / "stacks" / f"{framework}.md",
+            skill_dir / "references" / f"{framework}.md",
+        ]
+    if stack and stack != framework:
+        stack_candidates += [
+            skill_dir / "references" / "stacks" / f"{stack}.md",
+            skill_dir / "references" / f"{stack}.md",
+        ]
+    for candidate in stack_candidates:
+        if candidate.exists():
+            overlay = candidate.read_text().strip()
+            if overlay:
+                parts.append(f"\n## Stack context: {candidate.stem}\n\n{overlay}")
+            break  # first match wins
+
+    # Domain overlay
+    if domain:
+        domain_candidates = [
+            skill_dir / "domain" / f"{domain}.md",
+            skill_dir / "references" / "domain" / f"{domain}.md",
+        ]
+        for candidate in domain_candidates:
+            if candidate.exists():
+                overlay = candidate.read_text().strip()
+                if overlay:
+                    parts.append(f"\n## Domain context: {domain}\n\n{overlay}")
+                break
+
+    return "\n".join(parts)
+
+
 def load_skill_fast_path(skill_name: str) -> Optional[str]:
     """Extract the fast-path frontmatter from a SKILL.md if present."""
     try:

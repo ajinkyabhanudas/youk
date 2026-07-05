@@ -248,6 +248,86 @@ def _detect_project_type(project_dir: str) -> str:
     return "unknown"
 
 
+def _detect_stack_context(project_dir: str) -> dict:
+    """
+    Detect stack, framework, and domain from project files.
+    Pure file I/O — zero tokens, zero API calls.
+
+    Returns: {stack, framework, domain} — any field may be None if undetected.
+    """
+    p = _resolve_project_path(project_dir)
+    if not p.exists():
+        return {"stack": None, "framework": None, "domain": None}
+
+    stack: str | None = None
+    framework: str | None = None
+    domain: str | None = None
+
+    # --- Stack detection ---
+    if (p / "go.mod").exists():
+        stack = "go"
+    elif (p / "Cargo.toml").exists():
+        stack = "rust"
+    else:
+        # Collect all requirements/dependency files, checking nested dirs too
+        req_files: list[Path] = []
+        for fname in ["requirements.txt", "pyproject.toml", "setup.py"]:
+            candidates = [p / fname] + [
+                p / sub / fname
+                for sub in ["servers", "src", "app", "backend", "api"]
+            ]
+            req_files.extend(c for c in candidates if c.exists())
+
+        if req_files:
+            stack = "python"
+            all_deps = ""
+            for f in req_files[:6]:
+                try:
+                    all_deps += f.read_text().lower()
+                except Exception:
+                    pass
+
+            # Framework detection (Python)
+            if "django" in all_deps:
+                framework = "django"
+            elif "fastapi" in all_deps:
+                framework = "fastapi"
+            elif "flask" in all_deps:
+                framework = "flask"
+            elif "tornado" in all_deps:
+                framework = "tornado"
+
+            # Domain detection (Python deps)
+            if any(k in all_deps for k in ("stripe", "billing", "subscription", "paddle", "chargebee")):
+                domain = "saas"
+            elif any(k in all_deps for k in ("sklearn", "torch", "tensorflow", "pandas", "numpy", "xgboost")):
+                domain = "data"
+            elif any(k in all_deps for k in ("boto3", "kubernetes", "terraform", "pulumi", "ansible")):
+                domain = "infra"
+
+        elif (p / "package.json").exists():
+            stack = "javascript"
+            try:
+                pkg = json.loads((p / "package.json").read_text())
+                deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+                if "next" in deps:
+                    framework = "nextjs"
+                elif "react" in deps:
+                    framework = "react"
+                elif "vue" in deps:
+                    framework = "vue"
+                elif "svelte" in deps:
+                    framework = "svelte"
+                if "typescript" in deps:
+                    stack = "typescript"
+                if any(k in deps for k in ("stripe", "@stripe/stripe-js")):
+                    domain = "saas"
+            except Exception:
+                pass
+
+    return {"stack": stack, "framework": framework, "domain": domain}
+
+
 def _read_git_log(project_dir: str, n: int = 5) -> str:
     resolved = str(_resolve_project_path(project_dir))
     try:
@@ -1106,6 +1186,10 @@ def start_session(project_dir: str) -> SessionState:
     state["session_counter"] = state.get("session_counter", 0) + 1
     state["last_project"] = project_dir
     state["last_session"] = datetime.utcnow().isoformat()
+    stack_ctx = _detect_stack_context(project_dir)
+    state["stack"] = stack_ctx["stack"]
+    state["framework"] = stack_ctx["framework"]
+    state["domain"] = stack_ctx["domain"]
     _save_state(state)
 
     slug = _slug(project_dir)

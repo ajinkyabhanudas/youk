@@ -1,7 +1,6 @@
 """Tests for review.py — doc-map ref staleness, commit quality scoring."""
 from __future__ import annotations
 from pathlib import Path
-import pytest
 import yaml
 
 
