@@ -22,6 +22,20 @@ observability scope. This skill makes that decision explicit and documented.
 
 ---
 
+## Size Override: Always M+ for Global State Mutations
+
+Before applying the S/M/L sizing from route_task, check:
+
+Does this task write to any of:
+- `~/.claude/` or any global Claude Code configuration
+- A shared namespace used by multiple tools or developers (skill names, MCP server names, config keys)
+- Global system config outside the current project directory
+- A file or directory that other tools on this machine also write to
+
+If yes: treat as M regardless of route_task's size. These tasks look small but have a blast radius that spans the entire developer environment — collision risk, irreversibility, and cross-tool interference are all real. An S-sized task that writes 7 files into `~/.claude/skills/` with generic names like `done` and `build` is an M task.
+
+---
+
 ## Default Behaviour: 4 Core Questions
 
 For any S or M feature (under ~3 days of work), skip the full phase structure.
@@ -106,6 +120,17 @@ are **mandatory** (must decide now), **conditional** (decide if relevant), or
 **optional** (can defer with a stated reason).
 
 Read `references/feature-type-matrix.md` for the routing table.
+
+**Global config / shared namespace** is a feature type not in the matrix file.
+If the task writes to a shared global namespace (skills, MCP servers, ~/.claude/,
+global CLI config), add these mandatory NFRs before the standard categories:
+
+| NFR | Question |
+|---|---|
+| Namespace collision | Are the names chosen unique enough that another tool on this machine couldn't have the same name? |
+| Reversibility | Can a developer undo this without data loss? Is there a backup/migration path? |
+| Blast radius | Does this affect all Claude Code sessions on this machine, or only the current project? |
+| Discoverability | Will the developer know which entries came from youk vs their own setup? |
 
 Output a compact classification:
 
