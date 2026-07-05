@@ -154,6 +154,66 @@ def _score_org(audit_texts: list[str]) -> float:
     return min(round(score, 1), 10.0)
 
 
+def _audit_skill_quality(skills_dir: Path) -> list[str]:
+    """
+    Proactively score capability skill SKILL.md files on structural quality.
+    Does not wait for SkillGap audit entries — reads SKILL.md files directly.
+
+    Scores each skill on four signals:
+    - phases: has a ## Phase / ## Step / ## Execution section
+    - quality_bars: has a ## Quality Bar section
+    - examples: has at least one fenced code block or ## Example section
+    - references: has a references/ subdirectory with content
+
+    WEAK = score ≤ 1 (missing 3+ signals). Surfaces at most 2 findings to avoid flooding.
+    Returns [] when skills_dir does not exist (fail-safe for Docker path mismatches).
+    """
+    if not skills_dir.exists():
+        return []
+
+    _CAPABILITY_SKILL_NAMES = frozenset({
+        "code-review", "dev-loop", "nfr-check", "security-review",
+        "write-spec", "adr", "stress-test", "verify", "learn",
+    })
+
+    weak: list[str] = []
+    for skill_name in sorted(_CAPABILITY_SKILL_NAMES):
+        skill_file = skills_dir / skill_name / "SKILL.md"
+        if not skill_file.exists():
+            weak.append(f"'{skill_name}' has no SKILL.md")
+            continue
+        try:
+            content = skill_file.read_text()
+        except Exception:
+            continue
+
+        lower = content.lower()
+        signals = {
+            "phases": any(h in lower for h in ["## phase", "## step ", "## execution", "## how to", "## implement"]),
+            "quality_bars": "quality bar" in lower or "## quality" in lower,
+            "examples": "## example" in lower or "```" in content,
+            "references": any(
+                (skills_dir / skill_name / d).exists()
+                for d in ["references", "domain"]
+            ),
+        }
+        score = sum(signals.values())
+        if score <= 1:
+            missing = ", ".join(k for k, v in signals.items() if not v)
+            weak.append(f"'{skill_name}' (missing: {missing})")
+
+    if not weak:
+        return []
+    if len(weak) == 1:
+        return [f"SKILL.md quality weak: {weak[0]} — run assess_skill() to improve it."]
+    return [
+        f"SKILL.md quality weak in {len(weak)} capability skills: "
+        f"{'; '.join(weak[:3])}"
+        + (f" (+{len(weak) - 3} more)" if len(weak) > 3 else "")
+        + ". Run assess_skill() on each to propose improvements."
+    ]
+
+
 def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     findings = []
     if not audit_texts:
@@ -209,9 +269,31 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
         skill_counts[sk] = skill_counts.get(sk, 0) + 1
 
     if total >= 5:
-        for candidate in ["code-review", "verify", "nfr-check"]:
-            if skill_counts.get(candidate, 0) == 0:
-                findings.append(f"Skill '{candidate}' not recorded in any of {total} sessions.")
+        _CORE_CAPABILITY_SKILLS = frozenset({
+            "code-review", "verify", "nfr-check", "learn", "dev-loop",
+            "security-review", "write-spec", "adr",
+        })
+        skills_used_normalized = {s.lower().replace("_", "-") for s in all_skills}
+        dormant = sorted(
+            s for s in _CORE_CAPABILITY_SKILLS
+            if s not in skills_used_normalized
+            and s.replace("-", "_") not in skills_used_normalized
+        )
+        if dormant:
+            if len(dormant) <= 2:
+                for s in dormant:
+                    findings.append(f"Skill '{s}' not recorded in any of {total} sessions.")
+            else:
+                findings.append(
+                    f"{len(dormant)} capability skills never invoked across {total} sessions: "
+                    f"{', '.join(dormant[:5])}. "
+                    "Run /build, /review, or /done (includes /learn) to activate them."
+                )
+
+    # Proactive SKILL.md quality audit — does not wait for explicit SkillGap log entries.
+    # Reads SKILL.md files directly and surfaces structurally weak skills.
+    skill_quality_findings = _audit_skill_quality(CLAUDE_ROOT / "skills")
+    findings.extend(skill_quality_findings[:2])
 
     if score < 6.0:
         findings.append("Org score below 6.0 — review which skills are being skipped.")

@@ -284,6 +284,92 @@ class TestGapResolutionRate:
         assert _compute_gap_resolution_rate(sessions) == 0.5
 
 
+class TestAuditSkillQuality:
+    def test_returns_empty_when_skills_dir_missing(self, tmp_path):
+        from health import _audit_skill_quality
+        result = _audit_skill_quality(tmp_path / "nonexistent")
+        assert result == []
+
+    def test_detects_weak_skill_missing_all_signals(self, tmp_path):
+        skills_dir = tmp_path / "skills"
+        skill_dir = skills_dir / "dev-loop"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("# dev-loop\n\nDo stuff.\n")
+        from health import _audit_skill_quality
+        findings = _audit_skill_quality(skills_dir)
+        assert any("dev-loop" in f for f in findings)
+
+    def test_strong_skill_not_flagged(self, tmp_path):
+        skills_dir = tmp_path / "skills"
+        skill_dir = skills_dir / "code-review"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "references").mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "# code-review\n\n## Phase 1\nDo it.\n\n"
+            "## Quality Bars\nHigh.\n\n## Example\n```py\nprint()\n```\n"
+        )
+        from health import _audit_skill_quality
+        findings = _audit_skill_quality(skills_dir)
+        # code-review has all 4 signals — should not be flagged
+        assert not any("code-review" in f for f in findings)
+
+    def test_missing_skill_md_flagged(self, tmp_path):
+        skills_dir = tmp_path / "skills"
+        # Only create nfr-check dir; all other capability skills also absent
+        (skills_dir / "nfr-check").mkdir(parents=True)  # dir exists, no SKILL.md
+        from health import _audit_skill_quality
+        findings = _audit_skill_quality(skills_dir)
+        # With many skills missing, output is a grouped finding — check that it fires
+        assert findings, "Expected at least one quality finding when SKILL.md is absent"
+        assert any("no SKILL.md" in f or "weak" in f.lower() for f in findings)
+
+    def test_multiple_weak_skills_grouped_into_one_finding(self, tmp_path):
+        skills_dir = tmp_path / "skills"
+        for name in ["code-review", "dev-loop", "nfr-check"]:
+            d = skills_dir / name
+            d.mkdir(parents=True)
+            (d / "SKILL.md").write_text(f"# {name}\n\nDo stuff.\n")
+        from health import _audit_skill_quality
+        findings = _audit_skill_quality(skills_dir)
+        # 3+ weak skills → one grouped finding, not 3 separate ones
+        assert len(findings) == 1
+        assert "3" in findings[0] or "weak" in findings[0].lower()
+
+
+class TestDormantSkillDetectionExpanded:
+    def _run(self, claude_root, youk_root, skills: str, sessions: int = 6) -> list[str]:
+        blocks = "\n".join(
+            f"### Session — 2026-07-0{i} 10:00 UTC\n"
+            f"Skills: {skills}\nCloseCluster: yes\nCommits: yes\n"
+            for i in range(1, sessions + 1)
+        )
+        (claude_root / "audit" / "2026-07.md").write_text(blocks)
+        from health import _generate_findings, _score_org
+        score = _score_org([blocks])
+        return _generate_findings([blocks], score)
+
+    def test_hardcoded_three_skills_covered_by_expansion(self, youk_root, claude_root):
+        """nfr-check never invoked across 6 sessions surfaces a dormant finding."""
+        findings = self._run(claude_root, youk_root, skills="code-review, learn")
+        dormant_findings = [f for f in findings if "nfr-check" in f or "dormant" in f.lower() or "never invoked" in f.lower()]
+        assert dormant_findings, f"Expected nfr-check dormant finding. Got: {findings}"
+
+    def test_many_dormant_skills_grouped(self, youk_root, claude_root):
+        """5+ dormant skills → one grouped finding instead of individual ones."""
+        # Only 'learn' used — code-review, verify, nfr-check, dev-loop, security-review all dormant
+        findings = self._run(claude_root, youk_root, skills="learn")
+        grouped = [f for f in findings if "never invoked" in f.lower() or "capability skills" in f.lower()]
+        individual = [f for f in findings if "not recorded in any" in f]
+        # Should not generate 5+ individual findings — should group them
+        assert len(individual) <= 2 or grouped, f"Expected grouping for many dormant skills. Got: {findings}"
+
+    def test_active_skill_not_flagged_as_dormant(self, youk_root, claude_root):
+        """code-review used in all sessions → not flagged as dormant."""
+        findings = self._run(claude_root, youk_root, skills="code-review, learn, nfr-check, verify, dev-loop, security-review, write-spec, adr")
+        dormant_findings = [f for f in findings if "not recorded" in f or "dormant" in f.lower()]
+        assert not dormant_findings, f"Unexpected dormant finding: {dormant_findings}"
+
+
 class TestApplyProposalSafeTypes:
     _PENDING = (
         "# Proposals\n\n"
