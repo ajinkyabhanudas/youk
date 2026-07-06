@@ -53,6 +53,8 @@ If size is M, L, or XL:
 Call `youk-code.route_to_skill("nfr_check", task)`. Follow returned skill_content.
 Answer the NFR questions yourself from context. This gate is non-negotiable.
 
+If the tool call fails or returns an error: emit "nfr_check unavailable (MCP offline?). M+ task proceeding without safety gate — run `make -C ~/.claude/youk up` then re-run /build to restore the gate." Then continue to Step 4.
+
 **Step 4 — Execute**
 
 Call `youk-code.route_to_skill("dev-loop", task)`. Follow returned skill_content.

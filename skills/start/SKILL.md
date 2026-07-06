@@ -89,13 +89,13 @@ in the skills. By session 10, this system knows how you work.
 
 Commands
   /build   — implement something (routes → nfr_check → dev-loop)
-  /done    — review and close (code-review → verify → humanize)
+  /done    — end your session (code-review → learn → saves progress)
   /check   — audit what's here (code-review [+ security-review])
   /health  — system score + proposals — run after this session to set baseline
   /plan    — rebuild today's priorities
   /decide  — log an architectural choice (adr)
 
-Just build. youk handles the rest.
+Type /done when you finish — this saves your session. Closing the tab without it loses today's progress.
 ```
 
 ### ORIENT mode (fresh clone, project detected)
@@ -132,6 +132,10 @@ Today's plan
   3. {session_plan[2]}
   ... (up to 5 items)
 
+{IF days_since_last >= 7}
+  Note: plan items above are from your last session. Run /plan to rebuild from current git state if the project moved.
+{END IF}
+
 {IF pending_proposals > 0}
   ⚑ {pending_proposals_count} proposal(s) pending review — /health to see them
 {END IF}
@@ -149,6 +153,8 @@ Today's plan
 {END IF}
 
 Commands: /build · /done · /check · /health · /plan · /decide
+
+Note: if this project has .claude/skills/done, it overrides youk's /done. Use 'ship it' phrase instead — phrase matching bypasses project overrides.
 
 Ready. What's first?
 ```

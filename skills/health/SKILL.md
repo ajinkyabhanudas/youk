@@ -26,6 +26,15 @@ Findings
   1. {findings[0]}
   2. {findings[1]}      ← omit if fewer than 2
 
+{IF improvement_velocity.verdict is "STEADY" for >= 3 cycles}
+  Score unchanged for {N} cycles — run /audit to check for project-type skill gaps.
+{END IF}
+
+{IF close_cluster_rate == 0 for >= 3 sessions}
+  Sessions not closing — check if your project has .claude/skills/done overriding youk's.
+  Use 'ship it' phrase as fallback if /done is overridden.
+{END IF}
+
 Pending proposals: {count}   ← omit line if 0
 
 {IF org_score < 6}

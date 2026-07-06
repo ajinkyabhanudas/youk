@@ -29,6 +29,7 @@ safe, correct, and maintainable. The verdict is always explicit — no
 | *(no directive)* | Full review: SCOPE → ANALYZE → SECURITY → VERDICT |
 | `quick` | SCOPE → VERDICT only — surface CRITICAL and HIGH, skip MEDIUM/LOW |
 | `security only` | SCOPE → SECURITY → VERDICT — skip logic and quality analysis |
+| `improve` | Full review + Phase 2.5 — redundancy, performance, structural opportunities |
 | `enter: ANALYZE` | Skip SCOPE (diff already in context), go straight to analysis |
 
 ---
@@ -114,6 +115,32 @@ After all findings:
 - State ship-readiness: SAFE TO SHIP AS-IS / NEEDS FIXES BEFORE SHIP / BLOCKED
 
 > Compact phase summary: "N findings (X CRITICAL, Y HIGH, Z MEDIUM). Ship status: ___."
+
+---
+
+### Phase 2.5 — IMPROVE (optional — run when `improve` directive given or risk tier MED+)
+
+Surfaces improvement opportunities that don't block shipping but compound into debt.
+All findings in this phase are MEDIUM or INFO — never block.
+
+**Redundancy**
+- Duplicate logic: same computation or conditional appearing in 2+ places — extract or share
+- Dead code in the output that is unreachable or unused — remove
+
+**Performance**
+- N+1 patterns: loop that calls a function or query once per iteration when it could be batched
+- Unnecessary repeated computation: same value derived multiple times in a call path — hoist
+- Missing obvious cache: result of expensive call used multiple times with no memoization
+
+**Structure**
+- Functions doing 2+ distinct things — could be split without changing callers
+- Abstraction that could be extracted and reused elsewhere in the codebase
+- Complexity: nested conditionals > 3 levels deep — consider early return or extraction
+
+Emit findings using the same format as Phase 2 with severity MEDIUM or INFO.
+Skip this phase entirely if the diff is ≤10 lines or risk tier is LOW.
+
+> Compact phase summary: "N improvement opportunities. All non-blocking."
 
 ---
 
