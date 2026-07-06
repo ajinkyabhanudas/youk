@@ -464,5 +464,45 @@ def get_proposals_resource() -> str:
     return pending.read_text() if pending.exists() else "No pending proposals."
 
 
+@app.tool()
+def promote_to_global_contracts(contracts: list[str]) -> dict:
+    """Promote confirmed cross-project patterns to the user's global intelligence layer.
+
+    Appends to knowledge/global/contracts.md — loaded on every future project start.
+    Deduplicates case-insensitively. Returns {promoted: N, skipped: N, conflicts: [...]}.
+    Call after confirming candidates from self_heal()'s global_pattern_candidates field.
+    """
+    from health import _detect_cross_project_patterns
+    global_file = YOUK_ROOT / "knowledge" / "global" / "contracts.md"
+    global_file.parent.mkdir(parents=True, exist_ok=True)
+
+    existing_lines: list[str] = []
+    if global_file.exists():
+        existing_lines = [
+            line.strip().lstrip("- ")
+            for line in global_file.read_text().splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+    existing_normalized = {c.lower() for c in existing_lines}
+
+    promoted, skipped, conflicts = 0, 0, []
+    with open(global_file, "a") as f:
+        for c in contracts:
+            normalized = c.strip().lower()
+            if normalized in existing_normalized:
+                skipped += 1
+                continue
+            # Conflict check: look for semantically opposing patterns
+            for existing in existing_lines:
+                if ("always" in normalized and "never" in existing.lower() and normalized[7:20] in existing.lower()) or \
+                   ("never" in normalized and "always" in existing.lower() and normalized[6:20] in existing.lower()):
+                    conflicts.append(f"Conflict: new '{c}' vs existing '{existing}'")
+            f.write(f"- {c.strip()}\n")
+            existing_normalized.add(normalized)
+            promoted += 1
+
+    return {"promoted": promoted, "skipped": skipped, "conflicts": conflicts}
+
+
 if __name__ == "__main__":
     mcp.run()
