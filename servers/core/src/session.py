@@ -482,6 +482,24 @@ def _load_contracts(slug: str) -> list[str]:
         return []
 
 
+def _load_global_contracts(cap: int = 50) -> list[str]:
+    """Load user's cross-project global behavioral contracts (knowledge/global/contracts.md).
+    These apply to every project — loaded before project-specific contracts at session start.
+    Capped at `cap` most recently confirmed entries to bound session context cost."""
+    global_file = YOUK_ROOT / "knowledge" / "global" / "contracts.md"
+    if not global_file.exists():
+        return []
+    try:
+        lines = [
+            line.strip()
+            for line in global_file.read_text().splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+        return lines[-cap:]  # most recently added = most recently confirmed
+    except Exception:
+        return []
+
+
 def _load_l2_context(project_dir: str) -> tuple[str, str]:
     """Returns (resume_point, context_health) from project's .claude/ dir."""
     p = _resolve_project_path(project_dir)
@@ -1333,7 +1351,9 @@ def start_session(project_dir: str) -> SessionState:
     else:
         resume_point = "No prior context found — fresh session."
 
-    contracts = _load_contracts(slug)
+    global_contracts = _load_global_contracts()
+    project_contracts = _load_contracts(slug)
+    contracts = global_contracts + project_contracts  # global first, project overrides
     audit_dir = CLAUDE_ROOT / "audit"
     close_cluster_missed, orchestrate_pending = _parse_last_session_flags(audit_dir)
 

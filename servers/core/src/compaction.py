@@ -190,18 +190,20 @@ def write_contracts(slug: str, new_contracts: list[str]) -> dict:
     contracts_file = YOUK_ROOT / "knowledge" / "projects" / slug / "contracts.md"
     contracts_file.parent.mkdir(parents=True, exist_ok=True)
 
-    existing: set[str] = set()
+    existing_raw: list[str] = []
     if contracts_file.exists():
-        existing = {
+        existing_raw = [
             line.strip().lstrip("- ")
             for line in contracts_file.read_text().splitlines()
             if line.strip() and not line.startswith("#")
-        }
+        ]
+    existing_normalized = {c.lower() for c in existing_raw}
 
-    to_add = [c for c in new_contracts if c.strip().lstrip("- ") not in existing]
+    to_add = [c for c in new_contracts if c.strip().lstrip("- ").lower() not in existing_normalized]
+    existing_set = set(existing_raw)
     all_conflicts: list[str] = []
     for c in to_add:
-        all_conflicts.extend(_conflict_check(c, existing))
+        all_conflicts.extend(_conflict_check(c, existing_set))
 
     if not to_add:
         return {"added": 0, "conflicts": all_conflicts}
