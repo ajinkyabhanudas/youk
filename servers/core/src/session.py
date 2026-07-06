@@ -43,14 +43,19 @@ def _is_generalizable(contract: str) -> bool:
 
 
 def _promote_generalizable_to_global(contracts: list[str]) -> dict:
-    """Promote generalizable contracts to knowledge/global/contracts.md with dedup."""
+    """Promote generalizable contracts to knowledge/global/contracts.md with line-level dedup."""
     global_file = YOUK_ROOT / "knowledge" / "global" / "contracts.md"
     if not global_file.parent.exists():
         return {"promoted": 0, "candidates": contracts}
-    existing_lower = global_file.read_text().lower() if global_file.exists() else ""
+    existing_lines: set[str] = set()
+    if global_file.exists():
+        for line in global_file.read_text().splitlines():
+            normalized = line.strip().lstrip("- ").removeprefix("[auto-promoted] ").lower()
+            if normalized:
+                existing_lines.add(normalized)
     promoted = []
     for c in contracts:
-        if c.strip().lower() not in existing_lower:
+        if c.strip().lower() not in existing_lines:
             promoted.append(c)
     if promoted:
         with open(global_file, "a") as f:

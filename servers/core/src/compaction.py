@@ -74,6 +74,26 @@ def _load_session_plan() -> list[str]:
         return []
 
 
+def _load_domain_gaps(max_gaps: int = 3) -> list[str]:
+    """Load HIGH-priority unaddressed gaps from knowledge/domain/gaps.md."""
+    gaps_file = YOUK_ROOT / "knowledge" / "domain" / "gaps.md"
+    if not gaps_file.exists():
+        return []
+    gaps = []
+    for line in gaps_file.read_text().splitlines():
+        if "HIGH" not in line:
+            continue
+        # Skip rows that are already addressed (have a date in the Addressed column)
+        cells = [c.strip() for c in line.split("|") if c.strip()]
+        if len(cells) >= 5 and cells[4] not in ("—", "-", ""):
+            continue
+        if cells and cells[0] not in ("Concept", "---"):
+            gaps.append(cells[0])
+            if len(gaps) >= max_gaps:
+                break
+    return gaps
+
+
 def _load_domain_knowledge_summary(cap: int = 10) -> str:
     """Returns comma-separated concept headings from knowledge/domain/ for the brief."""
     domain_dir = YOUK_ROOT / "knowledge" / "domain"
@@ -157,6 +177,15 @@ def build_brief(project_dir: str, intent: str = "") -> dict:
     domain_summary = _load_domain_knowledge_summary()
     if domain_summary:
         sections.append(f"## Domain knowledge\n{domain_summary} — /learn adds more")
+
+    # Active knowledge gaps: HIGH-priority unaddressed items from /learn
+    domain_gaps = _load_domain_gaps()
+    if domain_gaps:
+        sections.append(
+            "## Active knowledge gaps (HIGH priority)\n"
+            + ", ".join(domain_gaps)
+            + " — address with /learn"
+        )
 
     sections.append(f"## Compaction instruction\n{_TIER_INSTRUCTION}")
 

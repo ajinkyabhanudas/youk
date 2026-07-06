@@ -772,6 +772,20 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
             "Confirm promotion via: promote_to_global_contracts(contract_text)."
         )
 
+    # Global contracts store health — surface when review or pruning is needed
+    global_audit = _audit_global_contracts()
+    if global_audit["auto_promoted"] > 0:
+        base["global_contracts_pending_review"] = (
+            f"{global_audit['auto_promoted']} auto-promoted global contracts need review "
+            f"(total: {global_audit['total']}, session loads last 50). "
+            "Open knowledge/global/contracts.md to confirm or prune."
+        )
+    if global_audit["total"] > 100:
+        base["global_contracts_oversize"] = (
+            f"knowledge/global/contracts.md has {global_audit['total']} entries — "
+            "only 50 load per session. Consider pruning stale entries."
+        )
+
     if research_mode and skill_gap_signals:
         # Derive search topics from gap descriptions — one topic per top gap signal.
         # These are passed back to the caller to feed into youk-research.
@@ -815,6 +829,19 @@ def _archive_applied_proposals() -> int:
     with open(archive_file, "a") as f:
         f.write("".join(archived))
     return len(archived)
+
+
+def _audit_global_contracts() -> dict:
+    """Return count of total, auto-promoted, and manually confirmed global contracts."""
+    global_file = YOUK_ROOT / "knowledge" / "global" / "contracts.md"
+    if not global_file.exists():
+        return {"total": 0, "auto_promoted": 0, "confirmed": 0}
+    lines = [
+        ln.strip() for ln in global_file.read_text().splitlines()
+        if ln.strip() and not ln.startswith("#")
+    ]
+    auto = sum(1 for ln in lines if "[auto-promoted]" in ln)
+    return {"total": len(lines), "auto_promoted": auto, "confirmed": len(lines) - auto}
 
 
 def _detect_cross_project_patterns(min_projects: int = 2) -> list[dict]:
