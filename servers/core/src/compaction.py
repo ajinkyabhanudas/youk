@@ -74,6 +74,28 @@ def _load_session_plan() -> list[str]:
         return []
 
 
+def _load_domain_knowledge_summary(cap: int = 10) -> str:
+    """Returns comma-separated concept headings from knowledge/domain/ for the brief."""
+    domain_dir = YOUK_ROOT / "knowledge" / "domain"
+    if not domain_dir.exists():
+        return ""
+    headings = []
+    for f in sorted(domain_dir.glob("*.md")):
+        if f.name in ("gaps.md",):
+            continue
+        try:
+            for line in f.read_text().splitlines():
+                if line.startswith("## "):
+                    headings.append(line[3:].strip())
+                    if len(headings) >= cap:
+                        break
+        except Exception:
+            continue
+        if len(headings) >= cap:
+            break
+    return ", ".join(headings) if headings else ""
+
+
 def build_brief(project_dir: str, intent: str = "") -> dict:
     """
     Build a structured context brief from youk's knowledge store.
@@ -130,6 +152,11 @@ def build_brief(project_dir: str, intent: str = "") -> dict:
     if session_plan:
         plan_lines = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(session_plan))
         sections.append(f"## Session plan (from last session_start)\n{plan_lines}")
+
+    # Domain knowledge: concept headings accumulated by /learn across all projects
+    domain_summary = _load_domain_knowledge_summary()
+    if domain_summary:
+        sections.append(f"## Domain knowledge\n{domain_summary} — /learn adds more")
 
     sections.append(f"## Compaction instruction\n{_TIER_INSTRUCTION}")
 

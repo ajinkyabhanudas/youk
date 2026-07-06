@@ -26,6 +26,11 @@ knowledge/projects/
 # Capabilities (skills, server code) belong in the repo; accumulated knowledge does not
 knowledge/proposals/
 knowledge/global/
+knowledge/domain/*
+!knowledge/domain/.gitkeep
+
+# Accumulated /learn domain knowledge — grows per-user, never shared across installs
+skills/learn/knowledge/
 
 # OS
 .DS_Store

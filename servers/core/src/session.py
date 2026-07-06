@@ -7,7 +7,7 @@ from pathlib import Path
 
 import sys
 sys.path.insert(0, "/shared")
-from models import SessionState, Proposal
+from models import SessionState
 from compaction import write_contracts, build_brief as _build_brief
 from tokens import read_and_clear as _read_and_clear_tokens
 
@@ -40,6 +40,23 @@ def _is_generalizable(contract: str) -> bool:
     has_method = any(phrase in lower for phrase in _GENERALIZABLE_PHRASES)
     has_specific = any(marker in contract for marker in _PROJECT_SPECIFIC_MARKERS)
     return has_method and not has_specific
+
+
+def _promote_generalizable_to_global(contracts: list[str]) -> dict:
+    """Promote generalizable contracts to knowledge/global/contracts.md with dedup."""
+    global_file = YOUK_ROOT / "knowledge" / "global" / "contracts.md"
+    if not global_file.parent.exists():
+        return {"promoted": 0, "candidates": contracts}
+    existing_lower = global_file.read_text().lower() if global_file.exists() else ""
+    promoted = []
+    for c in contracts:
+        if c.strip().lower() not in existing_lower:
+            promoted.append(c)
+    if promoted:
+        with open(global_file, "a") as f:
+            for c in promoted:
+                f.write(f"- [auto-promoted] {c}\n")
+    return {"promoted": len(promoted), "candidates": contracts}
 
 
 def _scan_research_inbox(slug: str = "") -> list[str]:
@@ -1743,40 +1760,18 @@ def end_session(
         for marker in ["FLUSHED", "[MENTAL MODEL UPDATE", "context-sync end", "learn complete"]
     )
 
-    # 3A — Extract generalizable contracts as cross-project proposals.
+    # 3A — Promote generalizable contracts directly to knowledge/global/contracts.md.
     # Project-specific contracts already went to contracts.md above.
-    # Generalizable ones (no file paths, expresses a methodology) go to cross-project.md
-    # via the proposal queue so the founder can review before they become global knowledge.
-    cross_project_queued = 0
+    # Generalizable ones (no file paths, expresses a methodology) go straight to global —
+    # prefixed [auto-promoted] so the developer can review and clean up later.
+    global_contracts_promoted = 0
     all_contracts_for_xp = explicit_contracts or detected_contracts
     if all_contracts_for_xp and slug:
         try:
-            from health import add_proposal as _queue_proposal
-            for i, contract in enumerate(all_contracts_for_xp):
-                if _is_generalizable(contract):
-                    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-                    xp_proposal = Proposal(
-                        id=f"PENDING-{ts}-xp{i}",
-                        target=str(YOUK_ROOT / "knowledge" / "cross-project.md"),
-                        change_description=f"Cross-project: {contract[:60]}",
-                        reason=(
-                            f"Extracted from {slug} session on "
-                            f"{datetime.utcnow().strftime('%Y-%m-%d')}. "
-                            "Generalizable pattern — not project-specific."
-                        ),
-                        before="(append to cross-project.md)",
-                        after=f"\n## {contract}\nSource project: {slug}\n",
-                        status="PENDING",
-                        proposed_date=datetime.utcnow().strftime("%Y-%m-%d"),
-                        change_type="FILE_CREATE",
-                        content=(
-                            f"\n## {contract}\n"
-                            f"Source project: {slug}\n"
-                            f"Extracted: {datetime.utcnow().strftime('%Y-%m-%d')}\n"
-                        ),
-                    )
-                    _queue_proposal(xp_proposal)
-                    cross_project_queued += 1
+            generalizable = [c for c in all_contracts_for_xp if _is_generalizable(c)]
+            if generalizable:
+                result = _promote_generalizable_to_global(generalizable)
+                global_contracts_promoted = result.get("promoted", 0)
         except Exception:
             pass
 
@@ -1792,7 +1787,7 @@ def end_session(
 
     return {
         "knowledge_extracted": summary.count("##"),
-        "proposals_added": cross_project_queued,
+        "global_contracts_promoted": global_contracts_promoted,
         "audit_written": True,
         "session_close_cluster_detected": session_close_detected,
         "contract_phrases_detected": detected_contracts,

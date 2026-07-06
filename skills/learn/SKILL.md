@@ -165,6 +165,10 @@ for the file organization.
 facts, and one-off debugging details do not belong in the knowledge base.
 
 **Write to the domain knowledge file:**
+
+Target path: `knowledge/domain/{topic}.md` under the youk root (`~/.claude/youk/`).
+Create the file if it doesn't exist. Create `knowledge/domain/` if the directory doesn't exist.
+
 ```
 ## {concept name}
 *Added: {date}*
@@ -173,17 +177,25 @@ facts, and one-off debugging details do not belong in the knowledge base.
 **What it is:** {one sentence}
 **Analogy:** {the bridge — specific, not abstract}
 **Where the analogy breaks:** {the gap}
-**Canopy example:** {where this was applied, with a concrete reference}
+**Project example:** {where this was applied, with a concrete reference}
 **When to reach for this:** {the condition that suggests this pattern is relevant}
 ```
 
 **Update the gap log** if a gap was identified:
+
+Target path: `knowledge/domain/gaps.md`
+
 ```
 ## Gaps (Active)
 | Concept | Domain | Priority | Added | Addressed |
 |---|---|---|---|---|
 | {concept} | {domain} | HIGH/MED/LOW | {date} | — |
 ```
+
+**Note on cross-project promotion:** Generalizable behavioral contracts (those expressing
+methodology rather than project-specific paths) are automatically promoted to
+`knowledge/global/contracts.md` by `session_end()`. You do not need to write to any
+cross-project file directly — the promotion happens at session close.
 
 ---
 
