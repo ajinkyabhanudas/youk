@@ -57,6 +57,7 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         if "### Session —" not in block:
             continue
         s: dict = {"raw": block}
+
         skills_match = re.search(r"^Skills:\s*(.+)$", block, re.MULTILINE)
         if skills_match:
             raw_skills = skills_match.group(1).strip()
@@ -80,7 +81,7 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
             s["tokens_budget"] = 0
             s["tokens_ratio"] = None
         sessions.append(s)
-    return sessions
+    return sessions[-150:]  # cap: most recent 150 sessions regardless of window size
 
 
 def _consecutive_skill_skips(sessions: list[dict]) -> int:
@@ -714,8 +715,9 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     so the caller can invoke youk-research with targeted queries. Does not perform
     web research itself — keeps this function on the zero-API hot path.
     """
+    _archive_applied_proposals()
     report = run_health_check()
-    audit_texts = _read_recent_audit_logs(days=60)
+    audit_texts = _read_recent_audit_logs(days=30)
     skill_gap_signals = _parse_skill_gap_signals(audit_texts)
     velocity = _compute_improvement_velocity(audit_texts, report.org_score)
 
@@ -760,6 +762,16 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
             "then add_proposal() + apply_proposal(confirmed=True, safe_types=['FILE_CREATE'])."
         )
 
+    # Cross-project pattern detection — surface global intelligence candidates
+    cross_project_candidates = _detect_cross_project_patterns(min_projects=2)
+    if cross_project_candidates:
+        base["global_pattern_candidates"] = cross_project_candidates[:5]  # top 5 only
+        base["global_pattern_note"] = (
+            f"{len(cross_project_candidates)} contract(s) found across 2+ projects. "
+            "These may belong in your global intelligence layer (knowledge/global/contracts.md). "
+            "Confirm promotion via: promote_to_global_contracts(contract_text)."
+        )
+
     if research_mode and skill_gap_signals:
         # Derive search topics from gap descriptions — one topic per top gap signal.
         # These are passed back to the caller to feed into youk-research.
@@ -779,6 +791,70 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
             )
 
     return base
+
+
+def _archive_applied_proposals() -> int:
+    """Move APPLIED/SUPERSEDED proposal blocks from PENDING.md to APPLIED-ARCHIVE.md.
+    Returns count of blocks archived. Called at start of each health check."""
+    if not PROPOSALS_FILE.exists():
+        return 0
+    content = PROPOSALS_FILE.read_text()
+    parts = content.split("\n## ")
+    header = parts[0]
+    active, archived = [], []
+    for block in parts[1:]:
+        status_line = next((l for l in block.splitlines() if "**Status:**" in l), "")
+        if "APPLIED" in status_line or "SUPERSEDED" in status_line:
+            archived.append("## " + block)
+        else:
+            active.append("## " + block)
+    if not archived:
+        return 0
+    PROPOSALS_FILE.write_text(header + ("\n" if active else "") + "".join(active))
+    archive_file = PROPOSALS_FILE.parent / "APPLIED-ARCHIVE.md"
+    with open(archive_file, "a") as f:
+        f.write("".join(archived))
+    return len(archived)
+
+
+def _detect_cross_project_patterns(min_projects: int = 2) -> list[dict]:
+    """Scan all project contracts.md files and find contracts recurring across projects.
+    Returns candidates: [{contract, projects: [slug, ...], count}] sorted by count desc."""
+    projects_dir = YOUK_ROOT / "knowledge" / "projects"
+    if not projects_dir.exists():
+        return []
+
+    # Collect contracts per project
+    project_contracts: dict[str, list[str]] = {}
+    for project_dir in projects_dir.iterdir():
+        contracts_file = project_dir / "contracts.md"
+        if not contracts_file.is_file():
+            continue
+        lines = [
+            line.strip().lstrip("- ").lower()
+            for line in contracts_file.read_text().splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+        if lines:
+            project_contracts[project_dir.name] = lines
+
+    if len(project_contracts) < min_projects:
+        return []
+
+    # Find contracts appearing in min_projects or more distinct projects
+    contract_to_projects: dict[str, list[str]] = {}
+    for slug, contracts in project_contracts.items():
+        for c in contracts:
+            contract_to_projects.setdefault(c, [])
+            if slug not in contract_to_projects[c]:
+                contract_to_projects[c].append(slug)
+
+    candidates = [
+        {"contract": c, "projects": slugs, "count": len(slugs)}
+        for c, slugs in contract_to_projects.items()
+        if len(slugs) >= min_projects
+    ]
+    return sorted(candidates, key=lambda x: x["count"], reverse=True)
 
 
 def add_proposal(proposal: Proposal) -> None:
