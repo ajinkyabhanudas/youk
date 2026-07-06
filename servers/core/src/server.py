@@ -464,7 +464,7 @@ def get_proposals_resource() -> str:
     return pending.read_text() if pending.exists() else "No pending proposals."
 
 
-@app.tool()
+@mcp.tool()
 def promote_to_global_contracts(contracts: list[str]) -> dict:
     """Promote confirmed cross-project patterns to the user's global intelligence layer.
 
@@ -472,7 +472,6 @@ def promote_to_global_contracts(contracts: list[str]) -> dict:
     Deduplicates case-insensitively. Returns {promoted: N, skipped: N, conflicts: [...]}.
     Call after confirming candidates from self_heal()'s global_pattern_candidates field.
     """
-    from health import _detect_cross_project_patterns
     global_file = YOUK_ROOT / "knowledge" / "global" / "contracts.md"
     global_file.parent.mkdir(parents=True, exist_ok=True)
 

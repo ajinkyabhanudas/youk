@@ -803,7 +803,7 @@ def _archive_applied_proposals() -> int:
     header = parts[0]
     active, archived = [], []
     for block in parts[1:]:
-        status_line = next((l for l in block.splitlines() if "**Status:**" in l), "")
+        status_line = next((ln for ln in block.splitlines() if "**Status:**" in ln), "")
         if "APPLIED" in status_line or "SUPERSEDED" in status_line:
             archived.append("## " + block)
         else:
