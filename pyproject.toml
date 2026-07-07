@@ -1,3 +1,9 @@
+[tool.pytest.ini_options]
+addopts = "--cov=servers --cov-report=term-missing --cov-fail-under=45"
+
+[tool.coverage.run]
+omit = ["tests/*", "scripts/*"]
+
 [tool.ruff]
 target-version = "py313"
 line-length = 100
