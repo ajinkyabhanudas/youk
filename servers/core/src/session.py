@@ -1439,7 +1439,7 @@ def start_session(project_dir: str) -> SessionState:
             if subjects_str else f" — {new_commits} commit(s) since last session"
         )
         session_plan.append(f"Returning after {days_since_last} days{commits_note}")
-        if days_since_last >= 30 and contracts:
+        if days_since_last >= 7 and contracts:
             session_plan.insert(0,
                 f"Returning after {days_since_last} days — {len(contracts)} saved rule(s) may be stale. "
                 f"Say 'show my contracts' to review them before we start."
@@ -1513,7 +1513,17 @@ def start_session(project_dir: str) -> SessionState:
         commits_since = _count_commits_since(project_dir, survey_commit_hash)
         if commits_since > 20:
             survey_stale_note = f"Codebase survey is {commits_since} commits old — run /survey to refresh"
-    if survey_stale_note:
+    # Only surface survey note when it's genuinely actionable:
+    # - first 3 sessions (new user should survey early)
+    # - returning after ≥14 days (codebase may have drifted)
+    # - survey truly missing (not just stale)
+    _survey_is_missing = not survey_file.exists()
+    _survey_is_actionable = (
+        counter <= 3
+        or (days_since_last is not None and days_since_last >= 14)
+        or _survey_is_missing
+    )
+    if survey_stale_note and _survey_is_actionable:
         session_plan.append(survey_stale_note)
 
     # Persist session plan so compact_context can include it in briefs
@@ -1575,6 +1585,35 @@ def start_session(project_dir: str) -> SessionState:
     )
 
 
+def _write_session_stub(slug: str, session_counter: int) -> None:
+    """Write a minimal per-project audit stub on first task_checkpoint.
+
+    Serves as a breadcrumb: if the developer tabs out without /done, the audit
+    dir shows a stub entry with date + status INCOMPLETE rather than a silent gap.
+    session_end does NOT overwrite this — both coexist. The stub signals "session
+    started, task_checkpoint fired, but loop was not closed."
+    Only writes once per calendar day to avoid noise on repeated checkpoints.
+    """
+    if not slug:
+        return
+    audit_dir = YOUK_ROOT / "knowledge" / "projects" / slug / "audit"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    stub_file = audit_dir / f"{today}-session-stub.txt"
+    if stub_file.exists():
+        return
+    try:
+        stub_file.write_text(
+            f"Session #{session_counter} stub — {today}\n"
+            f"Status: INCOMPLETE (tab-close or crash — /done not called)\n"
+            f"Contracts: see contracts.md (saved as you go, survive tab-close)\n"
+            f"Org score: N/A — session not closed\n"
+            f"close_cluster: no\n"
+        )
+    except Exception:
+        pass
+
+
 def task_checkpoint(
     project_dir: str,
     task_label: str,
@@ -1596,6 +1635,12 @@ def task_checkpoint(
 
     Returns: brief (paste verbatim), checkpoint_written, pattern_trigger (if any).
     """
+    # G2a: write session stub on first checkpoint so tab-close leaves a breadcrumb
+    current_state = _load_state()
+    _slug_val = _slug(current_state.get("last_project", project_dir))
+    _counter = current_state.get("session_counter", 0)
+    _write_session_stub(_slug_val, _counter)
+
     brief_result = _build_brief(project_dir)
     checkpoint_written = False
     pattern_trigger: list[str] = []
@@ -1639,6 +1684,11 @@ def task_checkpoint(
                 ]
             except Exception:
                 pass
+
+    # G2b: write mid-session resume point so tomorrow's card shows last known task
+    # even if the developer closed the tab without /done.
+    if _slug_val and size.upper() not in ("XS", "S"):
+        _update_resume_point(_slug_val, f"In progress: {task_label[:180]}")
 
     result = {
         "brief": brief_result.get("brief", ""),
@@ -1868,6 +1918,19 @@ def end_session(
             "Invoke one retroactively (code-review at minimum) or pass "
             "skill_gaps={'skill': ['reason']} to document the miss."
         )
+
+    # G4: /learn enforcement — /learn is non-optional at /done.
+    # Without /learn, domain knowledge doesn't grow and the ability-compounding loop
+    # never closes. Emit a targeted warning that names what's missing and why it matters.
+    learn_ran = "learn" in (skills_used or [])
+    if close_cluster and not learn_ran:
+        learn_warning = (
+            "/learn has not run this session. "
+            "/learn extracts patterns into knowledge/domain/ — it is what makes today compound "
+            "into tomorrow's starting point. Run /learn before considering this session closed, "
+            "or pass skills_used=['learn'] if it ran implicitly."
+        )
+        skill_gate_warning = (skill_gate_warning + "  " + learn_warning).strip() if skill_gate_warning else learn_warning
 
     session_delta = _compute_session_delta(
         contracts_saved=contracts_saved,

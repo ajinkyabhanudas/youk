@@ -81,21 +81,23 @@ Output one card. Format exactly as shown below — no preamble, no narration.
 youk — session #1
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-No prior sessions on this machine.
+{IF readme_snippet}Project: {readme_snippet}{END IF}
+{IF stack}Stack: {stack}{IF framework} / {framework}{END IF}{END IF}
 
-youk accumulates from here. Working agreements you set this session load
-automatically next time. Patterns that trip you up get detected and fixed
-in the skills. By session 10, this system knows how you work.
+I remember what you agree to. Say "always use X" or "never do Y" this
+session and it loads automatically every future session. By session 5,
+I know your patterns. By session 20, you stop re-explaining things.
 
-Commands
-  /build   — implement something (routes → nfr_check → dev-loop)
-  /done    — end your session (code-review → learn → saves progress)
-  /check   — audit what's here (code-review [+ security-review])
-  /health  — system score + proposals — run after this session to set baseline
-  /plan    — rebuild today's priorities
-  /decide  — log an architectural choice (adr)
+One thing matters: type /done before you close this tab.
+That saves today's session. Contracts are safe as you go — the session
+record and /learn output need /done.
 
-Type /done when you finish — this saves your session. Closing the tab without it loses today's progress.
+{IF no survey exists}
+I don't have a map of this codebase yet.
+  /survey — 12-question map: stack, modules, entry points, integrations
+{END IF}
+
+Ready. What are we building?
 ```
 
 ### ORIENT mode (fresh clone, project detected)
@@ -105,16 +107,19 @@ youk — session #1 on {project}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Project: {readme_snippet}
+Stack: {stack}{IF framework} / {framework}{END IF}
 
-Context: {context_health} — {what was found: README / docs / CLAUDE.md}
+No prior context on this machine. Working agreements you make today
+load automatically every future session.
 
-No prior youk session on this machine. Run /health after your first
-session to establish a baseline.
+I don't have a codebase map yet. Run /survey first — it produces a
+one-page map (stack, modules, entry points, integrations) that loads
+in every future session brief and is ready for any joining developer.
 
-Commands
-  /build · /done · /check · /health · /plan · /decide
+One thing matters: type /done before you close this tab.
+That's how today's session saves. Contracts are safe as you go.
 
-What are we starting with?
+Ready. Start with /survey, or tell me what to build.
 ```
 
 ### RESUME mode (returning session)
@@ -141,7 +146,17 @@ Today's plan
 {END IF}
 
 {IF contracts exist}
-  Contracts active: {count} — commit format, test cadence, review rules preserved
+  {contracts_count} rules active{IF domain_concepts_count > 0} · {domain_concepts_count} domain concepts{END IF} · session #{n}
+  "{most_recent_contract}"{IF session_counter <= 5}  <- loaded automatically{END IF}
+{END IF}
+{IF contracts is empty}
+  Session #{n} · no rules saved yet — working agreements you set today load next time
+{END IF}
+
+{IF session_counter >= 30}
+  30 sessions in — your rules load faster than you'd re-explain them.
+{ELSE IF session_counter >= 10}
+  10 sessions in — the system knows your patterns.
 {END IF}
 
 {IF health_check_due AND self_heal was called}
@@ -152,9 +167,13 @@ Today's plan
   Trend: {dashboard_summary}
 {END IF}
 
+{IF pending_proposals > 0}
+  {pending_proposals_count} proposal(s) pending — /health to see them
+{END IF}
+
 Commands: /build · /done · /check · /health · /plan · /decide
 
-Note: if this project has .claude/skills/done, it overrides youk's /done. Use 'ship it' phrase instead — phrase matching bypasses project overrides.
+Note: if this project has .claude/skills/done, it overrides youk's /done. Use 'ship it' phrase instead.
 
 Ready. What's first?
 ```
@@ -167,6 +186,14 @@ Ready. What's first?
 - Fill in actual values from the tool responses — never placeholder text.
 - If session_plan has fewer than 3 items, only list what exists. Do not pad.
 - If pending_proposals_count is 0, omit that line entirely.
-- If contracts list is empty, omit that line.
+- If contracts list is empty, omit the rules/contracts lines.
 - `━` divider width: match the header line length (adjust to fit project name).
 - No em dashes in the card output.
+
+## Data bindings for RESUME card
+
+- `{contracts_count}` — `len(contracts)` from session_start response
+- `{domain_concepts_count}` — count of `*.md` files in `knowledge/domain/` excluding `gaps.md` (read from brief or domain_knowledge field if present)
+- `{most_recent_contract}` — last item in `contracts` list, truncated to 60 chars
+- `{session_counter}` / `{n}` — `session_counter` from session_start
+- `{no survey exists}` — true when `survey_stale_note` in session_start contains "No codebase survey yet"
