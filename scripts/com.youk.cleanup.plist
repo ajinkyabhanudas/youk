@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.youk.cleanup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>YOUK_DIR/scripts/cleanup.sh</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>YOUK_DIR</key>
+        <string>YOUK_DIR</string>
+    </dict>
+
+    <!-- Every Sunday at 02:00 local time -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>YOUK_DIR/state/cleanup.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>YOUK_DIR/state/cleanup.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

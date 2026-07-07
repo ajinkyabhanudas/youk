@@ -18,15 +18,34 @@ install: ## First-time setup: build images, register MCP servers, patch CLAUDE.m
 	@bash scripts/install.sh
 
 .PHONY: update
-update: ## Pull latest + rebuild images
+update: ## Pull latest + rebuild images + prune stale containers
 	git pull --rebase
 	$(MAKE) rebuild
+	@$(MAKE) --no-print-directory _prune-stale-containers
 
 .PHONY: build
 build: ## Build both Docker images
 	docker build -t youk-core:latest -f servers/core/Dockerfile .
 	docker build -t youk-code:latest -f servers/code/Dockerfile .
 	@docker image prune -f --filter label!=keep 2>/dev/null | grep -v "^Total" || true
+	@$(MAKE) --no-print-directory _prune-stale-containers
+
+# Internal target — stop youk containers whose image SHA no longer matches :latest.
+# Called automatically by build and update; also used by prune for manual runs.
+# Safe during active sessions: containers on the current SHA are never touched.
+.PHONY: _prune-stale-containers
+_prune-stale-containers:
+	@CORE_SHA=$$(docker image inspect youk-core:latest --format '{{.Id}}' 2>/dev/null || echo ""); \
+	 CODE_SHA=$$(docker image inspect youk-code:latest --format '{{.Id}}' 2>/dev/null || echo ""); \
+	 docker ps --format '{{.ID}} {{.Image}}' 2>/dev/null | grep -E 'youk-(core|code)' | \
+	 while read -r cid img; do \
+	   sha=$$(docker inspect $$cid --format '{{.Image}}' 2>/dev/null || echo ""); \
+	   if [ -n "$$sha" ] && [ "$$sha" != "$$CORE_SHA" ] && [ "$$sha" != "$$CODE_SHA" ]; then \
+	     echo "    stopping stale $$cid ($$img)"; \
+	     docker stop $$cid >/dev/null 2>&1 || true; \
+	   fi; \
+	 done
+	@docker container prune -f >/dev/null 2>&1 || true
 
 .PHONY: rebuild
 rebuild: clean build ## Full rebuild from scratch (removes cached layers)
@@ -45,19 +64,9 @@ clean: ## Remove Docker images and stopped containers
 
 .PHONY: prune
 prune: ## Stop orphaned youk containers (old image SHAs) and remove dangling layers
-	@echo "==> Stopping orphaned youk containers..."
-	@CORE_SHA=$$(docker image inspect youk-core:latest --format '{{.Id}}' 2>/dev/null); \
-	 CODE_SHA=$$(docker image inspect youk-code:latest --format '{{.Id}}' 2>/dev/null); \
-	 docker ps --format '{{.ID}} {{.Image}}' | grep -E 'youk-(core|code)' | \
-	 while read id img; do \
-	   sha=$$(docker inspect $$id --format '{{.Image}}'); \
-	   if [ "$$sha" != "$$CORE_SHA" ] && [ "$$sha" != "$$CODE_SHA" ]; then \
-	     echo "    stopping $$id ($$img, stale SHA)"; \
-	     docker stop $$id >/dev/null; \
-	   fi; \
-	 done
-	@docker container prune -f >/dev/null
-	@docker image prune -f
+	@echo "==> Pruning stale youk containers..."
+	@$(MAKE) --no-print-directory _prune-stale-containers
+	@docker image prune -f >/dev/null 2>&1 || true
 	@echo "==> Done. Active youk containers:"
 	@docker ps --format "  {{.Names}} ({{.Status}}) {{.Image}}" | grep youk || echo "  none"
 

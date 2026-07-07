@@ -283,6 +283,25 @@ else
   warn "No scheduler available — run manually: python3 $YOUK_DIR/scripts/project-research.py"
 fi
 
+# ── Step 8b: Container cleanup scheduler ─────────────────────────────────────
+step "Container cleanup scheduler"
+
+if [[ "$(uname)" == "Darwin" ]]; then
+  PLIST_SRC="$YOUK_DIR/scripts/com.youk.cleanup.plist"
+  PLIST_DST="$HOME/Library/LaunchAgents/com.youk.cleanup.plist"
+  sed -e "s|YOUK_DIR|$YOUK_DIR|g" "$PLIST_SRC" > "$PLIST_DST"
+  launchctl unload "$PLIST_DST" 2>/dev/null || true
+  launchctl load "$PLIST_DST" 2>/dev/null \
+    && ok "Container cleanup scheduled (every Sunday 02:00)" \
+    || warn "launchctl load failed — check $PLIST_DST"
+elif command -v crontab &>/dev/null; then
+  CRON_LINE="0 2 * * 0 YOUK_DIR=$YOUK_DIR /bin/bash $YOUK_DIR/scripts/cleanup.sh"
+  ( crontab -l 2>/dev/null | grep -v "youk.*cleanup.sh"; echo "$CRON_LINE" ) | crontab -
+  ok "Container cleanup scheduled via cron (every Sunday 02:00)"
+else
+  warn "No scheduler available — stale containers cleaned on each 'make build'. Run 'bash $YOUK_DIR/scripts/cleanup.sh' for a manual sweep."
+fi
+
 # ── Step 9: Validate ─────────────────────────────────────────────────────────
 step "Validation"
 bash "$YOUK_DIR/scripts/doctor.sh"
