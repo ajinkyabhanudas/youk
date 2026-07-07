@@ -78,19 +78,21 @@ Output one card. Format exactly as shown below — no preamble, no narration.
 ### ONBOARD mode (fresh install, no prior context)
 
 ```
-youk — session #1
+youk — session #1 · active
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {IF readme_snippet}Project: {readme_snippet}{END IF}
 {IF stack}Stack: {stack}{IF framework} / {framework}{END IF}{END IF}
 
-I remember what you agree to. Say "always use X" or "never do Y" this
-session and it loads automatically every future session. By session 5,
-I know your patterns. By session 20, you stop re-explaining things.
+youk is running. What you agree to today loads automatically next time.
+Say "always use X" or "never do Y" and it saves immediately — not at the
+end of the session. By session 5, I know your patterns. By session 20,
+you stop re-explaining things.
 
 One thing matters: type /done before you close this tab.
-Contracts are safe as you go. What needs /done: today's work patterns
-(what you learned) and the session record. Tab-close loses those.
+/done saves today's patterns to the knowledge base so they inform every
+future session. Contracts are safe as you go — /done saves the rest.
+Tab-close loses patterns; contracts always survive.
 
 {IF no survey exists}
 I don't have a map of this codebase yet.

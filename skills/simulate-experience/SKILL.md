@@ -279,6 +279,21 @@ addition to youk itself.
   (2) the contract appears in contracts.md after the call, (3) the next session_start
   loads it. If any step fails, that is a HIGH friction finding — verbalized agreements
   that don't survive compaction silently destroy institutional memory.
+- **Contract durability verification (not just UI)**: Do not stop at confirming the
+  save_contract call fired. Read contracts.md directly after the simulated call and
+  verify the exact text appears. Then simulate what session_start would return and
+  verify the contract appears in the brief. The prior gap: the skill audited what
+  developers SEE (the confirmation message) but not whether the data reached the file.
+  Silent write failures are invisible unless the file is checked.
+- **Stale slug detection (required for Persona D)**: When simulating a dev returning
+  after a gap during which they worked on other projects, read state/session-plan.json
+  and verify its `slug` field matches the current project directory. If it doesn't,
+  that is a HIGH friction finding — the wrong project's resume point loads at session
+  open with no warning. Check compaction.py's `_load_session_plan(slug)` call handles this.
+- **Breadcrumb coverage (required for Persona A)**: After the dev's first session (with
+  tab-close, no /done), check that knowledge/projects/{slug}/audit/ contains a stub
+  file for today's date. If not, the breadcrumb mechanism (PROPOSAL A) hasn't fired —
+  surface this as a HIGH finding with "session stub missing after first session".
 
 ## Personas
 ## Persona E: The Acid Test — youk developing youk
