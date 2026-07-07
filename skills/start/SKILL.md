@@ -89,8 +89,8 @@ session and it loads automatically every future session. By session 5,
 I know your patterns. By session 20, you stop re-explaining things.
 
 One thing matters: type /done before you close this tab.
-That saves today's session. Contracts are safe as you go — the session
-record and /learn output need /done.
+Contracts are safe as you go. What needs /done: today's work patterns
+(what you learned) and the session record. Tab-close loses those.
 
 {IF no survey exists}
 I don't have a map of this codebase yet.
@@ -110,7 +110,8 @@ Project: {readme_snippet}
 Stack: {stack}{IF framework} / {framework}{END IF}
 
 No prior context on this machine. Working agreements you make today
-load automatically every future session.
+load automatically every future session. Each developer maintains
+their own knowledge store — teammate history doesn't transfer automatically.
 
 I don't have a codebase map yet. Run /survey first — it produces a
 one-page map (stack, modules, entry points, integrations) that loads
