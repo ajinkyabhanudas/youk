@@ -11,6 +11,7 @@ GUARDRAILS_FILE = YOUK_ROOT / "config" / "guardrails.yaml"
 
 _CREDENTIAL_PATTERNS = [
     r"\.env$",
+    r"\.env[.\-_]",  # .env.local, .env.backup, .env.production etc.
     r"secret",
     r"credential",
     r"api_key",
@@ -19,10 +20,15 @@ _CREDENTIAL_PATTERNS = [
     r"\.key$",
 ]
 
+# Known-safe env templates — blocked by pattern above but explicitly allowed.
+_ALLOWED_CREDENTIAL_FILES = {".env.example", ".env.sample", ".env.template"}
+
 _DESTRUCTIVE_PATTERNS = [
     r"rm\s+-rf",
+    r"rm\s+-r\s+-f",   # rm -r -f (flags separated)
+    r"rm\s+-f\s+-r",   # rm -f -r (flags reversed)
     r"DROP\s+TABLE",
-    r"push\s+--force",
+    r"push\b.*--force(?!-)",  # git push [ref] --force but NOT --force-with-lease
     r"reset\s+--hard",
     r"checkout\s+\.",
     r"restore\s+\.",
@@ -45,6 +51,9 @@ class HardRuleViolation(Exception):
 
 def check_credential_file(file_path: str) -> None:
     """Raise HardRuleViolation if file_path matches credential patterns."""
+    from pathlib import Path
+    if Path(file_path).name in _ALLOWED_CREDENTIAL_FILES:
+        return
     for pattern in _CREDENTIAL_PATTERNS:
         if re.search(pattern, file_path, re.IGNORECASE):
             raise HardRuleViolation(
@@ -68,10 +77,11 @@ def check_destructive_command(command: str) -> None:
 def check_knowledge_write(content: str) -> None:
     """Raise HardRuleViolation if content looks like a raw transcript."""
     raw_transcript_signals = [
-        "Human:", "Assistant:", "User:", "Claude:", "<human>", "<assistant>",
+        "human:", "assistant:", "user:", "claude:", "<human>", "<assistant>",
     ]
+    lower = content.lower()
     for signal in raw_transcript_signals:
-        if signal in content:
+        if signal in lower:
             raise HardRuleViolation(
                 "knowledge-extraction-not-logging",
                 f"Content appears to be a raw transcript (contains '{signal}'). "
