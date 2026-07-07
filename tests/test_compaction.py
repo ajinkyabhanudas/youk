@@ -57,6 +57,57 @@ class TestWriteContracts:
         assert result["conflicts"] == []
 
 
+class TestLoadSessionPlanSlugValidation:
+    """_load_session_plan must reject plans from a different project slug."""
+
+    def test_returns_plan_when_slug_matches(self, youk_root):
+        (youk_root / "state" / "session-plan.json").write_text(
+            json.dumps({"plan": ["do the thing"], "slug": "myproj"})
+        )
+        from compaction import _load_session_plan
+        result = _load_session_plan(slug="myproj")
+        assert result == ["do the thing"]
+
+    def test_returns_empty_when_slug_mismatches(self, youk_root):
+        """Stale plan from a different project must be silently excluded."""
+        (youk_root / "state" / "session-plan.json").write_text(
+            json.dumps({"plan": ["canopy resume point"], "slug": "canopy"})
+        )
+        from compaction import _load_session_plan
+        result = _load_session_plan(slug="youk")
+        assert result == [], "Stale slug should return empty plan, not canopy's context"
+
+    def test_returns_plan_when_no_slug_passed(self, youk_root):
+        """No-arg call (backward compat) must still return the plan."""
+        (youk_root / "state" / "session-plan.json").write_text(
+            json.dumps({"plan": ["anything"], "slug": "proj"})
+        )
+        from compaction import _load_session_plan
+        result = _load_session_plan()
+        assert result == ["anything"]
+
+    def test_build_brief_excludes_stale_slug_plan(self, youk_root, tmp_path):
+        """build_brief for 'youk' must not include a plan stored for 'canopy'."""
+        # Seed canopy plan
+        (youk_root / "state" / "session-plan.json").write_text(
+            json.dumps({"plan": ["canopy: fix the billing flow"], "slug": "canopy"})
+        )
+        (youk_root / "state" / "session.json").write_text(
+            json.dumps({"last_project": "canopy", "session_counter": 38})
+        )
+        # Seed youk contracts
+        youk_proj = youk_root / "knowledge" / "projects" / "youk"
+        youk_proj.mkdir(parents=True, exist_ok=True)
+        (youk_proj / "contracts.md").write_text("- always run ruff before committing\n")
+
+        from compaction import build_brief
+        result = build_brief(str(tmp_path / "youk"))
+        assert "canopy: fix the billing flow" not in result["brief"], (
+            "Stale canopy plan must not appear in youk brief"
+        )
+        assert "always run ruff before committing" in result["brief"]
+
+
 class TestBuildBrief:
     def _seed(self, youk_root: Path, slug: str, contracts: list[str]) -> None:
         proj_dir = youk_root / "knowledge" / "projects" / slug

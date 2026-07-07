@@ -372,6 +372,52 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
             "Call track_tokens(input, output, note) at session checkpoints to enable cost tracking."
         )
 
+    # PROPOSAL 2: project-level skill override — when close_cluster_rate is 0 for 3+
+    # consecutive sessions, check whether a project .claude/skills/done exists that is
+    # silently swallowing /done without calling youk's session_end.
+    _cz = 0
+    for _s in reversed(sessions):
+        if not _s.get("close_cluster"):
+            _cz += 1
+        else:
+            break
+    if _cz >= 3:
+        import json as _json
+        state_file = YOUK_ROOT / "state" / "session.json"
+        last_project = ""
+        try:
+            last_project = _json.loads(state_file.read_text()).get("last_project", "")
+        except Exception:
+            pass
+        project_done_skill = Path(last_project) / ".claude" / "skills" / "done" if last_project else None
+        if project_done_skill and project_done_skill.exists():
+            findings.append(
+                f"close_cluster_rate is 0% for {_cz} consecutive sessions, but the project "
+                f"has its own .claude/skills/done that overrides youk's /done. "
+                "youk's session bookkeeping is not running after that skill fires. "
+                "Fix: after any project /done skill runs, call session_end(close_cluster=True) "
+                "manually, or use the phrase 'ship it' to trigger youk's version instead."
+            )
+        elif _cz >= 3:
+            findings.append(
+                f"Session-close loop missed for {_cz} consecutive sessions. "
+                "If you're using /done but org_score stays flat, check whether a project "
+                ".claude/skills/done is overriding youk's. Use 'ship it' as the trigger phrase "
+                "to ensure youk's session_end runs with close_cluster=True."
+            )
+
+    # PROPOSAL B: task_checkpoint coverage — surface when sessions lack checkpoint data.
+    # Low coverage means the G2 breadcrumb (tab-close recovery) is not working.
+    cp_count = sum(1 for s in sessions if "TaskCheckpoints:" in s.get("raw", ""))
+    cp_coverage = round(cp_count / total, 2) if total else 0.0
+    if total >= 5 and cp_coverage < 0.4:
+        findings.append(
+            f"task_checkpoint data in only {round(cp_coverage * 100)}% of sessions "
+            f"({cp_count}/{total}). Tab-close recovery (session breadcrumbs) only fires when "
+            "/build is used for code tasks. Use /build to anchor context at each commit — "
+            "this also feeds the progressive learning loop."
+        )
+
     # Self-evolution loop health: flag when PENDING.md and audit SkillGaps are both empty
     pending_count = PROPOSALS_FILE.read_text().count("## PENDING-") if PROPOSALS_FILE.exists() else 0
     skill_gap_count = sum(text.count("SkillGap:") for text in audit_texts)

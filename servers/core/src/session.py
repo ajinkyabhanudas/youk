@@ -1235,6 +1235,8 @@ def _count_pending_proposals() -> int:
         return 0
     content = pending_file.read_text()
     count = 0
+
+    # Format 1: auto-generated PENDING-* blocks (from self_heal / session_end)
     for block in content.split("## PENDING-")[1:]:
         status_line = next(
             (ln for ln in block.splitlines() if "**Status:**" in ln),
@@ -1242,6 +1244,17 @@ def _count_pending_proposals() -> int:
         )
         if "APPLIED" not in status_line and "SUPERSEDED" not in status_line:
             count += 1
+
+    # Format 2: named ### PROPOSAL blocks (from simulate-experience / gate-check audits)
+    # Each "### PROPOSAL" heading is one proposal; skip those marked SUPERSEDED inline.
+    import re as _re
+    positions = [m.start() for m in _re.finditer(r"^### PROPOSAL\b", content, _re.MULTILINE)]
+    for i, start in enumerate(positions):
+        end = positions[i + 1] if i + 1 < len(positions) else len(content)
+        block = content[start:end]
+        if "SUPERSEDED" not in block and "APPLIED" not in block:
+            count += 1
+
     return count
 
 
@@ -1548,6 +1561,13 @@ def start_session(project_dir: str) -> SessionState:
         brief = _build_brief(project_dir).get("brief", "")
     except Exception:
         brief = ""
+
+    # Write a session stub to the audit dir immediately at session open.
+    # This breadcrumb survives even if the developer tabs out without calling /done —
+    # audit logs will show INCOMPLETE rather than a silent gap.
+    # PROPOSAL A: moved from task_checkpoint-only to session_start so ALL sessions
+    # leave a breadcrumb, not just sessions that reach their first commit.
+    _write_session_stub(slug, counter)
 
     # Write session-open.json AFTER build_brief — build_brief deletes this file
     # (because compact_context supersedes it), so we must write it last.

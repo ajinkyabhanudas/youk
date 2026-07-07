@@ -63,12 +63,16 @@ def _load_task_state() -> dict:
         return {}
 
 
-def _load_session_plan() -> list[str]:
+def _load_session_plan(slug: str = "") -> list[str]:
     plan_file = YOUK_ROOT / "state" / "session-plan.json"
     if not plan_file.exists():
         return []
     try:
         data = json.loads(plan_file.read_text())
+        # Guard: if stored plan belongs to a different project, return empty so
+        # build_brief doesn't embed another project's resume point in this brief.
+        if slug and data.get("slug") and data["slug"] != slug:
+            return []
         return data.get("plan", [])
     except Exception:
         return []
@@ -144,7 +148,7 @@ def build_brief(project_dir: str, intent: str = "") -> dict:
     contracts = _load_contracts(slug)
     decisions = _load_decisions(slug)
     state = _load_task_state()
-    session_plan = _load_session_plan()
+    session_plan = _load_session_plan(slug)
 
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     intent_keywords = {w.lower() for w in intent.split() if len(w) > 2} if intent else set()

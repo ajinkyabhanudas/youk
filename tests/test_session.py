@@ -48,6 +48,40 @@ class TestCountPendingProposals:
         from session import _count_pending_proposals
         assert _count_pending_proposals() == 1
 
+    def test_counts_named_proposal_blocks(self, youk_root):
+        """### PROPOSAL N — format (from simulate-experience) must be counted."""
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(
+            "# youk Proposals\n\n"
+            "## [simulate-experience audit]\n\n"
+            "### PROPOSAL 1 — fix something\n\n"
+            "**Type:** CODE_EDIT\nSome content.\n\n"
+            "### PROPOSAL 2 — fix something else\n\n"
+            "**Type:** SKILL_EDIT\nMore content.\n"
+        )
+        from session import _count_pending_proposals
+        assert _count_pending_proposals() == 2
+
+    def test_named_proposal_superseded_not_counted(self, youk_root):
+        """SUPERSEDED inline in a named proposal block must exclude it."""
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(
+            "### PROPOSAL 1 — old thing SUPERSEDED\n\nOld content.\n\n"
+            "### PROPOSAL 2 — active\n\nNew content.\n"
+        )
+        from session import _count_pending_proposals
+        assert _count_pending_proposals() == 1
+
+    def test_mixed_formats_counted_together(self, youk_root):
+        """PENDING-* format and ### PROPOSAL format must both contribute to total."""
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(
+            "## PENDING-001 — 2026-07-01\n**Status:** PENDING\n\n"
+            "## PENDING-002 — 2026-07-01\n**Status:** APPLIED\n\n"
+            "### PROPOSAL A — active\n\nContent.\n\n"
+            "### PROPOSAL B — another\n\nMore.\n"
+        )
+        from session import _count_pending_proposals
+        # PENDING-001 (pending) + PROPOSAL A + PROPOSAL B = 3; PENDING-002 excluded
+        assert _count_pending_proposals() == 3
+
 
 # ── Project type detection ───────────────────────────────────────────────────
 
