@@ -16,9 +16,9 @@
 
 ## The compounding developer
 
-youk makes you a better engineer with every session — not just Claude. Working agreements you set verbally today are loaded automatically six months from now. Lessons from this project improve every project that follows. Skills evolve to catch your specific patterns, not generic ones.
+youk makes you a better engineer with every session. Tell it something once and it remembers forever. Working agreements from today load six months from now. Lessons from one project improve the next. The longer you use it, the more it adapts to exactly how you build.
 
-**The north star:** after 20 sessions, you catch NFR gaps before nfr_check does, structure decisions before /adr prompts you, and write code that gets fewer review flags. youk makes that happen. If session 33 doesn't feel faster than session 1, the loop isn't closed.
+**The north star:** by session 10, you have something that knows your codebase, your calls, your way of building. Not a generic assistant. Yours. If that edge isn't obvious, the loop isn't closed.
 
 | Without youk | With youk |
 |---|---|
