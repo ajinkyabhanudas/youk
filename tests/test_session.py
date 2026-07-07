@@ -374,6 +374,46 @@ class TestEndSessionSkillGate:
         )
         assert "skill_gate_warning" not in result
 
+    def test_learn_gate_warning_when_learn_not_run(self, youk_root, tmp_path, monkeypatch):
+        """learn_gate_warning fires when close_cluster=True and learn not in skills_used."""
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        result = session.end_session(
+            summary="did some work",
+            commits_made=False,
+            skills_used=["code-review"],
+            close_cluster=True,
+        )
+        assert "learn_gate_warning" in result
+        assert "/learn" in result["learn_gate_warning"]
+
+    def test_no_learn_gate_warning_when_learn_ran(self, youk_root, tmp_path, monkeypatch):
+        """No learn_gate_warning when learn is in skills_used."""
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        result = session.end_session(
+            summary="did some work",
+            commits_made=False,
+            skills_used=["code-review", "learn"],
+            close_cluster=True,
+        )
+        assert "learn_gate_warning" not in result
+
+    def test_no_learn_gate_warning_when_not_closing(self, youk_root, tmp_path, monkeypatch):
+        """/close without learn is fine — gate only applies to /done (close_cluster=True)."""
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        result = session.end_session(
+            summary="quick close",
+            commits_made=False,
+            skills_used=["code-review"],
+            close_cluster=False,
+        )
+        assert "learn_gate_warning" not in result
+
 
 class TestEndSessionCheckpointRollup:
     """end_session rolls up task-checkpoints.jsonl into the audit entry."""

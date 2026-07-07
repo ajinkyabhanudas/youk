@@ -1705,12 +1705,6 @@ def task_checkpoint(
     return result
 
 
-_CAPABILITY_SKILLS = frozenset({
-    "code-review", "nfr_check", "write-spec", "security-review",
-    "learn", "adr", "stress-test", "pm-review", "dev-loop",
-})
-
-
 def _compute_session_delta(
     contracts_saved: int,
     global_promoted: int,
@@ -1920,17 +1914,16 @@ def end_session(
         )
 
     # G4: /learn enforcement — /learn is non-optional at /done.
-    # Without /learn, domain knowledge doesn't grow and the ability-compounding loop
-    # never closes. Emit a targeted warning that names what's missing and why it matters.
+    # Separate key so the capability-skill gate and the /learn gate are independently checkable.
     learn_ran = "learn" in (skills_used or [])
+    learn_gate_warning = ""
     if close_cluster and not learn_ran:
-        learn_warning = (
+        learn_gate_warning = (
             "/learn has not run this session. "
             "/learn extracts patterns into knowledge/domain/ — it is what makes today compound "
             "into tomorrow's starting point. Run /learn before considering this session closed, "
             "or pass skills_used=['learn'] if it ran implicitly."
         )
-        skill_gate_warning = (skill_gate_warning + "  " + learn_warning).strip() if skill_gate_warning else learn_warning
 
     session_delta = _compute_session_delta(
         contracts_saved=contracts_saved,
@@ -1950,4 +1943,5 @@ def end_session(
         "session_delta": session_delta,
         "compounding_verdict": session_delta["verdict"],
         **({"skill_gate_warning": skill_gate_warning} if skill_gate_warning else {}),
+        **({"learn_gate_warning": learn_gate_warning} if learn_gate_warning else {}),
     }
