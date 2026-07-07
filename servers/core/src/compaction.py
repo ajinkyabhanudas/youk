@@ -94,6 +94,17 @@ def _load_domain_gaps(max_gaps: int = 3) -> list[str]:
     return gaps
 
 
+def _load_survey_summary(slug: str, max_chars: int = 400) -> str:
+    """Return the first max_chars of survey.md — stack + architecture headline only."""
+    survey = YOUK_ROOT / "knowledge" / "projects" / slug / "survey.md"
+    if not survey.exists():
+        return ""
+    try:
+        return survey.read_text()[:max_chars]
+    except Exception:
+        return ""
+
+
 def _load_domain_knowledge_summary(cap: int = 10) -> str:
     """Returns comma-separated concept headings from knowledge/domain/ for the brief."""
     domain_dir = YOUK_ROOT / "knowledge" / "domain"
@@ -172,6 +183,11 @@ def build_brief(project_dir: str, intent: str = "") -> dict:
     if session_plan:
         plan_lines = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(session_plan))
         sections.append(f"## Session plan (from last session_start)\n{plan_lines}")
+
+    # Codebase survey: first 400 chars of survey.md (stack + architecture headline)
+    survey_summary = _load_survey_summary(slug)
+    if survey_summary:
+        sections.append(f"## Codebase survey\n{survey_summary}\n(run /survey to refresh)")
 
     # Domain knowledge: concept headings accumulated by /learn across all projects
     domain_summary = _load_domain_knowledge_summary()

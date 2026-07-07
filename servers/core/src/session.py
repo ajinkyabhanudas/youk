@@ -435,6 +435,19 @@ def _read_git_log(project_dir: str, n: int = 5) -> str:
         return ""
 
 
+def _count_commits_since(project_dir: str, since_hash: str) -> int:
+    """Count commits in project_dir that came after since_hash."""
+    resolved = str(_resolve_project_path(project_dir))
+    try:
+        result = subprocess.run(
+            ["git", "-C", resolved, "rev-list", "--count", f"{since_hash}..HEAD"],
+            capture_output=True, text=True, timeout=5
+        )
+        return int(result.stdout.strip()) if result.stdout.strip().isdigit() else 0
+    except Exception:
+        return 0
+
+
 def _load_project_context(slug: str) -> str | None:
     ctx_file = YOUK_ROOT / "knowledge" / "projects" / slug / "context.md"
     if not ctx_file.exists():
@@ -1376,6 +1389,17 @@ def start_session(project_dir: str) -> SessionState:
     global_contracts = _load_global_contracts()
     project_contracts = _load_contracts(slug)
     contracts = global_contracts + project_contracts  # global first, project overrides
+
+    # Snapshot for session_end delta: how many contracts + domain concepts exist RIGHT NOW
+    # so session_end can compute what grew during this session.
+    _domain_dir = YOUK_ROOT / "knowledge" / "domain"
+    state["session_start_contracts"] = len(contracts)
+    state["session_start_domain_concepts"] = (
+        sum(1 for f in _domain_dir.glob("*.md") if f.name != "gaps.md")
+        if _domain_dir.exists() else 0
+    )
+    _save_state(state)
+
     audit_dir = CLAUDE_ROOT / "audit"
     close_cluster_missed, orchestrate_pending = _parse_last_session_flags(audit_dir)
 
@@ -1478,6 +1502,19 @@ def start_session(project_dir: str) -> SessionState:
             f"From {src_slug}: '{xp_contract}' — "
             "say 'save this contract' to adopt for this project."
         )
+
+    # Survey staleness: surface if no survey exists or it's >20 commits behind HEAD
+    survey_file = YOUK_ROOT / "knowledge" / "projects" / slug / "survey.md"
+    survey_stale_note = ""
+    survey_commit_hash = state.get("survey_commit_hash", "")
+    if not survey_file.exists():
+        survey_stale_note = "No codebase survey yet — run /survey to map this project (12-question map: stack, architecture, modules, entry points, integrations)"
+    elif survey_commit_hash:
+        commits_since = _count_commits_since(project_dir, survey_commit_hash)
+        if commits_since > 20:
+            survey_stale_note = f"Codebase survey is {commits_since} commits old — run /survey to refresh"
+    if survey_stale_note:
+        session_plan.append(survey_stale_note)
 
     # Persist session plan so compact_context can include it in briefs
     plan_file = YOUK_ROOT / "state" / "session-plan.json"
@@ -1616,6 +1653,48 @@ def task_checkpoint(
             "Do not defer to /done."
         )
     return result
+
+
+_CAPABILITY_SKILLS = frozenset({
+    "code-review", "nfr_check", "write-spec", "security-review",
+    "learn", "adr", "stress-test", "pm-review", "dev-loop",
+})
+
+
+def _compute_session_delta(
+    contracts_saved: int,
+    global_promoted: int,
+    skills_used: list[str] | None,
+    slug: str,
+) -> dict:
+    """Compute what grew this session vs. what existed at session_start."""
+    state = _load_state()
+    start_domain = state.get("session_start_domain_concepts", 0)
+
+    domain_dir = YOUK_ROOT / "knowledge" / "domain"
+    current_domain = (
+        sum(1 for f in domain_dir.glob("*.md") if f.name != "gaps.md")
+        if domain_dir.exists() else 0
+    )
+    domain_added = max(0, current_domain - start_domain)
+    capability_count = sum(1 for s in (skills_used or []) if s in _CAPABILITY_SKILLS)
+
+    if contracts_saved > 0 or domain_added > 0:
+        verdict = "COMPOUNDING — knowledge base grew this session"
+    elif capability_count >= 1:
+        verdict = "PARTIAL — skills fired but no new knowledge captured"
+    else:
+        verdict = "STATIC — no new knowledge, no capability skills"
+
+    return {
+        "contracts_added": contracts_saved,
+        "contracts_total": len(_load_contracts(slug)),
+        "domain_concepts_added": domain_added,
+        "domain_concepts_total": current_domain,
+        "global_contracts_promoted": global_promoted,
+        "capability_skills_count": capability_count,
+        "verdict": verdict,
+    }
 
 
 def end_session(
@@ -1790,6 +1869,13 @@ def end_session(
             "skill_gaps={'skill': ['reason']} to document the miss."
         )
 
+    session_delta = _compute_session_delta(
+        contracts_saved=contracts_saved,
+        global_promoted=global_contracts_promoted,
+        skills_used=skills_used,
+        slug=slug,
+    )
+
     return {
         "knowledge_extracted": summary.count("##"),
         "global_contracts_promoted": global_contracts_promoted,
@@ -1798,5 +1884,7 @@ def end_session(
         "contract_phrases_detected": detected_contracts,
         "contracts_saved": contracts_saved,
         "add_to_contracts_prompt": len(detected_contracts) > 0 and contracts_saved == 0,
+        "session_delta": session_delta,
+        "compounding_verdict": session_delta["verdict"],
         **({"skill_gate_warning": skill_gate_warning} if skill_gate_warning else {}),
     }
