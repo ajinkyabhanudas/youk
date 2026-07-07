@@ -29,7 +29,7 @@ loads when Claude Code runs `/done`, `/check`, `/build`, etc.
 
 To add a skill:
 
-1. Read `docs/skill-schema.md` — the canonical template and quality bar
+1. Read `knowledge/skill-schema.md` — the canonical template and quality bar
 2. Create `skills/{name}/SKILL.md` following the schema (phases, quality bars, rules)
 3. Add the skill to `docs/doc-map.yaml` under `skills:`
 4. Test by calling `route_to_skill("{name}", "describe a task")` in Claude Code
@@ -55,7 +55,7 @@ This keeps the audit trail clean and lets `assess_skill` track the change.
 
 - `servers/core/` — session lifecycle, routing, health, compaction (youk-core container)
 - `servers/code/` — skill execution, NFR checks, code review tools (youk-code container)
-- `servers/shared/models.py` — shared data models
+- `servers/shared/` — shared data models, mounted as a live volume in both containers
 
 After any server change:
 ```bash
@@ -64,11 +64,15 @@ make test             # MCP handshake must succeed on both servers
 make build            # rebuild Docker images before testing behavior
 ```
 
+Note: `servers/shared/` changes take effect immediately without a rebuild (live volume mount).
+`servers/core/` and `servers/code/` changes also take effect live — only rebuild when
+`requirements.txt` or `Dockerfile` changes.
+
 ### Knowledge files (`knowledge/`)
 
-- `knowledge/cross-project.md` — patterns that apply across all projects, feed `generate_skill`
-- `knowledge/routes.yaml` — task routing rules (XS→XL sizing, skill assignments)
-- `knowledge/nfr-categories.md` — NFR categories for `nfr_check`
+- `knowledge/cross-project.md` — patterns that apply across all projects, feeds `generate_skill`
+- `knowledge/skill-graph.yaml` — task routing rules (XS→XL sizing, skill assignments)
+- `knowledge/skill-schema.md` — canonical skill template and quality bar
 
 Edit these directly — they're read at runtime, no rebuild needed.
 
