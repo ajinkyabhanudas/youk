@@ -706,6 +706,60 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
     }
 
 
+def _compute_knowledge_velocity(audit_texts: list[str], slug: str) -> dict:
+    """Measure how fast the developer's personal knowledge base is growing.
+
+    org_score measures youk health. knowledge_velocity measures whether the developer
+    is accumulating intelligence — the developer-ability proxy for G5.
+    """
+    full_text = "\n".join(audit_texts)
+
+    # Contracts saved per session (from audit "contracts_saved: N" or "Contracts: N")
+    contract_saves = re.findall(r"contracts_saved:\s*(\d+)", full_text)
+    rates = [int(x) for x in contract_saves[-5:]]
+    avg_contracts_per_session = round(sum(rates) / len(rates), 1) if rates else 0.0
+
+    # Domain concept count — absolute, from files (not derived from audit)
+    domain_dir = YOUK_ROOT / "knowledge" / "domain"
+    domain_concepts = (
+        sum(1 for f in domain_dir.glob("*.md") if f.name != "gaps.md")
+        if domain_dir.exists() else 0
+    )
+
+    # Project contracts total
+    project_contracts_file = YOUK_ROOT / "knowledge" / "projects" / slug / "contracts.md"
+    contract_total = 0
+    if project_contracts_file.exists():
+        contract_total = sum(
+            1 for ln in project_contracts_file.read_text().splitlines()
+            if ln.strip() and not ln.startswith("#")
+        )
+
+    # /learn invocation rate across recent sessions
+    sessions = _parse_audit_sessions(audit_texts)
+    total = len(sessions)
+    learn_count = sum(1 for s in sessions if "learn" in s.get("skills", []))
+    learn_rate = round(learn_count / total, 2) if total else 0.0
+
+    # Verdict
+    if avg_contracts_per_session >= 1.0 and domain_concepts > 0:
+        verdict = "GROWING — contracts and domain concepts accumulating each session"
+    elif avg_contracts_per_session >= 0.3 or domain_concepts > 0:
+        verdict = "SLOW — knowledge accumulating but below 1 contract/session average"
+    elif contract_total > 0:
+        verdict = "STALLED — existing knowledge loaded but nothing added recently"
+    else:
+        verdict = "EMPTY — no knowledge accumulated yet; run /learn at session end"
+
+    return {
+        "avg_contracts_per_session": avg_contracts_per_session,
+        "domain_concepts_total": domain_concepts,
+        "project_contracts_total": contract_total,
+        "learn_rate": learn_rate,
+        "verdict": verdict,
+    }
+
+
 def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     """
     Extended health check that also returns skill gap signals for evolution
@@ -725,6 +779,16 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     promotion_candidates = _analyze_promotion_candidates(audit_texts)
     promotion_queued = _queue_promotion_proposals(promotion_candidates) if promotion_candidates else 0
 
+    # G5: Knowledge velocity — developer-ability proxy (separate from org_score)
+    import json as _j
+    _state_file = YOUK_ROOT / "state" / "session.json"
+    _slug = ""
+    try:
+        _slug = _j.loads(_state_file.read_text()).get("last_project", "")
+    except Exception:
+        pass
+    knowledge_velocity = _compute_knowledge_velocity(audit_texts, _slug)
+
     base = {
         "org_score": report.org_score,
         "sessions_analyzed": report.sessions_analyzed,
@@ -732,7 +796,15 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         "proposals": [p.to_dict() for p in report.proposals],
         "proposals_count": len(report.proposals),
         "improvement_velocity": velocity,
+        "knowledge_velocity": knowledge_velocity,
     }
+
+    # Surface knowledge velocity warnings when stalled or empty
+    if knowledge_velocity["verdict"].startswith(("STALLED", "EMPTY")):
+        base["knowledge_velocity_warning"] = (
+            f"Knowledge velocity: {knowledge_velocity['verdict']}. "
+            "Run /learn at the end of each session to extract patterns into knowledge/domain/."
+        )
 
     if skill_gap_signals:
         base["skill_gap_signals"] = skill_gap_signals
