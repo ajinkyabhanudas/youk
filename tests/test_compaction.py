@@ -125,3 +125,84 @@ class TestBuildBrief:
         from compaction import build_brief
         result = build_brief(str(tmp_path / "testproj"))
         assert "brief" in result
+
+
+class TestCompactionFaithfulness:
+    """Ground-truth faithfulness: contracts written must appear verbatim in the brief.
+
+    These tests verify youk's core value prop — silent information loss during
+    compaction would be undetectable by the unit tests above and catastrophic
+    for the product guarantee.
+    """
+
+    def _seed(self, youk_root: Path, slug: str, contracts: list[str]) -> None:
+        import json
+        proj_dir = youk_root / "knowledge" / "projects" / slug
+        proj_dir.mkdir(parents=True, exist_ok=True)
+        if contracts:
+            (proj_dir / "contracts.md").write_text(
+                "\n".join(f"- {c}" for c in contracts) + "\n"
+            )
+        (youk_root / "state" / "session-plan.json").write_text(
+            json.dumps({"plan": ["work on X"], "slug": slug})
+        )
+        (youk_root / "state" / "session.json").write_text(
+            json.dumps({"last_project": slug, "session_counter": 3})
+        )
+
+    def test_contracts_survive_verbatim(self, youk_root, tmp_path):
+        """Every written contract must appear verbatim in the compacted brief."""
+        contracts = [
+            "always use TypeScript for new files",
+            "never mock the database in integration tests",
+            "commit format: feat/fix/chore: description",
+        ]
+        self._seed(youk_root, "proj", contracts)
+        from compaction import build_brief
+        result = build_brief(str(tmp_path / "proj"))
+        brief = result["brief"]
+        for contract in contracts:
+            assert contract in brief, f"Contract lost in compaction: {contract!r}"
+
+    def test_contracts_with_special_chars_survive(self, youk_root, tmp_path):
+        """Contracts with quotes, colons, and braces must not be mangled."""
+        contract = 'always wrap errors: raise ValueError(f"context: {e}")'
+        self._seed(youk_root, "proj", [contract])
+        from compaction import build_brief
+        result = build_brief(str(tmp_path / "proj"))
+        assert contract in result["brief"], f"Special-char contract lost: {contract!r}"
+
+    def test_ten_contracts_all_survive(self, youk_root, tmp_path):
+        """None of 10 contracts may be silently dropped."""
+        contracts = [f"rule {i}: always do thing {i}" for i in range(10)]
+        self._seed(youk_root, "proj", contracts)
+        from compaction import build_brief
+        result = build_brief(str(tmp_path / "proj"))
+        brief = result["brief"]
+        missing = [c for c in contracts if c not in brief]
+        assert not missing, f"Contracts silently lost in compaction: {missing}"
+
+    def test_contracts_count_matches_actual(self, youk_root, tmp_path):
+        """contracts_count in result must equal the number of lines in contracts.md."""
+        contracts = ["rule A", "rule B", "rule C"]
+        self._seed(youk_root, "proj", contracts)
+        from compaction import build_brief
+        result = build_brief(str(tmp_path / "proj"))
+        assert result["contracts_count"] == 3
+
+    def test_golden_file(self, youk_root, tmp_path):
+        """Fixed input must always produce output containing these exact strings.
+
+        This is a regression guard — if compaction.py is refactored, this test
+        catches any silent change to what survives in the brief.
+        """
+        self._seed(youk_root, "proj", [
+            "always run ruff before committing",
+            "never use print() for debugging — use logging",
+        ])
+        from compaction import build_brief
+        result = build_brief(str(tmp_path / "proj"))
+        brief = result["brief"]
+        assert "always run ruff before committing" in brief
+        assert "never use print() for debugging" in brief
+        assert "Pinned Contracts" in brief
