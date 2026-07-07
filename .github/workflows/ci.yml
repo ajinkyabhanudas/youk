@@ -19,7 +19,7 @@ jobs:
           cache: pip
 
       - name: Install lint dependencies
-        run: pip install ruff pyyaml pytest
+        run: pip install ruff pyyaml pytest pytest-cov
 
       - name: Ruff check
         run: ruff check servers/
