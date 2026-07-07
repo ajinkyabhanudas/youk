@@ -27,6 +27,7 @@ youk makes you a better engineer with every session. Tell it something once and 
 | Generic AI regardless of task size or stack | Routed to the right ceremony for your context |
 | Lessons lost when the session ends | Accumulated in audit log, feeding skill evolution |
 | Same gaps recur despite correction | /learn extracts patterns you internalize — not just files Claude reads |
+| Skills that fail keep failing | Skills that fail get patched in the session they fail |
 | Same gaps recur across projects | Detected, promoted to cross-project knowledge |
 | No institutional memory | Architecture decisions from six months ago still present today |
 
@@ -36,7 +37,25 @@ youk makes you a better engineer with every session. Tell it something once and 
 
 ---
 
+## It also improves itself
+
+Context memory is the foundation. What's built on top of it is the part that compounds faster.
+
+When youk doesn't have a skill for something you're doing, it generates one from the task itself. Not a generic template. One built from what you were actually trying to do, your stack, and the best-practice patterns accumulated across your projects.
+
+When a skill fails or gets skipped in a session, it gets patched before that session ends. Not queued for next time. The session that exposed the gap is the one that fixes it.
+
+Self-heal reads the last 30 days of sessions and surfaces structural improvements — recurring gaps, skipped skills, patterns that keep coming back. You review and approve them. Nothing applies automatically.
+
+`/learn` isn't logging. It maps what you encountered today to what you already know, explicitly calls out where the analogy breaks down, and writes that to your knowledge base. Cross-project patterns get promoted automatically. You don't extract the lesson manually — it does that.
+
+The result: the longer you use it, the fewer corrections you have to make. That's the compounding part.
+
+---
+
 ## Is youk getting better?
+
+Skills that are observed failing or being silently skipped are assessed and patched *within the same session* — not deferred to the next one. Structural code changes still go through `PENDING.md` for your review. Every `/health` run writes to `state/improvement-metrics.json`, which tracks up to 20 health cycles so trend direction is visible over time.
 
 Run `/health` at any point. It returns an `org_score` (0–10) and a `loop_verdict`:
 
@@ -51,8 +70,6 @@ Run `/health` at any point. It returns an `org_score` (0–10) and a `loop_verdi
 The score is driven by three signals: skill_invocation_rate (did a capability skill fire? — primary, 2.0 weight), close_cluster_rate (did you type `/done`? — completion bonus, 0.5 weight), and gap_resolution_rate (are recurring gaps being fixed?). The primary lever is **capability skill invocation** — a session where you used `/build`, `/review`, or `/done` (includes `/learn`) compounds your ability. Close rate matters but doesn't dominate. A discipline gate caps org_score at 6.5 if 3+ consecutive sessions have zero capability skills — the gate lifts when you next invoke one. The 7.5 target requires ≥85% capability skill rate and regular session close.
 
 **What to do when STALLED:** use `/build` for code tasks and `/done` at session end. The score responds to capability skill invocation first, close rate second.
-
-**What does the self-improvement loop look like?** Skills that are observed failing or being silently skipped are assessed and patched *within the same session* — not deferred to the next one. Structural code changes still go through `PENDING.md` for your review. Every `/health` run writes to `state/improvement-metrics.json`, which tracks up to 20 health cycles so trend direction is visible over time.
 
 ---
 
