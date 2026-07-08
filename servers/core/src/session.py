@@ -1887,7 +1887,23 @@ def end_session(
 
     # Write the resume point for the next session into external context.md (zero footprint).
     # Extract: first non-empty line after a ## heading, or first non-empty line of summary.
-    if slug:
+    # Cross-project bleed guard: use the slug from session-open.json (written at session_start)
+    # rather than last_project. If a session was opened in project A but did work described as
+    # project B, last_project still points to A — but summary content would contaminate A's
+    # resume-from with B's work description. session-open.json is authoritative for "what
+    # project this session was opened as."
+    resume_slug = slug
+    try:
+        open_file = YOUK_ROOT / "state" / "session-open.json"
+        if open_file.exists():
+            open_data = json.loads(open_file.read_text())
+            open_slug = open_data.get("slug", "")
+            if open_slug and open_slug != slug:
+                resume_slug = open_slug
+    except Exception:
+        pass
+
+    if resume_slug:
         resume_text = ""
         lines = summary.splitlines()
         for i, line in enumerate(lines):
@@ -1901,7 +1917,7 @@ def end_session(
         if not resume_text:
             resume_text = next((ln.strip() for ln in lines if ln.strip()), "")
         if resume_text:
-            _update_resume_point(slug, resume_text)
+            _update_resume_point(resume_slug, resume_text)
 
     session_close_detected = any(
         marker in summary
