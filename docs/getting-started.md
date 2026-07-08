@@ -21,19 +21,12 @@ Must be installed and running. Download from [docker.com](https://www.docker.com
 docker ps  # should return a header row, not an error
 ```
 
-**ANTHROPIC_API_KEY**
-youk-core and youk-code make API calls for M/L/XL tasks. Add to your shell profile:
-```bash
-echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.zshrc  # or ~/.bash_profile
-source ~/.zshrc
-```
-
 ---
 
 ## Step 2: Clone
 
 ```bash
-git clone https://github.com/ajinkya-dessai/youk ~/.claude/youk
+git clone https://github.com/ajinkyabhanudas/youk ~/.claude/youk
 ```
 
 If `~/.claude/` doesn't exist, Claude Code will have created it when you first ran `claude`. It's safe to add the `youk/` subdirectory here.
@@ -72,14 +65,12 @@ claude mcp add --scope user youk-core --transport stdio -- \
   docker run -i --rm \
   -v "$HOME/.claude:/claude" \
   -v "$HOME/.claude/youk:/youk" \
-  -e ANTHROPIC_API_KEY \
   youk-core:latest
 
 claude mcp add --scope user youk-code --transport stdio -- \
   docker run -i --rm \
   -v "$HOME/.claude:/claude:ro" \
   -v "$HOME/.claude/youk:/youk:ro" \
-  -e ANTHROPIC_API_KEY \
   youk-code:latest
 ```
 

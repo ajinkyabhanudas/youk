@@ -74,7 +74,6 @@ launchctl load ~/Library/LaunchAgents/com.youk.health.plist
 
 - Docker Desktop must be running (the health check calls `docker run`)
 - `youk-core:latest` image must be built (`make build`)
-- `ANTHROPIC_API_KEY` must be accessible if health generates API-calling proposals
 
 ## Reviewing results
 

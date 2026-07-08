@@ -11,8 +11,10 @@ For every non-trivial task:
 2. Call `youk-core.route_task(task)`.
 3. If soft rule warnings returned → surface them briefly.
 4. **M+ tasks only:** if `route_task` returns a non-empty `plan_hook` — output it verbatim before doing anything else. One redirect accepted. Silence = proceed.
+5. **M+ only, after silence or approval:** call `youk-code.route_to_skill("nfr_check", task)` BEFORE writing any code.
 
 **Never start M+ implementation before plan_hook appears in the conversation.**
+**Never start M+ implementation before nfr_check has run.**
 XS: typo, rename, one-liner, clarification — respond directly, skip both calls.
 
 ## Proactive patterns (once per session each)
@@ -20,7 +22,7 @@ XS: typo, rename, one-liner, clarification — respond directly, skip both calls
 - New external dependency → flag for dependency check
 - 3+ exchanges with a significant diff accumulating → suggest code-review before commit
 - Recommendation with real alternatives → suggest /adr
-- "Done / ship it / commit" signal → surface session-close cluster (context-sync + learn + humanize)
+- Session-end signal detected → run /done. Trigger phrases: "done", "ship it", "commit", "ok thanks", "that's all", "looks good", "we're done", "let's call it", "alright", "perfect", "good enough", "that'll do", "wrap it up", "nothing else". Any natural phrase closing a work block — even without an explicit /done command.
 
 ## Session plan (present at start of every session)
 
@@ -39,11 +41,13 @@ Today's plan:
 If the user says "sounds right" or just starts working, proceed. If they redirect,
 update your working priority and continue. Never ask "what do you want to do today?"
 
+**Retrospective recovery:** If session_plan item 1 starts with "⚠ Last session closed without /done", run `/learn` immediately before presenting the rest of the plan. Say: "Last session had unlearned commits — running /learn to capture patterns before we start."
+
 ## Workflow commands (user types these — compose underlying skills silently)
 
 /start  → session activation card — call this (or say "activate youk") to begin any session
 /build  → call route_task first; M+: nfr_check(quick) then dev-loop; S-: dev-loop only
-/done   → code-review + verify + humanize, in that order; report findings per skill
+/done   → code-review + verify + humanize + **learn (required)** in sequence; sweep for unsaved contracts; session_end with close_cluster=True. /learn is not optional — a /done without /learn is an incomplete session.
 /check  → code-review; add security-review if auth/creds/endpoints in scope
 /decide → adr; ask for the decision statement if not provided in the command
 /health → self_heal(); surface org_score, top 2 findings, pending proposals count

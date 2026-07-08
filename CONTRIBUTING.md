@@ -9,7 +9,6 @@ Same as installation:
 - Docker Desktop 24+
 - Claude Code (Anthropic CLI)
 - Python 3.11+
-- `ANTHROPIC_API_KEY` in your environment
 
 ## Setup
 
