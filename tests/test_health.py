@@ -239,6 +239,174 @@ class TestGenerateFindingsDisciplineGate:
         assert not gate_findings, f"Unexpected gate finding: {gate_findings}"
 
 
+# ── New metrics: skill_invocation_rate, nfr_check_hit_rate, contracts_total, skill_patch_rate ──
+
+def _audit_with(sessions: list[dict]) -> str:
+    """Build an audit text block from a list of session dicts."""
+    blocks = []
+    for i, s in enumerate(sessions):
+        skills = s.get("skills", "none")
+        close = "yes" if s.get("close_cluster") else "no"
+        mid = f"MidSessionAdaptations: {s['adaptations']}\n" if s.get("adaptations") else ""
+        blocks.append(
+            f"### Session — 2026-07-0{i + 1} 10:00 UTC\n"
+            f"Skills: {skills}\nCloseCluster: {close}\nCommits: yes\n{mid}"
+        )
+    return "\n".join(blocks)
+
+
+class TestSkillInvocationRateMetric:
+    """skill_invocation_rate persisted in improvement-metrics.json."""
+
+    def _run_velocity(self, youk_root, claude_root, sessions: list[dict]) -> dict:
+        audit = _audit_with(sessions)
+        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        from health import _compute_improvement_velocity, _score_org
+        score = _score_org([audit])
+        return _compute_improvement_velocity([audit], score)
+
+    def test_100_percent_when_all_sessions_have_capability_skill(self, youk_root, claude_root):
+        result = self._run_velocity(youk_root, claude_root, [
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "learn", "close_cluster": True},
+        ])
+        import json
+        entry = json.loads((youk_root / "state" / "improvement-metrics.json").read_text())["entries"][-1]
+        assert entry["skill_invocation_rate"] == 1.0
+
+    def test_zero_when_no_capability_skills(self, youk_root, claude_root):
+        result = self._run_velocity(youk_root, claude_root, [
+            {"skills": "self_heal", "close_cluster": False},
+            {"skills": "none", "close_cluster": False},
+        ])
+        import json
+        entry = json.loads((youk_root / "state" / "improvement-metrics.json").read_text())["entries"][-1]
+        assert entry["skill_invocation_rate"] == 0.0
+
+    def test_partial_rate_computed_correctly(self, youk_root, claude_root):
+        self._run_velocity(youk_root, claude_root, [
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "none", "close_cluster": False},
+            {"skills": "none", "close_cluster": False},
+            {"skills": "none", "close_cluster": False},
+        ])
+        import json
+        entry = json.loads((youk_root / "state" / "improvement-metrics.json").read_text())["entries"][-1]
+        assert entry["skill_invocation_rate"] == 0.25
+
+
+class TestNfrCheckHitRateMetric:
+    """nfr_check_hit_rate: % of sessions where nfr_check appeared in Skills:"""
+
+    def _run(self, youk_root, claude_root, sessions: list[dict]) -> dict:
+        audit = _audit_with(sessions)
+        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        from health import _compute_improvement_velocity, _score_org
+        score = _score_org([audit])
+        _compute_improvement_velocity([audit], score)
+        import json
+        return json.loads((youk_root / "state" / "improvement-metrics.json").read_text())["entries"][-1]
+
+    def test_nfr_check_hyphen_format_detected(self, youk_root, claude_root):
+        entry = self._run(youk_root, claude_root, [
+            {"skills": "nfr-check, code-review", "close_cluster": True},
+            {"skills": "code-review", "close_cluster": True},
+        ])
+        assert entry["nfr_check_hit_rate"] == 0.5
+
+    def test_nfr_check_underscore_format_detected(self, youk_root, claude_root):
+        entry = self._run(youk_root, claude_root, [
+            {"skills": "nfr_check", "close_cluster": True},
+            {"skills": "nfr_check", "close_cluster": True},
+        ])
+        assert entry["nfr_check_hit_rate"] == 1.0
+
+    def test_zero_when_nfr_never_fired(self, youk_root, claude_root):
+        entry = self._run(youk_root, claude_root, [
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "learn", "close_cluster": True},
+        ])
+        assert entry["nfr_check_hit_rate"] == 0.0
+
+
+class TestContractsTotalMetric:
+    """contracts_total: sum of '- ' lines across all projects/*/contracts.md"""
+
+    def _run(self, youk_root, claude_root, contract_lines: dict[str, list[str]]) -> dict:
+        for slug, lines in contract_lines.items():
+            proj = youk_root / "knowledge" / "projects" / slug
+            proj.mkdir(parents=True, exist_ok=True)
+            (proj / "contracts.md").write_text("\n".join(f"- {l}" for l in lines) + "\n")
+        audit = _audit_with([{"skills": "code-review", "close_cluster": True}])
+        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        from health import _compute_improvement_velocity, _score_org
+        score = _score_org([audit])
+        _compute_improvement_velocity([audit], score)
+        import json
+        return json.loads((youk_root / "state" / "improvement-metrics.json").read_text())["entries"][-1]
+
+    def test_counts_contracts_across_projects(self, youk_root, claude_root):
+        entry = self._run(youk_root, claude_root, {
+            "canopy": ["always run ruff", "test after migrate"],
+            "youk": ["never auto-apply code edits"],
+        })
+        assert entry["contracts_total"] == 3
+
+    def test_zero_when_no_contracts(self, youk_root, claude_root):
+        entry = self._run(youk_root, claude_root, {})
+        assert entry["contracts_total"] == 0
+
+    def test_non_list_lines_not_counted(self, youk_root, claude_root):
+        """Lines without '- ' prefix (headings, blank lines) are excluded."""
+        proj = youk_root / "knowledge" / "projects" / "test"
+        proj.mkdir(parents=True, exist_ok=True)
+        (proj / "contracts.md").write_text("# contracts\n\n- real contract\nheading line\n")
+        audit = _audit_with([{"skills": "code-review", "close_cluster": True}])
+        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        from health import _compute_improvement_velocity, _score_org
+        score = _score_org([audit])
+        _compute_improvement_velocity([audit], score)
+        import json
+        entry = json.loads((youk_root / "state" / "improvement-metrics.json").read_text())["entries"][-1]
+        assert entry["contracts_total"] == 1
+
+
+class TestSkillPatchRateMetric:
+    """skill_patch_rate: % of sessions with MidSessionAdaptations: N (N > 0)"""
+
+    def _run(self, youk_root, claude_root, sessions: list[dict]) -> dict:
+        audit = _audit_with(sessions)
+        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        from health import _compute_improvement_velocity, _score_org
+        score = _score_org([audit])
+        _compute_improvement_velocity([audit], score)
+        import json
+        return json.loads((youk_root / "state" / "improvement-metrics.json").read_text())["entries"][-1]
+
+    def test_counts_sessions_with_adaptations(self, youk_root, claude_root):
+        entry = self._run(youk_root, claude_root, [
+            {"skills": "code-review", "close_cluster": True, "adaptations": 2},
+            {"skills": "learn", "close_cluster": True, "adaptations": 0},
+            {"skills": "verify", "close_cluster": True, "adaptations": 1},
+            {"skills": "none", "close_cluster": False},
+        ])
+        assert entry["skill_patch_rate"] == 0.5  # 2 out of 4
+
+    def test_zero_when_no_adaptations(self, youk_root, claude_root):
+        entry = self._run(youk_root, claude_root, [
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "learn", "close_cluster": True},
+        ])
+        assert entry["skill_patch_rate"] == 0.0
+
+    def test_adaptations_zero_not_counted(self, youk_root, claude_root):
+        """MidSessionAdaptations: 0 must NOT increment the patch count."""
+        entry = self._run(youk_root, claude_root, [
+            {"skills": "code-review", "close_cluster": True, "adaptations": 0},
+        ])
+        assert entry["skill_patch_rate"] == 0.0
+
+
 class TestGapResolutionRate:
     def _sessions_with_gaps(self, gap_lines_per_session: list[list[str]]) -> list[dict]:
         """Build fake parsed sessions with SkillGap: lines embedded in 'raw'."""
