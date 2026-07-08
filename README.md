@@ -425,6 +425,16 @@ Docker may not be running, or the images need rebuilding. Doctor will tell you w
 
 No contracts have been saved yet for this project. Call `session_end` with `explicit_contracts=[...]` at the end of your first session to seed them.
 
+**Skills like `nfr_check` or `assess_skill` return errors or fail silently**
+
+youk-code needs `ANTHROPIC_API_KEY` exported in your shell before launching Claude Code. Verify with:
+
+```bash
+make verify-mcp
+```
+
+If youk-core shows OK but youk-code shows FAIL: `export ANTHROPIC_API_KEY=sk-ant-...` then relaunch Claude Code.
+
 **Build fails with `COPY servers/shared/ /shared/` error**
 
 Build must run from the repo root. The Makefile handles this — use `make build`, not `docker build` directly.
