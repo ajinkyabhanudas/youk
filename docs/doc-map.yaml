@@ -24,6 +24,7 @@ mcp_tools:
     - {tool: compact_context, refs: [README.md, docs/claude-md-template.md]}
     - {tool: track_tokens, refs: [README.md, docs/claude-md-template.md]}
     - {tool: check_doc_graph, refs: [README.md, docs/doc-map.yaml]}
+    - {tool: promote_to_global_contracts, refs: [README.md, docs/claude-md-template.md]}
 
   youk-code:
     - {tool: nfr_check, refs: [README.md, docs/claude-md-template.md]}
