@@ -166,6 +166,21 @@ def main() -> None:
     args = parser.parse_args()
 
     youk_dir = Path(args.youk_dir)
+
+    # Check if API key is available — if not, print migration notice and exit cleanly.
+    # Stack briefings now run in-session via '/research stack' (no API key required).
+    api_key = _resolve_api_key(youk_dir)
+    if not api_key:
+        print(
+            "[youk] No ANTHROPIC_API_KEY found — project-research.py requires a key.\n"
+            "[youk] Stack briefings now run in-session without an API key:\n"
+            "[youk]   Open a Claude Code session and run: /research stack\n"
+            "[youk] The briefing writes to the same research-inbox/ path and surfaces\n"
+            "[youk] at your next session_start automatically.",
+            file=sys.stderr,
+        )
+        sys.exit(0)  # exit 0 — not a failure, just migrated
+
     slugs = [args.slug] if args.slug else _list_all_slugs(youk_dir)
 
     if not slugs:
