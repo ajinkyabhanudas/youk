@@ -1428,10 +1428,22 @@ def start_session(project_dir: str) -> SessionState:
                 f"Say 'show my contracts' to review them before we start."
             )
     elif close_cluster_missed and new_commits > 0 and days_since_last != 0:
-        # Commits exist from last session but no /done was called — surface the loss
-        session_plan.append(
-            f"⚠ {new_commits} commit(s) from last session have no saved context — "
-            "run /done at end of this session so work compounds."
+        # Option C — retrospective recovery: previous session had commits but no /done.
+        # Surface the unlearned commits and prompt /learn NOW (start-of-session is the
+        # most reliable trigger — user just opened Claude, attention is highest).
+        # This converts the "open new session" action into the closure for the previous one.
+        recent_subjects = []
+        for ln in git_log.splitlines()[:3]:
+            subject = ln.split(" ", 1)[1].strip() if " " in ln else ln.strip()
+            if subject:
+                recent_subjects.append(subject)
+        commits_summary = (
+            f": {' / '.join(recent_subjects)}" if recent_subjects else ""
+        )
+        session_plan.insert(0,
+            f"⚠ Last session closed without /done — {new_commits} commit(s) unlearned"
+            f"{commits_summary}. "
+            "Run /learn now to extract patterns before starting new work."
         )
 
     # 3B2 — Skill-skip warning: capability skills unused for 3+ consecutive sessions
