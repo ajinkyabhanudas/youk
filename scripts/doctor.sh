@@ -47,6 +47,21 @@ else
   fail "youk-code image: not found" \
     "cd $YOUK_DIR && make build"
 fi
+
+# Detect stale image: servers/shared/ changed after the image was built
+# servers/shared/ is baked into both images at build time — not live-mounted.
+IMAGE_BUILT=$(docker image inspect youk-code:latest --format '{{.Created}}' 2>/dev/null | sed 's/\.[0-9]*Z*$//')
+IMAGE_BUILT_S=$(date -jf "%Y-%m-%dT%H:%M:%S" "${IMAGE_BUILT:-1970-01-01T00:00:00}" +%s 2>/dev/null \
+               || date -d "${IMAGE_BUILT:-1970-01-01T00:00:00}" +%s 2>/dev/null || echo 0)
+if [[ "${IMAGE_BUILT_S:-0}" -gt 0 ]] && command -v git &>/dev/null && [[ -d "$YOUK_DIR/.git" ]]; then
+  SHARED_CHANGED=$(git -C "$YOUK_DIR" log --since="@${IMAGE_BUILT_S}" --format="%h" -- servers/shared/ 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "${SHARED_CHANGED:-0}" -gt 0 ]]; then
+    fail "image stale: servers/shared/ has ${SHARED_CHANGED} commit(s) since last build" \
+      "cd $YOUK_DIR && make build  (shared code is baked into image — rebuild required)"
+  else
+    pass "image freshness: servers/shared/ up to date"
+  fi
+fi
 echo ""
 
 # ── API key ───────────────────────────────────────────────────────────────────
