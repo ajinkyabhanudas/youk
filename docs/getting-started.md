@@ -126,7 +126,9 @@ This pulls the latest code and rebuilds Docker images. Restart Claude Code after
 
 **During the session:** `route_task` runs silently for every non-trivial task. Small tasks get no ceremony. M+ tasks get an nfr_check before implementation starts. If a skill fails mid-session, youk patches it immediately rather than deferring to the next session.
 
-**Session end:** youk improves whether or not you type `/done`. If you close the tab, youk detects the stale session and at the next open surfaces the unlearned commits with a prompt to run `/learn` — capturing patterns before new work starts. If you type `/done` (or any natural closing phrase — "looks good", "that's all", "wrap it up"), you also get code-review + verify + the `CloseCluster: yes` audit entry that feeds org_score. `/done` is the higher-quality close; tab-close is the fallback that still compounds.
+**Session end:** Type `/done` when you finish — or any natural closing phrase ("looks good", "that's all", "wrap it up"). This runs code-review + verify, writes the resume point for next session, saves contracts, and sets `CloseCluster: yes` for org_score.
+
+If you close the tab without `/done`: the audit entry is still written, and at next open youk surfaces the unlearned commits and prompts `/learn` so patterns aren't lost. What you do lose is the **resume point** — without `/done`, the next session picks up from the last git commit subject rather than a description of what you were actually working on.
 
 **Checking system health:** Type `/health` at any point. It returns `org_score` (0–10) and `loop_verdict` (IMPROVING / STALLED / etc.). The primary factor in score is capability skill invocation — did `/build`, `/review`, or `/done` fire this session? Close rate matters but doesn't dominate.
 
