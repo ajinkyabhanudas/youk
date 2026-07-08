@@ -94,3 +94,27 @@ concepts:
     derived_in:
       - PHILOSOPHY.md
       - docs/well-architected.md
+
+  - concept: api_key_required
+    description: "Whether an ANTHROPIC_API_KEY is required to install and run youk"
+    authority: scripts/install.sh
+    derived_in:
+      - README.md
+      - docs/getting-started.md
+      - docs/scheduling.md
+      - CONTRIBUTING.md
+
+  - concept: session_close_contract
+    description: "What /done does and which phrases trigger it"
+    authority: ~/.claude/CLAUDE.md
+    derived_in:
+      - docs/claude-md-template.md
+      - docs/getting-started.md
+      - skills/done/SKILL.md
+
+  - concept: mcp_registration_command
+    description: "Exact docker run command used to register MCP servers"
+    authority: scripts/install.sh
+    derived_in:
+      - docs/getting-started.md
+      - README.md
