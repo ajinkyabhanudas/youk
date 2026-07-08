@@ -128,7 +128,14 @@ This pulls the latest code and rebuilds Docker images. Restart Claude Code after
 
 **Session end:** Type `/done` when you finish — or any natural closing phrase ("looks good", "that's all", "wrap it up"). This runs code-review + verify, writes the resume point for next session, saves contracts, and sets `CloseCluster: yes` for org_score.
 
-If you close the tab without `/done`: the audit entry is still written, and at next open youk surfaces the unlearned work and prompts `/learn` so patterns aren't lost. The **resume point** is also preserved — as long as `compact_context` ran at least once during your session (which CLAUDE.md instructs after every commit or M+ task), the next session picks up from where you actually were. The only thing fully lost on tab-close is `CloseCluster: yes` for org_score.
+If you close the tab without `/done`: the audit entry is still written, the resume point is preserved (the `PostToolUse` hook writes active task state continuously), and at next open youk surfaces the unlearned work and prompts `/learn`. The only thing lost on tab-close is `CloseCluster: yes` for org_score.
+
+**Context management:** youk manages context automatically via three hooks installed at setup:
+- `PreCompact` — fires before Claude auto-compacts, injects a structured preservation brief so contracts and active task survive the summarizer verbatim.
+- `UserPromptSubmit` — injects an intent-gated brief (~100-150 tokens) before each turn. When context pressure exceeds 40% of the window, it signals Claude to run `/compact` proactively — before auto-compaction fires at 70%.
+- `PostToolUse` — captures active task state (file being edited, last error, current intent) after every tool call so post-compact resume is accurate.
+
+No manual compaction needed. Context stays lean; auto-compaction rarely fires.
 
 **Checking system health:** Type `/health` at any point. It returns `org_score` (0–10) and `loop_verdict` (IMPROVING / STALLED / etc.). The primary factor in score is capability skill invocation — did `/build`, `/review`, or `/done` fire this session? Close rate matters but doesn't dominate.
 

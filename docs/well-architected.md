@@ -81,7 +81,7 @@ Every concept defined in PRD.md or well-architected.md has exactly one authority
 | Mechanism | What it does |
 |---|---|
 | `route_task` ceremony sizing | XS tasks get no ceremony; XL tasks get full architecture review. Proportional cost |
-| Event-based `compact_context` triggers | Compact when new context is created (after route_to_skill, after commit), not on exchange count |
+| Hook-based context management | `UserPromptSubmit` hook injects intent-gated brief (~100-150 tokens) before each turn; `PreCompact` hook injects preservation brief before auto-compact; `PostToolUse` hook captures active task state continuously |
 | `optimize_intent` fast path | Pattern-matched intents return instantly (no API call); only truly ambiguous inputs hit the API |
 | `nfr_check` size-gated questions | XS/S: 2-question instant; M: 4-question API; L/XL: full. Cost scales with risk |
 | `track_tokens` | Accumulates token usage per session; `self_heal` detects over-ceremony (>2× budget) or under-ceremony (<0.5×) |
@@ -99,7 +99,7 @@ Every concept defined in PRD.md or well-architected.md has exactly one authority
 | `track_tokens` + audit log `Tokens:` line | Per-session token accounting written to audit log for trend analysis |
 | `self_heal` token scoring | If avg token usage > 2× budget for 2+ sessions, org_score penalty + `headroom` recommendation |
 | XS bypass | XS tasks skip `route_task`, `optimize_intent`, all ceremony — zero token overhead |
-| `compact_context` event triggers | Proactive compaction means shorter context windows per exchange (vs waiting for 50% fill) |
+| `UserPromptSubmit` hook context pressure signal | Triggers `/compact` at 40% context fill vs waiting for auto-compact at 70% — reduces per-inference token cost 3-4× in heavy sessions |
 | Proposals, never auto-apply | No token spend on rejected changes — founder reviews before any self-heal action runs |
 
 **Key invariant:** `track_tokens` is the observability floor. If it's not being called, `self_heal` flags it after 3 sessions with no token data.
@@ -116,7 +116,7 @@ Every concept defined in PRD.md or well-architected.md has exactly one authority
 | No global state mutation without approval | `apply_proposal(confirmed=True)` is the only path to persistent change in youk's knowledge base |
 | Knowledge extracted, not stored | Session insights are extracted to structured files; raw conversation is discarded |
 | Single binary per variant | Each youk variant is one Docker image. No multi-process sprawl |
-| `compact_context` from files | Briefs are rebuilt from structured files, not stored as conversation snapshots — no dead state accumulates |
+| Hook-driven write-first discipline | `PostToolUse` hook externalizes active task state after every tool call; context can be cleared at any time without losing work state |
 
 **Key invariant:** Every write to `~/.claude/youk/` is either ephemeral state (`state/`) or explicit knowledge extraction. Nothing grows unbounded without a purge mechanism.
 

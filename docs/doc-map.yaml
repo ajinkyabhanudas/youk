@@ -118,3 +118,23 @@ concepts:
     derived_in:
       - docs/getting-started.md
       - README.md
+
+  - concept: context_hook_architecture
+    description: "Three hooks (PreCompact, UserPromptSubmit, PostToolUse) that manage context automatically"
+    authority: plugin/hooks/hooks.json
+    derived_in:
+      - docs/getting-started.md
+      - docs/well-architected.md
+      - README.md
+
+  - concept: intent_gated_brief
+    description: "build_brief mode=index returns ~100-150 token brief gated on intent keywords"
+    authority: servers/core/src/compaction.py
+    derived_in:
+      - docs/well-architected.md
+
+  - concept: active_task_state
+    description: "PostToolUse hook writes state/active_task.json for post-compact resume accuracy"
+    authority: plugin/scripts/post_tool_use.py
+    derived_in:
+      - docs/getting-started.md

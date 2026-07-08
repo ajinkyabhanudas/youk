@@ -131,18 +131,45 @@ def _load_domain_knowledge_summary(cap: int = 10) -> str:
     return ", ".join(headings) if headings else ""
 
 
-def build_brief(project_dir: str, intent: str = "") -> dict:
+_BRIEF_STOP_WORDS = {
+    "the", "a", "an", "and", "or", "not", "in", "on", "at", "from",
+    "to", "with", "by", "for", "of", "it", "is", "we", "you", "can",
+    "do", "this", "that", "what", "how", "why", "when", "where",
+    "help", "me", "my", "our", "its", "be", "has", "have", "are",
+    "was", "were", "will", "would", "could", "should", "want", "need",
+    "get", "make", "let", "just", "also", "now", "then", "use",
+}
+
+
+def _intent_keywords(intent: str) -> set[str]:
+    return {
+        w.lower().strip(".,!?:;\"'()[]")
+        for w in intent.split()
+        if len(w) > 3 and w.lower() not in _BRIEF_STOP_WORDS
+    }
+
+
+def _contract_matches(contract: str, keywords: set[str]) -> bool:
+    if not keywords:
+        return True  # no intent = include everything
+    return bool({w.lower() for w in contract.split()} & keywords)
+
+
+def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
     """
     Build a structured context brief from youk's knowledge store.
 
-    When intent is provided, applies Tier priority:
-    - CONTRACT (always verbatim, always first)
-    - DECISION blocks matching intent keywords (verbatim)
-    - DECISION blocks not matching intent (key fact + rationale, compressed)
-    - Session state + plan (summary)
+    mode="full"  — complete brief (~800-1200 tokens), used at session_start
+                   and compact_context. Includes all contracts, all decisions,
+                   survey, domain knowledge, gaps.
 
-    The brief is built from structured files, not conversation — so contracts
-    survive compaction without paraphrase degradation.
+    mode="index" — intent-gated minimal brief (~100-200 tokens), used when
+                   called with a specific intent. Contracts matching intent are
+                   verbatim; others are a count only. Decisions compressed.
+                   No survey or domain knowledge (too expensive for per-turn use).
+
+    The brief is rebuilt from files, not conversation — contracts survive
+    compaction without paraphrase degradation.
     """
     slug = _slug(project_dir)
     contracts = _load_contracts(slug)
@@ -151,63 +178,105 @@ def build_brief(project_dir: str, intent: str = "") -> dict:
     session_plan = _load_session_plan(slug)
 
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    intent_keywords = {w.lower() for w in intent.split() if len(w) > 2} if intent else set()
+    keywords = _intent_keywords(intent) if intent else set()
+    is_index = mode == "index" and bool(keywords)
 
-    sections: list[str] = [f"YOUK CONTEXT BRIEF — {timestamp}"]
+    sections: list[str] = [f"[YOUK CONTEXT BRIEF — {timestamp}]"]
 
-    # Contracts: always verbatim, always first (CONTRACT tier)
-    if contracts:
-        sections.append("## Pinned Contracts (verbatim — never summarize or paraphrase)")
-        for c in contracts:
-            sections.append(f"- {c}")
+    if is_index:
+        # Index model: matching contracts verbatim, rest as count
+        matching = [c for c in contracts if _contract_matches(c, keywords)]
+        others = len(contracts) - len(matching)
+        if matching:
+            sections.append("## Contracts (matching current task — verbatim):")
+            for c in matching:
+                sections.append(f"- {c}")
+        if others > 0:
+            sections.append(f"(+{others} other contract(s) in contracts.md — read if needed)")
+
+        # Active task from state
+        active_file = YOUK_ROOT / "state" / "active_task.json"
+        if active_file.exists():
+            try:
+                import json as _json
+                at = _json.loads(active_file.read_text())
+                task = at.get("task", "")
+                files = ", ".join(at.get("files_touched", [])[:3])
+                signal = at.get("last_signal", "")
+                parts = [f"Active: {task}"]
+                if files:
+                    parts.append(f"files: {files}")
+                if signal:
+                    parts.append(f"last: {signal[:80]}")
+                sections.append(" | ".join(parts))
+            except Exception:
+                pass
+
+        # Resume: first non-warning plan item only
+        resume = next((p for p in session_plan if p and not p.startswith("⚠")), "")
+        if resume:
+            sections.append(f"Resume: {resume[:120]}")
+
+        # Decisions: compressed, 3 max
+        if decisions:
+            compressed = []
+            for d in decisions[-3:]:
+                dlines = d.strip().splitlines()
+                heading = dlines[0] if dlines else ""
+                body = next((ln for ln in dlines[1:] if ln.strip()), "")
+                compressed.append(f"{heading}: {body}".strip()[:80])
+            sections.append("Decisions: " + " / ".join(compressed))
+
+        sections.append("[/YOUK CONTEXT BRIEF]")
     else:
-        sections.append("## Pinned Contracts\n(none saved yet — call session_end to capture working agreements)")
+        # Full model: everything (session_start, compact_context)
+        if contracts:
+            sections.append("## Pinned Contracts (verbatim — never summarize or paraphrase)")
+            for c in contracts:
+                sections.append(f"- {c}")
+        else:
+            sections.append("## Pinned Contracts\n(none saved yet — call session_end to capture working agreements)")
 
-    # Decisions: verbatim when they match intent keywords, compressed otherwise (DECISION tier)
-    if decisions:
-        sections.append("## Active Decisions")
-        for d in decisions:
-            lines = d.strip().splitlines()
-            heading = lines[0] if lines else ""
-            body = next((ln for ln in lines[1:] if ln.strip()), "")
-            if intent_keywords and any(kw in d.lower() for kw in intent_keywords):
-                sections.append(d.strip())
-            else:
-                sections.append(f"{heading}: {body}".strip())
+        # Decisions: verbatim when they match intent keywords, compressed otherwise
+        if decisions:
+            sections.append("## Active Decisions")
+            for d in decisions:
+                dlines = d.strip().splitlines()
+                heading = dlines[0] if dlines else ""
+                body = next((ln for ln in dlines[1:] if ln.strip()), "")
+                if keywords and any(kw in d.lower() for kw in keywords):
+                    sections.append(d.strip())
+                else:
+                    sections.append(f"{heading}: {body}".strip())
 
-    # Session state (DECISION tier — 1 line)
-    project = state.get("last_project", project_dir)
-    session_n = state.get("session_counter", "?")
-    sections.append(
-        f"## Session state\n"
-        f"Project: {slug} | Session #{session_n} | Dir: {project}"
-    )
-
-    # Session plan (DECISION tier — from files, survives compaction)
-    if session_plan:
-        plan_lines = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(session_plan))
-        sections.append(f"## Session plan (from last session_start)\n{plan_lines}")
-
-    # Codebase survey: first 400 chars of survey.md (stack + architecture headline)
-    survey_summary = _load_survey_summary(slug)
-    if survey_summary:
-        sections.append(f"## Codebase survey\n{survey_summary}\n(run /survey to refresh)")
-
-    # Domain knowledge: concept headings accumulated by /learn across all projects
-    domain_summary = _load_domain_knowledge_summary()
-    if domain_summary:
-        sections.append(f"## Domain knowledge\n{domain_summary} — /learn adds more")
-
-    # Active knowledge gaps: HIGH-priority unaddressed items from /learn
-    domain_gaps = _load_domain_gaps()
-    if domain_gaps:
+        project = state.get("last_project", project_dir)
+        session_n = state.get("session_counter", "?")
         sections.append(
-            "## Active knowledge gaps (HIGH priority)\n"
-            + ", ".join(domain_gaps)
-            + " — address with /learn"
+            f"## Session state\n"
+            f"Project: {slug} | Session #{session_n} | Dir: {project}"
         )
 
-    sections.append(f"## Compaction instruction\n{_TIER_INSTRUCTION}")
+        if session_plan:
+            plan_lines = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(session_plan))
+            sections.append(f"## Session plan (from last session_start)\n{plan_lines}")
+
+        survey_summary = _load_survey_summary(slug)
+        if survey_summary:
+            sections.append(f"## Codebase survey\n{survey_summary}\n(run /survey to refresh)")
+
+        domain_summary = _load_domain_knowledge_summary()
+        if domain_summary:
+            sections.append(f"## Domain knowledge\n{domain_summary} — /learn adds more")
+
+        domain_gaps = _load_domain_gaps()
+        if domain_gaps:
+            sections.append(
+                "## Active knowledge gaps (HIGH priority)\n"
+                + ", ".join(domain_gaps)
+                + " — address with /learn"
+            )
+
+        sections.append(f"## Compaction instruction\n{_TIER_INSTRUCTION}")
 
     brief = "\n\n".join(sections)
 

@@ -175,6 +175,27 @@ claude mcp add --scope user youk-code --transport stdio -- \
     youk-code:latest
 ok "youk-code registered"
 
+# ── Step 5b: Register youk context hooks plugin ──────────────────────────────
+step "Context hooks plugin"
+
+PLUGIN_DIR="$YOUK_DIR/plugin"
+PLUGINS_ROOT="$CLAUDE_DIR/plugins"
+LINK_TARGET="$PLUGINS_ROOT/youk-context"
+
+# Ensure plugins dir exists
+mkdir -p "$PLUGINS_ROOT"
+
+# Remove stale symlink or dir
+if [ -L "$LINK_TARGET" ] || [ -d "$LINK_TARGET" ]; then
+  rm -rf "$LINK_TARGET"
+fi
+
+# Symlink the plugin so Claude Code discovers it automatically
+ln -sf "$PLUGIN_DIR" "$LINK_TARGET"
+ok "youk-context plugin linked ($LINK_TARGET → $PLUGIN_DIR)"
+ok "Hooks registered: PreCompact, UserPromptSubmit, PostToolUse"
+echo "  Note: restart Claude Code for hooks to take effect."
+
 # ── Step 6: Patch CLAUDE.md ──────────────────────────────────────────────────
 step "CLAUDE.md"
 

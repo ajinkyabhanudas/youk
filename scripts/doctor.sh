@@ -199,6 +199,40 @@ else
 fi
 echo ""
 
+# ── Context hooks plugin ──────────────────────────────────────────────────────
+echo "Context hooks plugin"
+
+PLUGIN_LINK="$HOME/.claude/plugins/youk-context"
+PLUGIN_SRC="$YOUK_DIR/plugin"
+if [ -L "$PLUGIN_LINK" ] && [ -d "$PLUGIN_LINK" ]; then
+  pass "youk-context plugin linked ($PLUGIN_LINK)"
+elif [ -d "$PLUGIN_LINK" ]; then
+  warn "youk-context plugin dir exists but is not a symlink — hooks may be stale" \
+    "Run: rm -rf $PLUGIN_LINK && ln -sf $PLUGIN_SRC $PLUGIN_LINK"
+else
+  fail "youk-context plugin not linked — hooks not active" \
+    "Run: mkdir -p $HOME/.claude/plugins && ln -sf $PLUGIN_SRC $PLUGIN_LINK"
+fi
+
+HOOK_FILE="$PLUGIN_SRC/hooks/hooks.json"
+if [ -f "$HOOK_FILE" ]; then
+  pass "hooks/hooks.json present"
+else
+  fail "hooks/hooks.json missing at $HOOK_FILE" \
+    "Re-run: bash $YOUK_DIR/scripts/install.sh"
+fi
+
+for script in pre_compact.py user_prompt_submit.py post_tool_use.py youk_hook_utils.py; do
+  SCRIPT_PATH="$PLUGIN_SRC/scripts/$script"
+  if [ -f "$SCRIPT_PATH" ]; then
+    pass "hook script: $script"
+  else
+    fail "hook script missing: $script" \
+      "Re-run: bash $YOUK_DIR/scripts/install.sh"
+  fi
+done
+echo ""
+
 # ── Container health ──────────────────────────────────────────────────────────
 echo "Container health"
 
