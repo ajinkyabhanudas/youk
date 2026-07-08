@@ -128,7 +128,7 @@ This pulls the latest code and rebuilds Docker images. Restart Claude Code after
 
 **Session end:** Type `/done` when you finish — or any natural closing phrase ("looks good", "that's all", "wrap it up"). This runs code-review + verify, writes the resume point for next session, saves contracts, and sets `CloseCluster: yes` for org_score.
 
-If you close the tab without `/done`: the audit entry is still written, and at next open youk surfaces the unlearned commits and prompts `/learn` so patterns aren't lost. What you do lose is the **resume point** — without `/done`, the next session picks up from the last git commit subject rather than a description of what you were actually working on.
+If you close the tab without `/done`: the audit entry is still written, and at next open youk surfaces the unlearned work and prompts `/learn` so patterns aren't lost. The **resume point** is also preserved — as long as `compact_context` ran at least once during your session (which CLAUDE.md instructs after every commit or M+ task), the next session picks up from where you actually were. The only thing fully lost on tab-close is `CloseCluster: yes` for org_score.
 
 **Checking system health:** Type `/health` at any point. It returns `org_score` (0–10) and `loop_verdict` (IMPROVING / STALLED / etc.). The primary factor in score is capability skill invocation — did `/build`, `/review`, or `/done` fire this session? Close rate matters but doesn't dominate.
 

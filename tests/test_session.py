@@ -878,50 +878,246 @@ class TestRetrospectiveRecoveryPlanItem:
     """Option C: session_plan item 0 is the retrospective block when close_cluster
     was missed last session and commits exist. Tests the shape of the inserted item."""
 
-    def test_retrospective_item_format(self):
-        """When close_cluster_missed and new_commits > 0, plan item 0 includes /learn prompt."""
-        # Build the retrospective item the same way start_session does.
-        # We test the construction logic directly rather than the full start_session
-        # (which requires Docker volumes, git repos, etc.).
+    def test_retrospective_item_format_with_commits(self):
+        """When close_cluster_missed and new_commits > 0, plan item includes commit subjects."""
         close_cluster_missed = True
         new_commits = 3
         git_log = "abc1234 fix auth bug\ndef5678 add rate limiting\nghi9012 update deps"
-        days_since_last = 1  # non-zero, non-≥7
+        days_since_last = 1
 
-        # Replicate the Option C block from start_session:
         recent_subjects = []
         for ln in git_log.splitlines()[:3]:
             subject = ln.split(" ", 1)[1].strip() if " " in ln else ln.strip()
             if subject:
                 recent_subjects.append(subject)
-        commits_summary = ": " + " / ".join(recent_subjects) if recent_subjects else ""
-
+        commits_summary = f" — {new_commits} commit(s)" + (
+            f": {' / '.join(recent_subjects)}" if recent_subjects else ""
+        )
         item = (
-            f"⚠ Last session closed without /done — {new_commits} commit(s) unlearned"
-            f"{commits_summary}. "
+            f"⚠ Last session closed without /done{commits_summary}. "
             "Run /learn now to extract patterns before starting new work."
         )
 
         assert item.startswith("⚠ Last session closed without /done")
-        assert "3 commit(s) unlearned" in item
+        assert "3 commit(s)" in item
         assert "fix auth bug" in item
         assert "Run /learn now" in item
 
-    def test_retrospective_not_triggered_when_no_commits(self):
-        """When new_commits == 0, the retrospective block should NOT be inserted."""
-        # If new_commits is 0, the elif branch does not fire — nothing to test
-        # beyond confirming the condition guard.
-        new_commits = 0
+    def test_retrospective_item_format_no_commits(self):
+        """When close_cluster_missed and new_commits == 0, item still fires with no-commits note."""
         close_cluster_missed = True
-        # Guard condition: close_cluster_missed and new_commits > 0 and days_since_last != 0
-        should_trigger = close_cluster_missed and new_commits > 0
+        new_commits = 0
+        days_since_last = 1
+
+        commits_summary = " (no commits — patterns still worth capturing)"
+        item = (
+            f"⚠ Last session closed without /done{commits_summary}. "
+            "Run /learn now to extract patterns before starting new work."
+        )
+
+        # Condition now fires even with no commits
+        should_trigger = close_cluster_missed and days_since_last != 0
+        assert should_trigger
+        assert "no commits — patterns still worth capturing" in item
+        assert "Run /learn now" in item
+
+    def test_retrospective_not_triggered_when_same_day(self):
+        """days_since_last == 0 means same-day re-open — retrospective should NOT fire."""
+        close_cluster_missed = True
+        days_since_last = 0
+        should_trigger = close_cluster_missed and days_since_last != 0
         assert not should_trigger
 
     def test_retrospective_not_triggered_when_returning_after_7_days(self):
         """The 7-day staleness branch fires instead of retrospective for long gaps."""
-        # When days_since_last >= 7, the `if days_since_last >= 7` block fires first
-        # (it's the `if` branch, not `elif`), so close_cluster_missed branch is skipped.
         days_since_last = 10
         fires_staleness_branch = days_since_last is not None and days_since_last >= 7
         fires_retrospective = not fires_staleness_branch  # elif means mutually exclusive
         assert not fires_retrospective
+
+
+class TestMergeStaleCheckpoint:
+    """_merge_stale_checkpoint: audit entries + resume point recovery on tab-close."""
+
+    def _write_checkpoint(self, state_dir, filename, slug, timestamp, plan_items, resume_candidate=""):
+        import json
+        data = {
+            "timestamp": timestamp,
+            "slug": slug,
+            "plan_items": plan_items,
+            "contracts_count": 0,
+        }
+        if resume_candidate:
+            data["resume_candidate"] = resume_candidate
+        (state_dir / filename).write_text(json.dumps(data))
+
+    def test_writes_audit_entry_for_stale_session_open(self, tmp_path, monkeypatch):
+        import session
+        youk_root = tmp_path / "youk"
+        claude_root = tmp_path / "claude"
+        (youk_root / "state").mkdir(parents=True)
+        (claude_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+
+        self._write_checkpoint(
+            youk_root / "state", "session-open.json",
+            slug="myproject", timestamp="2026-07-01T10:00:00Z",
+            plan_items=["Fix the login bug", "Add tests"],
+        )
+
+        session._merge_stale_checkpoint()
+
+        audit_file = claude_root / "audit" / "2026-07.md"
+        assert audit_file.exists()
+        content = audit_file.read_text()
+        assert "myproject" in content
+        assert "tab-close" in content
+        assert "Fix the login bug" in content
+
+    def test_stale_checkpoint_file_deleted_after_merge(self, tmp_path, monkeypatch):
+        import session
+        youk_root = tmp_path / "youk"
+        claude_root = tmp_path / "claude"
+        (youk_root / "state").mkdir(parents=True)
+        (claude_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+
+        self._write_checkpoint(
+            youk_root / "state", "session-open.json",
+            slug="proj", timestamp="2026-07-01T10:00:00Z",
+            plan_items=[],
+        )
+
+        session._merge_stale_checkpoint()
+        assert not (youk_root / "state" / "session-open.json").exists()
+
+    def test_resume_candidate_written_to_context_md(self, tmp_path, monkeypatch):
+        """When session-checkpoint.json has resume_candidate, _merge_stale writes it."""
+        import session
+        youk_root = tmp_path / "youk"
+        claude_root = tmp_path / "claude"
+        (youk_root / "state").mkdir(parents=True)
+        (claude_root / "audit").mkdir(parents=True)
+        slug = "myproject"
+        ctx_dir = youk_root / "knowledge" / "projects" / slug
+        ctx_dir.mkdir(parents=True)
+        (ctx_dir / "context.md").write_text("last-seen: 2026-07-01\n")
+        monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+
+        self._write_checkpoint(
+            youk_root / "state", "session-checkpoint.json",
+            slug=slug, timestamp="2026-07-01T10:00:00Z",
+            plan_items=["Work on auth refactor"],
+            resume_candidate="Work on auth refactor",
+        )
+
+        session._merge_stale_checkpoint()
+
+        ctx_content = (ctx_dir / "context.md").read_text()
+        assert "Last working on: Work on auth refactor" in ctx_content
+
+    def test_no_resume_written_when_candidate_empty(self, tmp_path, monkeypatch):
+        """session-open.json has no resume_candidate — context.md not touched."""
+        import session
+        youk_root = tmp_path / "youk"
+        claude_root = tmp_path / "claude"
+        (youk_root / "state").mkdir(parents=True)
+        (claude_root / "audit").mkdir(parents=True)
+        slug = "myproject"
+        ctx_dir = youk_root / "knowledge" / "projects" / slug
+        ctx_dir.mkdir(parents=True)
+        original = "last-seen: 2026-07-01\nresume-from: old resume point\n"
+        (ctx_dir / "context.md").write_text(original)
+        monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+
+        self._write_checkpoint(
+            youk_root / "state", "session-open.json",
+            slug=slug, timestamp="2026-07-01T10:00:00Z",
+            plan_items=[],
+        )
+
+        session._merge_stale_checkpoint()
+
+        ctx_content = (ctx_dir / "context.md").read_text()
+        assert "old resume point" in ctx_content
+
+    def test_skips_audit_entry_for_young_file(self, tmp_path, monkeypatch):
+        """Same-session race: file < 5 min old should not produce an audit entry.
+        The file is always deleted, but no audit entry is written."""
+        import session
+        from datetime import datetime
+        youk_root = tmp_path / "youk"
+        claude_root = tmp_path / "claude"
+        (youk_root / "state").mkdir(parents=True)
+        (claude_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+
+        now_ts = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        self._write_checkpoint(
+            youk_root / "state", "session-open.json",
+            slug="proj", timestamp=now_ts, plan_items=["active task"],
+        )
+
+        session._merge_stale_checkpoint()
+
+        # No audit entry should be written for a < 5 min old file
+        month = now_ts[:7]
+        audit_file = claude_root / "audit" / f"{month}.md"
+        assert not audit_file.exists()
+
+
+class TestBuildBriefResumeCandidate:
+    """compact_context writes resume_candidate to session-checkpoint.json."""
+
+    def test_resume_candidate_extracted_from_plan(self, tmp_path, monkeypatch):
+        import compaction, json
+        youk_root = tmp_path / "youk"
+        (youk_root / "state").mkdir(parents=True)
+        (youk_root / "knowledge" / "projects" / "myproject").mkdir(parents=True)
+        monkeypatch.setattr(compaction, "YOUK_ROOT", youk_root)
+
+        # Write a session-plan.json so build_brief picks up plan items
+        plan_file = youk_root / "state" / "session-plan.json"
+        plan_file.write_text(json.dumps({
+            "slug": "myproject",
+            "plan": ["Work on auth refactor", "Add tests for tokens.py"],
+        }))
+
+        compaction.build_brief(str(tmp_path / "myproject"))
+
+        cp = json.loads((youk_root / "state" / "session-checkpoint.json").read_text())
+        assert cp["resume_candidate"] == "Work on auth refactor"
+
+    def test_resume_candidate_skips_warning_items(self, tmp_path, monkeypatch):
+        import compaction, json
+        youk_root = tmp_path / "youk"
+        (youk_root / "state").mkdir(parents=True)
+        (youk_root / "knowledge" / "projects" / "myproject").mkdir(parents=True)
+        monkeypatch.setattr(compaction, "YOUK_ROOT", youk_root)
+
+        plan_file = youk_root / "state" / "session-plan.json"
+        plan_file.write_text(json.dumps({
+            "slug": "myproject",
+            "plan": ["⚠ Last session closed without /done", "Continue auth work"],
+        }))
+
+        compaction.build_brief(str(tmp_path / "myproject"))
+
+        cp = json.loads((youk_root / "state" / "session-checkpoint.json").read_text())
+        assert cp["resume_candidate"] == "Continue auth work"
+
+    def test_resume_candidate_empty_when_no_plan(self, tmp_path, monkeypatch):
+        import compaction, json
+        youk_root = tmp_path / "youk"
+        (youk_root / "state").mkdir(parents=True)
+        monkeypatch.setattr(compaction, "YOUK_ROOT", youk_root)
+
+        compaction.build_brief(str(tmp_path / "myproject"))
+
+        cp = json.loads((youk_root / "state" / "session-checkpoint.json").read_text())
+        assert cp["resume_candidate"] == ""

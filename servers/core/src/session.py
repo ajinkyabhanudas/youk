@@ -1257,6 +1257,7 @@ def _merge_stale_checkpoint() -> None:
             cp_timestamp = cp.get("timestamp", "")
             cp_slug = cp.get("slug", "unknown")
             cp_plan = cp.get("plan_items", [])
+            cp_resume = cp.get("resume_candidate", "")
 
             if cp_timestamp:
                 cp_dt = datetime.strptime(cp_timestamp, "%Y-%m-%dT%H:%M:%SZ")
@@ -1276,6 +1277,10 @@ def _merge_stale_checkpoint() -> None:
                     )
                     with open(audit_file, "a") as f:
                         f.write(entry)
+                    # If the checkpoint recorded a resume candidate (written by compact_context),
+                    # persist it so next session has a meaningful resume point even on tab-close.
+                    if cp_resume and cp_slug and cp_slug != "unknown":
+                        _update_resume_point(cp_slug, f"Last working on: {cp_resume}")
         except Exception:
             pass  # never block session_start for recovery errors
         finally:
@@ -1427,22 +1432,24 @@ def start_session(project_dir: str) -> SessionState:
                 f"Returning after {days_since_last} days — {len(contracts)} saved rule(s) may be stale. "
                 f"Say 'show my contracts' to review them before we start."
             )
-    elif close_cluster_missed and new_commits > 0 and days_since_last != 0:
-        # Option C — retrospective recovery: previous session had commits but no /done.
-        # Surface the unlearned commits and prompt /learn NOW (start-of-session is the
-        # most reliable trigger — user just opened Claude, attention is highest).
-        # This converts the "open new session" action into the closure for the previous one.
+    elif close_cluster_missed and days_since_last != 0:
+        # Option C — retrospective recovery: previous session closed without /done.
+        # Fire regardless of commit count — exploration and planning sessions that
+        # produced no commits are still worth capturing via /learn.
+        # Guard: days_since_last != 0 prevents false trigger on same-day re-opens.
         recent_subjects = []
         for ln in git_log.splitlines()[:3]:
             subject = ln.split(" ", 1)[1].strip() if " " in ln else ln.strip()
             if subject:
                 recent_subjects.append(subject)
-        commits_summary = (
-            f": {' / '.join(recent_subjects)}" if recent_subjects else ""
-        )
+        if new_commits > 0:
+            commits_summary = f" — {new_commits} commit(s)" + (
+                f": {' / '.join(recent_subjects)}" if recent_subjects else ""
+            )
+        else:
+            commits_summary = " (no commits — patterns still worth capturing)"
         session_plan.insert(0,
-            f"⚠ Last session closed without /done — {new_commits} commit(s) unlearned"
-            f"{commits_summary}. "
+            f"⚠ Last session closed without /done{commits_summary}. "
             "Run /learn now to extract patterns before starting new work."
         )
 

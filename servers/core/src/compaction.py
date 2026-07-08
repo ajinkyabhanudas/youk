@@ -211,6 +211,14 @@ def build_brief(project_dir: str, intent: str = "") -> dict:
 
     brief = "\n\n".join(sections)
 
+    # Extract a resume candidate from the session plan — first non-warning item gives
+    # a meaningful "what were we working on" for next session if tab is closed without /done.
+    resume_candidate = ""
+    for item in session_plan:
+        if item and not item.startswith("⚠"):
+            resume_candidate = item[:200]
+            break
+
     checkpoint_file = YOUK_ROOT / "state" / "session-checkpoint.json"
     try:
         checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
@@ -219,6 +227,7 @@ def build_brief(project_dir: str, intent: str = "") -> dict:
             "slug": slug,
             "plan_items": session_plan,
             "contracts_count": len(contracts),
+            "resume_candidate": resume_candidate,
         }, indent=2))
         open_file = YOUK_ROOT / "state" / "session-open.json"
         if open_file.exists():
