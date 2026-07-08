@@ -51,6 +51,20 @@ For each unsaved contract found:
 
 Collect the list as `explicit_contracts`.
 
+**Step 5b — Doc-staleness sweep**
+
+Call `youk-core.check_doc_graph()`.
+
+For each stale concept returned, check whether files changed this session touch
+the concept's `derived_in` list in `docs/doc-map.yaml`. If any derived file was
+NOT updated despite the authority changing: surface it as a one-line item:
+"Doc gap: '{concept}' changed in {authority} — update {stale_file} before closing."
+
+This catches prose claims (install requirements, command syntax, behavioural contracts)
+drifting across docs without requiring a human to remember to check.
+
+Skip silently if check_doc_graph() returns no stale concepts.
+
 **Step 6 — Close**
 
 Call `youk-core.track_tokens(approx_input, approx_output, "final")`
