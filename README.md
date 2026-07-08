@@ -303,9 +303,17 @@ Adding a variant means building one Dockerfile, one server.py, one entry in `con
 
 ## Context management
 
-youk's context compaction runs proactively — before Claude's generic auto-compaction can blur behavioral contracts.
+youk manages context automatically via three Claude Code hooks — no manual `/compact` needed.
 
-When new significant context is established — after a `route_to_skill` call, after a commit, when a decision is verbalized, before `session_end`, or after 8+ tool calls — Claude calls `compact_context(project_dir)`. The tool builds a brief from structured knowledge files, not by summarizing conversation. Content is tiered:
+| Hook | When it fires | What it does |
+|---|---|---|
+| `UserPromptSubmit` | Before every turn | Injects intent-gated brief (~100-150 tokens). At 40% context fill, signals Claude to run `/compact` — before auto-compaction fires at 70% |
+| `PreCompact` | Before auto-compaction | Injects a preservation brief so contracts, active task, and resume point survive the summarizer verbatim |
+| `PostToolUse` | After Bash/Read/Write/Edit | Writes `state/active_task.json` with current file, last signal, and task label — feeds post-compact resume |
+
+**Intent-gated brief:** The `UserPromptSubmit` hook builds a minimal brief from your prompt's keywords. Contracts that match the intent are included verbatim; non-matching contracts appear as a count (`+N others in contracts.md`). This keeps per-turn injection at ~100-150 tokens instead of dumping the full knowledge store.
+
+**Tier model (when `compact_context` does run):**
 
 | Tier | What it is | How compacted |
 |---|---|---|
@@ -314,7 +322,7 @@ When new significant context is established — after a `route_to_skill` call, a
 | EXPLORATION | Depth dives, explanations | 1 sentence |
 | CLARIFICATION | One-shot Q&A | Dropped entirely, re-ask if needed |
 
-Working agreements detected mid-session are saved via `session_end(explicit_contracts=[...])` to `knowledge/projects/{slug}/contracts.md`. Every future `session_start` loads them first. `compact_context` pins them in every brief. They are immune to compaction because they come from files, not conversation history.
+Working agreements detected mid-session are written immediately to `knowledge/projects/{slug}/contracts.md` via `save_contract`. Every future `session_start` loads them first. Contracts are immune to compaction because they come from files, not conversation history.
 
 ---
 
