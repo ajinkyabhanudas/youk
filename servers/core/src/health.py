@@ -677,6 +677,38 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
     close_count = sum(1 for s in sessions if s["close_cluster"])
     close_rate = round(close_count / total, 2) if total else 0.0
 
+    # skill_invocation_rate: primary org_score driver (weight 2.0) — persisted so trend is visible
+    capability_count = sum(1 for s in sessions if s.get("capability_skills"))
+    skill_invocation_rate = round(capability_count / total, 2) if total else 0.0
+
+    # nfr_check_hit_rate: % of sessions where nfr_check fired (gate discipline signal)
+    nfr_sessions = sum(
+        1 for s in sessions
+        if any(sk.lower().replace("-", "_") in ("nfr_check", "nfr-check") for sk in s.get("skills", []))
+    )
+    nfr_check_hit_rate = round(nfr_sessions / total, 2) if total else 0.0
+
+    # contracts_total: total contracts saved across all projects (knowledge growth signal)
+    contracts_total = 0
+    projects_dir = YOUK_ROOT / "knowledge" / "projects"
+    if projects_dir.exists():
+        for contracts_file in projects_dir.glob("*/contracts.md"):
+            try:
+                contracts_total += sum(
+                    1 for line in contracts_file.read_text().splitlines()
+                    if line.startswith("- ")
+                )
+            except Exception:
+                pass
+
+    # skill_patch_rate: % of sessions with within-session skill adaptations applied
+    # MidSessionAdaptations: N audit line (N > 0 = patch happened in-session)
+    patched_sessions = sum(
+        1 for s in sessions
+        if re.search(r"MidSessionAdaptations:\s*[1-9]", s.get("raw", ""))
+    )
+    skill_patch_rate = round(patched_sessions / total, 2) if total else 0.0
+
     # Loop health verdict
     evolution_active = gaps_last30 > 0 or proposals_applied > 0
     if close_rate == 0.0:
@@ -707,6 +739,10 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
             "proposals_applied": proposals_applied,
             "gaps_last30": gaps_last30,
             "close_cluster_rate": close_rate,
+            "skill_invocation_rate": skill_invocation_rate,
+            "nfr_check_hit_rate": nfr_check_hit_rate,
+            "contracts_total": contracts_total,
+            "skill_patch_rate": skill_patch_rate,
         }
         existing_entries.append(entry)
         existing_entries = existing_entries[-20:]  # keep last 20 health cycles
