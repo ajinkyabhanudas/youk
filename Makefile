@@ -70,6 +70,40 @@ prune: ## Stop orphaned youk containers (old image SHAs) and remove dangling lay
 	@echo "==> Done. Active youk containers:"
 	@docker ps --format "  {{.Names}} ({{.Status}}) {{.Image}}" | grep youk || echo "  none"
 
+# Default idle threshold in hours. Override: make prune-idle IDLE_HOURS=4
+IDLE_HOURS ?= 8
+
+.PHONY: prune-idle
+prune-idle: ## Stop youk containers running >8h (orphaned from closed sessions). Override: IDLE_HOURS=4
+	@echo "==> Scanning for idle youk containers (running >$(IDLE_HOURS)h)..."
+	@NOW=$$(date +%s); \
+	STOPPED=0; KEPT=0; \
+	for CID in $$(docker ps --format "{{.ID}} {{.Image}}" 2>/dev/null | grep "youk-" | awk '{print $$1}'); do \
+	  IMAGE=$$(docker inspect $$CID --format '{{.Config.Image}}' 2>/dev/null); \
+	  STARTED=$$(docker inspect $$CID --format '{{.State.StartedAt}}' 2>/dev/null); \
+	  STARTED_TRIM=$$(echo "$$STARTED" | sed 's/\.[0-9]*Z*$$//'); \
+	  STARTED_S=$$(date -jf "%Y-%m-%dT%H:%M:%S" "$$STARTED_TRIM" +%s 2>/dev/null \
+	              || date -d "$$STARTED_TRIM" +%s 2>/dev/null || echo 0); \
+	  AGE_H=$$(( ($$NOW - $$STARTED_S) / 3600 )); \
+	  NAME=$$(docker inspect $$CID --format '{{.Name}}' 2>/dev/null | sed 's|/||'); \
+	  if [[ $$AGE_H -ge $(IDLE_HOURS) ]]; then \
+	    echo "    stopping $$NAME ($$IMAGE, $${AGE_H}h old)"; \
+	    docker stop $$CID >/dev/null 2>&1; \
+	    STOPPED=$$((STOPPED+1)); \
+	  else \
+	    echo "    keeping  $$NAME ($$IMAGE, $${AGE_H}h old)"; \
+	    KEPT=$$((KEPT+1)); \
+	  fi; \
+	done; \
+	echo ""; \
+	if [[ $$STOPPED -eq 0 ]]; then \
+	  echo "    Nothing stopped — no youk containers older than $(IDLE_HOURS)h."; \
+	else \
+	  echo "    $$STOPPED stopped, $$KEPT kept."; \
+	  echo "    Note: if any stopped container belonged to an open Claude Code window,"; \
+	  echo "    restart that window to reconnect (MCP spawns a fresh container)."; \
+	fi
+
 # ── Verification ───────────────────────────────────────────────────────────────
 
 .PHONY: doctor

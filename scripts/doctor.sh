@@ -195,6 +195,20 @@ else
 fi
 echo ""
 
+# ── Container health ──────────────────────────────────────────────────────────
+echo "Container health"
+
+YOUK_COUNT=$(docker ps --format "{{.Image}}" 2>/dev/null | grep -c "youk-" || true)
+if [[ "${YOUK_COUNT:-0}" -le 2 ]]; then
+  pass "youk containers: ${YOUK_COUNT:-0} running (normal — 2 per active Claude Code session)"
+elif [[ "${YOUK_COUNT:-0}" -le 4 ]]; then
+  warn "youk containers: ${YOUK_COUNT:-0} running — more than one session pair. Close unused Claude Code tabs or run: make prune-idle"
+else
+  fail "youk containers: ${YOUK_COUNT:-0} running — likely orphaned from closed sessions" \
+    "cd $YOUK_DIR && make prune-idle"
+fi
+echo ""
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 TOTAL=$((PASS+FAIL+WARN))
 echo "────────────────────────────────────"
