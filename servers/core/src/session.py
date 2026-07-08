@@ -1451,8 +1451,24 @@ def start_session(project_dir: str) -> SessionState:
         suffix = f" (+{count - 3} more)" if count > 3 else ""
         session_plan.append(
             f"{count} research finding(s) in knowledge/research-inbox/ — "
-            f"{names}{suffix}. Call add_proposal() to queue each one."
+            f"{names}{suffix}. Run '/research stack propose' to queue as proposals."
         )
+    else:
+        # Suggest stack briefing when inbox is empty or stale (>14 days)
+        project_inbox = YOUK_ROOT / "knowledge" / "projects" / slug / "research-inbox"
+        inbox_stale = True
+        if project_inbox.exists():
+            cutoff = datetime.utcnow().timestamp() - (14 * 24 * 3600)
+            inbox_stale = not any(
+                f.suffix == ".md" and f.stat().st_mtime > cutoff
+                for f in project_inbox.iterdir()
+                if f.name not in (".gitkeep", "README.md")
+            )
+        if inbox_stale:
+            session_plan.append(
+                "No recent stack briefing — run '/research stack' to generate "
+                "actionable findings for your stack (no API key required)."
+            )
 
     # 3D — Token budget used last session (budget utilization, not youk overhead ratio)
     budget_pct, _budget_limit = _last_token_overhead()
