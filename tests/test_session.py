@@ -143,6 +143,23 @@ class TestDetectProjectType:
         from session import _detect_project_type
         assert _detect_project_type(str(tmp_path / "nonexistent")) == "unknown"
 
+    def test_python_docker_with_compose(self, tmp_path):
+        """Makefile + docker-compose + pyproject in servers/ → python/docker."""
+        (tmp_path / "Makefile").write_text("build:\n\tdocker build .\n")
+        (tmp_path / "docker-compose.yml").write_text("services:\n  app:\n    build: .\n")
+        (tmp_path / "servers" / "core").mkdir(parents=True)
+        (tmp_path / "servers" / "core" / "pyproject.toml").write_text("[tool.ruff]\n")
+        from session import _detect_project_type
+        assert _detect_project_type(str(tmp_path)) == "python/docker"
+
+    def test_python_docker_no_compose_falls_back_to_python(self, tmp_path):
+        """Makefile without docker-compose/Dockerfile + pyproject in servers/ → plain python."""
+        (tmp_path / "Makefile").write_text("build:\n\tdocker build .\n")
+        (tmp_path / "servers").mkdir()
+        (tmp_path / "servers" / "requirements.txt").write_text("mcp\n")
+        from session import _detect_project_type
+        assert _detect_project_type(str(tmp_path)) == "python"
+
 
 # ── Session plan generation ──────────────────────────────────────────────────
 
