@@ -156,7 +156,7 @@ report: ## Write HTML dashboard to ~/.claude/youk/reports/dashboard-YYYY-MM-DD.h
 # ── Code quality ──────────────────────────────────────────────────────────────
 
 .PHONY: verify-mcp
-verify-mcp: ## Test both MCP container handshakes + API key reachability for youk-code
+verify-mcp: ## Test both MCP container handshakes
 	@echo "==> youk-core handshake"
 	@printf '$(MCP_INIT)\n$(MCP_DONE)\n' | \
 	  docker run -i --rm \
@@ -167,19 +167,16 @@ verify-mcp: ## Test both MCP container handshakes + API key reachability for you
 	      d=json.loads(lines[0]) if lines else {}; \
 	      print('  youk-core: OK') if 'result' in d else print('  youk-core: FAIL — check docker logs')" \
 	  || echo "  youk-core: FAIL — container did not start"
-	@echo "==> youk-code handshake + API key"
+	@echo "==> youk-code handshake"
 	@printf '$(MCP_INIT)\n$(MCP_DONE)\n' | \
 	  docker run -i --rm \
 	    -v $(CLAUDE_DIR):/claude:ro \
 	    -v $(YOUK_DIR):/youk:ro \
-	    -e ANTHROPIC_API_KEY=$(ANTHROPIC_API_KEY) \
 	    youk-code:latest 2>/dev/null \
 	  | python3 -c "import sys,json; lines=[l for l in sys.stdin if l.strip()]; \
 	      d=json.loads(lines[0]) if lines else {}; \
-	      print('  youk-code: OK') if 'result' in d else print('  youk-code: FAIL — check ANTHROPIC_API_KEY is exported')" \
+	      print('  youk-code: OK') if 'result' in d else print('  youk-code: FAIL — check docker logs')" \
 	  || echo "  youk-code: FAIL — container did not start"
-	@echo ""
-	@echo "  If youk-code fails: export ANTHROPIC_API_KEY=sk-ant-... && make install"
 
 .PHONY: simulate
 simulate: ## Run simulate-experience skill — developer experience audit, feeds self-heal loop

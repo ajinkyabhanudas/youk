@@ -83,8 +83,6 @@ One command. The installer handles Docker build, MCP server registration, and CL
 
 **Prerequisites:** Docker Desktop running · Claude Code installed · Python 3.11+
 
-The installer prompts for your `ANTHROPIC_API_KEY` if it's not already in your environment — no pre-export needed.
-
 Open any Claude Code session and start working. youk activates automatically. Type `/start` if you want to see the session card explicitly. By your second session, youk picks up where you left off without being asked.
 
 **Verify the install:**
@@ -392,7 +390,7 @@ youk/
 │   ├── skill-schema.md     ← canonical SKILL.md template (drives generate_skill)
 │   └── cross-project.md    ← best-practices patterns (feeds generation + assessment)
 ├── scripts/
-│   ├── install.sh                          ← one-command idempotent setup (curl | bash); prompts for API key
+│   ├── install.sh                          ← one-command idempotent setup (curl | bash); no API key required
 │   ├── doctor.sh                           ← health check with Fix: lines per failure
 │   ├── project-research.py                 ← weekly per-project stack briefing (runs via scheduler)
 │   └── com.youk.project-research.plist    ← launchd plist (macOS scheduler, registered by install.sh)
@@ -425,15 +423,15 @@ Docker may not be running, or the images need rebuilding. Doctor will tell you w
 
 No contracts have been saved yet for this project. Call `session_end` with `explicit_contracts=[...]` at the end of your first session to seed them.
 
-**Skills like `nfr_check` or `assess_skill` return errors or fail silently**
+**MCP containers not responding**
 
-youk-code needs `ANTHROPIC_API_KEY` exported in your shell before launching Claude Code. Verify with:
+Run `make verify-mcp` to test both container handshakes:
 
 ```bash
 make verify-mcp
 ```
 
-If youk-core shows OK but youk-code shows FAIL: `export ANTHROPIC_API_KEY=sk-ant-...` then relaunch Claude Code.
+If either shows FAIL, check that Docker is running and images are built (`make build`).
 
 **Build fails with `COPY servers/shared/ /shared/` error**
 

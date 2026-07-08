@@ -34,41 +34,6 @@ if ! command -v claude &>/dev/null; then
 fi
 ok "Claude Code found ($(claude --version 2>/dev/null | head -1))"
 
-_api_key_file="$CLAUDE_DIR/.anthropic/api_key"
-# Auto-load from .env in repo root if present and key not already set
-_env_file="$REPO_DIR/.env"
-if [[ -z "${ANTHROPIC_API_KEY:-}" && -s "$_env_file" ]]; then
-  # shellcheck source=/dev/null
-  set -a; source "$_env_file"; set +a
-  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && ok "ANTHROPIC_API_KEY loaded from .env"
-fi
-
-if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-  ok "ANTHROPIC_API_KEY found"
-  mkdir -p "$CLAUDE_DIR/.anthropic"
-  printf '%s' "$ANTHROPIC_API_KEY" > "$_api_key_file"
-  chmod 600 "$_api_key_file"
-  ok "API key persisted to ~/.claude/.anthropic/api_key"
-elif [[ -s "$_api_key_file" ]]; then
-  ok "API key already saved at ~/.claude/.anthropic/api_key — reusing"
-  ANTHROPIC_API_KEY="$(cat "$_api_key_file")"
-else
-  # Interactive prompt — no pre-exported key needed
-  echo "  youk uses this key for quality checks (nfr_check) and skill execution."
-  echo "  Without it, basic session tracking still works — you can add it later by re-running this script."
-  echo -n "  Enter your ANTHROPIC_API_KEY (sk-ant-..., blank to skip): "
-  read -rs ANTHROPIC_API_KEY
-  echo ""
-  if [[ -n "$ANTHROPIC_API_KEY" ]]; then
-    mkdir -p "$CLAUDE_DIR/.anthropic"
-    printf '%s' "$ANTHROPIC_API_KEY" > "$_api_key_file"
-    chmod 600 "$_api_key_file"
-    ok "API key saved to ~/.claude/.anthropic/api_key"
-  else
-    warn "No API key — nfr_check and skill execution unavailable until you re-run with the key set."
-  fi
-fi
-
 # ── Step 1: Clone or pull ────────────────────────────────────────────────────
 step "Repository"
 
@@ -198,7 +163,6 @@ claude mcp add --scope user youk-core --transport stdio -- \
     -v "$YOUK_DIR:/youk" \
     -v "$YOUK_DIR/servers/shared:/shared" \
     -v "$HOME:/host-home:ro" \
-    -e ANTHROPIC_API_KEY \
     youk-core:latest
 ok "youk-core registered"
 
@@ -208,7 +172,6 @@ claude mcp add --scope user youk-code --transport stdio -- \
     -v "$YOUK_DIR:/youk:ro" \
     -v "$YOUK_DIR/servers/shared:/shared" \
     -v "$HOME:/host-home:ro" \
-    -e ANTHROPIC_API_KEY \
     youk-code:latest
 ok "youk-code registered"
 
@@ -261,13 +224,11 @@ if [[ -z "$PYTHON_BIN" ]]; then
 elif [[ "$(uname)" == "Darwin" ]]; then
   PLIST_SRC="$YOUK_DIR/scripts/com.youk.project-research.plist"
   PLIST_DST="$HOME/Library/LaunchAgents/com.youk.project-research.plist"
-  API_KEY_VALUE="${ANTHROPIC_API_KEY:-$(cat "$CLAUDE_DIR/.anthropic/api_key" 2>/dev/null || echo "")}"
-
-  # Render plist with actual paths
+  # Render plist with actual paths (project-research.py resolves its own API key at runtime)
   sed \
     -e "s|PYTHON_PATH|$PYTHON_BIN|g" \
     -e "s|YOUK_DIR|$YOUK_DIR|g" \
-    -e "s|ANTHROPIC_API_KEY_VALUE|$API_KEY_VALUE|g" \
+    -e "s|ANTHROPIC_API_KEY_VALUE||g" \
     "$PLIST_SRC" > "$PLIST_DST"
 
   # Unload stale job if present, load the new one

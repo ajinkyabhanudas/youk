@@ -631,38 +631,8 @@ def _scan_project_context_files(project_dir: str) -> dict:
         except Exception:
             pass
 
-    # API fallback: if README exists but crude extraction yielded nothing useful,
-    # use a one-shot Claude call to extract a project description sentence.
-    # Uses the user's API credits intentionally — better than returning nothing.
-    if readme.exists() and not result["readme_snippet"]:
-        try:
-            import os
-            import anthropic as _anthropic
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            if not api_key:
-                key_file = Path("/claude/.anthropic/api_key")
-                if key_file.exists():
-                    api_key = key_file.read_text().strip()
-            if api_key:
-                _c = _anthropic.Anthropic(api_key=api_key)
-                readme_head = readme.read_text()[:2000]
-                msg = _c.messages.create(
-                    model="claude-haiku-4-5-20251001",
-                    max_tokens=80,
-                    messages=[{
-                        "role": "user",
-                        "content": (
-                            f"In one sentence (max 120 chars), what does this project do?\n\n{readme_head}"
-                        ),
-                    }],
-                )
-                snippet = msg.content[0].text.strip()
-                if snippet:
-                    result["readme_snippet"] = snippet[:200]
-                    if result["context_level"] == "L1":
-                        result["context_level"] = "L4"
-        except Exception:
-            pass
+    # readme_snippet is extracted heuristically above. No API fallback — all skill
+    # execution is in_session (Claude Code answers, not the container). Zero double-billing.
 
     # docs/ directory — scan for spec/PRD/architecture files (names only)
     docs_dir = p / "docs"
@@ -1462,14 +1432,6 @@ def start_session(project_dir: str) -> SessionState:
         session_plan.append(
             f"⚠ {new_commits} commit(s) from last session have no saved context — "
             "run /done at end of this session so work compounds."
-        )
-
-    # API key warning — surfaces FIRST so the developer sees it before any skill fails
-    import os as _os
-    if not _os.environ.get("ANTHROPIC_API_KEY") and not Path("/claude/.anthropic/api_key").exists():
-        session_plan.insert(0,
-            "⚠ ANTHROPIC_API_KEY missing — nfr_check and skill execution will fail. "
-            "Fix: export ANTHROPIC_API_KEY=sk-ant-... && make install"
         )
 
     # 3B2 — Skill-skip warning: capability skills unused for 3+ consecutive sessions

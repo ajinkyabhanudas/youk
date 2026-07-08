@@ -64,17 +64,6 @@ if [[ "${IMAGE_BUILT_S:-0}" -gt 0 ]] && command -v git &>/dev/null && [[ -d "$YO
 fi
 echo ""
 
-# ── API key ───────────────────────────────────────────────────────────────────
-echo "API key"
-
-if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-  pass "ANTHROPIC_API_KEY: set in environment"
-elif [[ -f "$CLAUDE_DIR/.anthropic/api_key" ]]; then
-  pass "api_key: found at ~/.claude/.anthropic/api_key (Docker volume fallback)"
-else
-  fail "api_key: not found in environment or at ~/.claude/.anthropic/api_key" \
-    "re-run install.sh with ANTHROPIC_API_KEY set: export ANTHROPIC_API_KEY=sk-ant-... && bash $YOUK_DIR/scripts/install.sh"
-fi
 echo ""
 
 # ── MCP registration ──────────────────────────────────────────────────────────
