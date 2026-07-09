@@ -192,9 +192,16 @@ fi
 
 # Symlink the plugin so Claude Code discovers it automatically
 ln -sf "$PLUGIN_DIR" "$LINK_TARGET"
-ok "youk-context plugin linked ($LINK_TARGET → $PLUGIN_DIR)"
-ok "Hooks registered: PreCompact, UserPromptSubmit, PostToolUse"
-echo "  Note: restart Claude Code for hooks to take effect."
+
+# Verify the symlink was actually created — ln -sf can silently fail on some systems
+if [ -L "$LINK_TARGET" ] && [ -d "$LINK_TARGET" ]; then
+  ok "youk-context plugin linked ($LINK_TARGET → $PLUGIN_DIR)"
+  ok "Hooks registered: PreCompact, UserPromptSubmit, PostToolUse"
+  echo "  Note: restart Claude Code for hooks to take effect."
+else
+  fail "youk-context plugin symlink failed — hooks will not be active"
+  warn "Manual fix: ln -sf $PLUGIN_DIR $LINK_TARGET"
+fi
 
 # ── Step 6: Patch CLAUDE.md ──────────────────────────────────────────────────
 step "CLAUDE.md"
