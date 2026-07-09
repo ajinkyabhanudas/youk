@@ -71,10 +71,10 @@ Each phase begins with a compact token: `[PHASE: NAME]`
    done look like?
 2. Identify the language, framework, runtime, and any constraints.
 3. **NFR Gate check**: Is this a non-trivial feature (new module, new external I/O,
-   new endpoint, user-facing change)? If yes, check whether an NFR Decision Block
-   exists for this feature. If not, pause and tell the user: "This feature needs an
-   NFR check before implementation. Run `/nfr-check` first, then resume dev-loop
-   with the NFR Decision Block as context." Do not proceed to WRITE without it.
+   new endpoint, user-facing change)? If yes, call `youk-core.check_nfr_gate(task, size, nfr_decision_block)`.
+   If it returns `blocked: true`, pause: "This feature needs an NFR check before
+   implementation. Run `/nfr-check` first, then resume dev-loop with the NFR Decision
+   Block as context." Do not proceed to WRITE while blocked.
    Skip this check only for: bug fixes, test additions, documentation changes, and
    hotfixes to existing behavior.
 4. **Run the Stack Coverage check** (see Stack Coverage System below). If a gap is

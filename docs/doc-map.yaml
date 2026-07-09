@@ -25,6 +25,7 @@ mcp_tools:
     - {tool: track_tokens, refs: [README.md, docs/claude-md-template.md]}
     - {tool: check_doc_graph, refs: [README.md, docs/doc-map.yaml]}
     - {tool: promote_to_global_contracts, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: check_nfr_gate, refs: [README.md, docs/claude-md-template.md]}
 
   youk-code:
     - {tool: nfr_check, refs: [README.md, docs/claude-md-template.md]}
@@ -146,3 +147,10 @@ concepts:
       - ~/.claude/CLAUDE.md
       - skills/dev-loop/SKILL.md
       - knowledge/projects/youk/decisions.md
+
+  - concept: nfr_gate
+    description: "check_nfr_gate blocks M+ dev-loop until an NFR Decision Block is supplied; XS/S always pass"
+    authority: servers/core/src/nfr_gate.py
+    derived_in:
+      - ~/.claude/CLAUDE.md
+      - skills/dev-loop/SKILL.md

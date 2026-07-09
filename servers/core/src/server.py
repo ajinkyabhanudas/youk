@@ -15,6 +15,7 @@ from health import (
     _load_pending_proposals,
 )
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
+from nfr_gate import check_nfr_gate as _check_nfr_gate
 from intent import optimize_intent as _optimize_intent
 from compaction import build_brief, write_contracts
 from tokens import init_token_tracker, record_checkpoint
@@ -162,6 +163,25 @@ def check_command(command: str) -> dict:
         return {"safe": True, "blocked": False, "reason": ""}
     except HardRuleViolation as e:
         return {"safe": False, "blocked": True, "reason": str(e), "rule_id": e.rule_id}
+
+
+@mcp.tool()
+def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) -> dict:
+    """
+    Gate that blocks M+ implementation when no NFR Decision Block is present.
+    Call this after route_task returns size M/L/XL, before invoking dev-loop.
+
+    task: The task being implemented (for logging context — not evaluated here).
+    size: The routing size returned by route_task — XS, S, M, L, or XL.
+    nfr_decision_block: The structured output from `/nfr-check`. Pass None or
+        omit if nfr-check has not run yet.
+
+    Returns: {"blocked": bool, "reason": str}
+    When blocked=True: run `/nfr-check` first, then re-call check_nfr_gate with
+    the NFR output as nfr_decision_block. Do not start dev-loop while blocked.
+    When blocked=False: proceed to dev-loop.
+    """
+    return _check_nfr_gate(task, size, nfr_decision_block)
 
 
 @mcp.tool()
