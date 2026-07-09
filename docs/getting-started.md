@@ -15,6 +15,8 @@ npm install -g @anthropic-ai/claude-code
 ```
 Sign in with `claude` and confirm it works.
 
+> **API key:** Signing in with `claude` writes your key to `~/.claude/.anthropic/api_key`. youk reads it from there automatically — no `ANTHROPIC_API_KEY` export required. If you're using the Claude Code desktop app, the signin flow handles this for you.
+
 **Docker Desktop**
 Must be installed and running. Download from [docker.com](https://www.docker.com/products/docker-desktop). After installing, verify:
 ```bash

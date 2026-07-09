@@ -109,6 +109,23 @@ do
 done
 echo ""
 
+# ── API key ───────────────────────────────────────────────────────────────────
+echo "API key"
+
+# Priority 1: env var (CI / explicit export)
+# Priority 2: Claude Code's own key file (set when you sign in with 'claude')
+# The Docker container reads from /claude/.anthropic/api_key (mounted volume).
+# No action needed if you've already signed into Claude Code.
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  pass "ANTHROPIC_API_KEY: set in environment"
+elif [[ -f "$CLAUDE_DIR/.anthropic/api_key" ]] && [[ -s "$CLAUDE_DIR/.anthropic/api_key" ]]; then
+  pass "API key: found at ~/.claude/.anthropic/api_key (Claude Code signin — auto-mounted into container)"
+else
+  warn "API key: not found — optimize_intent and nfr_check will fall back to fast-path (no API call)" \
+    "Sign in with 'claude' or export ANTHROPIC_API_KEY=sk-ant-... before running install.sh"
+fi
+echo ""
+
 # ── Config files ──────────────────────────────────────────────────────────────
 echo "Config files"
 

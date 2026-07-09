@@ -69,6 +69,8 @@ Run `/health` at any point. It returns an `org_score` (0–10) and a `loop_verdi
 
 The score is driven by three signals: skill_invocation_rate (did a capability skill fire? — primary, 2.0 weight), close_cluster_rate (did you type `/done`? — completion bonus, 0.5 weight), and gap_resolution_rate (are recurring gaps being fixed?). The primary lever is **capability skill invocation** — a session where you used `/build`, `/review`, or `/done` (includes `/learn`) compounds your ability. Close rate matters but doesn't dominate. A discipline gate caps org_score at 6.5 if 3+ consecutive sessions have zero capability skills — the gate lifts when you next invoke one. The 7.5 target requires ≥85% capability skill rate and regular session close.
 
+**M+ gate chain (what `/build` runs):** For features and non-trivial tasks, three gates run before code is written: (1) `optimize_intent` collapses ambiguous scope with one question, (2) `nfr_check` answers four questions (performance, reliability, security, observability) to produce an NFR Decision Block, (3) `check_nfr_gate` confirms the block is present before dev-loop starts. Each gate is tool-enforced — skipping it requires the tool to return `blocked=false`, not just deciding to proceed.
+
 **What to do when STALLED:** use `/build` for code tasks and `/done` at session end. The score responds to capability skill invocation first, close rate second.
 
 ---
