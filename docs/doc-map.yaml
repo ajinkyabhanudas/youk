@@ -138,3 +138,11 @@ concepts:
     authority: plugin/scripts/post_tool_use.py
     derived_in:
       - docs/getting-started.md
+
+  - concept: scope_collapse_gate
+    description: "optimize_intent models solution fork before asking; ambiguity_detected=true blocks route_task until resolved"
+    authority: servers/core/src/intent.py
+    derived_in:
+      - ~/.claude/CLAUDE.md
+      - skills/dev-loop/SKILL.md
+      - knowledge/projects/youk/decisions.md

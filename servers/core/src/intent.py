@@ -41,6 +41,12 @@ The brief must be:
 - Token-efficient (under 120 words total for the brief)
 - Honest about scope (what is explicitly out of scope)
 
+Before generating clarifying questions, model the solution space fork:
+For each interpretation of the request, estimate what the implementation looks like.
+The question that distinguishes the interpretations most efficiently is the right one to ask.
+A question is only worth asking if the answer changes what gets written by more than trivially.
+Never ask about something you can infer from context or assume safely.
+
 Output ONLY valid JSON matching this schema:
 {
   "problem": "1-2 sentences, specific and actionable",
@@ -49,15 +55,25 @@ Output ONLY valid JSON matching this schema:
   "architecture_recommendation": "concrete pattern recommendation with one sentence rationale",
   "anti_patterns": ["pattern to avoid and why", "..."],
   "out_of_scope": ["explicit exclusions"],
+  "solution_fork": {
+    "if_interpretation_A": "what the minimal implementation looks like under this reading — one sentence",
+    "if_interpretation_B": "what the implementation looks like under the alternative reading — one sentence",
+    "lines_delta": "rough difference in implementation size between A and B (e.g. '5 lines vs 80 lines')",
+    "collapsing_question": "the single question whose answer makes A vs B obvious"
+  },
   "ambiguity_detected": true/false,
-  "clarifying_questions": ["question if ambiguity_detected is true, else empty"],
+  "clarifying_questions": ["at most one question — the collapsing_question if ambiguity_detected, else empty"],
   "estimated_size": "XS/S/M/L/XL",
   "token_efficiency_gain": "estimated token reduction vs. proceeding with raw input (e.g. '60%')"
 }
 
-If the input is already clear and specific, set ambiguity_detected to false and clarifying_questions to [].
-If the input mentions multiple unrelated concerns, separate them and note that in constraints.
-Always recommend a concrete architecture pattern — never say "it depends" without a default recommendation.
+Rules:
+- solution_fork is required when ambiguity_detected is true. When ambiguity_detected is false, set solution_fork to null.
+- clarifying_questions must contain AT MOST ONE item — the question from solution_fork.collapsing_question.
+- Never ask about something answerable from context. Never ask multiple questions.
+- If the input is already clear and specific, set ambiguity_detected to false and clarifying_questions to [].
+- If the input mentions multiple unrelated concerns, separate them and note that in constraints.
+- Always recommend a concrete architecture pattern — never say "it depends" without a default recommendation.
 """
 
 _FAST_PATTERNS = {
@@ -208,6 +224,7 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
         interpretation_context = f"\n\nKnown interpretation patterns for this user:\n{interpretation_file.read_text()[:2000]}"
 
     if not _ANTHROPIC_AVAILABLE:
+        is_ambiguous = len(raw_input.split()) < 8
         return {
             "problem": raw_input,
             "success_criteria": "Task completed as described.",
@@ -215,8 +232,11 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
             "architecture_recommendation": "Proceed with standard patterns for this domain.",
             "anti_patterns": [],
             "out_of_scope": [],
-            "ambiguity_detected": len(raw_input.split()) < 8,
-            "clarifying_questions": ["Could you describe the expected output in concrete terms?"] if len(raw_input.split()) < 8 else [],
+            "solution_fork": {
+                "collapsing_question": "Could you describe the expected output in concrete terms?"
+            } if is_ambiguous else None,
+            "ambiguity_detected": is_ambiguous,
+            "clarifying_questions": ["Could you describe the expected output in concrete terms?"] if is_ambiguous else [],
             "estimated_size": "M",
             "token_efficiency_gain": "n/a",
             "raw_input": raw_input,
@@ -261,6 +281,7 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
             "architecture_recommendation": "Proceed with standard patterns.",
             "anti_patterns": [],
             "out_of_scope": [],
+            "solution_fork": None,
             "ambiguity_detected": False,
             "clarifying_questions": [],
             "estimated_size": "M",
