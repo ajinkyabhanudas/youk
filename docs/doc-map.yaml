@@ -34,6 +34,7 @@ mcp_tools:
     - {tool: list_skills, refs: [README.md]}
     - {tool: generate_skill, refs: [README.md]}
     - {tool: assess_skill, refs: [README.md]}
+    - {tool: generate_stack_overlay, refs: [README.md, skills/stack-overlay-schema.md]}
     - {tool: detect_skill_gaps, refs: [README.md]}
 
 src_files:

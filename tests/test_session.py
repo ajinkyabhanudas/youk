@@ -1182,3 +1182,86 @@ class TestBuildBriefResumeCandidate:
 
         cp = json.loads((youk_root / "state" / "session-checkpoint.json").read_text())
         assert cp["resume_candidate"] == ""
+
+
+# ── Cold-start (alpha readiness) ─────────────────────────────────────────────
+
+class TestColdStart:
+    """session_start must not crash on a brand-new machine with no prior audit history.
+
+    Alpha readiness: a new developer who just ran install.sh has:
+    - Empty knowledge/projects/ (no contracts, no context, no decisions)
+    - Empty audit dir (no prior sessions)
+    - No state/session.json
+    All of these must produce a valid SessionState, not an exception.
+    """
+
+    @pytest.fixture(autouse=True)
+    def patch_claude_root(self, tmp_path, monkeypatch, youk_root):
+        """Patch session.CLAUDE_ROOT so audit dir writes don't hit the read-only container path."""
+        import session
+        claude_root = tmp_path / "claude"
+        (claude_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        return claude_root
+
+    def test_cold_start_no_prior_audit_returns_session_state(self, youk_root, tmp_path):
+        """Brand-new install: no audit, no contracts, no prior session."""
+        import session
+
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+
+        state = session.start_session(str(project_dir))
+
+        assert state.session_counter >= 1
+        assert state.resume_point is not None  # may be empty string — that's fine
+        assert state.session_plan is not None
+        assert isinstance(state.session_plan, list)
+        assert state.pending_proposals_count == 0
+        assert state.close_cluster_missed is False  # no prior session = no missed close
+
+    def test_cold_start_session_plan_has_items(self, youk_root, tmp_path):
+        """Session plan must be non-empty even with no prior context."""
+        import session
+
+        project_dir = tmp_path / "new-project"
+        project_dir.mkdir()
+
+        state = session.start_session(str(project_dir))
+        assert len(state.session_plan) >= 1
+
+    def test_cold_start_contracts_empty(self, youk_root, tmp_path):
+        """No contracts on first session — must not crash or return garbage."""
+        import session
+
+        project_dir = tmp_path / "fresh-project"
+        project_dir.mkdir()
+
+        state = session.start_session(str(project_dir))
+        assert isinstance(state.contracts, list)
+
+    def test_cold_start_to_dict_serializable(self, youk_root, tmp_path):
+        """to_dict() must produce a JSON-serializable result on cold start."""
+        import session, json
+
+        project_dir = tmp_path / "serialize-project"
+        project_dir.mkdir()
+
+        state = session.start_session(str(project_dir))
+        d = state.to_dict()
+
+        # Must serialize without error
+        serialized = json.dumps(d)
+        assert '"session_counter"' in serialized
+        assert '"session_plan"' in serialized
+
+    def test_cold_start_does_not_set_close_cluster_missed(self, youk_root, tmp_path):
+        """No prior audit = no missed close cluster. Flag must be False."""
+        import session
+
+        project_dir = tmp_path / "first-ever-project"
+        project_dir.mkdir()
+
+        state = session.start_session(str(project_dir))
+        assert state.close_cluster_missed is False

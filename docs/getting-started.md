@@ -124,7 +124,12 @@ This pulls the latest code and rebuilds Docker images. Restart Claude Code after
 
 **Session start:** youk-core loads contracts, resume point, and session plan from the project you're in. Pending improvement proposals surface once: "youk flagged N proposals — review them?"
 
-**During the session:** `route_task` runs silently for every non-trivial task. Small tasks get no ceremony. M+ tasks get an nfr_check before implementation starts. If a skill fails mid-session, youk patches it immediately rather than deferring to the next session.
+**During the session:** `route_task` runs silently for every non-trivial task. Small tasks get no ceremony. For M+ tasks (features, new modules, anything non-trivial), three gates run in sequence before implementation starts:
+1. `optimize_intent` — if the task is ambiguous, models the solution fork and asks the one question that collapses it. You answer once; implementation proceeds on the resolved scope.
+2. `nfr_check` — four questions (performance, reliability, security, observability) answered in-session. Takes seconds, produces an NFR Decision Block that anchors the implementation.
+3. `check_nfr_gate` — confirms the NFR block is present before code is written. Blocked = re-run nfr_check. Passed = dev-loop starts.
+
+If a skill fails mid-session, youk patches it immediately rather than deferring to the next session.
 
 **Session end:** Type `/done` when you finish — or any natural closing phrase ("looks good", "that's all", "wrap it up"). This runs code-review + verify, writes the resume point for next session, saves contracts, and sets `CloseCluster: yes` for org_score.
 
