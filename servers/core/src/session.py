@@ -1115,6 +1115,27 @@ def _generate_session_plan(
     if nudge:
         plan.append(nudge)
 
+    # 4b. Stack bootstrap signal — fires when: known stack, stack template exists in
+    # knowledge/stacks/, and user-profile.md either doesn't exist or doesn't mention
+    # this stack. Prompts /learn to seed the knowledge graph for this stack.
+    _stack_key_map = {
+        "python_postgresql": "python_postgresql",
+        "python": "python",
+        "js_react": "typescript_react",
+        "node": "node",
+    }
+    _stack_key = _stack_key_map.get(project_type)
+    if _stack_key and is_cold_start:
+        _stack_template = YOUK_ROOT / "knowledge" / "stacks" / f"{_stack_key}.md"
+        _user_profile = YOUK_ROOT / "knowledge" / "user-profile.md"
+        _profile_text = _user_profile.read_text() if _user_profile.exists() else ""
+        _stack_in_profile = _stack_key.replace("_", " ") in _profile_text.lower() or project_type in _profile_text.lower()
+        if _stack_template.exists() and not _stack_in_profile:
+            plan.append(
+                f"New stack ({project_type}) — run /learn after this session to seed your "
+                f"knowledge graph with {_stack_key} concepts and analogies."
+            )
+
     # 5. Pre-commit hooks — surface once so Claude knows commits go through them
     if t.get("pre_commit"):
         plan.append("Pre-commit hooks active — commits run checks automatically before staging")

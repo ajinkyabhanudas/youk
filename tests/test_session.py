@@ -178,6 +178,17 @@ class TestGenerateSessionPlan:
         defaults.update(kwargs)
         return _generate_session_plan(**defaults)
 
+    def _plan_with_root(self, youk_root, **kwargs):
+        """Helper that patches YOUK_ROOT so stack bootstrap checks run."""
+        import session
+        import importlib
+        old_root = session.YOUK_ROOT
+        session.YOUK_ROOT = youk_root
+        try:
+            return self._plan(**kwargs)
+        finally:
+            session.YOUK_ROOT = old_root
+
     def test_stale_resume_point_tagged_when_old_and_many_commits(self):
         plan = self._plan(days_since_last=20, new_commits=15)
         assert any("20d stale" in item and "15 commits since" in item for item in plan)
@@ -207,6 +218,56 @@ class TestGenerateSessionPlan:
     def test_pending_proposals_technical_for_veteran(self):
         plan = self._plan(pending_proposals=3, session_counter=10)
         assert any("self-heal" in item.lower() or "get_proposals" in item for item in plan)
+
+    def test_stack_bootstrap_fires_on_cold_start_with_template(self, youk_root):
+        """Bootstrap nudge appears when stack template exists and no user-profile."""
+        stacks_dir = youk_root / "knowledge" / "stacks"
+        stacks_dir.mkdir(parents=True)
+        (stacks_dir / "python.md").write_text("# Stack: Python\n")
+        plan = self._plan_with_root(
+            youk_root,
+            project_type="python",
+            resume_point="No prior context found — fresh session.",
+        )
+        assert any("New stack" in item and "python" in item for item in plan)
+
+    def test_stack_bootstrap_suppressed_when_stack_in_profile(self, youk_root):
+        """Bootstrap nudge is suppressed when user-profile already mentions the stack."""
+        stacks_dir = youk_root / "knowledge" / "stacks"
+        stacks_dir.mkdir(parents=True)
+        (stacks_dir / "python.md").write_text("# Stack: Python\n")
+        (youk_root / "knowledge" / "user-profile.md").write_text(
+            "## Domains\n### Python\n**Depth:** DEEP\n"
+        )
+        plan = self._plan_with_root(
+            youk_root,
+            project_type="python",
+            resume_point="No prior context found — fresh session.",
+        )
+        assert not any("New stack" in item for item in plan)
+
+    def test_stack_bootstrap_suppressed_when_no_template(self, youk_root):
+        """Bootstrap nudge is suppressed when no stack template file exists."""
+        (youk_root / "knowledge" / "stacks").mkdir(parents=True)
+        # No python.md in stacks/
+        plan = self._plan_with_root(
+            youk_root,
+            project_type="python",
+            resume_point="No prior context found — fresh session.",
+        )
+        assert not any("New stack" in item for item in plan)
+
+    def test_stack_bootstrap_suppressed_on_returning_session(self, youk_root):
+        """Bootstrap nudge only fires on cold start (no resume point)."""
+        stacks_dir = youk_root / "knowledge" / "stacks"
+        stacks_dir.mkdir(parents=True)
+        (stacks_dir / "python.md").write_text("# Stack: Python\n")
+        plan = self._plan_with_root(
+            youk_root,
+            project_type="python",
+            resume_point="Fix the login bug",  # not a cold start
+        )
+        assert not any("New stack" in item for item in plan)
 
 
 # ── Mid-session adaptations audit line ───────────────────────────────────────
