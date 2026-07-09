@@ -57,9 +57,45 @@ def _score_size(task: str, routes: dict) -> TaskSize:
     return scored[0][1]
 
 
-def route_task(task: str, skills_already_invoked: list[str] | None = None) -> RoutingDecision:
+def route_task(
+    task: str,
+    skills_already_invoked: list[str] | None = None,
+    intent_brief: dict | None = None,
+) -> RoutingDecision:
+    # Scope-collapse gate: if an intent brief was provided and scope is still
+    # ambiguous, block routing and surface the collapsing question.
+    # The model must re-call optimize_intent with the user's answer, then
+    # re-call route_task with the resolved brief before any skill can run.
+    if intent_brief and intent_brief.get("ambiguity_detected"):
+        fork = intent_brief.get("solution_fork") or {}
+        question = (
+            fork.get("collapsing_question")
+            or (intent_brief.get("clarifying_questions") or [""])[0]
+            or "Please clarify the scope before proceeding."
+        )
+        # Stub out a minimal RoutingDecision — size unknown until scope is resolved
+        return RoutingDecision(
+            task=task,
+            size=TaskSize.M,  # conservative placeholder
+            ceremony="blocked",
+            skills=[],
+            nfr_mode="none",
+            blocked=True,
+            collapsing_question=question,
+        )
+
     routes = _load_routes()
-    size = _score_size(task, routes)
+    # If a resolved intent brief was provided, prefer its estimated size over
+    # keyword scoring — the brief has already reasoned about the problem.
+    if intent_brief and not intent_brief.get("ambiguity_detected"):
+        brief_size = intent_brief.get("estimated_size", "")
+        if brief_size in ("XS", "S", "M", "L", "XL"):
+            size = TaskSize(brief_size)
+        else:
+            size = _score_size(task, routes)
+    else:
+        size = _score_size(task, routes)
+
     sizes_config = routes.get("task_sizes", {})
     size_config = sizes_config.get(size.value, {})
 

@@ -50,9 +50,14 @@ class RoutingDecision:
     # For M+ tasks: pre-formatted planning gate string to output verbatim before acting.
     # Empty for XS/S tasks — those proceed without a gate.
     plan_hook: str = ""
+    # Scope-collapse gate: set when intent_brief has ambiguity_detected=True.
+    # When blocked=True, do not proceed — surface collapsing_question to the user,
+    # then re-call optimize_intent with clarified_context, then re-call route_task.
+    blocked: bool = False
+    collapsing_question: str = ""
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "task": self.task,
             "size": self.size.value,
             "ceremony": self.ceremony,
@@ -64,7 +69,11 @@ class RoutingDecision:
                 for w in self.warnings
             ],
             "plan_hook": self.plan_hook,
+            "blocked": self.blocked,
         }
+        if self.collapsing_question:
+            d["collapsing_question"] = self.collapsing_question
+        return d
 
 
 @dataclass

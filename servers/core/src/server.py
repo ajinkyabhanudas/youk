@@ -117,17 +117,32 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
 
 
 @mcp.tool()
-def route_task(task: str, skills_already_invoked: list[str] | None = None) -> dict:
+def route_task(
+    task: str,
+    skills_already_invoked: list[str] | None = None,
+    intent_brief: dict | None = None,
+) -> dict:
     """
     Determine the size and skill routing for a task. Read this before acting —
     apply the returned ceremony level silently without announcing the routing.
 
-    task: One-sentence description of what needs to be done.
-    skills_already_invoked: Skills already run this session (to avoid double-triggering warnings).
+    SCOPE-COLLAPSE GATE: If you called optimize_intent first and it returned
+    ambiguity_detected=true, pass the full result as intent_brief. This tool
+    will return blocked=true with a collapsing_question. Surface that question
+    to the user, get their answer, re-call optimize_intent with clarified_context,
+    then re-call route_task with the resolved brief. Do not proceed when blocked=true.
 
-    Returns: size, ceremony, skills (suggested), nfr_mode, warnings (soft rule violations).
+    If intent_brief is provided and ambiguity_detected=false, the brief's
+    estimated_size is used for routing (more accurate than keyword scoring).
+
+    task: One-sentence description of what needs to be done.
+    skills_already_invoked: Skills already run this session (avoids double-triggering warnings).
+    intent_brief: Optional — the full dict returned by optimize_intent.
+
+    Returns: size, ceremony, skills, nfr_mode, warnings, plan_hook, blocked, collapsing_question.
+    When blocked=true: stop. Surface collapsing_question. Do not invoke any skill.
     """
-    decision = _route_task(task, skills_already_invoked or [])
+    decision = _route_task(task, skills_already_invoked or [], intent_brief)
     return decision.to_dict()
 
 
