@@ -50,9 +50,11 @@ fi
 
 # Detect stale image: servers/shared/ changed after the image was built
 # servers/shared/ is baked into both images at build time — not live-mounted.
+# Docker returns Created in UTC (ISO 8601 with trailing Z). Parse explicitly as UTC
+# so local timezone offsets don't skew the epoch calculation on macOS.
 IMAGE_BUILT=$(docker image inspect youk-code:latest --format '{{.Created}}' 2>/dev/null | sed 's/\.[0-9]*Z*$//')
-IMAGE_BUILT_S=$(date -jf "%Y-%m-%dT%H:%M:%S" "${IMAGE_BUILT:-1970-01-01T00:00:00}" +%s 2>/dev/null \
-               || date -d "${IMAGE_BUILT:-1970-01-01T00:00:00}" +%s 2>/dev/null || echo 0)
+IMAGE_BUILT_S=$(TZ=UTC date -jf "%Y-%m-%dT%H:%M:%S" "${IMAGE_BUILT:-1970-01-01T00:00:00}" +%s 2>/dev/null \
+               || date -d "${IMAGE_BUILT:-1970-01-01T00:00:00}Z" +%s 2>/dev/null || echo 0)
 if [[ "${IMAGE_BUILT_S:-0}" -gt 0 ]] && command -v git &>/dev/null && [[ -d "$YOUK_DIR/.git" ]]; then
   SHARED_CHANGED=$(git -C "$YOUK_DIR" log --since="@${IMAGE_BUILT_S}" --format="%h" -- servers/shared/ 2>/dev/null | wc -l | tr -d ' ')
   if [[ "${SHARED_CHANGED:-0}" -gt 0 ]]; then
