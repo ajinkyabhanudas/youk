@@ -80,17 +80,28 @@ Each phase begins with a compact token: `[PHASE: NAME]`
 4. **Run the Stack Coverage check** (see Stack Coverage System below). If a gap is
    detected, pause here and propose generating the stack reference before continuing.
    Do not proceed to the next phase until the user responds.
-5. Flag ambiguities. Ask exactly one clarifying question if something is blocking;
-   otherwise make a stated assumption and proceed.
+5. **Scope-collapse check** — before writing a single line, model the solution space:
+   - List every interpretation of the task that produces a materially different implementation.
+   - For each, estimate: what changes, how many lines, which files touched.
+   - If two interpretations differ by more than trivially (>10 lines, different files, different API contract): ask the one question whose answer collapses the fork. Wait for the answer. Do not proceed to WRITE until the fork is resolved.
+   - If interpretations converge to the same implementation: state your reading in the CONTEXT BLOCK and proceed. Do not ask.
+   - **The test before asking:** "If I'm wrong about this assumption, how much do I throw away?" More than a few lines → ask. Almost nothing → state and proceed.
+   - Never ask about something answerable from existing context. Never ask more than one question per turn.
 6. Declare the entry point for the next phase.
 
-> Output: a compact CONTEXT BLOCK (≤10 lines) that will be carried into all
-> subsequent phases as the source of truth.
+> Output: a compact CONTEXT BLOCK (≤10 lines) carried into all subsequent phases as
+> the source of truth. If scope-collapse required a question, write CONTEXT BLOCK
+> after the answer arrives — not before.
 
 ---
 
 ### Phase 2 — WRITE
 
+0. **Minimal-path check** — before writing, answer: what is the smallest implementation
+   that satisfies the constraint stated in CONTEXT BLOCK? Write that. Not a generalized
+   version, not a future-proof version. If a dict covers the use case, don't add Redis.
+   If one function covers it, don't add a class. Additions require a stated reason tied
+   to a constraint in CONTEXT BLOCK — not anticipated future use.
 1. Write the implementation using idiomatic patterns for the detected language
    and framework.
 2. Apply best practices by default — see `references/best-practices.md` for
