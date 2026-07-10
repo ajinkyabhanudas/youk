@@ -11,6 +11,7 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License](https://img.shields.io/badge/license-MIT-22C55E)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](https://github.com/ajinkyabhanudas/youk)
+[![Wiki](https://img.shields.io/badge/wiki-reference-8B5CF6)](https://github.com/ajinkyabhanudas/youk/wiki)
 
 </div>
 
