@@ -835,3 +835,530 @@ class TestNamingLint:
                 if pattern in s:
                     violations.append(f"Found '{pattern}' in: {s[:80]}")
         assert not violations, "Opaque design labels found in user-facing strings:\n" + "\n".join(violations)
+
+
+# ── _read_recent_audit_logs ───────────────────────────────────────────────────
+
+class TestReadRecentAuditLogs:
+    def test_returns_empty_when_dir_missing(self, youk_root, claude_root):
+        from health import _read_recent_audit_logs
+        assert _read_recent_audit_logs() == []
+
+    def test_reads_current_month_file(self, youk_root, claude_root):
+        from datetime import datetime
+        month = datetime.utcnow().strftime("%Y-%m")
+        (claude_root / "audit" / f"{month}.md").write_text("### Session — content\n")
+        from health import _read_recent_audit_logs
+        texts = _read_recent_audit_logs(days=30)
+        assert any("### Session" in t for t in texts)
+
+    def test_skips_files_outside_window(self, youk_root, claude_root):
+        # Write a file from 3 years ago — should be excluded by the 30-day window
+        (claude_root / "audit" / "2020-01.md").write_text("### Session — old\n")
+        from health import _read_recent_audit_logs
+        texts = _read_recent_audit_logs(days=30)
+        assert not any("old" in t for t in texts)
+
+    def test_skips_malformed_filenames(self, youk_root, claude_root):
+        (claude_root / "audit" / "notes.md").write_text("just notes\n")
+        from health import _read_recent_audit_logs
+        # Should not raise — malformed files are silently skipped
+        texts = _read_recent_audit_logs(days=30)
+        assert isinstance(texts, list)
+
+
+# ── _parse_skill_gap_signals ──────────────────────────────────────────────────
+
+class TestParseSkillGapSignals:
+    def test_extracts_gap_lines(self, youk_root, claude_root):
+        audit = "SkillGap: learn — missing PERSIST phase\nSkillGap: learn — no bridges\n"
+        from health import _parse_skill_gap_signals
+        result = _parse_skill_gap_signals([audit])
+        assert len(result) == 1
+        assert result[0]["skill"] == "learn"
+        assert result[0]["count"] == 2
+
+    def test_multiple_skills_sorted_by_count(self, youk_root, claude_root):
+        audit = (
+            "SkillGap: code-review — gap1\nSkillGap: code-review — gap2\n"
+            "SkillGap: code-review — gap3\nSkillGap: learn — gap1\n"
+        )
+        from health import _parse_skill_gap_signals
+        result = _parse_skill_gap_signals([audit])
+        assert result[0]["skill"] == "code-review"
+        assert result[0]["count"] == 3
+
+    def test_returns_empty_when_no_gap_lines(self, youk_root, claude_root):
+        from health import _parse_skill_gap_signals
+        assert _parse_skill_gap_signals(["### Session — no gaps\n"]) == []
+
+    def test_ignores_malformed_gap_lines(self, youk_root, claude_root):
+        from health import _parse_skill_gap_signals
+        # Missing " — " separator → should be ignored
+        result = _parse_skill_gap_signals(["SkillGap: learn missing separator\n"])
+        assert result == []
+
+
+# ── run_health_check_with_skill_signals ───────────────────────────────────────
+
+class TestRunHealthCheckWithSkillSignals:
+    def _write_audit(self, claude_root, sessions=3, with_gap=False):
+        lines = []
+        for i in range(1, sessions + 1):
+            lines.append(f"### Session — 2026-07-0{i} 10:00 UTC")
+            lines.append("Skills: code-review")
+            lines.append("CloseCluster: yes")
+            lines.append("Commits: yes")
+            if with_gap:
+                lines.append("SkillGap: learn — missing PERSIST phase")
+        (claude_root / "audit" / "2026-07.md").write_text("\n".join(lines))
+
+    def test_returns_org_score(self, youk_root, claude_root):
+        self._write_audit(claude_root)
+        from health import run_health_check_with_skill_signals
+        result = run_health_check_with_skill_signals()
+        assert "org_score" in result
+        assert isinstance(result["org_score"], float)
+
+    def test_includes_improvement_velocity(self, youk_root, claude_root):
+        self._write_audit(claude_root)
+        from health import run_health_check_with_skill_signals
+        result = run_health_check_with_skill_signals()
+        assert "improvement_velocity" in result
+        assert "loop_verdict" in result["improvement_velocity"]
+
+    def test_surfaces_skill_gap_signals_when_present(self, youk_root, claude_root):
+        self._write_audit(claude_root, with_gap=True)
+        from health import run_health_check_with_skill_signals
+        result = run_health_check_with_skill_signals()
+        assert "skill_gap_signals" in result
+        assert result["skill_gap_signals"][0]["skill"] == "learn"
+
+    def test_no_skill_gap_key_when_none_present(self, youk_root, claude_root):
+        self._write_audit(claude_root, with_gap=False)
+        from health import run_health_check_with_skill_signals
+        result = run_health_check_with_skill_signals()
+        assert "skill_gap_signals" not in result
+
+    def test_research_mode_adds_topics_when_gaps_exist(self, youk_root, claude_root):
+        self._write_audit(claude_root, with_gap=True)
+        from health import run_health_check_with_skill_signals
+        result = run_health_check_with_skill_signals(research_mode=True)
+        assert "research_topics" in result
+        assert len(result["research_topics"]) >= 1
+
+    def test_research_mode_no_topics_when_no_gaps(self, youk_root, claude_root):
+        self._write_audit(claude_root, with_gap=False)
+        from health import run_health_check_with_skill_signals
+        result = run_health_check_with_skill_signals(research_mode=False)
+        assert "research_topics" not in result
+
+
+# ── _archive_applied_proposals ────────────────────────────────────────────────
+
+class TestArchiveAppliedProposals:
+    _PENDING_WITH_APPLIED = (
+        "# Proposals\n\n"
+        "## PENDING-001 — 2026-07-01\n**Status:** APPLIED — 2026-07-02\n\n"
+        "## PENDING-002 — 2026-07-01\n**Status:** PENDING\n"
+    )
+
+    def test_moves_applied_to_archive(self, youk_root):
+        proposals_dir = youk_root / "knowledge" / "proposals"
+        proposals_dir.mkdir(parents=True, exist_ok=True)
+        (proposals_dir / "PENDING.md").write_text(self._PENDING_WITH_APPLIED)
+        from health import _archive_applied_proposals
+        count = _archive_applied_proposals()
+        assert count == 1
+        archive = (proposals_dir / "APPLIED-ARCHIVE.md").read_text()
+        assert "PENDING-001" in archive
+        pending = (proposals_dir / "PENDING.md").read_text()
+        assert "PENDING-001" not in pending
+        assert "PENDING-002" in pending
+
+    def test_returns_zero_when_nothing_to_archive(self, youk_root):
+        proposals_dir = youk_root / "knowledge" / "proposals"
+        proposals_dir.mkdir(parents=True, exist_ok=True)
+        (proposals_dir / "PENDING.md").write_text("# Proposals\n\n## PENDING-001\n**Status:** PENDING\n")
+        from health import _archive_applied_proposals
+        assert _archive_applied_proposals() == 0
+
+    def test_returns_zero_when_file_missing(self, youk_root):
+        from health import _archive_applied_proposals
+        assert _archive_applied_proposals() == 0
+
+    def test_also_archives_superseded(self, youk_root):
+        proposals_dir = youk_root / "knowledge" / "proposals"
+        proposals_dir.mkdir(parents=True, exist_ok=True)
+        (proposals_dir / "PENDING.md").write_text(
+            "# Proposals\n\n## PENDING-001 — 2026-07-01\n**Status:** SUPERSEDED\n"
+        )
+        from health import _archive_applied_proposals
+        count = _archive_applied_proposals()
+        assert count == 1
+
+
+# ── _audit_global_contracts ───────────────────────────────────────────────────
+
+class TestAuditGlobalContracts:
+    def test_returns_zeros_when_file_missing(self, youk_root):
+        from health import _audit_global_contracts
+        result = _audit_global_contracts()
+        assert result == {"total": 0, "auto_promoted": 0, "confirmed": 0}
+
+    def test_counts_total_and_auto_promoted(self, youk_root):
+        global_dir = youk_root / "knowledge" / "global"
+        global_dir.mkdir(parents=True)
+        (global_dir / "contracts.md").write_text(
+            "- always test before commit [auto-promoted]\n"
+            "- never mock the DB\n"
+            "- run ruff on save [auto-promoted]\n"
+        )
+        from health import _audit_global_contracts
+        result = _audit_global_contracts()
+        assert result["total"] == 3
+        assert result["auto_promoted"] == 2
+        assert result["confirmed"] == 1
+
+    def test_skips_headings_and_blank_lines(self, youk_root):
+        global_dir = youk_root / "knowledge" / "global"
+        global_dir.mkdir(parents=True)
+        (global_dir / "contracts.md").write_text(
+            "# Global Contracts\n\n- one contract\n\n# Section\n"
+        )
+        from health import _audit_global_contracts
+        result = _audit_global_contracts()
+        assert result["total"] == 1
+
+
+# ── _detect_cross_project_patterns ───────────────────────────────────────────
+
+class TestDetectCrossProjectPatterns:
+    def _write_contracts(self, youk_root, project_contracts: dict[str, list[str]]):
+        for slug, contracts in project_contracts.items():
+            proj = youk_root / "knowledge" / "projects" / slug
+            proj.mkdir(parents=True, exist_ok=True)
+            (proj / "contracts.md").write_text(
+                "\n".join(f"- {c}" for c in contracts) + "\n"
+            )
+
+    def test_returns_empty_when_no_projects(self, youk_root):
+        from health import _detect_cross_project_patterns
+        assert _detect_cross_project_patterns() == []
+
+    def test_returns_empty_when_only_one_project(self, youk_root):
+        self._write_contracts(youk_root, {"canopy": ["always run tests"]})
+        from health import _detect_cross_project_patterns
+        assert _detect_cross_project_patterns() == []
+
+    def test_detects_shared_contract(self, youk_root):
+        self._write_contracts(youk_root, {
+            "canopy": ["always run tests", "never mock the db"],
+            "youk":   ["always run tests", "never auto-apply code edits"],
+        })
+        from health import _detect_cross_project_patterns
+        result = _detect_cross_project_patterns()
+        shared = [r for r in result if "always run tests" in r["contract"]]
+        assert shared
+        assert shared[0]["count"] == 2
+
+    def test_no_cross_project_when_contracts_differ(self, youk_root):
+        self._write_contracts(youk_root, {
+            "canopy": ["always run tests"],
+            "youk":   ["never auto-apply code edits"],
+        })
+        from health import _detect_cross_project_patterns
+        assert _detect_cross_project_patterns() == []
+
+    def test_sorted_by_count_descending(self, youk_root):
+        self._write_contracts(youk_root, {
+            "a": ["shared1", "shared2", "unique-a"],
+            "b": ["shared1", "shared2", "unique-b"],
+            "c": ["shared1", "unique-c"],
+        })
+        from health import _detect_cross_project_patterns
+        result = _detect_cross_project_patterns()
+        # shared1 appears in 3 projects, shared2 in 2 — should be sorted desc
+        assert result[0]["count"] >= result[-1]["count"]
+
+
+# ── add_proposal deduplication ────────────────────────────────────────────────
+
+class TestAddProposal:
+    def _make_proposal(self, desc="do X"):
+        from models import Proposal
+        return Proposal(
+            id="PENDING-TEST",
+            target="skills/learn/SKILL.md",
+            change_description=desc,
+            reason="test",
+            before="old",
+            after="new",
+            status="PENDING",
+            proposed_date="2026-07-10",
+            change_type="SKILL_EDIT",
+            target_section="Phase 1",
+            content="new content",
+        )
+
+    def test_creates_file_when_missing(self, youk_root):
+        from health import add_proposal
+        add_proposal(self._make_proposal())
+        assert (youk_root / "knowledge" / "proposals" / "PENDING.md").exists()
+
+    def test_deduplicates_by_change_description(self, youk_root):
+        from health import add_proposal
+        p = self._make_proposal("unique description for dedup test")
+        add_proposal(p)
+        add_proposal(p)  # second call should be a no-op
+        content = (youk_root / "knowledge" / "proposals" / "PENDING.md").read_text()
+        assert content.count("unique description for dedup test") == 1
+
+    def test_appends_distinct_proposals(self, youk_root):
+        from health import add_proposal
+        add_proposal(self._make_proposal("description one"))
+        add_proposal(self._make_proposal("description two"))
+        content = (youk_root / "knowledge" / "proposals" / "PENDING.md").read_text()
+        assert "description one" in content
+        assert "description two" in content
+
+
+# ── _compute_diff_preview (SKILL_EDIT, FILE_CREATE, unknown) ──────────────────
+
+class TestComputeDiffPreview:
+    def _make_proposal(self, change_type, target, section="", content="new content", youk_root=None, claude_root=None):
+        from models import Proposal
+        return Proposal(
+            id="PENDING-PREVIEW",
+            target=target,
+            change_description="preview test",
+            reason="r",
+            before="",
+            after="",
+            status="PENDING",
+            proposed_date="2026-07-10",
+            change_type=change_type,
+            target_section=section,
+            content=content,
+        )
+
+    def test_skill_edit_section_found(self, youk_root, claude_root):
+        skill_dir = claude_root / "skills" / "learn"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("# learn\n\n## Phase 1\nold content\n\n## Phase 2\nother\n")
+        p = self._make_proposal("SKILL_EDIT", "learn", section="Phase 1", content="new content")
+        from health import _compute_diff_preview
+        result = _compute_diff_preview(p)
+        assert result["change_type"] == "SKILL_EDIT"
+        assert "Phase 1" in result["before"]
+        assert "new content" in result["after"]
+
+    def test_skill_edit_section_missing(self, youk_root, claude_root):
+        skill_dir = claude_root / "skills" / "learn"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("# learn\n\n## Phase 1\nstuff\n")
+        p = self._make_proposal("SKILL_EDIT", "learn", section="NonExistent", content="x")
+        from health import _compute_diff_preview
+        result = _compute_diff_preview(p)
+        assert "section not found" in result["before"]
+
+    def test_skill_edit_skill_md_missing(self, youk_root, claude_root):
+        p = self._make_proposal("SKILL_EDIT", "missing-skill", section="Phase 1", content="x")
+        from health import _compute_diff_preview
+        result = _compute_diff_preview(p)
+        assert "error" in result
+
+    def test_unknown_change_type_returns_note(self, youk_root, claude_root):
+        p = self._make_proposal("UNKNOWN_TYPE", "some/target")
+        from health import _compute_diff_preview
+        result = _compute_diff_preview(p)
+        assert "note" in result or "error" in result
+
+
+# ── _execute_proposal (FILE_CREATE path guard, SKILL_EDIT write) ──────────────
+
+class TestExecuteProposal:
+    def _make_proposal(self, change_type, target, section="", content="content", youk_root=None):
+        from models import Proposal
+        return Proposal(
+            id="PENDING-EXEC",
+            target=target,
+            change_description="exec test",
+            reason="r",
+            before="",
+            after="",
+            status="PENDING",
+            proposed_date="2026-07-10",
+            change_type=change_type,
+            target_section=section,
+            content=content,
+        )
+
+    def test_file_create_blocked_outside_allowed_roots(self, youk_root, claude_root):
+        p = self._make_proposal("FILE_CREATE", "/tmp/evil.md", content="evil")
+        from health import _execute_proposal
+        result = _execute_proposal(p)
+        assert result["applied"] is False
+        assert "blocked" in result["error"].lower() or "outside" in result["error"].lower()
+
+    def test_file_create_writes_inside_youk_root(self, youk_root, claude_root, monkeypatch):
+        import health
+        monkeypatch.setattr(health, "_ALLOWED_WRITE_ROOTS", [youk_root])
+        target = str(youk_root / "knowledge" / "proposals" / "test-create.md")
+        p = self._make_proposal("FILE_CREATE", target, content="# Created\n")
+        result = health._execute_proposal(p)
+        assert result["applied"] is True
+        assert (youk_root / "knowledge" / "proposals" / "test-create.md").read_text() == "# Created\n"
+
+    def test_skill_edit_appends_new_section_when_missing(self, youk_root, claude_root):
+        skill_dir = claude_root / "skills" / "learn"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("# learn\n\n## Phase 1\noriginal\n")
+        p = self._make_proposal("SKILL_EDIT", "learn", section="New Section", content="brand new")
+        from health import _execute_proposal
+        result = _execute_proposal(p)
+        assert result["applied"] is True
+        content = (skill_dir / "SKILL.md").read_text()
+        assert "New Section" in content
+        assert "brand new" in content
+
+    def test_skill_edit_replaces_existing_section(self, youk_root, claude_root):
+        skill_dir = claude_root / "skills" / "learn"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("# learn\n\n## Phase 1\nold content\n\n## Phase 2\nkeep\n")
+        p = self._make_proposal("SKILL_EDIT", "learn", section="Phase 1", content="replaced")
+        from health import _execute_proposal
+        result = _execute_proposal(p)
+        assert result["applied"] is True
+        content = (skill_dir / "SKILL.md").read_text()
+        assert "replaced" in content
+        assert "keep" in content
+        assert "old content" not in content
+
+    def test_skill_edit_missing_skill_md(self, youk_root, claude_root):
+        p = self._make_proposal("SKILL_EDIT", "nonexistent", section="Phase 1", content="x")
+        from health import _execute_proposal
+        result = _execute_proposal(p)
+        assert result["applied"] is False
+        assert "not found" in result["error"]
+
+    def test_unknown_change_type_returns_error(self, youk_root, claude_root):
+        p = self._make_proposal("UNKNOWN", "some/target")
+        from health import _execute_proposal
+        result = _execute_proposal(p)
+        assert result["applied"] is False
+        assert "Unknown change_type" in result["error"]
+
+
+# ── _compute_knowledge_velocity ───────────────────────────────────────────────
+
+class TestComputeKnowledgeVelocity:
+    def _write_audit(self, claude_root, sessions: list[dict]):
+        lines = []
+        for i, s in enumerate(sessions):
+            lines.append(f"### Session — 2026-07-0{i+1} 10:00 UTC")
+            lines.append(f"Skills: {s.get('skills', 'code-review')}")
+            lines.append(f"CloseCluster: {'yes' if s.get('close_cluster') else 'no'}")
+            if s.get("contracts_saved"):
+                lines.append(f"contracts_saved: {s['contracts_saved']}")
+        return "\n".join(lines)
+
+    def test_growing_when_contracts_and_domain(self, youk_root, claude_root):
+        domain_dir = youk_root / "knowledge" / "domain"
+        domain_dir.mkdir(parents=True, exist_ok=True)
+        (domain_dir / "testing.md").write_text("# Testing\n")
+        audit = self._write_audit(claude_root, [
+            {"skills": "learn", "contracts_saved": 2},
+            {"skills": "learn", "contracts_saved": 1},
+        ])
+        from health import _compute_knowledge_velocity
+        result = _compute_knowledge_velocity([audit], "test-project")
+        assert result["domain_concepts_total"] >= 1
+        assert "GROWING" in result["verdict"] or "SLOW" in result["verdict"]
+
+    def test_empty_verdict_when_no_knowledge(self, youk_root, claude_root):
+        audit = self._write_audit(claude_root, [{"skills": "code-review"}])
+        from health import _compute_knowledge_velocity
+        result = _compute_knowledge_velocity([audit], "test-project")
+        assert result["verdict"] in ("EMPTY — no knowledge accumulated yet; run /learn at session end",
+                                     "SLOW — knowledge accumulating but below 1 contract/session average",
+                                     "STALLED — existing knowledge loaded but nothing added recently")
+
+    def test_domain_concepts_counts_md_files_excluding_gaps(self, youk_root, claude_root):
+        domain_dir = youk_root / "knowledge" / "domain"
+        domain_dir.mkdir(parents=True, exist_ok=True)
+        (domain_dir / "concept-a.md").write_text("# A\n")
+        (domain_dir / "concept-b.md").write_text("# B\n")
+        (domain_dir / "gaps.md").write_text("# Gaps\n")  # should be excluded
+        audit = self._write_audit(claude_root, [{"skills": "learn"}])
+        from health import _compute_knowledge_velocity
+        result = _compute_knowledge_velocity([audit], "test-project")
+        assert result["domain_concepts_total"] == 2  # gaps.md excluded
+
+    def test_project_contracts_counted(self, youk_root, claude_root):
+        proj = youk_root / "knowledge" / "projects" / "myproj"
+        proj.mkdir(parents=True, exist_ok=True)
+        (proj / "contracts.md").write_text("- contract one\n- contract two\n")
+        audit = self._write_audit(claude_root, [{"skills": "learn"}])
+        from health import _compute_knowledge_velocity
+        result = _compute_knowledge_velocity([audit], "myproj")
+        assert result["project_contracts_total"] == 2
+
+    def test_learn_rate_computed(self, youk_root, claude_root):
+        audit = self._write_audit(claude_root, [
+            {"skills": "learn", "close_cluster": True},
+            {"skills": "code-review", "close_cluster": True},
+        ])
+        from health import _compute_knowledge_velocity
+        result = _compute_knowledge_velocity([audit], "test")
+        assert result["learn_rate"] == 0.5
+
+
+# ── _analyze_promotion_candidates ─────────────────────────────────────────────
+
+class TestAnalyzePromotionCandidates:
+    def _audit_with_gaps(self, gaps: list[tuple[str, str, str]]) -> str:
+        """Build audit text with SkillGap lines. gaps = [(project, skill, description)]"""
+        lines = []
+        for i, (proj, skill, desc) in enumerate(gaps):
+            lines.append(f"### Session — 2026-07-0{i+1} 10:00 UTC")
+            lines.append(f"Project: {proj}")
+            lines.append(f"Skills: code-review")
+            lines.append(f"CloseCluster: yes")
+            lines.append(f"SkillGap: {skill} — {desc}")
+        return "\n".join(lines)
+
+    def test_returns_empty_when_no_gaps(self, youk_root, claude_root):
+        from health import _analyze_promotion_candidates
+        assert _analyze_promotion_candidates([]) == []
+
+    def test_skill_with_3_occurrences_is_candidate(self, youk_root, claude_root):
+        audit = self._audit_with_gaps([
+            ("proj-a", "learn", "missing PERSIST"),
+            ("proj-a", "learn", "no bridges"),
+            ("proj-a", "learn", "no extract"),
+        ])
+        from health import _analyze_promotion_candidates
+        candidates = _analyze_promotion_candidates([audit])
+        assert any(c["skill"] == "learn" and c["occurrence_count"] >= 3 for c in candidates)
+
+    def test_skill_with_2_occurrences_not_candidate(self, youk_root, claude_root):
+        audit = self._audit_with_gaps([
+            ("proj-a", "learn", "gap1"),
+            ("proj-a", "learn", "gap2"),
+        ])
+        from health import _analyze_promotion_candidates
+        candidates = _analyze_promotion_candidates([audit])
+        assert not any(c["skill"] == "learn" for c in candidates)
+
+    def test_cross_project_gap_gets_file_create_type(self, youk_root, claude_root):
+        audit = self._audit_with_gaps([
+            ("proj-a", "verify", "missing step"),
+            ("proj-b", "verify", "missing step"),
+            ("proj-c", "verify", "missing step"),
+        ])
+        from health import _analyze_promotion_candidates
+        candidates = _analyze_promotion_candidates([audit])
+        verify = next((c for c in candidates if c["skill"] == "verify"), None)
+        assert verify is not None
+        assert verify["change_type"] in ("FILE_CREATE", "SKILL_EDIT")
