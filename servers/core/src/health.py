@@ -305,10 +305,25 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
             "Aim for ≥50% of sessions invoking at least one capability skill."
         )
 
-    if skip_rate > 0.5:
+    # Option C recovery: a no-/done close is recovered when the *next* session opened
+    # with /learn (retrospective recovery). Count those as closed for messaging purposes.
+    recovered_count = 0
+    for i, s in enumerate(sessions):
+        if not s["close_cluster"] and i + 1 < len(sessions):
+            next_s = sessions[i + 1]
+            if "learn" in [sk.lower() for sk in next_s.get("skills", [])]:
+                recovered_count += 1
+    effective_close_count = close_count + recovered_count
+    effective_skip_rate = 1 - (effective_close_count / total)
+
+    if effective_skip_rate > 0.5:
+        unrecovered = total - effective_close_count
         findings.append(
-            f"Session-close cluster skipped {skip_rate:.0%} of sessions "
-            f"({close_count}/{total} completed)."
+            f"Session-close loop incomplete in {effective_skip_rate:.0%} of sessions "
+            f"({effective_close_count}/{total} closed or recovered via /learn at next open). "
+            f"{unrecovered} session(s) have no /done and no Option C recovery — "
+            "knowledge from those sessions did not compound. "
+            "Tab-close is fine; just ensure next session opens in the same project so /learn fires."
         )
 
     # Detect skills that never appear across tracked sessions
@@ -399,12 +414,18 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
                 "manually, or use the phrase 'ship it' to trigger youk's version instead."
             )
         elif _cz >= 3:
-            findings.append(
-                f"Session-close loop missed for {_cz} consecutive sessions. "
-                "If you're using /done but org_score stays flat, check whether a project "
-                ".claude/skills/done is overriding youk's. Use 'ship it' as the trigger phrase "
-                "to ensure youk's session_end runs with close_cluster=True."
+            # Check if Option C (retrospective /learn) ran in any of those sessions
+            _option_c_count = sum(
+                1 for _s in sessions[-_cz:]
+                if "learn" in [sk.lower() for sk in _s.get("skills", [])]
             )
+            if _option_c_count == 0:
+                findings.append(
+                    f"Session-close loop missed for {_cz} consecutive sessions — "
+                    "neither /done nor Option C (/learn at next session open) ran. "
+                    "Tab-close is fine; ensure the next session opens in the same project "
+                    "so youk can run retrospective /learn automatically."
+                )
 
     # PROPOSAL B: task_checkpoint coverage — surface when sessions lack checkpoint data.
     # Low coverage means the G2 breadcrumb (tab-close recovery) is not working.
@@ -710,9 +731,11 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
     skill_patch_rate = round(patched_sessions / total, 2) if total else 0.0
 
     # Loop health verdict
+    # Option C: /learn at next session open recovers a no-/done close.
+    # A low close_rate alone is not a stall signal — check skill_invocation_rate instead.
     evolution_active = gaps_last30 > 0 or proposals_applied > 0
-    if close_rate == 0.0:
-        verdict = "STALLED — /done never fires; audit data is thin; loop is not closing"
+    if skill_invocation_rate == 0.0 and close_rate == 0.0:
+        verdict = "STALLED — no capability skills and no /done; loop is not running"
     elif velocity > 0:
         verdict = f"IMPROVING — org_score +{velocity} from last cycle"
     elif velocity < 0:
