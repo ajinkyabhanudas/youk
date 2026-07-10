@@ -3,6 +3,7 @@
 <img src="assets/install-demo.svg" alt="youk — install, first session, compounding loop" width="100%"/>
 
 [![CI](https://github.com/ajinkyabhanudas/youk/actions/workflows/ci.yml/badge.svg)](https://github.com/ajinkyabhanudas/youk/actions/workflows/ci.yml)
+[![config valid](https://img.shields.io/badge/config-valid%20YAML-4CAF50)](config/)
 [![health.py coverage](https://img.shields.io/badge/health.py%20coverage-92%25-4CAF50)](tests/test_health.py)
 [![Python](https://img.shields.io/badge/python-3.13+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-required-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
