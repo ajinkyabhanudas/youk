@@ -279,7 +279,6 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     total = len(sessions)
     close_count = sum(1 for s in sessions if s["close_cluster"])
     capability_count = sum(1 for s in sessions if s.get("capability_skills"))
-    skip_rate = 1 - (close_count / total)
     capability_skip_rate = 1 - (capability_count / total)
 
     # Discipline gate finding — surfaces when score is capped due to capability skill absence
