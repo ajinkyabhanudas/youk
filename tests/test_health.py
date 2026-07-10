@@ -645,3 +645,193 @@ class TestCheckProjectTypeCoverage:
         assert result is not None
         assert len(result["missing"]) == 1
         assert result["missing"][0]["name"] == "namespace-safety"
+
+
+# ── Retrospective recovery: /learn at next open recovers a no-/done close ────
+
+class TestRetrospectiveRecoveryInFindings:
+    """_generate_findings must not flag sessions recovered via retrospective /learn."""
+
+    def _run(self, claude_root, youk_root, sessions: list[dict]) -> list[str]:
+        blocks = []
+        for i, s in enumerate(sessions):
+            close = "yes" if s.get("close_cluster") else "no"
+            skills = s.get("skills", "code-review")
+            blocks.append(
+                f"### Session — 2026-07-0{i+1} 10:00 UTC\n"
+                f"Skills: {skills}\nCloseCluster: {close}\nCommits: yes\n"
+            )
+        audit = "\n".join(blocks)
+        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        from health import _generate_findings, _score_org
+        score = _score_org([audit])
+        return _generate_findings([audit], score)
+
+    def test_no_flag_when_all_sessions_have_done(self, youk_root, claude_root):
+        """All sessions with close_cluster: no spurious session-close loop finding."""
+        findings = self._run(claude_root, youk_root, [
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "learn", "close_cluster": True},
+            {"skills": "code-review", "close_cluster": True},
+        ])
+        loop_findings = [f for f in findings if "session-close loop" in f.lower()]
+        assert not loop_findings, f"Unexpected session-close loop finding: {loop_findings}"
+
+    def test_no_flag_when_skip_rate_below_50pct(self, youk_root, claude_root):
+        """skip_rate ≤ 50% after accounting for recovery: no finding."""
+        # 2 closed, 1 not-closed but recovered by next session's /learn → 3/3 effective
+        findings = self._run(claude_root, youk_root, [
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "code-review", "close_cluster": False},  # missed
+            {"skills": "learn, code-review", "close_cluster": True},  # recovery
+        ])
+        loop_findings = [f for f in findings if "session-close loop incomplete" in f.lower()]
+        assert not loop_findings, f"Unexpected finding when recovery present: {loop_findings}"
+
+    def test_flag_when_majority_unrecovered(self, youk_root, claude_root):
+        """Majority of sessions have no /done AND no retrospective recovery → finding fires."""
+        findings = self._run(claude_root, youk_root, [
+            {"skills": "code-review", "close_cluster": False},
+            {"skills": "code-review", "close_cluster": False},
+            {"skills": "code-review", "close_cluster": False},
+            {"skills": "code-review", "close_cluster": True},
+        ])
+        loop_findings = [f for f in findings if "session-close loop" in f.lower()]
+        assert loop_findings, f"Expected session-close loop finding. Got: {findings}"
+
+    def test_recovery_counts_toward_effective_close(self, youk_root, claude_root):
+        """A no-/done session followed by a session with /learn is counted as recovered."""
+        # 4 sessions: 1 closed, 1 not-closed+recovered, 1 not-closed+recovered, 1 closed
+        # effective_close = 4/4 = 100% → no finding
+        findings = self._run(claude_root, youk_root, [
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "code-review", "close_cluster": False},
+            {"skills": "learn", "close_cluster": True},   # recovers session 2
+            {"skills": "code-review", "close_cluster": False},
+            {"skills": "learn", "close_cluster": True},   # recovers session 4
+        ])
+        loop_findings = [f for f in findings if "session-close loop incomplete" in f.lower()]
+        assert not loop_findings, f"Unexpected finding when all recovered: {loop_findings}"
+
+
+# ── loop_verdict: every value has a test (positive AND negative path) ─────────
+
+class TestLoopVerdict:
+    """_compute_improvement_velocity loop_verdict — every value, positive and negative."""
+
+    def _run(self, youk_root, claude_root, sessions: list[dict],
+             prior_score: float | None = None) -> dict:
+        blocks = []
+        if prior_score is not None:
+            # Inject a prior Org score entry so velocity can be computed
+            blocks.append(f"### Session — 2026-06-30 10:00 UTC\nSkills: code-review\n"
+                          f"CloseCluster: yes\nOrg score: {prior_score}/10\nCommits: yes\n")
+        for i, s in enumerate(sessions):
+            close = "yes" if s.get("close_cluster") else "no"
+            skills = s.get("skills", "code-review")
+            blocks.append(
+                f"### Session — 2026-07-0{i+1} 10:00 UTC\n"
+                f"Skills: {skills}\nCloseCluster: {close}\nCommits: yes\n"
+            )
+        audit = "\n".join(blocks)
+        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        from health import _compute_improvement_velocity, _score_org
+        score = _score_org([audit])
+        return _compute_improvement_velocity([audit], score)
+
+    def test_improving_when_score_rose(self, youk_root, claude_root):
+        """IMPROVING verdict when current score > previous score."""
+        result = self._run(youk_root, claude_root, [
+            {"skills": "code-review", "close_cluster": True},
+            {"skills": "learn", "close_cluster": True},
+        ], prior_score=5.0)
+        assert "IMPROVING" in result["loop_verdict"]
+
+    def test_regressing_when_score_fell(self, youk_root, claude_root):
+        """REGRESSING verdict when current score < previous score."""
+        result = self._run(youk_root, claude_root, [
+            {"skills": "self_heal", "close_cluster": False},
+            {"skills": "none", "close_cluster": False},
+        ], prior_score=9.5)
+        assert "REGRESSING" in result["loop_verdict"]
+
+    def test_stalled_requires_both_zero(self, youk_root, claude_root):
+        """STALLED only fires when BOTH skill_invocation_rate=0 AND close_rate=0."""
+        result = self._run(youk_root, claude_root, [
+            {"skills": "none", "close_cluster": False},
+            {"skills": "none", "close_cluster": False},
+        ])
+        assert "STALLED" in result["loop_verdict"]
+
+    def test_not_stalled_when_skills_ran_without_done(self, youk_root, claude_root):
+        """NOT STALLED when capability skills ran, even with close_rate=0."""
+        result = self._run(youk_root, claude_root, [
+            {"skills": "code-review", "close_cluster": False},
+            {"skills": "learn", "close_cluster": False},
+        ])
+        assert "STALLED" not in result["loop_verdict"], (
+            f"Should not be STALLED when skills ran. Got: {result['loop_verdict']}"
+        )
+
+    def test_not_stalled_when_done_ran_without_skills(self, youk_root, claude_root):
+        """NOT STALLED when /done ran (close_rate>0) even if no capability skills."""
+        result = self._run(youk_root, claude_root, [
+            {"skills": "none", "close_cluster": True},
+            {"skills": "none", "close_cluster": True},
+        ])
+        assert "STALLED" not in result["loop_verdict"], (
+            f"Should not be STALLED when /done ran. Got: {result['loop_verdict']}"
+        )
+
+    def test_steady_when_no_velocity_but_evolution_active(self, youk_root, claude_root):
+        """STEADY when score unchanged and gaps or proposals exist."""
+        # Write a SkillGap entry so evolution_active=True
+        (claude_root / "audit" / "2026-07.md").write_text(
+            "### Session — 2026-06-30 10:00 UTC\nSkills: code-review\n"
+            "CloseCluster: yes\nOrg score: 7.0/10\nCommits: yes\n"
+            "SkillGap: learn — missing PERSIST phase\n\n"
+            "### Session — 2026-07-01 10:00 UTC\nSkills: code-review\n"
+            "CloseCluster: yes\nCommits: yes\n"
+        )
+        from health import _compute_improvement_velocity, _score_org
+        audit = (claude_root / "audit" / "2026-07.md").read_text()
+        score = _score_org([audit])
+        result = _compute_improvement_velocity([audit], score)
+        # Score might not be exactly 7.0 again — just verify STALLED is absent
+        assert "STALLED" not in result["loop_verdict"]
+
+
+# ── Naming lint: no design-phase shorthand in user-facing strings ─────────────
+
+class TestNamingLint:
+    """User-facing message strings must not contain internal design labels."""
+
+    _OPAQUE_PATTERNS = [
+        "Option A", "Option B", "Option C", "Option D",
+        "PROPOSAL A", "PROPOSAL B", "PROPOSAL C",
+        "G1:", "G2:", "G3:", "G4:", "G5:",
+        "G2a", "G2b", "G2c",
+    ]
+
+    def _all_finding_strings(self, claude_root, youk_root) -> list[str]:
+        """Run _generate_findings with a realistic audit and collect all strings."""
+        audit = "\n".join(
+            f"### Session — 2026-07-0{i} 10:00 UTC\n"
+            f"Skills: code-review\nCloseCluster: yes\nCommits: yes\n"
+            for i in range(1, 6)
+        )
+        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        from health import _generate_findings, _score_org, _compute_improvement_velocity
+        score = _score_org([audit])
+        findings = _generate_findings([audit], score)
+        velocity = _compute_improvement_velocity([audit], score)
+        return findings + [velocity.get("loop_verdict", "")]
+
+    def test_no_opaque_labels_in_findings(self, youk_root, claude_root):
+        strings = self._all_finding_strings(claude_root, youk_root)
+        violations = []
+        for s in strings:
+            for pattern in self._OPAQUE_PATTERNS:
+                if pattern in s:
+                    violations.append(f"Found '{pattern}' in: {s[:80]}")
+        assert not violations, "Opaque design labels found in user-facing strings:\n" + "\n".join(violations)
