@@ -91,8 +91,8 @@ class TestGenerateFindings:
             _audit_block(i, close=(i % 3 == 0)) for i in range(1, 7)
         )
         findings = self._run(claude_root, youk_root, audit)
-        skip_findings = [f for f in findings if "skipped" in f.lower() or "cluster" in f.lower()]
-        assert skip_findings, f"Expected skip-rate finding. Got: {findings}"
+        skip_findings = [f for f in findings if "session-close loop" in f.lower() or "incomplete" in f.lower()]
+        assert skip_findings, f"Expected session-close loop finding. Got: {findings}"
 
     def test_capability_skill_absent_finding(self, youk_root, claude_root):
         """When >75% of sessions have no capability skill, surfaces a finding."""
