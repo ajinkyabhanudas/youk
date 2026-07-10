@@ -886,7 +886,7 @@ class TestDetectProjectPurpose:
         assert _detect_project_purpose(str(tmp_path / "nonexistent")) == "general"
 
 
-# ── Option C: retrospective recovery (close_cluster_missed) ─────────────────
+# ── Retrospective recovery: /learn at next open recovers a no-/done close ────
 
 class TestParseLastSessionFlags:
     """_parse_last_session_flags reads close_cluster_missed from audit."""
@@ -936,7 +936,7 @@ class TestParseLastSessionFlags:
 
 
 class TestRetrospectiveRecoveryPlanItem:
-    """Option C: session_plan item 0 is the retrospective block when close_cluster
+    """Retrospective recovery: session_plan item 0 is the recovery block when close_cluster
     was missed last session and commits exist. Tests the shape of the inserted item."""
 
     def test_retrospective_item_format_with_commits(self):

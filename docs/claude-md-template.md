@@ -46,7 +46,7 @@ Plan:
 
 User redirects in one line if wrong. Never ask what to do — the plan proposes.
 
-**Retrospective recovery (Option C):** If session_plan item 1 starts with "⚠ Last session closed without /done", run `/learn` immediately — before presenting the rest of the plan. Say: "Last session had unlearned commits — running /learn to capture patterns before we start." Then present the updated plan.
+**Retrospective recovery:** If session_plan item 1 starts with "⚠ Last session closed without /done", run `/learn` immediately — before presenting the rest of the plan. Say: "Last session had unlearned commits — running /learn to capture patterns before we start." Then present the updated plan.
 
 ## Workflow commands
 

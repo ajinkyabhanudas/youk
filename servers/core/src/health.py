@@ -305,25 +305,26 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
             "Aim for ≥50% of sessions invoking at least one capability skill."
         )
 
-    # Option C recovery: a no-/done close is recovered when the *next* session opened
-    # with /learn (retrospective recovery). Count those as closed for messaging purposes.
-    recovered_count = 0
+    # Retrospective recovery: a session closed without /done is recovered when the *next*
+    # session opened with /learn (youk detects the missed close and runs /learn automatically).
+    # Count those as recovered for messaging — they are not actually lost.
+    retrospective_recoveries = 0
     for i, s in enumerate(sessions):
         if not s["close_cluster"] and i + 1 < len(sessions):
             next_s = sessions[i + 1]
             if "learn" in [sk.lower() for sk in next_s.get("skills", [])]:
-                recovered_count += 1
-    effective_close_count = close_count + recovered_count
+                retrospective_recoveries += 1
+    effective_close_count = close_count + retrospective_recoveries
     effective_skip_rate = 1 - (effective_close_count / total)
 
     if effective_skip_rate > 0.5:
         unrecovered = total - effective_close_count
         findings.append(
             f"Session-close loop incomplete in {effective_skip_rate:.0%} of sessions "
-            f"({effective_close_count}/{total} closed or recovered via /learn at next open). "
-            f"{unrecovered} session(s) have no /done and no Option C recovery — "
+            f"({effective_close_count}/{total} closed or recovered via retrospective /learn). "
+            f"{unrecovered} session(s) have no /done and no retrospective recovery — "
             "knowledge from those sessions did not compound. "
-            "Tab-close is fine; just ensure next session opens in the same project so /learn fires."
+            "Tab-close is fine; just ensure the next session opens in the same project so /learn fires."
         )
 
     # Detect skills that never appear across tracked sessions
@@ -414,15 +415,16 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
                 "manually, or use the phrase 'ship it' to trigger youk's version instead."
             )
         elif _cz >= 3:
-            # Check if Option C (retrospective /learn) ran in any of those sessions
-            _option_c_count = sum(
+            # Retrospective recovery: /learn at next session open is equivalent to /done for
+            # knowledge accumulation. Only flag when neither path ran.
+            retrospective_count = sum(
                 1 for _s in sessions[-_cz:]
                 if "learn" in [sk.lower() for sk in _s.get("skills", [])]
             )
-            if _option_c_count == 0:
+            if retrospective_count == 0:
                 findings.append(
                     f"Session-close loop missed for {_cz} consecutive sessions — "
-                    "neither /done nor Option C (/learn at next session open) ran. "
+                    "neither /done nor retrospective /learn at next session open ran. "
                     "Tab-close is fine; ensure the next session opens in the same project "
                     "so youk can run retrospective /learn automatically."
                 )
@@ -731,7 +733,7 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
     skill_patch_rate = round(patched_sessions / total, 2) if total else 0.0
 
     # Loop health verdict
-    # Option C: /learn at next session open recovers a no-/done close.
+    # Retrospective recovery (/learn at next session open) recovers a no-/done close.
     # A low close_rate alone is not a stall signal — check skill_invocation_rate instead.
     evolution_active = gaps_last30 > 0 or proposals_applied > 0
     if skill_invocation_rate == 0.0 and close_rate == 0.0:

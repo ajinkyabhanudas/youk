@@ -1454,7 +1454,7 @@ def start_session(project_dir: str) -> SessionState:
                 f"Say 'show my contracts' to review them before we start."
             )
     elif close_cluster_missed and days_since_last != 0:
-        # Option C — retrospective recovery: previous session closed without /done.
+        # Retrospective recovery: previous session closed without /done.
         # Fire regardless of commit count — exploration and planning sessions that
         # produced no commits are still worth capturing via /learn.
         # Guard: days_since_last != 0 prevents false trigger on same-day re-opens.
