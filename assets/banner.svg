@@ -173,7 +173,7 @@
 <!-- Header text -->
 <text x="991" y="107" text-anchor="middle"
   font-family="'SF Mono','JetBrains Mono',monospace"
-  font-size="11" fill="#28405a" letter-spacing="0.3">youk — session #30 on canopy</text>
+  font-size="11" fill="#28405a" letter-spacing="0.3">youk — session #30 on my-app</text>
 
 <!-- ── Card content ── -->
 
