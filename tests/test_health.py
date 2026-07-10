@@ -1362,3 +1362,602 @@ class TestAnalyzePromotionCandidates:
         verify = next((c for c in candidates if c["skill"] == "verify"), None)
         assert verify is not None
         assert verify["change_type"] in ("FILE_CREATE", "SKILL_EDIT")
+
+    def test_code_gap_signal_gets_code_edit_type(self, youk_root, claude_root):
+        audit = self._audit_with_gaps([
+            ("proj-a", "learn", "session.py route_task missing"),
+            ("proj-a", "learn", "session.py returns wrong value"),
+            ("proj-a", "learn", "session.py health.py conflict"),
+        ])
+        from health import _analyze_promotion_candidates
+        candidates = _analyze_promotion_candidates([audit])
+        learn = next((c for c in candidates if c["skill"] == "learn"), None)
+        assert learn is not None
+        assert learn["change_type"] == "CODE_EDIT"
+        assert learn["promotion_target"].endswith("learn.py")
+
+
+# ── _queue_promotion_proposals ────────────────────────────────────────────────
+
+class TestQueuePromotionProposals:
+    def test_queues_skill_edit_proposal(self, youk_root, claude_root):
+        import health
+        (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
+        candidates = [{
+            "skill": "verify",
+            "occurrence_count": 4,
+            "distinct_projects": 1,
+            "sample_gaps": ["gap1", "gap2"],
+            "promotion_target": "skills/verify/SKILL.md",
+            "change_type": "SKILL_EDIT",
+        }]
+        from health import _queue_promotion_proposals
+        count = _queue_promotion_proposals(candidates)
+        assert count == 1
+        pending = (youk_root / "knowledge" / "proposals" / "PENDING.md").read_text()
+        assert "verify" in pending.lower()
+
+    def test_queues_code_edit_proposal(self, youk_root, claude_root):
+        (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
+        candidates = [{
+            "skill": "learn",
+            "occurrence_count": 5,
+            "distinct_projects": 2,
+            "sample_gaps": ["session.py missing"],
+            "promotion_target": "servers/core/src/learn.py",
+            "change_type": "CODE_EDIT",
+        }]
+        from health import _queue_promotion_proposals
+        count = _queue_promotion_proposals(candidates)
+        assert count == 1
+        pending = (youk_root / "knowledge" / "proposals" / "PENDING.md").read_text()
+        assert "CODE_EDIT" in pending
+
+
+# ── _score_org early returns ───────────────────────────────────────────────────
+
+class TestScoreOrgEdgeCases:
+    def test_returns_5_when_no_audit_texts(self, youk_root, claude_root):
+        from health import _score_org
+        assert _score_org([]) == 5.0
+
+    def test_returns_5_when_no_sessions_parseable(self, youk_root, claude_root):
+        from health import _score_org
+        result = _score_org(["# empty audit file\nno session blocks here"])
+        assert result == 5.0
+
+
+# ── Token budget parsing ───────────────────────────────────────────────────────
+
+class TestTokenBudgetParsing:
+    def _audit(self, token_line: str) -> str:
+        return (
+            "### Session — 2026-07-01 10:00 UTC\n"
+            "Skills: code-review\n"
+            f"CloseCluster: yes\n"
+            f"{token_line}\n"
+        )
+
+    def test_parses_tokens_with_budget(self, youk_root, claude_root):
+        audit = self._audit("Tokens: 8000/12000")
+        from health import _parse_audit_sessions
+        sessions = _parse_audit_sessions([audit])
+        assert len(sessions) == 1
+        s = sessions[0]
+        assert s["tokens_actual"] == 8000
+        assert s["tokens_budget"] == 12000
+        assert abs(s["tokens_ratio"] - 8000 / 12000) < 0.01
+
+    def test_parses_tokens_without_budget(self, youk_root, claude_root):
+        audit = self._audit("Tokens: 5000")
+        from health import _parse_audit_sessions
+        sessions = _parse_audit_sessions([audit])
+        s = sessions[0]
+        assert s["tokens_actual"] == 5000
+        assert s["tokens_budget"] == 0
+        assert s["tokens_ratio"] is None
+
+
+# ── _generate_findings — nominal + token efficiency + consecutive_no_close ────
+
+class TestGenerateFindingsExtended:
+    def _make_sessions(self, n: int, close: bool = True, skills: str = "code-review", token_line: str = "") -> str:
+        blocks = []
+        for i in range(n):
+            block = (
+                f"### Session — 2026-07-0{i+1} 10:00 UTC\n"
+                f"Skills: {skills}\n"
+                f"CloseCluster: {'yes' if close else 'no'}\n"
+                "Commits: yes\n"
+            )
+            if token_line:
+                block += token_line + "\n"
+            blocks.append(block)
+        return "\n".join(blocks)
+
+    def test_nominal_finding_when_no_issues(self, youk_root, claude_root):
+        # Need token data (suppress no-token finding) + a proposal (suppress starved finding)
+        import health
+        (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text("## PENDING-001\n")
+        blocks = []
+        for i in range(3):
+            blocks.append(
+                f"### Session — 2026-07-0{i+1} 10:00 UTC\n"
+                "Skills: code-review\n"
+                "CloseCluster: yes\n"
+                "Commits: yes\n"
+                "Tokens: 5000/10000\n"
+            )
+        audit = "\n".join(blocks)
+        from health import _generate_findings
+        findings = _generate_findings([audit], score=7.5)
+        assert any("nominal" in f.lower() for f in findings)
+
+    def test_token_efficiency_over_budget(self, youk_root, claude_root):
+        # 3 sessions each 3x over budget triggers the finding
+        audit = self._make_sessions(3, close=True, skills="code-review", token_line="Tokens: 30000/10000")
+        from health import _generate_findings
+        findings = _generate_findings([audit], score=7.0)
+        assert any("over budget" in f.lower() for f in findings)
+
+    def test_token_efficiency_under_budget(self, youk_root, claude_root):
+        # 3 sessions all <50% of budget
+        audit = self._make_sessions(3, close=True, skills="code-review", token_line="Tokens: 2000/10000")
+        from health import _generate_findings
+        findings = _generate_findings([audit], score=7.0)
+        assert any("under budget" in f.lower() for f in findings)
+
+    def test_consecutive_no_close_with_done_skill(self, youk_root, claude_root, tmp_path):
+        import json, health
+        # Create a project with .claude/skills/done
+        project_dir = tmp_path / "myproject"
+        (project_dir / ".claude" / "skills" / "done").mkdir(parents=True)
+        state = youk_root / "state" / "session.json"
+        state.write_text(json.dumps({"last_project": str(project_dir)}))
+        monkeypatch_root = youk_root  # already patched via fixture
+        # 3 consecutive no-close sessions
+        audit = self._make_sessions(3, close=False, skills="code-review")
+        findings = health._generate_findings([audit], score=6.0)
+        assert any("done" in f.lower() for f in findings)
+
+    def test_consecutive_no_close_no_retrospective(self, youk_root, claude_root):
+        # 3 no-close sessions with no /learn recovery → should flag
+        audit = self._make_sessions(3, close=False, skills="code-review")
+        from health import _generate_findings
+        findings = _generate_findings([audit], score=6.0)
+        assert any("session-close loop" in f.lower() for f in findings)
+
+    def test_consecutive_no_close_with_retrospective_learn(self, youk_root, claude_root):
+        # 3 no-close sessions but /learn ran in one → the specific
+        # "neither /done nor retrospective /learn ran" message should NOT appear.
+        # (The generic high-skip-rate finding may still appear — that's expected.)
+        blocks = []
+        for i in range(3):
+            skills = "learn" if i == 2 else "code-review"
+            blocks.append(
+                f"### Session — 2026-07-0{i+1} 10:00 UTC\n"
+                f"Skills: {skills}\n"
+                "CloseCluster: no\n"
+                "Commits: yes\n"
+            )
+        audit = "\n".join(blocks)
+        from health import _generate_findings
+        findings = _generate_findings([audit], score=6.0)
+        assert not any("neither /done nor retrospective" in f.lower() for f in findings)
+
+
+# ── _skill_quality — single weak skill path ────────────────────────────────────
+
+class TestAuditSkillQualitySingleWeak:
+    _ALL_SKILLS = [
+        "code-review", "dev-loop", "nfr-check", "security-review",
+        "write-spec", "adr", "stress-test", "verify", "learn",
+    ]
+    _GOOD_CONTENT = (
+        "# Skill\n\n## Phase 1\nDo things.\n\n## Quality bar\nMust be thorough.\n\n"
+        "## Examples\n```\nexample\n```\n"
+    )
+
+    def test_single_weak_skill_message(self, youk_root, claude_root):
+        skills_dir = claude_root / "skills"
+        # Give all skills good SKILL.md content, except "adr" which gets minimal content
+        for name in self._ALL_SKILLS:
+            skill_dir = skills_dir / name
+            skill_dir.mkdir(parents=True)
+            content = "# Minimal\nNo phases.\n" if name == "adr" else self._GOOD_CONTENT
+            (skill_dir / "SKILL.md").write_text(content)
+        from health import _audit_skill_quality
+        findings = _audit_skill_quality(skills_dir)
+        assert len(findings) == 1
+        assert "adr" in findings[0].lower()
+        assert "assess_skill()" in findings[0]
+
+
+# ── _compute_improvement_velocity — single history + PENDING counting ─────────
+
+class TestImprovementVelocityExtended:
+    def _write_audit(self, claude_root, sessions_data):
+        from datetime import datetime
+        month = datetime.utcnow().strftime("%Y-%m")
+        audit_dir = claude_root / "audit"
+        blocks = []
+        for i, s in enumerate(sessions_data):
+            close = s.get("close_cluster", True)
+            skills = s.get("skills", "code-review")
+            blocks.append(
+                f"### Session — 2026-07-0{i+1} 10:00 UTC\n"
+                f"Skills: {skills}\n"
+                f"CloseCluster: {'yes' if close else 'no'}\n"
+            )
+        f = audit_dir / f"{month}.md"
+        f.write_text("\n".join(blocks))
+        return f.read_text()
+
+    def test_single_score_in_history_velocity_is_zero(self, youk_root, claude_root):
+        audit = self._write_audit(claude_root, [{"skills": "code-review"}])
+        from health import _compute_improvement_velocity
+        result = _compute_improvement_velocity([audit], current_score=6.0)
+        assert result["velocity"] == 0.0
+
+    def test_proposals_applied_counted(self, youk_root, claude_root):
+        (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
+        pending_file = youk_root / "knowledge" / "proposals" / "PENDING.md"
+        pending_file.write_text(
+            "## PENDING-001\n**Status:** APPLIED — 2026-07-01\n\n"
+            "## PENDING-002\n**Status:** APPLIED — 2026-07-02\n\n"
+            "## PENDING-003\n**Status:** PENDING\n"
+        )
+        import health
+        monkeypatch_path = pending_file
+        import health as h
+        orig = h.PROPOSALS_FILE
+        h.PROPOSALS_FILE = pending_file
+        try:
+            audit = self._write_audit(claude_root, [{"skills": "code-review"}])
+            from health import _compute_improvement_velocity
+            result = _compute_improvement_velocity([audit], current_score=6.0)
+            assert result["proposals_applied_total"] == 2
+        finally:
+            h.PROPOSALS_FILE = orig
+
+
+# ── _audit_global_contracts — oversize + pending review paths ─────────────────
+
+class TestAuditGlobalContractsExtended:
+    def test_oversize_returns_high_count(self, youk_root, claude_root):
+        global_dir = youk_root / "knowledge" / "global"
+        global_dir.mkdir(parents=True)
+        lines = [f"- contract {i}" for i in range(105)]
+        (global_dir / "contracts.md").write_text("\n".join(lines) + "\n")
+        from health import _audit_global_contracts
+        result = _audit_global_contracts()
+        assert result["total"] > 100
+
+    def test_auto_promoted_counted(self, youk_root, claude_root):
+        global_dir = youk_root / "knowledge" / "global"
+        global_dir.mkdir(parents=True)
+        content = "- contract one [auto-promoted]\n- contract two\n- contract three [auto-promoted]\n"
+        (global_dir / "contracts.md").write_text(content)
+        from health import _audit_global_contracts
+        result = _audit_global_contracts()
+        assert result["auto_promoted"] == 2
+
+
+# ── _compute_knowledge_velocity — STALLED verdict ─────────────────────────────
+
+class TestKnowledgeVelocityStalled:
+    def _write_audit(self, claude_root, sessions_data):
+        from datetime import datetime
+        month = datetime.utcnow().strftime("%Y-%m")
+        blocks = []
+        for i, s in enumerate(sessions_data):
+            blocks.append(
+                f"### Session — 2026-07-0{i+1} 10:00 UTC\n"
+                f"Skills: {s.get('skills', 'code-review')}\n"
+                f"CloseCluster: {'yes' if s.get('close_cluster', True) else 'no'}\n"
+            )
+        f = claude_root / "audit" / f"{month}.md"
+        f.write_text("\n".join(blocks))
+        return f.read_text()
+
+    def test_stalled_when_contracts_exist_but_nothing_added(self, youk_root, claude_root):
+        # project has contracts but no recent saves → STALLED
+        proj = youk_root / "knowledge" / "projects" / "myproj"
+        proj.mkdir(parents=True)
+        (proj / "contracts.md").write_text("- old contract\n")
+        audit = self._write_audit(claude_root, [{"skills": "code-review"}])
+        from health import _compute_knowledge_velocity
+        result = _compute_knowledge_velocity([audit], "myproj")
+        assert result["verdict"].startswith("STALLED")
+
+    def test_empty_when_nothing_at_all(self, youk_root, claude_root):
+        audit = self._write_audit(claude_root, [{"skills": "code-review"}])
+        from health import _compute_knowledge_velocity
+        result = _compute_knowledge_velocity([audit], "nonexistent-project")
+        assert result["verdict"].startswith("EMPTY")
+
+
+# ── _compute_diff_preview — REFERENCE_ADD, CONFIG_EDIT, CODE_EDIT branches ────
+
+class TestComputeDiffPreviewExtended:
+    def _make_proposal(self, change_type: str, target: str, content: str, target_section: str = "") -> "Proposal":
+        from models import Proposal
+        return Proposal(
+            id="PENDING-TEST-001",
+            target=target,
+            change_description="test",
+            reason="test",
+            before="",
+            after="",
+            status="PENDING",
+            proposed_date="2026-07-01",
+            change_type=change_type,
+            target_section=target_section,
+            content=content,
+        )
+
+    def test_reference_add_new_file(self, youk_root, claude_root):
+        skills_dir = claude_root / "skills"
+        (skills_dir / "verify" / "references").mkdir(parents=True)
+        proposal = self._make_proposal("REFERENCE_ADD", "verify", "ref content", "my-ref.md")
+        import health
+        monkeypatch_claude = claude_root
+        orig = health.CLAUDE_ROOT
+        health.CLAUDE_ROOT = claude_root
+        try:
+            from health import _compute_diff_preview
+            result = _compute_diff_preview(proposal)
+            assert result["change_type"] == "REFERENCE_ADD"
+            assert "file does not exist" in result["before"]
+        finally:
+            health.CLAUDE_ROOT = orig
+
+    def test_config_edit_missing_file(self, youk_root, claude_root):
+        proposal = self._make_proposal("CONFIG_EDIT", "nonexistent.yaml", "key: value")
+        from health import _compute_diff_preview
+        result = _compute_diff_preview(proposal)
+        assert "error" in result
+        assert "Config not found" in result["error"]
+
+    def test_config_edit_existing_file(self, youk_root, claude_root):
+        config_dir = youk_root / "config"
+        config_dir.mkdir(parents=True)
+        (config_dir / "settings.yaml").write_text("existing_key: old_value\n")
+        proposal = self._make_proposal("CONFIG_EDIT", "settings.yaml", "new_key: new_value")
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            from health import _compute_diff_preview
+            result = _compute_diff_preview(proposal)
+            assert result["change_type"] == "CONFIG_EDIT"
+            assert "existing_key" in result["before"]
+        finally:
+            health.YOUK_ROOT = orig
+
+    def test_code_edit_no_function(self, youk_root, claude_root):
+        code_file = youk_root / "servers" / "core" / "src" / "somefile.py"
+        code_file.parent.mkdir(parents=True)
+        code_file.write_text("def existing_fn():\n    pass\n")
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            proposal = self._make_proposal("CODE_EDIT", "servers/core/src/somefile.py", "def new_fn():\n    pass\n", "nonexistent_fn")
+            from health import _compute_diff_preview
+            result = _compute_diff_preview(proposal)
+            assert "function not found" in result["before"]
+        finally:
+            health.YOUK_ROOT = orig
+
+    def test_code_edit_with_matching_function(self, youk_root, claude_root):
+        code_file = youk_root / "servers" / "core" / "src" / "somefile.py"
+        code_file.parent.mkdir(parents=True)
+        code_file.write_text("def target_fn():\n    return 1\n\ndef other_fn():\n    pass\n")
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            proposal = self._make_proposal("CODE_EDIT", "servers/core/src/somefile.py", "def target_fn():\n    return 2\n", "target_fn")
+            from health import _compute_diff_preview
+            result = _compute_diff_preview(proposal)
+            assert result["change_type"] == "CODE_EDIT"
+            assert "target_fn" in result["before"]
+        finally:
+            health.YOUK_ROOT = orig
+
+
+# ── _execute_proposal — REFERENCE_ADD, CONFIG_EDIT, CODE_EDIT branches ────────
+
+class TestExecuteProposalExtended:
+    def _make_proposal(self, change_type: str, target: str, content: str, target_section: str = "") -> "Proposal":
+        from models import Proposal
+        return Proposal(
+            id="PENDING-EXT-001",
+            target=target,
+            change_description="test",
+            reason="test",
+            before="",
+            after="",
+            status="PENDING",
+            proposed_date="2026-07-01",
+            change_type=change_type,
+            target_section=target_section,
+            content=content,
+        )
+
+    def test_reference_add_writes_file(self, youk_root, claude_root):
+        skills_dir = claude_root / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        import health
+        orig = health.CLAUDE_ROOT
+        health.CLAUDE_ROOT = claude_root
+        try:
+            proposal = self._make_proposal("REFERENCE_ADD", "verify", "# Ref Content\n", "my-ref.md")
+            from health import _execute_proposal
+            result = _execute_proposal(proposal)
+            assert result["applied"] is True
+            ref_file = claude_root / "skills" / "verify" / "references" / "my-ref.md"
+            assert ref_file.exists()
+            assert "Ref Content" in ref_file.read_text()
+        finally:
+            health.CLAUDE_ROOT = orig
+
+    def test_config_edit_missing_file_returns_error(self, youk_root, claude_root):
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            proposal = self._make_proposal("CONFIG_EDIT", "nonexistent.yaml", "key: val")
+            from health import _execute_proposal
+            result = _execute_proposal(proposal)
+            assert result["applied"] is False
+            assert "Config not found" in result["error"]
+        finally:
+            health.YOUK_ROOT = orig
+
+    def test_config_edit_merges_yaml(self, youk_root, claude_root):
+        config_dir = youk_root / "config"
+        config_dir.mkdir(parents=True)
+        (config_dir / "settings.yaml").write_text("key_a: old\n")
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            proposal = self._make_proposal("CONFIG_EDIT", "settings.yaml", "key_b: new\n")
+            from health import _execute_proposal
+            result = _execute_proposal(proposal)
+            assert result["applied"] is True
+            written = (config_dir / "settings.yaml").read_text()
+            assert "key_a" in written
+            assert "key_b" in written
+        finally:
+            health.YOUK_ROOT = orig
+
+    def test_config_edit_yaml_error(self, youk_root, claude_root):
+        config_dir = youk_root / "config"
+        config_dir.mkdir(parents=True)
+        (config_dir / "bad.yaml").write_text("valid: yaml\n")
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            proposal = self._make_proposal("CONFIG_EDIT", "bad.yaml", ": bad: yaml: content: [\n")
+            from health import _execute_proposal
+            result = _execute_proposal(proposal)
+            assert result["applied"] is False
+            assert "YAML" in result["error"]
+        finally:
+            health.YOUK_ROOT = orig
+
+    def test_code_edit_missing_content(self, youk_root, claude_root):
+        code_file = youk_root / "servers" / "core" / "src" / "somefile.py"
+        code_file.parent.mkdir(parents=True)
+        code_file.write_text("def myfn():\n    pass\n")
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            proposal = self._make_proposal("CODE_EDIT", "servers/core/src/somefile.py", "", "myfn")
+            from health import _execute_proposal
+            result = _execute_proposal(proposal)
+            assert result["applied"] is False
+            assert "content" in result["error"].lower()
+        finally:
+            health.YOUK_ROOT = orig
+
+    def test_code_edit_missing_section(self, youk_root, claude_root):
+        code_file = youk_root / "servers" / "core" / "src" / "somefile.py"
+        code_file.parent.mkdir(parents=True)
+        code_file.write_text("def myfn():\n    pass\n")
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            proposal = self._make_proposal("CODE_EDIT", "servers/core/src/somefile.py", "def myfn():\n    return 1\n", "")
+            from health import _execute_proposal
+            result = _execute_proposal(proposal)
+            assert result["applied"] is False
+            assert "target_section" in result["error"].lower()
+        finally:
+            health.YOUK_ROOT = orig
+
+    def test_code_edit_function_not_found(self, youk_root, claude_root):
+        code_file = youk_root / "servers" / "core" / "src" / "somefile.py"
+        code_file.parent.mkdir(parents=True)
+        code_file.write_text("def myfn():\n    pass\n")
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            proposal = self._make_proposal("CODE_EDIT", "servers/core/src/somefile.py", "def ghost():\n    pass\n", "ghost")
+            from health import _execute_proposal
+            result = _execute_proposal(proposal)
+            assert result["applied"] is False
+            assert "not found" in result["error"].lower()
+        finally:
+            health.YOUK_ROOT = orig
+
+    def test_code_edit_replaces_function(self, youk_root, claude_root):
+        code_file = youk_root / "servers" / "core" / "src" / "somefile.py"
+        code_file.parent.mkdir(parents=True)
+        code_file.write_text("def myfn():\n    return 1\n\ndef other():\n    pass\n")
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            proposal = self._make_proposal("CODE_EDIT", "servers/core/src/somefile.py", "def myfn():\n    return 99\n", "myfn")
+            from health import _execute_proposal
+            result = _execute_proposal(proposal)
+            assert result["applied"] is True
+            written = code_file.read_text()
+            assert "return 99" in written
+        finally:
+            health.YOUK_ROOT = orig
+
+
+# ── run_health_check_with_skill_signals — promotion + coverage + cross-project ─
+
+class TestRunHealthCheckWithSkillSignalsExtended:
+    def _write_audit_with_gaps(self, claude_root, gaps: list[tuple[str, str, str]]) -> None:
+        from datetime import datetime
+        month = datetime.utcnow().strftime("%Y-%m")
+        lines = []
+        for i, (proj, skill, desc) in enumerate(gaps):
+            lines.append(f"### Session — 2026-07-0{i+1} 10:00 UTC")
+            lines.append(f"Project: {proj}")
+            lines.append("Skills: code-review")
+            lines.append("CloseCluster: yes")
+            lines.append(f"SkillGap: {skill} — {desc}")
+        (claude_root / "audit" / f"{month}.md").write_text("\n".join(lines))
+
+    def test_promotion_queued_when_threshold_met(self, youk_root, claude_root):
+        self._write_audit_with_gaps(claude_root, [
+            ("proj-a", "verify", "gap 1"),
+            ("proj-a", "verify", "gap 2"),
+            ("proj-a", "verify", "gap 3"),
+        ])
+        from health import run_health_check_with_skill_signals
+        result = run_health_check_with_skill_signals()
+        assert result.get("promotion_proposals_queued", 0) >= 1
+
+    def test_cross_project_patterns_surfaced(self, youk_root, claude_root):
+        # Two projects with the same contract → should appear in global_pattern_candidates
+        proj_a = youk_root / "knowledge" / "projects" / "alpha"
+        proj_b = youk_root / "knowledge" / "projects" / "beta"
+        proj_a.mkdir(parents=True)
+        proj_b.mkdir(parents=True)
+        (proj_a / "contracts.md").write_text("- always run tests before commit\n")
+        (proj_b / "contracts.md").write_text("- always run tests before commit\n")
+        from health import run_health_check_with_skill_signals
+        result = run_health_check_with_skill_signals()
+        assert "global_pattern_candidates" in result
+
+    def test_knowledge_velocity_stalled_surfaces_warning(self, youk_root, claude_root):
+        # No /learn, no contracts → knowledge velocity will be EMPTY or STALLED
+        from health import run_health_check_with_skill_signals
+        result = run_health_check_with_skill_signals()
+        velocity = result.get("knowledge_velocity", {})
+        verdict = velocity.get("verdict", "")
+        assert verdict.startswith(("STALLED", "EMPTY"))

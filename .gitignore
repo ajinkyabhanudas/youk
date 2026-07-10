@@ -10,6 +10,8 @@ dist/
 venv/
 .coverage
 .coverage.*
+coverage.json
+coverage.xml
 htmlcov/
 
 # Docker
