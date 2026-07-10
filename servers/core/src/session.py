@@ -24,6 +24,8 @@ _CONTRACT_PHRASES = [
     "stop doing", "use this instead", "the right way is",
 ]
 
+import re as _re
+
 _GENERALIZABLE_PHRASES = [
     "always ", "never ", "prefer ", "before every", "after every",
     "use ", " instead of ", "make sure ", "keep ", "ensure ",
@@ -33,13 +35,27 @@ _PROJECT_SPECIFIC_MARKERS = [
     "this project", "in our", "our codebase", "our repo",
 ]
 
+# Broader patterns: label-prefixed contracts and imperative phrases not caught by
+# simple substring matching. These express methodology but don't start with the
+# trigger words in _GENERALIZABLE_PHRASES.
+_GENERALIZABLE_PATTERNS = [
+    _re.compile(r"^[a-z][a-z _-]+:\s+.{20,}", _re.IGNORECASE),   # "commit format: ..."
+    _re.compile(r"\b(every project|any project|all projects)\b", _re.IGNORECASE),
+    _re.compile(r"\b(before every|after every|on every)\b", _re.IGNORECASE),
+    _re.compile(r"^(check|run|read|verify|avoid|scan)\b", _re.IGNORECASE),
+]
+
 
 def _is_generalizable(contract: str) -> bool:
     """True if contract expresses a cross-project methodology, not a project-specific path."""
     lower = contract.lower()
-    has_method = any(phrase in lower for phrase in _GENERALIZABLE_PHRASES)
     has_specific = any(marker in contract for marker in _PROJECT_SPECIFIC_MARKERS)
-    return has_method and not has_specific
+    if has_specific:
+        return False
+    has_method = any(phrase in lower for phrase in _GENERALIZABLE_PHRASES)
+    if has_method:
+        return True
+    return any(p.search(contract) for p in _GENERALIZABLE_PATTERNS)
 
 
 def _promote_generalizable_to_global(contracts: list[str]) -> dict:
@@ -1957,6 +1973,18 @@ def end_session(
         except Exception:
             pass
 
+    # 3B — Cross-project pattern scan at session close.
+    # Surfaces contracts appearing in 2+ projects so the developer can promote them globally.
+    # Runs here (not only on /health) so patterns are caught at the moment of reflection.
+    emerging_global_patterns: list[dict] = []
+    try:
+        from health import _detect_cross_project_patterns
+        candidates = _detect_cross_project_patterns(min_projects=2)
+        if candidates:
+            emerging_global_patterns = candidates[:3]
+    except Exception:
+        pass
+
     # M+ skill gate: if close_cluster requested but no capability skill was used,
     # surface a warning so Claude can invoke one retroactively before the loop closes.
     skill_gate_warning = ""
@@ -1998,4 +2026,9 @@ def end_session(
         "compounding_verdict": session_delta["verdict"],
         **({"skill_gate_warning": skill_gate_warning} if skill_gate_warning else {}),
         **({"learn_gate_warning": learn_gate_warning} if learn_gate_warning else {}),
+        **({"emerging_global_patterns": emerging_global_patterns,
+            "global_pattern_note": (
+                f"{len(emerging_global_patterns)} contract(s) found across 2+ projects — "
+                "call promote_to_global_contracts() to elevate to global intelligence."
+            )} if emerging_global_patterns else {}),
     }

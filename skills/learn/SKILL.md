@@ -260,10 +260,26 @@ Target path: `knowledge/domain/gaps.md`
 
 Rule: depth only goes up. Never lower a domain from DEEP → WORKING. Depth is cumulative.
 
-**Note on cross-project promotion:** Generalizable behavioral contracts (those expressing
-methodology rather than project-specific paths) are automatically promoted to
-`knowledge/global/contracts.md` by `session_end()`. You do not need to write to any
-cross-project file directly — the promotion happens at session close.
+**Note on cross-project promotion:** `session_end()` auto-promotes contracts with methodology
+phrases, but the LAYER DECISION below makes the two-layer split explicit and visible.
+
+**[LAYER DECISION] — required at end of every PERSIST phase**
+
+For each concept persisted to `knowledge/domain/`, classify it explicitly:
+
+| Layer | What belongs here |
+|-------|-------------------|
+| **Project-only** | Implementation details, file paths, tool names, project-specific behaviour |
+| **Global candidate** | Methodology, principles, how-to-work patterns, transferable analogies |
+
+For each **global candidate**, call `promote_to_global_contracts([principle])` now — do not
+defer to `session_end()`. State which were promoted and why. This makes the decision
+visible rather than silent, and ensures cross-project intelligence is extracted even when
+`session_end()` phrase-matching doesn't catch the wording.
+
+Example:
+- "always run `ruff check servers/` before committing" → **Project-only** (names a tool + path)
+- "read the project's CI config to find the lint command before committing" → **Global** (promotes the principle)
 
 ---
 

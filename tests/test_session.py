@@ -1265,3 +1265,101 @@ class TestColdStart:
 
         state = session.start_session(str(project_dir))
         assert state.close_cluster_missed is False
+
+
+# ── _is_generalizable — broadened heuristic ───────────────────────────────────
+
+class TestIsGeneralizable:
+    def test_always_prefix_is_generalizable(self):
+        from session import _is_generalizable
+        assert _is_generalizable("always run tests before merging")
+
+    def test_never_prefix_is_generalizable(self):
+        from session import _is_generalizable
+        assert _is_generalizable("never commit secrets to the repo")
+
+    def test_label_prefixed_contract_is_generalizable(self):
+        # "commit format: ..." — label-prefixed, expresses methodology
+        from session import _is_generalizable
+        assert _is_generalizable("commit format: small logical commits with plain-English explanation")
+
+    def test_check_prefix_is_generalizable(self):
+        from session import _is_generalizable
+        assert _is_generalizable("check the CI config before running any lint command")
+
+    def test_run_prefix_is_generalizable(self):
+        from session import _is_generalizable
+        assert _is_generalizable("run the project lint check before every commit")
+
+    def test_every_project_phrase_is_generalizable(self):
+        from session import _is_generalizable
+        assert _is_generalizable("applies to every project: read the Makefile first")
+
+    def test_before_every_phrase_is_generalizable(self):
+        from session import _is_generalizable
+        assert _is_generalizable("before every commit scan CI config for the lint command")
+
+    def test_project_specific_path_not_generalizable(self):
+        from session import _is_generalizable
+        assert not _is_generalizable("always run servers/core/src/health.py linting")
+
+    def test_py_extension_not_generalizable(self):
+        from session import _is_generalizable
+        assert not _is_generalizable("always edit health.py before touching session.py")
+
+    def test_this_project_not_generalizable(self):
+        from session import _is_generalizable
+        assert not _is_generalizable("in this project we use ruff for formatting")
+
+    def test_short_label_prefixed_not_generalizable(self):
+        # Label-prefixed but body too short (<20 chars) — not meaningful enough
+        from session import _is_generalizable
+        assert not _is_generalizable("note: short")
+
+
+# ── _detect_cross_project_patterns — theme field ──────────────────────────────
+
+class TestCrossProjectPatternThemes:
+    def _write_contracts(self, youk_root, slug: str, contracts: list[str]) -> None:
+        proj = youk_root / "knowledge" / "projects" / slug
+        proj.mkdir(parents=True, exist_ok=True)
+        lines = ["# Working contracts\n"] + [f"- {c}\n" for c in contracts]
+        (proj / "contracts.md").write_text("".join(lines))
+
+    def test_theme_field_present(self, youk_root, claude_root):
+        self._write_contracts(youk_root, "alpha", ["always run tests before merging"])
+        self._write_contracts(youk_root, "beta", ["always run tests before merging"])
+        from health import _detect_cross_project_patterns
+        candidates = _detect_cross_project_patterns(min_projects=2)
+        assert candidates
+        assert "theme" in candidates[0]
+
+    def test_commit_hygiene_theme_detected(self, youk_root, claude_root):
+        contract = "always run lint before committing"
+        self._write_contracts(youk_root, "alpha", [contract])
+        self._write_contracts(youk_root, "beta", [contract])
+        from health import _detect_cross_project_patterns
+        candidates = _detect_cross_project_patterns(min_projects=2)
+        match = next((c for c in candidates if "lint" in c["contract"]), None)
+        assert match is not None
+        assert match["theme"] == "Commit hygiene"
+
+    def test_testing_discipline_theme_detected(self, youk_root, claude_root):
+        contract = "always write tests for every new function"
+        self._write_contracts(youk_root, "alpha", [contract])
+        self._write_contracts(youk_root, "beta", [contract])
+        from health import _detect_cross_project_patterns
+        candidates = _detect_cross_project_patterns(min_projects=2)
+        match = next((c for c in candidates if "test" in c["contract"]), None)
+        assert match is not None
+        assert match["theme"] == "Testing discipline"
+
+    def test_general_theme_when_no_keywords_match(self, youk_root, claude_root):
+        contract = "keep responses concise and direct"
+        self._write_contracts(youk_root, "alpha", [contract])
+        self._write_contracts(youk_root, "beta", [contract])
+        from health import _detect_cross_project_patterns
+        candidates = _detect_cross_project_patterns(min_projects=2)
+        match = next((c for c in candidates if "concise" in c["contract"]), None)
+        assert match is not None
+        assert match["theme"] == "General"
