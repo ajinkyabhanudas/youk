@@ -37,10 +37,28 @@ If `~/.claude/` doesn't exist, Claude Code will have created it when you first r
 
 ## Step 3: Install
 
+**macOS / Linux:**
+```bash
+cd ~/.claude/youk
+make install
+```
+
+**Windows — Git Bash (VS Code terminal) or WSL2:**
 ```bash
 cd ~/.claude/youk
 bash scripts/install.sh
 ```
+Docker Desktop must be installed with **"Use WSL 2 based engine"** enabled (Settings → General). Git Bash users: Docker Desktop for Windows handles the bridge automatically.
+
+**Windows — PowerShell:**
+```powershell
+cd ~\.claude\youk
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\install.ps1
+```
+Run as Administrator (or with Developer Mode enabled) for symlinks. The script creates directory junctions as fallback if symlinks fail.
+
+---
 
 This takes about 2 minutes on first run (downloading Python packages for the Docker images). Subsequent runs use Docker's build cache and are much faster.
 
@@ -104,6 +122,11 @@ youk routes silently based on task size. Small tasks get no ceremony. Large task
 
 ## Verifying the full setup
 
+```bash
+make doctor
+```
+
+Or directly:
 ```bash
 bash ~/.claude/youk/scripts/doctor.sh
 ```
