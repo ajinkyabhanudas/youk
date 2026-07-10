@@ -1583,8 +1583,8 @@ def start_session(project_dir: str) -> SessionState:
     # Write a session stub to the audit dir immediately at session open.
     # This breadcrumb survives even if the developer tabs out without calling /done —
     # audit logs will show INCOMPLETE rather than a silent gap.
-    # PROPOSAL A: moved from task_checkpoint-only to session_start so ALL sessions
-    # leave a breadcrumb, not just sessions that reach their first commit.
+    # Breadcrumb written at session_start (not just first task_checkpoint) so ALL sessions
+    # leave a record, not just sessions that reach their first commit.
     _write_session_stub(slug, counter)
 
     # Write session-open.json AFTER build_brief — build_brief deletes this file
@@ -1673,7 +1673,7 @@ def task_checkpoint(
 
     Returns: brief (paste verbatim), checkpoint_written, pattern_trigger (if any).
     """
-    # G2a: write session stub on first checkpoint so tab-close leaves a breadcrumb
+    # Write session stub on first checkpoint so tab-close leaves a breadcrumb
     current_state = _load_state()
     _slug_val = _slug(current_state.get("last_project", project_dir))
     _counter = current_state.get("session_counter", 0)
@@ -1723,7 +1723,7 @@ def task_checkpoint(
             except Exception:
                 pass
 
-    # G2b: write mid-session resume point so tomorrow's card shows last known task
+    # Write mid-session resume point so tomorrow's card shows last known task
     # even if the developer closed the tab without /done.
     if _slug_val and size.upper() not in ("XS", "S"):
         _update_resume_point(_slug_val, f"In progress: {task_label[:180]}")
@@ -1967,7 +1967,7 @@ def end_session(
             "skill_gaps={'skill': ['reason']} to document the miss."
         )
 
-    # G4: /learn enforcement — /learn is non-optional at /done.
+    # /learn enforcement — /learn is non-optional at /done.
     # Separate key so the capability-skill gate and the /learn gate are independently checkable.
     learn_ran = "learn" in (skills_used or [])
     learn_gate_warning = ""

@@ -388,16 +388,16 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
             "Call track_tokens(input, output, note) at session checkpoints to enable cost tracking."
         )
 
-    # PROPOSAL 2: project-level skill override — when close_cluster_rate is 0 for 3+
+    # Project-level skill override check — when close_cluster_rate is 0 for 3+
     # consecutive sessions, check whether a project .claude/skills/done exists that is
     # silently swallowing /done without calling youk's session_end.
-    _cz = 0
+    consecutive_no_close = 0
     for _s in reversed(sessions):
         if not _s.get("close_cluster"):
-            _cz += 1
+            consecutive_no_close += 1
         else:
             break
-    if _cz >= 3:
+    if consecutive_no_close >= 3:
         import json as _json
         state_file = YOUK_ROOT / "state" / "session.json"
         last_project = ""
@@ -408,29 +408,29 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
         project_done_skill = Path(last_project) / ".claude" / "skills" / "done" if last_project else None
         if project_done_skill and project_done_skill.exists():
             findings.append(
-                f"close_cluster_rate is 0% for {_cz} consecutive sessions, but the project "
+                f"close_cluster_rate is 0% for {consecutive_no_close} consecutive sessions, but the project "
                 f"has its own .claude/skills/done that overrides youk's /done. "
                 "youk's session bookkeeping is not running after that skill fires. "
                 "Fix: after any project /done skill runs, call session_end(close_cluster=True) "
                 "manually, or use the phrase 'ship it' to trigger youk's version instead."
             )
-        elif _cz >= 3:
+        elif consecutive_no_close >= 3:
             # Retrospective recovery: /learn at next session open is equivalent to /done for
             # knowledge accumulation. Only flag when neither path ran.
             retrospective_count = sum(
-                1 for _s in sessions[-_cz:]
+                1 for _s in sessions[-consecutive_no_close:]
                 if "learn" in [sk.lower() for sk in _s.get("skills", [])]
             )
             if retrospective_count == 0:
                 findings.append(
-                    f"Session-close loop missed for {_cz} consecutive sessions — "
+                    f"Session-close loop missed for {consecutive_no_close} consecutive sessions — "
                     "neither /done nor retrospective /learn at next session open ran. "
                     "Tab-close is fine; ensure the next session opens in the same project "
                     "so youk can run retrospective /learn automatically."
                 )
 
-    # PROPOSAL B: task_checkpoint coverage — surface when sessions lack checkpoint data.
-    # Low coverage means the G2 breadcrumb (tab-close recovery) is not working.
+    # Task checkpoint coverage — surface when sessions lack checkpoint data.
+    # Low coverage means tab-close recovery breadcrumbs are not being written.
     cp_count = sum(1 for s in sessions if "TaskCheckpoints:" in s.get("raw", ""))
     cp_coverage = round(cp_count / total, 2) if total else 0.0
     if total >= 5 and cp_coverage < 0.4:
@@ -817,7 +817,7 @@ def _compute_knowledge_velocity(audit_texts: list[str], slug: str) -> dict:
     """Measure how fast the developer's personal knowledge base is growing.
 
     org_score measures youk health. knowledge_velocity measures whether the developer
-    is accumulating intelligence — the developer-ability proxy for G5.
+    is accumulating intelligence — measures developer knowledge growth, separate from org_score.
     """
     full_text = "\n".join(audit_texts)
 
@@ -886,7 +886,7 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     promotion_candidates = _analyze_promotion_candidates(audit_texts)
     promotion_queued = _queue_promotion_proposals(promotion_candidates) if promotion_candidates else 0
 
-    # G5: Knowledge velocity — developer-ability proxy (separate from org_score)
+    # Knowledge velocity — measures developer-ability growth (separate from org_score)
     import json as _j
     _state_file = YOUK_ROOT / "state" / "session.json"
     _slug = ""
