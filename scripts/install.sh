@@ -1,12 +1,25 @@
 #!/usr/bin/env bash
-# youk installer — single command, idempotent, run from repo root or via curl
-# Usage: bash scripts/install.sh
+# youk installer — single command, idempotent
+# macOS/Linux:  bash scripts/install.sh
+# Windows:      bash scripts/install.sh  (Git Bash or WSL2)
+#               .\scripts\install.ps1    (PowerShell — see scripts/install.ps1)
 set -euo pipefail
 
 YOUK_DIR="$HOME/.claude/youk"
 CLAUDE_DIR="$HOME/.claude"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+
+# ── Platform detection ────────────────────────────────────────────────────────
+OS="$(uname -s)"
+IS_WINDOWS=false
+if [[ "$OS" == MINGW* ]] || [[ "$OS" == MSYS* ]] || [[ "$OS" == CYGWIN* ]]; then
+  IS_WINDOWS=true
+fi
+# WSL also appears as Linux but WSLENV or /proc/version hints are present
+if [[ "$OS" == "Linux" ]] && grep -qi "microsoft\|wsl" /proc/version 2>/dev/null; then
+  IS_WINDOWS=true
+fi
 
 # ── Colours ──────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; NC='\033[0m'
@@ -18,8 +31,22 @@ step() { echo -e "\n${GREEN}▶${NC} $1"; }
 # ── Step 0: Preflight ────────────────────────────────────────────────────────
 step "Preflight checks"
 
+if $IS_WINDOWS; then
+  ok "Platform: Windows (Git Bash / WSL2)"
+  # On Windows, Docker Desktop must have WSL2 backend enabled.
+  # Git Bash users: Docker Desktop for Windows handles the bridge automatically.
+else
+  ok "Platform: $(uname -s)"
+fi
+
 if ! command -v docker &>/dev/null; then
-  fail "Docker not found. Install Docker Desktop from https://docker.com and re-run."
+  fail "Docker not found."
+  if $IS_WINDOWS; then
+    echo "  Install Docker Desktop for Windows: https://docs.docker.com/desktop/install/windows-install/"
+    echo "  Enable 'Use WSL 2 based engine' in Docker Desktop → Settings → General."
+  else
+    echo "  Install Docker Desktop: https://docker.com"
+  fi
   exit 1
 fi
 if ! docker info &>/dev/null 2>&1; then
@@ -29,8 +56,15 @@ fi
 ok "Docker running"
 
 if ! command -v claude &>/dev/null; then
-  fail "Claude Code not found. Install from https://claude.ai/code and re-run."
-  exit 1
+  if command -v npm &>/dev/null; then
+    warn "Claude Code not found — installing via npm..."
+    npm install -g @anthropic-ai/claude-code
+    ok "Claude Code installed"
+  else
+    fail "Claude Code not found and npm unavailable."
+    echo "  Install Node.js from https://nodejs.org then run: npm install -g @anthropic-ai/claude-code"
+    exit 1
+  fi
 fi
 ok "Claude Code found ($(claude --version 2>/dev/null | head -1))"
 

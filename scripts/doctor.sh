@@ -6,6 +6,16 @@ set -uo pipefail
 YOUK_DIR="${YOUK_DIR:-$HOME/.claude/youk}"
 CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
 
+# ── Platform detection ────────────────────────────────────────────────────────
+OS="$(uname -s)"
+IS_WINDOWS=false
+if [[ "$OS" == MINGW* ]] || [[ "$OS" == MSYS* ]] || [[ "$OS" == CYGWIN* ]]; then
+  IS_WINDOWS=true
+fi
+if [[ "$OS" == "Linux" ]] && grep -qi "microsoft\|wsl" /proc/version 2>/dev/null; then
+  IS_WINDOWS=true
+fi
+
 PASS=0; FAIL=0; WARN=0
 
 pass() { echo "  PASS  $1"; PASS=$((PASS+1)); }
