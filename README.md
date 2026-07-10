@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/banner.svg" alt="youk — ambient engineering intelligence" width="100%"/>
+<img src="assets/install-demo.svg" alt="youk — install, first session, compounding loop" width="100%"/>
 
 [![CI](https://github.com/ajinkyabhanudas/youk/actions/workflows/ci.yml/badge.svg)](https://github.com/ajinkyabhanudas/youk/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.13+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
