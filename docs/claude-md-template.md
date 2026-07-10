@@ -9,7 +9,7 @@ Every session must compound the developer's ability — not just persist context
 Skill invocation is the primary signal. A session where capability skills ran but /done was skipped still moves org_score. A session where work was done but no skill fired and /done wasn't typed is a session where no compounding happened.
 
 ## Session start (every session, automatically)
-Call `youk-core.session_start(cwd)`. Paste the returned `brief` field VERBATIM as the first block in your response — this anchors contracts before any other context is established. Then fold the resume point naturally into the rest of your response — not "context loaded", just start from where things were. If pending proposals exist, surface them once: "youk flagged N improvement proposals — review them?"
+Call `youk-core.session_start(project_dir)`. Paste the returned `brief` field VERBATIM as the first block in your response — this anchors contracts before any other context is established. Then fold the resume point naturally into the rest of your response — not "context loaded", just start from where things were. If pending proposals exist, surface them once: "youk flagged N improvement proposals — review them?"
 
 ## Task routing (plan first, then act)
 For every non-trivial task:
@@ -53,11 +53,11 @@ User redirects in one line if wrong. Never ask what to do — the plan proposes.
 /start  → start skill — session activation card (also fires on "activate youk", "youk", "where were we")
 /build  → route_task; M+: nfr_check quick + check_nfr_gate + dev-loop; S-: dev-loop only
 /done   → code-review + verify + humanize + **learn (required — not optional)** in sequence, then: (1) scan conversation for any contracts not yet saved (save_contract fires immediately mid-session, this is a safety-net sweep for any missed), collect as explicit_contracts=[...], (2) **before calling session_end, confirm /learn ran. If "learn" is not in skills_used, run it now.** (3) session_end("done", commits_made=<bool>, explicit_contracts=[...], close_cluster=True). /learn is what closes the ability-compounding loop — a /done without /learn is an incomplete session.
-/close  → compact_context(cwd) then session_end("done", commits_made=<bool>) — lightweight close without code-review
+/close  → compact_context(project_dir) then session_end("done", commits_made=<bool>) — lightweight close without code-review
 /check  → code-review + security-review if auth/creds in scope
 /decide → adr (ask for decision statement if not given)
 /health → self_heal() — org_score + top 2 findings + pending proposals count
-/plan   → compact_context(cwd) then present updated session priorities
+/plan   → compact_context(project_dir) then present updated session priorities
 /improve → self_heal() → for each skill_gap_signal (count ≥ 2): assess_skill(skill_name) [in-session: read skill_content + gaps, propose additions] → add_proposal() for each SKILL_EDIT → apply_proposal(confirmed=True, safe_types=["SKILL_EDIT","FILE_CREATE"]) for each proposal (CODE_EDIT/CONFIG_EDIT will return blocked=True — surface those for manual review) → session_end(close_cluster=True, skills_used=["self_heal", "assess_skill"])
 
 Aliases: /requirements → nfr_check  |  /spec → write-spec  |  /review → code-review
@@ -80,22 +80,22 @@ Capability skills are the mechanism of compounding. A session where `route_task`
 
 ## Auto-compaction resume guard
 
-When a session begins from Claude's auto-compaction (the context window was auto-summarized, not by `youk-core.compact_context()`), immediately call `youk-core.compact_context(cwd)` and paste the returned brief VERBATIM before doing anything else. Signal: if you cannot see a `[YOUK CONTEXT BRIEF —` block in recent context from a `compact_context()` call, assume you need one. The cost of a redundant call is low; the cost of stale contracts from a compaction summary is high — contracts come from the summary's text, not from contracts.md directly.
+When a session begins from Claude's auto-compaction (the context window was auto-summarized, not by `youk-core.compact_context()`), immediately call `youk-core.compact_context(project_dir)` and paste the returned brief VERBATIM before doing anything else. Signal: if you cannot see a `[YOUK CONTEXT BRIEF —` block in recent context from a `compact_context()` call, assume you need one. The cost of a redundant call is low; the cost of stale contracts from a compaction summary is high — contracts come from the summary's text, not from contracts.md directly.
 
-After resuming from auto-compaction, also call `youk-core.session_start(cwd)` if no session_start has run this session.
+After resuming from auto-compaction, also call `youk-core.session_start(project_dir)` if no session_start has run this session.
 
 ## Context management — preempt Claude's auto-compaction, never wait for it
 
-Call `youk-core.compact_context(cwd)` when new significant context has been established — not on a timer:
+Call `youk-core.compact_context(project_dir)` when new significant context has been established — not on a timer:
 - **After any commit is made** (code in new state — anchor before continuing)
-- **Task completion** — when user says "done"/"ok"/"next" or topic shifts after multi-exchange work: M+: call `task_checkpoint(cwd, task_label, size)` (compact + mini audit entry, rolls into session_end); XS/S: compact_context only
+- **Task completion** — when user says "done"/"ok"/"next" or topic shifts after multi-exchange work: M+: call `task_checkpoint(project_dir, task_label, size)` (compact + mini audit entry, rolls into session_end); XS/S: compact_context only
 - **When a new decision is verbalized** (compact to anchor it — contracts are saved via save_contract immediately, not via compact)
 - **When moving to a new session plan item** (context shift — compact the previous item first)
 - **Before session_end** (always — compact first, then close)
 - **After 8+ tool calls without compacting** (rough 30-40% context fill proxy — don't wait for 50%)
 
 When compact_context runs:
-1. Call `youk-core.compact_context(cwd)`
+1. Call `youk-core.compact_context(project_dir)`
 2. **Paste the `brief` VERBATIM in your response** — not summarized, not reformatted
 3. Continue from the brief as your context anchor
 
@@ -107,7 +107,7 @@ Tier priorities when summarizing anything yourself:
 - **EXPLORATION** — compress to 1 sentence
 - **CLARIFICATION** — drop, re-ask if needed
 
-Contract phrase triggers — call `youk-core.save_contract(contract, cwd)` IMMEDIATELY when detected. Do not wait for /done or session_end. Contracts in conversation are erased by Claude's auto-compaction; contracts in contracts.md are permanent and survive every compaction cycle.
+Contract phrase triggers — call `youk-core.save_contract(contract, project_dir)` IMMEDIATELY when detected. Do not wait for /done or session_end. Contracts in conversation are erased by Claude's auto-compaction; contracts in contracts.md are permanent and survive every compaction cycle.
 Trigger phrases: "always", "never", "from now on", "remember to", "make sure you", "every time", "commit format", "test after", "before committing"
 Implicit correction triggers — also fire save_contract when the user negates a technical approach: "don't do that", "wrong approach", "instead of", "do it this way", "stop doing", "use this instead". Extract the underlying contract from context. Only save when a specific technical pattern is being corrected — not for vague redirects.
 After the call: if `result.saved` is true, confirm inline: "Saved — '{contract}' will load at the start of every future session." If `result.saved` is false: "Already in contracts." If `result.conflicts` is non-empty: "⚠ Possible conflict with existing contract: '{conflicts[0]}' — review contracts.md."
@@ -128,7 +128,7 @@ Rough estimates from the context window display are fine — trend detection, no
 
 When done/stopping detected (or user types /done or /close):
 1. `track_tokens(approx_input, approx_output, "final")` — final tally before closing.
-2. `compact_context(cwd)` — captures in-progress state before the session closes.
+2. `compact_context(project_dir)` — captures in-progress state before the session closes.
 3. `session_end("done", commits_made=<bool>)` — Set `close_cluster=True` when /done ran in full. Pass `skill_gaps={"skill": ["gap"]}` only for structural gaps not yet addressed. Pass `mid_session_adaptations_applied=N` when any skill adaptations were applied within this session.
 
 4. **After session_end returns**, if the response includes `session_delta`, display this block verbatim before closing:
@@ -166,7 +166,7 @@ When any of these happen mid-session, act immediately:
 3. For structural gaps (CODE_EDIT, CONFIG_EDIT): `add_proposal()` only — queue for human review
 4. Continue the session using the updated skill
 
-**Route correction capture:** When the user overrides a routing decision, immediately call `youk-core.save_contract("route override: [task pattern] → [correct size]", cwd)`.
+**Route correction capture:** When the user overrides a routing decision, immediately call `youk-core.save_contract("route override: [task pattern] → [correct size]", project_dir)`.
 
 ## Voice (always)
 No em dashes. Why before what. Name the trade-off. No rhetorical buildup. First-principles directness. Assume the reader can read the diff.
