@@ -1429,3 +1429,52 @@ class TestCrossProjectPatternThemes:
         match = next((c for c in candidates if "concise" in c["contract"]), None)
         assert match is not None
         assert match["theme"] == "General"
+
+
+# ── _routing_ran_last_session ─────────────────────────────────────────────────
+
+class TestRoutingRanLastSession:
+    def test_returns_false_when_no_flag_file(self, youk_root):
+        from session import _routing_ran_last_session
+        ran, task = _routing_ran_last_session("myproject")
+        assert ran is False
+        assert task == ""
+
+    def test_returns_true_when_slug_matches(self, youk_root):
+        import json
+        flag = youk_root / "state" / "route-task-ran.json"
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.write_text(json.dumps({"slug": "myproject", "task": "add login", "size": "M", "ts": "2026-07-14T00:00:00"}))
+        from session import _routing_ran_last_session
+        ran, task = _routing_ran_last_session("myproject")
+        assert ran is True
+        assert task == "add login"
+
+    def test_returns_false_when_slug_differs(self, youk_root):
+        import json
+        flag = youk_root / "state" / "route-task-ran.json"
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.write_text(json.dumps({"slug": "otherproject", "task": "other task", "size": "M", "ts": "2026-07-14T00:00:00"}))
+        from session import _routing_ran_last_session
+        ran, task = _routing_ran_last_session("myproject")
+        assert ran is False
+        assert task == ""
+
+    def test_returns_false_on_corrupt_file(self, youk_root):
+        flag = youk_root / "state" / "route-task-ran.json"
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.write_text("not valid json {{{")
+        from session import _routing_ran_last_session
+        ran, task = _routing_ran_last_session("myproject")
+        assert ran is False
+        assert task == ""
+
+    def test_task_label_returned_correctly(self, youk_root):
+        import json
+        flag = youk_root / "state" / "route-task-ran.json"
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.write_text(json.dumps({"slug": "proj", "task": "implement auth flow", "size": "L", "ts": "2026-07-14T10:00:00"}))
+        from session import _routing_ran_last_session
+        ran, task = _routing_ran_last_session("proj")
+        assert ran is True
+        assert task == "implement auth flow"
