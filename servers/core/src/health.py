@@ -841,10 +841,30 @@ def _compute_knowledge_velocity(audit_texts: list[str], slug: str) -> dict:
     """
     full_text = "\n".join(audit_texts)
 
-    # Contracts saved per session (from audit "contracts_saved: N" or "Contracts: N")
-    contract_saves = re.findall(r"contracts_saved:\s*(\d+)", full_text)
-    rates = [int(x) for x in contract_saves[-5:]]
-    avg_contracts_per_session = round(sum(rates) / len(rates), 1) if rates else 0.0
+    # Project contracts total — count only "- " prefixed lines (actual contracts).
+    # Prose headers, separator lines, and blank lines must be excluded.
+    project_contracts_file = YOUK_ROOT / "knowledge" / "projects" / slug / "contracts.md"
+    contract_total = 0
+    if project_contracts_file.exists():
+        contract_total = sum(
+            1 for ln in project_contracts_file.read_text().splitlines()
+            if ln.startswith("- ")
+        )
+
+    # avg_contracts_per_session — derived from ContractsSaved audit lines (written by
+    # session_end after each /done). Falls back to file-based estimate for pre-fix sessions.
+    contract_saves_raw = re.findall(r"ContractsSaved:\s*(\d+)", full_text)
+    audit_has_contracts_saved = bool(contract_saves_raw)
+    if contract_saves_raw:
+        rates = [int(x) for x in contract_saves_raw[-5:]]
+        avg_contracts_per_session = round(sum(rates) / len(rates), 1)
+    elif contract_total > 0:
+        # Audit predates ContractsSaved field — derive floor from file
+        sessions = _parse_audit_sessions(audit_texts)
+        denom = max(len(sessions), 1)
+        avg_contracts_per_session = round(contract_total / denom, 1)
+    else:
+        avg_contracts_per_session = 0.0
 
     # Domain concept count — absolute, from files (not derived from audit)
     domain_dir = YOUK_ROOT / "knowledge" / "domain"
@@ -853,25 +873,21 @@ def _compute_knowledge_velocity(audit_texts: list[str], slug: str) -> dict:
         if domain_dir.exists() else 0
     )
 
-    # Project contracts total
-    project_contracts_file = YOUK_ROOT / "knowledge" / "projects" / slug / "contracts.md"
-    contract_total = 0
-    if project_contracts_file.exists():
-        contract_total = sum(
-            1 for ln in project_contracts_file.read_text().splitlines()
-            if ln.strip() and not ln.startswith("#")
-        )
-
     # /learn invocation rate across recent sessions
     sessions = _parse_audit_sessions(audit_texts)
     total = len(sessions)
     learn_count = sum(1 for s in sessions if "learn" in s.get("skills", []))
     learn_rate = round(learn_count / total, 2) if total else 0.0
 
-    # Verdict
-    if avg_contracts_per_session >= 1.0 and domain_concepts > 0:
+    # Verdict — STALLED requires that no ContractsSaved lines appear in the audit,
+    # meaning session_end ran but saved nothing recently (vs. pre-fix sessions
+    # where ContractsSaved was never written — those get the file-based fallback
+    # which should show in avg_contracts_per_session but not suppress STALLED).
+    # When audit has ContractsSaved lines, use the rate to pick the verdict tier.
+    # When audit has NO ContractsSaved lines but contracts exist: STALLED.
+    if avg_contracts_per_session >= 1.0 and domain_concepts > 0 and audit_has_contracts_saved:
         verdict = "GROWING — contracts and domain concepts accumulating each session"
-    elif avg_contracts_per_session >= 0.3 or domain_concepts > 0:
+    elif (avg_contracts_per_session >= 0.3 or domain_concepts > 0) and audit_has_contracts_saved:
         verdict = "SLOW — knowledge accumulating but below 1 contract/session average"
     elif contract_total > 0:
         verdict = "STALLED — existing knowledge loaded but nothing added recently"

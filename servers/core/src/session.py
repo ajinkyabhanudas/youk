@@ -1871,6 +1871,7 @@ def end_session(
 
     entry = (
         f"\n### Session — {timestamp}\n"
+        f"Project: {_slug(_load_state().get('last_project', ''))}\n"
         f"{summary}\n"
         f"Skills: {skills_line}\n"
         f"CloseCluster: {close_line}\n"
@@ -1921,6 +1922,12 @@ def end_session(
     contracts_to_save = explicit_contracts or detected_contracts
     _wc = write_contracts(slug, contracts_to_save) if slug and contracts_to_save else {"added": 0, "conflicts": []}
     contracts_saved = _wc["added"]
+
+    # Append ContractsSaved to the audit entry now that we know the count.
+    # This must happen after write_contracts() — the entry was already written above
+    # without this field because contracts hadn't been computed yet.
+    with open(audit_file, "a") as f:
+        f.write(f"ContractsSaved: {contracts_saved}\n")
 
     # Write the resume point for the next session into external context.md (zero footprint).
     # Extract: first non-empty line after a ## heading, or first non-empty line of summary.
