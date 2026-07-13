@@ -506,6 +506,11 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
         for issue in release_issues[:2]:  # cap at 2 so they don't flood findings
             findings.append(issue)
 
+    # Git outcome signals — churn hotspots, reverts, commits-without-done.
+    # These are the only outcome metrics that survive beyond session end.
+    git_findings = _check_git_outcomes(sessions)
+    findings.extend(git_findings[:2])  # cap at 2 so audit findings don't get buried
+
     if not findings:
         findings.append(f"Org health nominal. Score: {score}/10.")
 
@@ -597,6 +602,95 @@ def _check_release_readiness() -> list[str]:
         )
 
     return issues
+
+
+def _check_git_outcomes(sessions: list[dict]) -> list[str]:
+    """
+    Read git history to surface outcome signals that process metrics miss.
+    Checks: churn hotspots (files changed in 3+ consecutive sessions),
+    recent reverts (revert commits in last 30 days), and sessions where
+    commits happened but /done was not typed.
+    Returns findings list — empty if git is unavailable or clean.
+    """
+    import subprocess as _sp
+    findings: list[str] = []
+
+    # Find the most recently touched project directory from audit sessions
+    project_dirs: list[str] = []
+    for s in sessions:
+        proj = s.get("project", "")
+        if proj and proj not in project_dirs:
+            project_dirs.append(proj)
+
+    # Resolve to actual paths by looking in knowledge/projects/{slug}/context.md
+    candidate_paths: list[str] = []
+    for slug in project_dirs[:3]:  # check up to 3 recent projects
+        ctx = YOUK_ROOT / "knowledge" / "projects" / slug / "context.md"
+        if ctx.exists():
+            # context.md doesn't store the full path — use HOST_HOME heuristic
+            candidate_paths.append(str(Path("/host-home") / "Desktop" / slug))
+            candidate_paths.append(str(Path("/host-home") / slug))
+
+    # Also try the youk repo itself as a known git root
+    candidate_paths.append(str(YOUK_ROOT))
+
+    # 1. Commits-without-done: audit says Commits: yes but CloseCluster: no
+    commits_no_done = sum(
+        1 for s in sessions[-20:]  # last 20 sessions only
+        if s.get("commits") and not s.get("close_cluster")
+    )
+    if commits_no_done >= 3:
+        findings.append(
+            f"{commits_no_done} recent sessions had commits but no /done. "
+            "Work is shipping without patterns being extracted. "
+            "Type /done before closing — it takes 60 seconds and is the compounding trigger."
+        )
+
+    # 2. Revert detection — git log for revert commits in last 30 days
+    for git_root in candidate_paths:
+        try:
+            result = _sp.run(
+                ["git", "-C", git_root, "log", "--oneline", "--since=30 days ago",
+                 "--grep=^[Rr]evert", "--no-walk=unsorted"],
+                capture_output=True, text=True, timeout=5
+            )
+            reverts = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
+            if len(reverts) >= 2:
+                findings.append(
+                    f"{len(reverts)} revert commits in the last 30 days "
+                    f"({Path(git_root).name}). "
+                    "Consider /stress-test before the next major change in this area."
+                )
+                break
+        except Exception:
+            continue
+
+    # 3. Churn hotspots — files changed in 3+ of the last 10 commits
+    for git_root in candidate_paths:
+        try:
+            result = _sp.run(
+                ["git", "-C", git_root, "log", "--name-only", "--pretty=format:", "-20"],
+                capture_output=True, text=True, timeout=5
+            )
+            file_counts: dict[str, int] = {}
+            for line in result.stdout.splitlines():
+                f = line.strip()
+                if f and not f.startswith("#"):
+                    file_counts[f] = file_counts.get(f, 0) + 1
+            hotspots = [f for f, c in file_counts.items() if c >= 4]
+            if hotspots:
+                top = hotspots[:3]
+                findings.append(
+                    f"Churn hotspot detected ({Path(git_root).name}): "
+                    + ", ".join(top)
+                    + f" — changed in {file_counts[top[0]]}+ of last 20 commits. "
+                    "Consider /adr or /stress-test before the next change here."
+                )
+                break
+        except Exception:
+            continue
+
+    return findings
 
 
 def _load_pending_proposals() -> list[Proposal]:

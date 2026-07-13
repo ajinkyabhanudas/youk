@@ -148,6 +148,48 @@ def _save_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
+def _find_stale_decisions(slug: str, threshold_days: int = 90) -> list[tuple[str, int]]:
+    """Return (heading, age_days) for decisions.md entries older than threshold_days.
+    Only returns entries with a parseable date in the heading (## YYYY-MM-DD: ...)."""
+    import re as _re2
+    decisions_file = YOUK_ROOT / "knowledge" / "projects" / slug / "decisions.md"
+    if not decisions_file.exists():
+        return []
+    stale: list[tuple[str, int]] = []
+    date_pattern = _re2.compile(r"^##\s+(\d{4}-\d{2}-\d{2})[:\s]+(.*)")
+    now = datetime.utcnow()
+    try:
+        for line in decisions_file.read_text().splitlines():
+            m = date_pattern.match(line)
+            if not m:
+                continue
+            try:
+                decision_date = datetime.strptime(m.group(1), "%Y-%m-%d")
+                age_days = (now - decision_date).days
+                if age_days >= threshold_days:
+                    stale.append((m.group(2).strip(), age_days))
+            except ValueError:
+                continue
+    except Exception:
+        return []
+    # Sort oldest first — most urgent to review
+    return sorted(stale, key=lambda x: x[1], reverse=True)
+
+
+def _load_session_plan_items(slug: str) -> list[str]:
+    """Return the current session plan items from state/session-plan.json."""
+    plan_file = YOUK_ROOT / "state" / "session-plan.json"
+    if not plan_file.exists():
+        return []
+    try:
+        data = json.loads(plan_file.read_text())
+        if data.get("slug") and data["slug"] != slug:
+            return []
+        return [p for p in data.get("plan", []) if p and not p.startswith("⚠")]
+    except Exception:
+        return []
+
+
 def _slug(project_dir: str) -> str:
     """Return a filesystem-safe slug for project_dir.
 
@@ -1583,6 +1625,16 @@ def start_session(project_dir: str) -> SessionState:
     if survey_stale_note and _survey_is_actionable:
         session_plan.append(survey_stale_note)
 
+    # Decision staleness: flag decisions.md entries older than 90 days without recent reference.
+    # Stale decisions are load-bearing architectural choices that may no longer reflect reality.
+    stale_decisions = _find_stale_decisions(slug)
+    if stale_decisions:
+        for decision_heading, age_days in stale_decisions[:1]:  # one at a time — not a flood
+            session_plan.append(
+                f"Stale decision ({age_days}d old): '{decision_heading[:60]}' — "
+                "review in decisions.md and confirm it still holds, or supersede it."
+            )
+
     # Persist session plan so compact_context can include it in briefs
     plan_file = YOUK_ROOT / "state" / "session-plan.json"
     try:
@@ -2031,6 +2083,17 @@ def end_session(
         slug=slug,
     )
 
+    # Session autopsy: surface "what did you plan but not finish?" when real work happened.
+    # Only ask when there were skills or commits — avoids nagging on exploration sessions.
+    autopsy_question = ""
+    if close_cluster and (commits_made or _has_capability_skill(skills_used or [])):
+        plan_items = _load_session_plan_items(slug)
+        autopsy_question = (
+            "Before closing: anything you planned for this session that didn't happen? "
+            "(One line — it becomes item 1 in next session's plan.)"
+            + (f" Session plan had {len(plan_items)} items." if plan_items else "")
+        )
+
     return {
         "knowledge_extracted": summary.count("##"),
         "global_contracts_promoted": global_contracts_promoted,
@@ -2043,6 +2106,7 @@ def end_session(
         "compounding_verdict": session_delta["verdict"],
         **({"skill_gate_warning": skill_gate_warning} if skill_gate_warning else {}),
         **({"learn_gate_warning": learn_gate_warning} if learn_gate_warning else {}),
+        **({"session_autopsy_question": autopsy_question} if autopsy_question else {}),
         **({"emerging_global_patterns": emerging_global_patterns,
             "global_pattern_note": (
                 f"{len(emerging_global_patterns)} contract(s) found across 2+ projects — "

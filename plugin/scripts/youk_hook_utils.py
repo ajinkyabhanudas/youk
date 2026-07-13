@@ -243,6 +243,140 @@ def extract_recent_tool_outputs(transcript_path: str, max_outputs: int = 3) -> l
     return results
 
 
+# ── Ambient intelligence: task size + session-end detection ──────────────────
+
+# M+ build signals — phrases that indicate a feature/refactor task is starting
+_BUILD_SIGNALS = [
+    "let's add", "let's build", "let's implement", "let's create", "let's refactor",
+    "add a ", "add the ", "build a ", "build the ", "implement ", "create a ", "create the ",
+    "i want to add", "i want to build", "i want to implement", "i want to create",
+    "we need to add", "we need to build", "we need to implement",
+    "can you add", "can you build", "can you implement", "can you create",
+    "new feature", "new endpoint", "new component", "new module",
+    "refactor ", "migrate ", "redesign ", "overhaul ",
+]
+
+# Session-end signals — natural phrases that close a work block
+_SESSION_END_SIGNALS = [
+    "ok thanks", "that's all", "that's all for now", "looks good", "we're done",
+    "we're done here", "let's call it", "alright", "perfect", "good enough",
+    "that'll do", "that'll do it", "wrap it up", "let's wrap", "we can stop here",
+    "nothing else", "i think we're good", "ship it", "commit it", "done for now",
+    "done for today", "calling it", "calling it a day", "that's it for today",
+    "ok done", "all done", "all good", "that works", "looks great", "nice",
+]
+
+# NFR check already ran — track via state file
+_NFR_STATE_FILE = "state/nfr-check-ran.json"
+
+
+def detect_task_size(prompt: str) -> str | None:
+    """
+    Detect if the prompt implies an M+ task that needs /build routing.
+    Returns 'M' if detected, None if not clearly M+.
+    Deliberately conservative — false positives are more annoying than misses.
+    """
+    lower = prompt.lower().strip()
+    # Skip very short prompts — not enough signal
+    if len(lower) < 15:
+        return None
+    # Skip prompts that are clearly questions or clarifications
+    if lower.startswith(("what", "why", "how", "where", "when", "which", "does", "is ", "are ")):
+        return None
+    # Skip explicit slash commands — user is already routing
+    if lower.startswith("/"):
+        return None
+    # Check build signals
+    if any(sig in lower for sig in _BUILD_SIGNALS):
+        return "M"
+    return None
+
+
+def detect_session_end(prompt: str) -> bool:
+    """
+    Detect if the prompt signals the user is wrapping up for the day.
+    Returns True only on clear session-closing phrases.
+    """
+    lower = prompt.lower().strip()
+    # Must be short — long messages aren't session-close signals
+    if len(lower) > 60:
+        return False
+    return any(sig in lower for sig in _SESSION_END_SIGNALS)
+
+
+def nfr_check_ran_this_session(root: Path, slug: str) -> bool:
+    """Check whether NFR check has already run for this session+slug."""
+    state_file = root / _NFR_STATE_FILE
+    if not state_file.exists():
+        return False
+    try:
+        data = json.loads(state_file.read_text())
+        return data.get("slug") == slug
+    except Exception:
+        return False
+
+
+def load_session_health(root: Path) -> dict:
+    """
+    Load a minimal health signal from improvement-metrics.json.
+    Returns {org_score, gaps_last30, close_cluster_rate} or empty dict.
+    """
+    metrics_file = root / "state" / "improvement-metrics.json"
+    if not metrics_file.exists():
+        return {}
+    try:
+        data = json.loads(metrics_file.read_text())
+        history = data.get("history", [])
+        if not history:
+            return {}
+        latest = history[-1]
+        return {
+            "org_score": latest.get("org_score", 0),
+            "gaps_last30": latest.get("gaps_last30", 0),
+            "close_cluster_rate": latest.get("close_cluster_rate", 0),
+        }
+    except Exception:
+        return {}
+
+
+def build_build_nudge(prompt: str) -> str:
+    """One-line nudge injected when an M+ task is detected without explicit /build."""
+    return (
+        "[YOUK] M+ task detected — NFR gate will run before implementation. "
+        "Type /build to make this explicit, or continue and the gate fires automatically."
+    )
+
+
+def build_session_end_nudge() -> str:
+    """One-line nudge injected when a session-end signal is detected."""
+    return (
+        "[YOUK] Session-end detected — run /done before closing "
+        "to save contracts, review work, and compound today's patterns. "
+        "Takes 60 seconds. Skipping loses this session's learnings."
+    )
+
+
+def build_health_nudge(health: dict) -> str | None:
+    """
+    Return a one-line ambient health signal if something is materially wrong.
+    Returns None if health is nominal or empty — silence is the right signal when things are fine.
+    """
+    if not health:
+        return None
+    score = health.get("org_score", 0)
+    gaps = health.get("gaps_last30", 0)
+    close_rate = health.get("close_cluster_rate", 0)
+
+    if score < 5.0:
+        return f"[YOUK HEALTH] org_score {score:.1f}/10 — run /improve to address {gaps} open gaps."
+    if gaps > 20 and close_rate < 0.4:
+        return (
+            f"[YOUK HEALTH] {gaps} recurring gaps, {close_rate:.0%} session close rate. "
+            "Type /done at session end — it's the primary driver of compounding."
+        )
+    return None
+
+
 # ── Output helpers ────────────────────────────────────────────────────────────
 
 def ok(system_message: str = "", additional_context: str = "") -> None:

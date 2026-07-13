@@ -21,7 +21,7 @@ This hook only writes to state/ (ephemeral, session-scoped).
 from __future__ import annotations
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -142,7 +142,7 @@ def main() -> None:
         "files_touched": files_touched,
         "last_signal": signal or existing.get("last_signal", ""),
         "last_tool": tool_name,
-        "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "updated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
     try:

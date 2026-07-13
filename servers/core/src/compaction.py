@@ -335,6 +335,34 @@ def _conflict_check(new_contract: str, existing: set[str]) -> list[str]:
     return conflicts
 
 
+def _tokenize(text: str) -> set[str]:
+    """Tokenize contract text: lowercase, strip punctuation, drop stop words and short words."""
+    import re as _re
+    cleaned = _re.sub(r"[^\w\s]", " ", text.lower())
+    return {w for w in cleaned.split() if w not in _STOP_WORDS and len(w) > 3}
+
+
+def _is_semantic_duplicate(new_contract: str, existing: set[str], threshold: float = 0.8) -> bool:
+    """True if new_contract shares ≥threshold of its meaningful words with any existing contract.
+    Threshold of 0.8 prevents suppression of related-but-distinct contracts (e.g. class vs hook
+    components share domain words but express different rules) while catching near-identical
+    restatements of the same agreement."""
+    new_words = _tokenize(new_contract)
+    # Skip dedup for very short contracts — not enough signal for reliable matching
+    if len(new_words) < 3:
+        return False
+    for ex in existing:
+        ex_words = _tokenize(ex)
+        if not ex_words:
+            continue
+        overlap = len(new_words & ex_words)
+        # Anchored to smaller set: catches restatements regardless of length difference
+        smaller = min(len(new_words), len(ex_words))
+        if overlap / smaller >= threshold:
+            return True
+    return False
+
+
 def write_contracts(slug: str, new_contracts: list[str]) -> dict:
     """
     Append new contract lines to knowledge/projects/{slug}/contracts.md.
@@ -352,9 +380,13 @@ def write_contracts(slug: str, new_contracts: list[str]) -> dict:
             if line.strip() and not line.startswith("#")
         ]
     existing_normalized = {c.lower() for c in existing_raw}
-
-    to_add = [c for c in new_contracts if c.strip().lstrip("- ").lower() not in existing_normalized]
     existing_set = set(existing_raw)
+
+    to_add = [
+        c for c in new_contracts
+        if c.strip().lstrip("- ").lower() not in existing_normalized
+        and not _is_semantic_duplicate(c, existing_set)
+    ]
     all_conflicts: list[str] = []
     for c in to_add:
         all_conflicts.extend(_conflict_check(c, existing_set))
