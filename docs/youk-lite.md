@@ -33,6 +33,13 @@ Add this block to your `CLAUDE.md` (or create one in your project root):
 ## Active decisions
 <!-- youk-lite: record key architecture/design decisions here with date and rationale -->
 <!-- example: ## 2026-07-13: Use SQLite not Postgres — single user, no concurrency needed -->
+
+## Direction gate (M+ tasks only)
+Before writing any substantial code or making architecture decisions:
+1. State what you're about to do in one sentence
+2. Ask: is this the right problem? Is there a simpler version?
+3. List what you're assuming — which assumption, if wrong, reverses everything?
+Only proceed after step 3. If anything is unresolved, ask one question before starting.
 ```
 
 That's it. Claude reads this at every session start.
@@ -88,4 +95,11 @@ Install full youk when:
 
 ## Active decisions
 <!-- Architecture/design decisions with date and rationale -->
+
+## Direction gate (M+ tasks only)
+Before writing any substantial code or making architecture decisions:
+1. State what you're about to do in one sentence
+2. Ask: is this the right problem? Is there a simpler version?
+3. List what you're assuming — which assumption, if wrong, reverses everything?
+Only proceed after step 3. If anything is unresolved, ask one question before starting.
 ```

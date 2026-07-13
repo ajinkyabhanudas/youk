@@ -83,6 +83,13 @@ Friction point {n}:
   Impact: HIGH | MEDIUM | LOW
   Fix: {specific, one-sentence change that removes this friction}
   Proposal type: SKILL_EDIT | CODE_EDIT | CONFIG_EDIT | CLAUDE_MD_EDIT
+
+Contract capture verification (required — do not skip):
+  Simulated agreement: {the "always X" / "never Y" phrase the persona said}
+  save_contract fired: YES | NO | NOT VERIFIED
+  contracts.md after call: {exact text found, or "MISSING — HIGH friction finding"}
+  session_start would load it: YES | NO | NOT VERIFIED
+  Verdict: DURABLE | LOST | UNVERIFIED
 ```
 
 ---
@@ -105,7 +112,7 @@ Friction point {n}:
 - resume_point only captures last audit summary, not actual code state
 - Token overhead invisible until /health is called manually
 
-**Output format**: same as Persona A but `[PERSONA B: SENIOR DEV]`
+**Output format**: same as Persona A but `[PERSONA B: SENIOR DEV]` — include contract capture verification block.
 
 ---
 
@@ -128,7 +135,7 @@ senior dev's history. There is no shared knowledge store.
 
 **This is the team collaboration gap.** Surface it explicitly.
 
-**Output format**: same format, `[PERSONA C: JOINING DEV]`
+**Output format**: same format, `[PERSONA C: JOINING DEV]` — include contract capture verification block.
 
 ---
 
@@ -150,7 +157,7 @@ Codebase has 60+ new commits from the team. Stack may have changed.
 - No "things changed while you were away" summary
 - Session plan shows 8-week-old resume point as if it's fresh
 
-**Output format**: same format, `[PERSONA D: RETURNING DEV]`
+**Output format**: same format, `[PERSONA D: RETURNING DEV]` — include contract capture verification block.
 
 ---
 

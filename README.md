@@ -19,9 +19,11 @@
 
 ## The compounding developer
 
-youk makes you a better engineer with every session. Tell it something once and it remembers forever. Working agreements from today load six months from now. Lessons from one project improve the next. The longer you use it, the more it adapts to exactly how you build.
+Session 1: Claude knows nothing about your project. You re-explain the stack, the constraints, what you decided last week.
 
-**The north star:** by session 10, you have something that knows your codebase, your calls, your way of building. Not a generic assistant. Yours. If that edge isn't obvious, the loop isn't closed.
+Session 10: Claude opens knowing your working agreements, your architecture decisions, your exact resume point. It routes a one-liner differently than a new feature. Skills it got wrong last month have already been patched. Patterns from another project loaded automatically.
+
+**That's the difference youk makes. Nothing changes in your workflow except the install.**
 
 | Without youk | With youk |
 |---|---|
@@ -29,12 +31,10 @@ youk makes you a better engineer with every session. Tell it something once and 
 | Working agreements live in chat, then vanish | Written to files, loaded at every future session |
 | Generic AI regardless of task size or stack | Routed to the right ceremony for your context |
 | Lessons lost when the session ends | Accumulated in audit log, feeding skill evolution |
-| Same gaps recur despite correction | /learn extracts patterns you internalize — not just files Claude reads |
+| Same gaps recur despite correction | /learn extracts patterns — written to your knowledge base |
 | Skills that fail keep failing | Skills that fail get patched in the session they fail |
 | Same gaps recur across projects | Detected, promoted to cross-project knowledge |
 | No institutional memory | Architecture decisions from six months ago still present today |
-
-**What changes about your workflow: the install. Nothing else.**
 
 > **Status:** Active development — v0.1.0. Compounding begins immediately. Gains become visible around session 10-20 as the audit log fills and skills get tuned to your patterns.
 
@@ -80,9 +80,19 @@ The score is driven by three signals: skill_invocation_rate (did a capability sk
 
 ## Quick start
 
-Two paths depending on what you have available:
+Three tiers — pick the one that matches what you have right now:
 
-### Path A — youk-lite (zero dependencies, any Claude agent)
+| Tier | What you get | Setup |
+|---|---|---|
+| **youk-lite** | Memory across sessions (contracts, resume point, decisions) | Copy 8 lines into CLAUDE.md |
+| **youk + contracts** | Memory + contracts survive git clone (shared across machines) | Copy CLAUDE.md + commit contracts.md |
+| **full youk** | Everything + skill routing, self-healing, compounding loop | One install command, Docker required |
+
+Start with youk-lite. Upgrade when the memory alone isn't enough.
+
+---
+
+### Tier 1 — youk-lite (zero dependencies, any Claude agent)
 
 No Docker. No install script. Works in Claude Code, Claude.ai Projects, Cursor, Windsurf, or anything that reads `CLAUDE.md`.
 
@@ -107,7 +117,23 @@ Tell Claude "remember: [agreement]" to add contracts. Tell Claude "update the re
 
 ---
 
-### Path B — full youk (Claude Code + Docker, compounding skills)
+### Tier 2 — youk + contracts (memory that survives git clone)
+
+Same CLAUDE.md template as Tier 1, plus commit `knowledge/projects/{your-project}/contracts.md` to the repo. This gives a second developer who clones the repo your working agreements on day one — no shared server, no Docker.
+
+```bash
+# after Tier 1 is working:
+mkdir -p knowledge/projects/$(basename $PWD)
+touch knowledge/projects/$(basename $PWD)/contracts.md
+echo "knowledge/projects/*/contracts.md" >> .gitignore.exceptions  # or remove from .gitignore
+git add knowledge/projects/$(basename $PWD)/contracts.md
+```
+
+Add one line to your `.gitignore` to un-ignore that file, commit it, and contracts travel with the repo.
+
+---
+
+### Tier 3 — full youk (Claude Code + Docker, compounding skills)
 
 ```bash
 curl -sL https://raw.githubusercontent.com/ajinkyabhanudas/youk/main/scripts/install.sh | bash
@@ -127,13 +153,13 @@ bash ~/.claude/youk/scripts/doctor.sh
 
 `doctor.sh` checks every dependency and gives a specific `Fix:` line for anything that fails.
 
-**When to use Path B over Path A:**
+**When to upgrade from Tier 1 → Tier 3:**
 - You want sessions to auto-close and capture what was learned (`/done`)
 - You want skill routing — different ceremony for a typo fix vs a new feature
 - You want cross-project pattern promotion (lessons from one project load on the next)
 - You're doing serious engineering work and want the compounding loop
 
-youk-lite is the entry point. Full youk is what you upgrade to once you've seen the value.
+Start at Tier 1. The value is visible without the infrastructure.
 
 ---
 
