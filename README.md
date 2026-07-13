@@ -111,7 +111,7 @@ Add this to your project's `CLAUDE.md`:
 <!-- Architecture/design decisions with date and rationale -->
 ```
 
-Tell Claude "remember: [agreement]" to add contracts. Tell Claude "update the resume point" at session end. That's it — memory across sessions, zero setup.
+Tell Claude "remember: [agreement]" to add contracts. At the end of your **first session**, type `save resume point: [one sentence about what you did today]` — that seeds session 2. After that, "update the resume point" at session end keeps it current.
 
 → [Full youk-lite guide](docs/youk-lite.md)
 

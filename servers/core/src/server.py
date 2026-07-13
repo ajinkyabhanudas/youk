@@ -182,14 +182,19 @@ def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) 
     When blocked=False: proceed to dev-loop.
     """
     result = _check_nfr_gate(task, size, nfr_decision_block)
-    # Write NFR-ran flag so hook doesn't re-nudge this session
+    # Write NFR-ran flag so hook doesn't re-nudge this session.
+    # Slug from session-open.json — task text is natural language, not a file path.
     if not result["blocked"] and size in {"M", "L", "XL"}:
         try:
             import json as _json
             from datetime import datetime as _dt
+            slug = "unknown"
+            open_file = YOUK_ROOT / "state" / "session-open.json"
+            if open_file.exists():
+                slug = _json.loads(open_file.read_text()).get("slug", "unknown")
             flag_file = YOUK_ROOT / "state" / "nfr-check-ran.json"
             flag_file.write_text(_json.dumps({
-                "slug": Path(task).name if "/" in task else "unknown",
+                "slug": slug,
                 "ts": _dt.utcnow().isoformat(),
             }))
         except Exception:

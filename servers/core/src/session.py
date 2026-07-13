@@ -496,6 +496,22 @@ def _read_git_log(project_dir: str, n: int = 5) -> str:
         return ""
 
 
+def _read_git_log_since_days(project_dir: str, days: int) -> tuple[int, list[str]]:
+    """Return (commit_count, [subject_lines]) for commits in the last `days` days.
+    Used to give returning developers a factual "what changed while you were gone" summary."""
+    resolved = str(_resolve_project_path(project_dir))
+    try:
+        result = subprocess.run(
+            ["git", "-C", resolved, "log", "--oneline", f"--since={days} days ago"],
+            capture_output=True, text=True, timeout=5
+        )
+        lines = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
+        subjects = [ln.split(" ", 1)[1] if " " in ln else ln for ln in lines[:5]]
+        return len(lines), subjects
+    except Exception:
+        return 0, []
+
+
 def _count_commits_since(project_dir: str, since_hash: str) -> int:
     """Count commits in project_dir that came after since_hash."""
     resolved = str(_resolve_project_path(project_dir))
@@ -1506,14 +1522,21 @@ def start_session(project_dir: str) -> SessionState:
         new_commits=new_commits,
     )
 
-    # Staleness awareness — surface when returning after a significant gap
+    # Staleness awareness — surface when returning after a significant gap.
+    # For gaps ≥30 days, fetch commits-since-gap from git so the plan answers
+    # "what changed while you were gone" with real data, not just a count.
     if days_since_last is not None and days_since_last >= 7:
-        recent_lines = git_log.splitlines()[:3] if git_log else []
-        recent_subjects = [ln.split(" ", 1)[1] if " " in ln else ln for ln in recent_lines]
-        subjects_str = " / ".join(s.strip() for s in recent_subjects if s.strip())
+        if days_since_last >= 30:
+            gap_commit_count, gap_subjects = _read_git_log_since_days(project_dir, days_since_last)
+        else:
+            # Short gap: use the already-loaded git_log (last 5 commits)
+            recent_lines = git_log.splitlines()[:3] if git_log else []
+            gap_subjects = [ln.split(" ", 1)[1] if " " in ln else ln for ln in recent_lines]
+            gap_commit_count = new_commits
+        subjects_str = " / ".join(s.strip() for s in gap_subjects if s.strip())
         commits_note = (
-            f" — {new_commits} commit(s). Recent: {subjects_str}"
-            if subjects_str else f" — {new_commits} commit(s) since last session"
+            f" — {gap_commit_count} commit(s) since you left. Recent: {subjects_str}"
+            if subjects_str else f" — {gap_commit_count} commit(s) since last session"
         )
         session_plan.append(f"Returning after {days_since_last} days{commits_note}")
         if days_since_last >= 7 and contracts:

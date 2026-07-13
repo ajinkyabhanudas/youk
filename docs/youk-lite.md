@@ -54,11 +54,14 @@ That's it. Claude reads this at every session start.
 - Tell Claude: "remember: always run ruff before committing"
 - Claude writes it under `## Contracts`
 
-**At the end of a session:** Tell Claude "update the resume point" — one sentence added under `## Resume point`. Next session picks up from there.
+**At the end of your first session:** Type exactly this: `save resume point: [one sentence about what you did today]`. That seeds session 2. Without it, session 2 starts cold — the template is there but empty.
+
+**At the end of subsequent sessions:** Tell Claude "update the resume point" — one sentence added under `## Resume point`. Next session picks up from there.
 
 **When you make an architecture decision:**
 - Tell Claude "log this decision: [what and why]"
-- Claude adds a dated entry under `## Active decisions`
+- Claude adds a dated entry under `## Active decisions` using format `## YYYY-MM-DD: Decision — rationale`
+- Use ISO date format (2026-07-14) so full youk can detect staleness automatically when you upgrade
 
 ---
 
@@ -92,9 +95,11 @@ Install full youk when:
 
 ## Resume point
 <!-- One sentence: where we stopped last session -->
+<!-- First session: type "save resume point: [what you did today]" before closing -->
 
 ## Active decisions
 <!-- Architecture/design decisions with date and rationale -->
+<!-- Format: ## YYYY-MM-DD: Decision — rationale in one sentence -->
 
 ## Direction gate (M+ tasks only)
 Before writing any substantial code or making architecture decisions:
@@ -103,3 +108,5 @@ Before writing any substantial code or making architecture decisions:
 3. List what you're assuming — which assumption, if wrong, reverses everything?
 Only proceed after step 3. If anything is unresolved, ask one question before starting.
 ```
+
+**The one thing that makes session 2 worth having:** Before you close your first session, type `save resume point: [one sentence about what you did today]`. That's the seed. Without it, session 2 opens to an empty template — same as session 1.

@@ -342,8 +342,8 @@ def load_session_health(root: Path) -> dict:
 def build_build_nudge(prompt: str) -> str:
     """One-line nudge injected when an M+ task is detected without explicit /build."""
     return (
-        "[YOUK] M+ task detected — NFR gate will run before implementation. "
-        "Type /build to make this explicit, or continue and the gate fires automatically."
+        "[YOUK] Before coding: is this the right thing to build? "
+        "Type /build to get a structured check (2 min), or continue if you're already sure."
     )
 
 
