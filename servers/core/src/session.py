@@ -1303,6 +1303,24 @@ def _check_doc_freshness() -> list[str]:
     return undocumented
 
 
+def _routing_ran_last_session(current_slug: str) -> tuple[bool, str]:
+    """
+    Returns (ran, task_label) — True when route_task was called during this session.
+    Uses state/route-task-ran.json written by server.py's route_task wrapper.
+    """
+    flag_file = YOUK_ROOT / "state" / "route-task-ran.json"
+    if not flag_file.exists():
+        return False, ""
+    try:
+        import json as _json
+        data = _json.loads(flag_file.read_text())
+        if data.get("slug") == current_slug:
+            return True, data.get("task", "")
+    except Exception:
+        pass
+    return False, ""
+
+
 def _count_pending_proposals() -> int:
     pending_file = YOUK_ROOT / "knowledge" / "proposals" / "PENDING.md"
     if not pending_file.exists():
@@ -1564,6 +1582,21 @@ def start_session(project_dir: str) -> SessionState:
             f"⚠ Last session closed without /done{commits_summary}. "
             "Run /learn now to extract patterns before starting new work."
         )
+
+    # Routing recovery: detect M+ work that started without route_task.
+    # Reads route-task-ran.json (written by server.py) to check if routing fired.
+    # If last session had M+ active task but route_task never ran, surface recovery item.
+    # Guard: only fire on returning sessions (days_since_last != 0) to avoid false triggers.
+    if days_since_last != 0:
+        routing_ran, routed_task = _routing_ran_last_session(slug)
+        if not routing_ran:
+            # Check if there was meaningful M+ work last session (new commits is a proxy).
+            # Skip if no commits — routing miss in exploration sessions isn't actionable.
+            if new_commits > 0:
+                session_plan.insert(0,
+                    "⚠ Last session: routing was skipped. "
+                    "Running /build now to catch any missed direction gates and NFR checks."
+                )
 
     # 3B2 — Skill-skip warning: capability skills unused for 3+ consecutive sessions
     _, consecutive_skill_skips = _compute_skill_invocation_rate(audit_dir)

@@ -144,7 +144,27 @@ def route_task(
     When blocked=true: stop. Surface collapsing_question. Do not invoke any skill.
     """
     decision = _route_task(task, skills_already_invoked or [], intent_brief)
-    return decision.to_dict()
+    result = decision.to_dict()
+    # Write routing flag so session_start can detect when routing ran this session.
+    # Analogous to nfr-check-ran.json — enables "routing was missed" recovery at next open.
+    if not result.get("blocked"):
+        import json as _json
+        from datetime import datetime as _dt
+        flag_file = YOUK_ROOT / "state" / "route-task-ran.json"
+        open_file = YOUK_ROOT / "state" / "session-open.json"
+        slug = "unknown"
+        if open_file.exists():
+            try:
+                slug = _json.loads(open_file.read_text()).get("slug", "unknown")
+            except Exception:
+                pass
+        flag_file.write_text(_json.dumps({
+            "slug": slug,
+            "task": task[:120],
+            "size": result.get("size", "?"),
+            "ts": _dt.utcnow().isoformat(),
+        }))
+    return result
 
 
 @mcp.tool()

@@ -340,19 +340,26 @@ def load_session_health(root: Path) -> dict:
 
 
 def build_build_nudge(prompt: str) -> str:
-    """One-line nudge injected when an M+ task is detected without explicit /build."""
+    """
+    Directive injected when an M+ task is detected without explicit /build.
+    Phrased as an instruction to Claude, not a suggestion to the user.
+    """
     return (
-        "[YOUK] Before coding: is this the right thing to build? "
-        "Type /build to get a structured check (2 min), or continue if you're already sure."
+        "[YOUK DIRECTIVE] M+ task detected. Run /build routing NOW before responding: "
+        "challenge → nfr_check → check_nfr_gate → dev-loop. "
+        "Do not ask the user — execute the sequence immediately, then continue."
     )
 
 
 def build_session_end_nudge() -> str:
-    """One-line nudge injected when a session-end signal is detected."""
+    """
+    Directive injected when a session-end signal is detected.
+    Phrased as an instruction to Claude, not a suggestion to the user.
+    """
     return (
-        "[YOUK] Session-end detected — run /done before closing "
-        "to save contracts, review work, and compound today's patterns. "
-        "Takes 60 seconds. Skipping loses this session's learnings."
+        "[YOUK DIRECTIVE] Session-end detected. Run /done NOW: "
+        "code-review → verify → humanize → learn → session_end(close_cluster=True). "
+        "Do not ask the user — execute immediately."
     )
 
 
