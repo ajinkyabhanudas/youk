@@ -80,23 +80,60 @@ The score is driven by three signals: skill_invocation_rate (did a capability sk
 
 ## Quick start
 
+Two paths depending on what you have available:
+
+### Path A — youk-lite (zero dependencies, any Claude agent)
+
+No Docker. No install script. Works in Claude Code, Claude.ai Projects, Cursor, Windsurf, or anything that reads `CLAUDE.md`.
+
+Add this to your project's `CLAUDE.md`:
+
+```markdown
+# Working memory — youk-lite
+
+## Contracts
+<!-- Working agreements — load verbatim every session, never paraphrase -->
+
+## Resume point
+<!-- One sentence: where we stopped last session -->
+
+## Active decisions
+<!-- Architecture/design decisions with date and rationale -->
+```
+
+Tell Claude "remember: [agreement]" to add contracts. Tell Claude "update the resume point" at session end. That's it — memory across sessions, zero setup.
+
+→ [Full youk-lite guide](docs/youk-lite.md)
+
+---
+
+### Path B — full youk (Claude Code + Docker, compounding skills)
+
 ```bash
 curl -sL https://raw.githubusercontent.com/ajinkyabhanudas/youk/main/scripts/install.sh | bash
 ```
 
-One command. The installer handles Docker build, MCP server registration, and CLAUDE.md patch. First run takes ~2 minutes (Docker image build). Re-runs are idempotent.
+One command. Handles Docker build, MCP server registration, and CLAUDE.md patch. First run ~2 minutes (Docker image build). Re-runs are idempotent.
 
-**Prerequisites:** Docker Desktop running · Claude Code installed · Python 3.11+
+**Prerequisites:** Docker Desktop (running) · Claude Code · Python 3.11+
 
-Open any Claude Code session and start working. youk activates automatically. Type `/start` if you want to see the session card explicitly. By your second session, youk picks up where you left off without being asked.
+Open any Claude Code session and start working. youk activates automatically. Type `/start` to see the session card. By session 2, youk picks up where you left off without being asked.
 
-**Verify the install:**
+**Verify:**
 
 ```bash
 bash ~/.claude/youk/scripts/doctor.sh
 ```
 
 `doctor.sh` checks every dependency and gives a specific `Fix:` line for anything that fails.
+
+**When to use Path B over Path A:**
+- You want sessions to auto-close and capture what was learned (`/done`)
+- You want skill routing — different ceremony for a typo fix vs a new feature
+- You want cross-project pattern promotion (lessons from one project load on the next)
+- You're doing serious engineering work and want the compounding loop
+
+youk-lite is the entry point. Full youk is what you upgrade to once you've seen the value.
 
 ---
 
