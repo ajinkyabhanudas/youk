@@ -499,10 +499,104 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
                 )
                 break  # one finding is enough — same root cause
 
+    # Release readiness — structural checks on plugin, install, and UX integrity.
+    # These don't depend on audit history; they read files directly.
+    release_issues = _check_release_readiness()
+    if release_issues:
+        for issue in release_issues[:2]:  # cap at 2 so they don't flood findings
+            findings.append(issue)
+
     if not findings:
         findings.append(f"Org health nominal. Score: {score}/10.")
 
     return findings
+
+
+def _check_release_readiness() -> list[str]:
+    """
+    Structural checks that a marketplace reviewer or senior engineer would run
+    before approving a plugin submission. Checks file integrity, install path
+    validity, and first-run UX gaps. Returns a list of blocker descriptions.
+    Does not depend on audit history — reads files directly.
+    """
+    import json as _json
+    issues: list[str] = []
+
+    # 1. Plugin manifest integrity
+    plugin_json = YOUK_ROOT / "plugin" / ".claude-plugin" / "plugin.json"
+    if plugin_json.exists():
+        try:
+            manifest = _json.loads(plugin_json.read_text())
+
+            # Hooks path must resolve to a real file
+            hooks_rel = manifest.get("hooks", "")
+            if hooks_rel:
+                hooks_path = (plugin_json.parent / hooks_rel).resolve()
+                if not hooks_path.exists():
+                    issues.append(
+                        f"plugin.json hooks path '{hooks_rel}' does not resolve to an existing file "
+                        f"(looked for {hooks_path}). Marketplace install will silently skip hooks."
+                    )
+
+            # Install script must be fetchable (check it exists in repo at expected path)
+            install_cmd = manifest.get("install", {}).get("command", "")
+            if "install.sh" in install_cmd:
+                install_sh = YOUK_ROOT / "scripts" / "install.sh"
+                if not install_sh.exists():
+                    issues.append(
+                        "plugin.json install command references scripts/install.sh but the file "
+                        "does not exist. Marketplace install will fail on first run."
+                    )
+
+            # Version field must be present and semver-like
+            version = manifest.get("version", "")
+            if not version or not any(c.isdigit() for c in version):
+                issues.append(
+                    f"plugin.json version field is missing or non-semver ('{version}'). "
+                    "Marketplace submissions require a valid version string."
+                )
+        except _json.JSONDecodeError:
+            issues.append("plugin.json is not valid JSON — marketplace submission will be rejected.")
+    elif (YOUK_ROOT / "plugin").exists():
+        issues.append(
+            "plugin/.claude-plugin/plugin.json not found. "
+            "Required for marketplace submission."
+        )
+    else:
+        # No plugin directory at all — not a marketplace project, skip structural checks
+        return issues
+
+    # 2. First-session UX gap: does session_plan mention /done for session_counter == 1?
+    # Proxy: check that the first-session branch in session.py contains '/done'
+    session_py = YOUK_ROOT / "servers" / "core" / "src" / "session.py"
+    if session_py.exists():
+        src = session_py.read_text()
+        first_session_block_start = src.find("is_cold_start")
+        first_session_block = src[first_session_block_start:first_session_block_start + 800]
+        if "/done" not in first_session_block and "done" not in first_session_block.lower():
+            issues.append(
+                "First-session plan does not mention /done. "
+                "New users who don't type /done after session 1 get no compounding — "
+                "youk is invisible to them. Add a /done prompt to the cold-start session plan item."
+            )
+
+    # 3. Doctor script must exist and be executable
+    doctor_sh = YOUK_ROOT / "scripts" / "doctor.sh"
+    if not doctor_sh.exists():
+        issues.append(
+            "scripts/doctor.sh not found. "
+            "Marketplace users need a post-install verification command."
+        )
+
+    # 4. README must have a verification step (proxy: 'doctor' appears in README)
+    readme = YOUK_ROOT / "README.md"
+    if readme.exists() and "doctor" not in readme.read_text().lower():
+        issues.append(
+            "README.md has no mention of doctor.sh. "
+            "New users need a 'did it work?' step after install."
+        )
+
+    return issues
 
 
 def _load_pending_proposals() -> list[Proposal]:

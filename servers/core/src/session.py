@@ -1073,7 +1073,13 @@ def _generate_session_plan(
         plan.append(
             f"First session on {slug}"
             + (f" — detected {signals_str}" if signals_str and signals_str != "unknown" else "")
-            + ". /build starts work. /done saves context so next session picks up where you left off — skipping /done means this session is forgotten."
+            + ". Start with /build. When you stop, type /done — that's what makes session 2 different from today."
+        )
+        # Dedicated onboarding item — tells the user the one thing that matters most
+        plan.append(
+            "When you finish today: type /done. It takes 30 seconds and is the only thing "
+            "that separates a session youk remembers from one it forgets. Session 2 opens "
+            "with your working agreements and resume point already loaded."
         )
     elif is_new_install and contracts:
         # New install on a project with existing history (dev joining mid-project)

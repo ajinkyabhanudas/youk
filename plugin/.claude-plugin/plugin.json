@@ -10,10 +10,10 @@
   "claude_code": {
     "min_version": "1.0.0"
   },
-  "hooks": "./hooks/hooks.json",
+  "hooks": "../hooks/hooks.json",
   "install": {
     "type": "script",
     "command": "curl -sL https://raw.githubusercontent.com/ajinkyabhanudas/youk/main/scripts/install.sh | bash",
-    "note": "Requires Docker Desktop (running) and Python 3.11+. First run ~2 min for Docker image build."
+    "note": "Requires Docker Desktop (running) and Python 3.11+. First run ~2 min for Docker image build. No API key needed — auto-mounts from Claude Code signin."
   }
 }
