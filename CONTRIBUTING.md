@@ -5,13 +5,29 @@ compounding loop (audit → self_heal → proposal → apply). This guide covers
 
 ## Prerequisites
 
-Same as installation:
+**For skill and docs contributions (no Docker required):**
+- Claude Code (Anthropic CLI) — or any Claude agent
+- A text editor
+
+Skills (`skills/*/SKILL.md`) and knowledge files are plain markdown — no build step needed to edit them.
+
+**For server code contributions (`servers/`):**
 - Docker Desktop 24+
 - Claude Code (Anthropic CLI)
 - Python 3.11+
 
+No API key is required to install or run youk — Claude Code handles authentication.
+
 ## Setup
 
+**Skills / docs only:**
+```bash
+git clone https://github.com/ajinkyabhanudas/youk
+cd youk
+# Edit skills/ or docs/ directly — no build needed
+```
+
+**Server code:**
 ```bash
 git clone https://github.com/ajinkyabhanudas/youk
 cd youk

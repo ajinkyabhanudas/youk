@@ -1,10 +1,35 @@
 # Getting Started with youk
 
-This guide walks through setup from zero to a working youk installation.
+Two paths: **youk-lite** (zero dependencies, any Claude agent, 60 seconds) or **full youk** (Claude Code + Docker, compounding skills). Start with lite if you're evaluating. Upgrade to full when you want the compounding loop.
 
 ---
 
-## Step 1: Prerequisites
+## Path A — youk-lite (no install required)
+
+Add this block to your project's `CLAUDE.md` (or `~/.claude/CLAUDE.md` for global use):
+
+```markdown
+# Working memory — youk-lite
+
+## Contracts
+<!-- Working agreements — load verbatim every session, never paraphrase -->
+
+## Resume point
+<!-- One sentence: where we stopped last session -->
+
+## Active decisions
+<!-- Architecture/design decisions with date and rationale -->
+```
+
+Tell Claude "remember: [agreement]" to add contracts. Tell Claude "update the resume point" at session end. Works in Claude Code, Claude.ai Projects, Cursor, Windsurf — anything that reads `CLAUDE.md`.
+
+→ [Full youk-lite guide](youk-lite.md)
+
+---
+
+## Path B — full youk (Claude Code + Docker)
+
+### Step 1: Prerequisites
 
 You need three things before installing youk:
 
@@ -156,7 +181,7 @@ This pulls the latest code and rebuilds Docker images. Restart Claude Code after
 
 If a skill fails mid-session, youk patches it immediately rather than deferring to the next session.
 
-**Session end:** Type `/done` when you finish — or any natural closing phrase ("looks good", "that's all", "wrap it up"). This runs code-review + verify, writes the resume point for next session, saves contracts, and sets `CloseCluster: yes` for org_score.
+**Session end:** Type `/done` when you finish — or any natural closing phrase: "done", "ship it", "commit", "ok thanks", "that's all", "looks good", "we're done", "wrap it up", "let's call it", "perfect", "good enough". This runs code-review + verify + learn, writes the resume point for next session, saves contracts, and sets `CloseCluster: yes` for org_score.
 
 If you close the tab without `/done`: the audit entry is still written, the resume point is preserved (the `PostToolUse` hook writes active task state continuously), and at next open youk surfaces the unlearned work and prompts `/learn`. The only thing lost on tab-close is `CloseCluster: yes` for org_score.
 

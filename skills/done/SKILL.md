@@ -5,8 +5,10 @@ description: >
   sweeps for unsaved contracts, then calls session_end with close_cluster=True.
   This is the primary org_score driver — a session that doesn't end with /done
   barely moves the score even if capability skills ran. Triggers on: "/done",
-  "ship it", "we're done", "close the session", "wrap up", "commit and close",
-  "mark as done".
+  "done", "ship it", "commit", "ok thanks", "that's all", "that's all for now",
+  "looks good", "we're done", "we're done here", "let's call it", "alright",
+  "perfect", "good enough", "that'll do", "wrap it up", "let's wrap",
+  "we can stop here", "nothing else", "I think we're good".
 ---
 
 # done — Full Session Close
@@ -68,7 +70,7 @@ Skip silently if check_doc_graph() returns no stale concepts.
 **Step 6 — Close**
 
 Call `youk-core.track_tokens(approx_input, approx_output, "final")`
-Call `youk-core.compact_context(cwd)`  — paste the returned `brief` verbatim
+Call `youk-core.compact_context(project_dir)`  — paste the returned `brief` verbatim
 Call `youk-core.session_end("done", commits_made=<bool>, explicit_contracts=explicit_contracts, close_cluster=True)`
 
 ---
