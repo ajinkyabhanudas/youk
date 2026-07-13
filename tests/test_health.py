@@ -2015,3 +2015,99 @@ class TestRunHealthCheckWithSkillSignalsExtended:
         velocity = result.get("knowledge_velocity", {})
         verdict = velocity.get("verdict", "")
         assert verdict.startswith(("STALLED", "EMPTY"))
+
+
+# ── _check_release_readiness ───────────────────────────────────────────────────
+
+class TestCheckReleaseReadiness:
+    def _make_valid_plugin(self, youk_root, install_sh=True):
+        """Write a valid plugin.json and optionally install.sh."""
+        plugin_dir = youk_root / "plugin" / ".claude-plugin"
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        hooks_dir = youk_root / "plugin" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        (hooks_dir / "hooks.json").write_text("{}")
+        (plugin_dir / "plugin.json").write_text(
+            '{"version": "0.1.0", "hooks": "../hooks/hooks.json", '
+            '"install": {"command": "curl .../install.sh | bash"}}'
+        )
+        scripts_dir = youk_root / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        if install_sh:
+            (scripts_dir / "install.sh").write_text("#!/bin/bash\necho ok")
+            (scripts_dir / "doctor.sh").write_text("#!/bin/bash\necho ok")
+        readme = youk_root.parent.parent / "README.md"  # won't exist — that's fine
+
+    def test_no_issues_when_everything_valid(self, youk_root):
+        import health
+        old_root = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            self._make_valid_plugin(youk_root)
+            # Add README with doctor mention
+            (youk_root / "README.md").write_text("Run doctor.sh to verify.\n")
+            from health import _check_release_readiness
+            issues = _check_release_readiness()
+            assert issues == [], f"Expected no issues, got: {issues}"
+        finally:
+            health.YOUK_ROOT = old_root
+
+    def test_missing_plugin_json_surfaced(self, youk_root):
+        import health
+        old_root = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            # Create plugin/ dir but not plugin.json — signals marketplace intent without the file
+            (youk_root / "plugin").mkdir(parents=True, exist_ok=True)
+            from health import _check_release_readiness
+            issues = _check_release_readiness()
+            assert any("plugin.json" in i and "not found" in i for i in issues)
+        finally:
+            health.YOUK_ROOT = old_root
+
+    def test_bad_hooks_path_surfaced(self, youk_root):
+        import health
+        old_root = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            plugin_dir = youk_root / "plugin" / ".claude-plugin"
+            plugin_dir.mkdir(parents=True, exist_ok=True)
+            (plugin_dir / "plugin.json").write_text(
+                '{"version": "0.1.0", "hooks": "./hooks/hooks.json"}'
+            )
+            from health import _check_release_readiness
+            issues = _check_release_readiness()
+            assert any("hooks" in i and "not resolve" in i for i in issues)
+        finally:
+            health.YOUK_ROOT = old_root
+
+    def test_missing_version_surfaced(self, youk_root):
+        import health
+        old_root = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            plugin_dir = youk_root / "plugin" / ".claude-plugin"
+            plugin_dir.mkdir(parents=True, exist_ok=True)
+            hooks_dir = youk_root / "plugin" / "hooks"
+            hooks_dir.mkdir(parents=True)
+            (hooks_dir / "hooks.json").write_text("{}")
+            (plugin_dir / "plugin.json").write_text(
+                '{"hooks": "../hooks/hooks.json"}'  # no version
+            )
+            from health import _check_release_readiness
+            issues = _check_release_readiness()
+            assert any("version" in i for i in issues)
+        finally:
+            health.YOUK_ROOT = old_root
+
+    def test_missing_install_sh_surfaced(self, youk_root):
+        import health
+        old_root = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            self._make_valid_plugin(youk_root, install_sh=False)
+            from health import _check_release_readiness
+            issues = _check_release_readiness()
+            assert any("install.sh" in i for i in issues)
+        finally:
+            health.YOUK_ROOT = old_root

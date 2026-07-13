@@ -239,6 +239,28 @@ class TestGenerateSessionPlan:
         plan = self._plan(pending_proposals=3, session_counter=10)
         assert any("self-heal" in item.lower() or "get_proposals" in item for item in plan)
 
+    def test_first_session_plan_contains_done_prompt(self):
+        """Cold-start session plan must include a /done prompt as a dedicated item."""
+        plan = self._plan(
+            resume_point="No prior context found — fresh session.",
+            session_counter=1,
+        )
+        done_items = [item for item in plan if "/done" in item]
+        assert len(done_items) >= 2, (
+            f"Expected at least 2 plan items mentioning /done on first session, got {done_items}"
+        )
+
+    def test_first_session_onboarding_item_explains_value(self):
+        """The dedicated onboarding item must explain what /done does, not just name it."""
+        plan = self._plan(
+            resume_point="No prior context found — fresh session.",
+            session_counter=1,
+        )
+        onboarding = " ".join(plan)
+        assert "session 2" in onboarding.lower() or "next session" in onboarding.lower(), (
+            "Onboarding item must tell the user that /done makes the next session different"
+        )
+
     def test_stack_bootstrap_fires_on_cold_start_with_template(self, youk_root):
         """Bootstrap nudge appears when stack template exists and no user-profile."""
         stacks_dir = youk_root / "knowledge" / "stacks"
