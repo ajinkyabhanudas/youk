@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 
-def _audit_block(n: int, close: bool = True, skills: str = "code-review") -> str:
+def _audit_block(n: int, close: bool = True, skills: str = "code-review", project: str = "") -> str:
+    project_line = f"Project: {project}\n" if project else ""
     return (
         f"### Session — 2026-07-0{n} 10:00 UTC\n"
+        f"{project_line}"
         f"Skills: {skills}\n"
         f"CloseCluster: {'yes' if close else 'no'}\n"
         "Commits: yes\n"
@@ -50,10 +52,11 @@ class TestGenerateFindings:
         return _generate_findings(audit_texts, score)
 
     def test_zero_contracts_flagged_after_many_sessions(self, youk_root, claude_root):
-        """Project with 5+ sessions and no contracts must surface a finding."""
+        """Project with 5+ real (non-stub) sessions and no contracts must surface a finding."""
         proj = youk_root / "knowledge" / "projects" / "myproject"
         proj.mkdir(parents=True)
-        audit = "\n".join(_audit_block(i) for i in range(1, 7))
+        # Include Project: field so per-project count reaches threshold
+        audit = "\n".join(_audit_block(i, project="myproject") for i in range(1, 7))
         findings = self._run(claude_root, youk_root, audit)
         contract_findings = [f for f in findings if "contracts.md" in f or "no contracts" in f.lower()]
         assert contract_findings, f"Expected 0-contracts finding. Got: {findings}"

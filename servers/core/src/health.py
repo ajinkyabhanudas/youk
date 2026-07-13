@@ -70,6 +70,8 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         ]
         close_match = re.search(r"^CloseCluster:\s*(\w+)$", block, re.MULTILINE)
         s["close_cluster"] = (close_match.group(1).lower() == "yes") if close_match else False
+        project_match = re.search(r"^Project:\s*(.+)$", block, re.MULTILINE)
+        s["project"] = project_match.group(1).strip() if project_match else ""
         # Tokens: actual/budget (pct%) or Tokens: actual (no budget set)
         tokens_match = re.search(r"^Tokens:\s*(\d+)(?:/(\d+))?", block, re.MULTILINE)
         if tokens_match:
@@ -461,11 +463,25 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
             "Run /audit to confirm and generate them."
         )
 
-    # Contract capture health: flag when active project has many sessions but no contracts
-    # This catches the silent failure where contracts were verbalized but never persisted
+    # Contract capture health: flag when a project has many real sessions but no contracts.
+    # Uses per-project session count from audit (not global total) to avoid false alarms
+    # from cross-project session inflation. Skips projects with only stub/tab-close entries.
     projects_dir = YOUK_ROOT / "knowledge" / "projects"
-    if total >= 5 and projects_dir.exists():
+    if projects_dir.exists():
+        # Build per-project session counts from parsed audit sessions (exclude stubs)
+        proj_session_counts: dict[str, int] = {}
+        for s in sessions:
+            proj_name = s.get("project", "")
+            if not proj_name:
+                continue
+            is_stub = "tab-close" in s.get("raw", "") or "compact-checkpoint" in s.get("raw", "")
+            if not is_stub:
+                proj_session_counts[proj_name] = proj_session_counts.get(proj_name, 0) + 1
+
         for proj in projects_dir.iterdir():
+            proj_session_count = proj_session_counts.get(proj.name, 0)
+            if proj_session_count < 5:
+                continue  # not enough real sessions to flag
             contracts_file = proj / "contracts.md"
             has_contracts = (
                 contracts_file.exists()
@@ -476,9 +492,9 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
             )
             if not has_contracts:
                 findings.append(
-                    f"Project '{proj.name}' has {total} sessions but no contracts in contracts.md. "
+                    f"Project '{proj.name}' has {proj_session_count} sessions but no contracts in contracts.md. "
                     "Working agreements stated in conversation are not surviving compaction. "
-                    "Call save_contract(agreement, cwd) the moment a contract is verbalized — "
+                    "Call save_contract(agreement, project_dir) the moment a contract is verbalized — "
                     "do not wait for /done."
                 )
                 break  # one finding is enough — same root cause
@@ -552,9 +568,14 @@ def run_health_check() -> HealthReport:
     findings = _generate_findings(audit_texts, score)
     proposals = _load_pending_proposals()
 
+    sessions = _parse_audit_sessions(audit_texts)
+    real_sessions = sum(
+        1 for s in sessions
+        if "tab-close" not in s.get("raw", "") and "compact-checkpoint" not in s.get("raw", "")
+    )
     return HealthReport(
         org_score=score,
-        sessions_analyzed=sum(t.count("### Session —") for t in audit_texts),
+        sessions_analyzed=real_sessions,
         findings=findings,
         proposals=proposals,
     )
