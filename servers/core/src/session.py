@@ -1247,12 +1247,13 @@ def _count_pending_proposals() -> int:
     count = 0
 
     # Format 1: auto-generated PENDING-* blocks (from self_heal / session_end)
+    _DONE_STATUSES = ("APPLIED", "SUPERSEDED", "CLOSED")
     for block in content.split("## PENDING-")[1:]:
         status_line = next(
             (ln for ln in block.splitlines() if "**Status:**" in ln),
             "",
         )
-        if "APPLIED" not in status_line and "SUPERSEDED" not in status_line:
+        if not any(s in status_line for s in _DONE_STATUSES):
             count += 1
 
     # Format 2: named ### PROPOSAL blocks (from simulate-experience / gate-check audits)
@@ -1262,7 +1263,7 @@ def _count_pending_proposals() -> int:
     for i, start in enumerate(positions):
         end = positions[i + 1] if i + 1 < len(positions) else len(content)
         block = content[start:end]
-        if "SUPERSEDED" not in block and "APPLIED" not in block:
+        if not any(s in block for s in _DONE_STATUSES):
             count += 1
 
     return count
