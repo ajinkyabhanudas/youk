@@ -8,7 +8,7 @@ description: >
   Exit condition: a challenge round produces nothing new. Only then does work begin.
   Triggers on: any M+ task at route_task time, explicit "challenge this", "are we
   solving the right problem?", "before we go further". Does NOT replace stress-test
-  (which attacks a plan's execution). challenge attacks the direction itself.
+  (which red-teams implementation after direction is set). challenge attacks direction itself.
   Do NOT use for: XS/S tasks, tasks where direction is already explicitly confirmed
   by the user this session, retest of an already-challenged direction.
 ---
@@ -101,6 +101,8 @@ Each phase begins with the token `[PHASE: NAME]`
 
 ### Phase 1 — ORIENT
 
+`[PHASE: ORIENT]`
+
 State what is being challenged:
 
 1. Write INTERPRETED_AS in one sentence — exactly what is about to happen if challenge passes
@@ -117,6 +119,8 @@ State what is being challenged:
 ---
 
 ### Phase 2 — CHALLENGE LOOP
+
+`[PHASE: CHALLENGE LOOP]`
 
 Run each active lens independently. For each lens, produce at most 2 objections.
 An objection is only valid if:
@@ -149,6 +153,8 @@ After all lenses run:
 ---
 
 ### Phase 3 — ITERATE (conditional)
+
+`[PHASE: ITERATE]`
 
 Only runs when verdict is NEEDS SHARPENING.
 
