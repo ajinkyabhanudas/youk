@@ -1316,6 +1316,30 @@ class TestIsGeneralizable:
         from session import _is_generalizable
         assert not _is_generalizable("note: short")
 
+    def test_document_prefix_is_generalizable(self):
+        from session import _is_generalizable
+        assert _is_generalizable("document decisions with date and rationale before archiving")
+
+    def test_test_prefix_is_generalizable(self):
+        from session import _is_generalizable
+        assert _is_generalizable("test every verdict value including the healthy nominal path")
+
+    def test_flag_prefix_is_generalizable(self):
+        from session import _is_generalizable
+        assert _is_generalizable("flag intentional shortcuts with an upgrade trigger comment")
+
+    def test_require_prefix_is_generalizable(self):
+        from session import _is_generalizable
+        assert _is_generalizable("require a comment in the form # youk: limitation when shortcutting")
+
+    def test_write_prefix_is_generalizable(self):
+        from session import _is_generalizable
+        assert _is_generalizable("write tests for every new skill quality bar added to SKILL.md")
+
+    def test_capture_prefix_is_generalizable(self):
+        from session import _is_generalizable
+        assert _is_generalizable("capture the route correction immediately via save_contract when user overrides routing")
+
 
 # ── _detect_cross_project_patterns — theme field ──────────────────────────────
 

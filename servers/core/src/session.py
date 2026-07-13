@@ -42,7 +42,10 @@ _GENERALIZABLE_PATTERNS = [
     _re.compile(r"^[a-z][a-z _-]+:\s+.{20,}", _re.IGNORECASE),   # "commit format: ..."
     _re.compile(r"\b(every project|any project|all projects)\b", _re.IGNORECASE),
     _re.compile(r"\b(before every|after every|on every)\b", _re.IGNORECASE),
-    _re.compile(r"^(check|run|read|verify|avoid|scan)\b", _re.IGNORECASE),
+    _re.compile(
+        r"^(check|run|read|verify|avoid|scan|document|test|flag|require|write|record|capture)\b",
+        _re.IGNORECASE,
+    ),
 ]
 
 
