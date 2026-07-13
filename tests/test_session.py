@@ -82,6 +82,26 @@ class TestCountPendingProposals:
         # PENDING-001 (pending) + PROPOSAL A + PROPOSAL B = 3; PENDING-002 excluded
         assert _count_pending_proposals() == 3
 
+    def test_excludes_closed(self, youk_root):
+        """CLOSED entries (already actioned) must not count toward pending_proposals_count."""
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(
+            "## PENDING-001 — 2026-07-01\n"
+            "**Status:** CLOSED — already documented in SKILL.md verbatim.\n\n"
+            "## PENDING-002 — 2026-07-01\n"
+            "**Status:** PENDING\n"
+        )
+        from session import _count_pending_proposals
+        assert _count_pending_proposals() == 1
+
+    def test_closed_named_proposal_not_counted(self, youk_root):
+        """CLOSED inline in a named ### PROPOSAL block must exclude it."""
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(
+            "### PROPOSAL 1 — old thing CLOSED\n\nAlready in docs.\n\n"
+            "### PROPOSAL 2 — active\n\nStill needed.\n"
+        )
+        from session import _count_pending_proposals
+        assert _count_pending_proposals() == 1
+
 
 # ── Project type detection ───────────────────────────────────────────────────
 
