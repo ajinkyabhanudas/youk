@@ -206,6 +206,7 @@ Rules:
 - **Missing tests on changed logic = HIGH.** Not MEDIUM. Logic changes without tests are HIGH risk.
 - **youk write-path violations are CRITICAL.** Any code that writes outside permitted paths blocks immediately.
 - **No invented findings.** If zero issues, say so explicitly. Do not generate noise to seem thorough.
+- **Flag intentional shortcuts with an upgrade trigger.** When a shortcut is acceptable now but will need revisiting, require a comment in the form `# youk: <limitation> → upgrade when <condition>` (e.g. `# youk: skipping retry backoff → upgrade when error rate > 1%`). Shortcuts without upgrade triggers are LOW findings — they prevent "later" from meaning never and create an auditable debt trail.
 
 ---
 
