@@ -265,21 +265,33 @@ phrases, but the LAYER DECISION below makes the two-layer split explicit and vis
 
 **[LAYER DECISION] — required at end of every PERSIST phase**
 
-For each concept persisted to `knowledge/domain/`, classify it explicitly:
+For each concept persisted to `knowledge/domain/`, classify it explicitly into one of three layers:
 
-| Layer | What belongs here |
-|-------|-------------------|
-| **Project-only** | Implementation details, file paths, tool names, project-specific behaviour |
-| **Global candidate** | Methodology, principles, how-to-work patterns, transferable analogies |
+| Layer | What belongs here | Action |
+|-------|-------------------|--------|
+| **Project-only** | Implementation details, file paths, tool names, project-specific behaviour | None — stays in `knowledge/domain/` |
+| **Global candidate** | Methodology, principles, how-to-work patterns, transferable analogies | Call `promote_to_global_contracts([principle])` now |
+| **SHIPPED** | Capability or well-architected principle that improves youk for *all users* — skill design decisions, quality bars, exit conditions, architectural invariants | Call `add_proposal()` targeting the committed file it belongs in |
+
+**SHIPPED** is the third layer and the most important for youk development sessions. A concept is SHIPPED when:
+- It changes how a skill should behave (→ target: `skills/{name}/SKILL.md`)
+- It is a well-architected invariant that should be documented for all users (→ target: `docs/well-architected.md`)
+- It is a new skill that should be generated (→ target: `generate_skill()` then `add_proposal()`)
+
+For each **SHIPPED** concept:
+1. Identify the committed file it belongs in
+2. Call `add_proposal(title=..., rationale=..., action="SKILL_EDIT", target="{skill-name}", content=..., target_section=...)` — or `FILE_CREATE` for new skills
+3. The proposal sits in `PENDING.md` for review — nothing commits automatically
+4. State what was proposed and why: "SHIPPED → added as proposal to `skills/challenge/SKILL.md` Phase 2 quality bars"
 
 For each **global candidate**, call `promote_to_global_contracts([principle])` now — do not
-defer to `session_end()`. State which were promoted and why. This makes the decision
-visible rather than silent, and ensures cross-project intelligence is extracted even when
-`session_end()` phrase-matching doesn't catch the wording.
+defer to `session_end()`. State which were promoted and why.
 
 Example:
 - "always run `ruff check servers/` before committing" → **Project-only** (names a tool + path)
 - "read the project's CI config to find the lint command before committing" → **Global** (promotes the principle)
+- "challenge skill must extract FIXED_CONSTRAINTS before running lenses — never attack walls" → **SHIPPED** (quality bar for `skills/challenge/SKILL.md`)
+- "a skill without hiring validation tests will drift silently — drift sentinels are non-negotiable" → **SHIPPED** (add to `docs/well-architected.md` under Operational Excellence)
 
 ---
 
