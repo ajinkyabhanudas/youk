@@ -1,3 +1,19 @@
 {
-  "name": "youk-context"
+  "name": "youk",
+  "version": "0.1.1",
+  "description": "AI engineering system that compounds your ability with every session. Persistent memory, skill routing, direction gating, and self-healing skills. The longer you use it, the better it gets.",
+  "author": "Ajinkya Bhanudas",
+  "homepage": "https://github.com/ajinkyabhanudas/youk",
+  "repository": "https://github.com/ajinkyabhanudas/youk",
+  "license": "MIT",
+  "keywords": ["memory", "compounding", "session", "skills", "engineering", "productivity"],
+  "claude_code": {
+    "min_version": "1.0.0"
+  },
+  "hooks": "./hooks/hooks.json",
+  "install": {
+    "type": "script",
+    "command": "curl -sL https://raw.githubusercontent.com/ajinkyabhanudas/youk/main/scripts/install.sh | bash",
+    "note": "Requires Docker Desktop (running) and Python 3.11+. First run ~2 min for Docker image build."
+  }
 }
