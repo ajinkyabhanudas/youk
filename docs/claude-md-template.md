@@ -19,7 +19,8 @@ For every non-trivial task:
    - This is a tool-enforced hard gate — not a suggestion. `route_task` itself refuses to route when the implementation fork is unresolved.
 3. If soft rule warnings are returned → surface them briefly.
 4. **M+ tasks only:** if `route_task` returns a non-empty `plan_hook` — output it verbatim before doing anything else. This is the planning gate. One redirect accepted. Silence = proceed.
-5. **M+ only, after silence or approval:** call `youk-code.route_to_skill("nfr_check", task)` BEFORE writing any code. This is non-negotiable — nfr_check must run before implementation starts on M+ tasks.
+5. **M+ only, after silence or approval:** call `youk-code.route_to_skill("challenge", task)` BEFORE writing any code. challenge gates the direction — it must pass before nfr_check runs. If challenge returns DIRECTION WRONG or NEEDS SHARPENING: surface the objection, wait for user to resolve, then re-run challenge. Do not proceed to nfr_check while challenge verdict is unresolved.
+5b. **M+ only, after challenge passes:** call `youk-code.route_to_skill("nfr_check", task)`. This is non-negotiable — nfr_check must run before implementation starts on M+ tasks.
 6. **M+ only, after nfr_check returns:** call `youk-core.check_nfr_gate(task, size, nfr_decision_block=<nfr_check output>)`. If it returns `blocked: true`, the NFR block is absent or empty — stop and re-run nfr_check. If `blocked: false`, proceed to dev-loop. This is a tool-enforced hard gate — not a suggestion.
 
 **Never start M+ implementation before plan_hook appears in the conversation.**
@@ -51,7 +52,8 @@ User redirects in one line if wrong. Never ask what to do — the plan proposes.
 ## Workflow commands
 
 /start  → start skill — session activation card (also fires on "activate youk", "youk", "where were we")
-/build  → route_task; M+: nfr_check quick + check_nfr_gate + dev-loop; S-: dev-loop only
+/build  → route_task; M+: **challenge first** + nfr_check quick + check_nfr_gate + dev-loop; S-: dev-loop only
+/challenge → challenge skill — direction gate before work starts (also fires on "are we solving the right problem?", "challenge this", "before we go further")
 /done   → code-review + verify + humanize + **learn (required — not optional)** in sequence, then: (1) scan conversation for any contracts not yet saved (save_contract fires immediately mid-session, this is a safety-net sweep for any missed), collect as explicit_contracts=[...], (2) **before calling session_end, confirm /learn ran. If "learn" is not in skills_used, run it now.** (3) session_end("done", commits_made=<bool>, explicit_contracts=[...], close_cluster=True). /learn is what closes the ability-compounding loop — a /done without /learn is an incomplete session.
 /close  → compact_context(project_dir) then session_end("done", commits_made=<bool>) — lightweight close without code-review
 /check  → code-review + security-review if auth/creds in scope
