@@ -1262,8 +1262,9 @@ class TestComputeKnowledgeVelocity:
             lines.append(f"### Session — 2026-07-0{i+1} 10:00 UTC")
             lines.append(f"Skills: {s.get('skills', 'code-review')}")
             lines.append(f"CloseCluster: {'yes' if s.get('close_cluster') else 'no'}")
-            if s.get("contracts_saved"):
-                lines.append(f"contracts_saved: {s['contracts_saved']}")
+            if s.get("contracts_saved") is not None:
+                # Use capitalised key — matches session_end output after fix
+                lines.append(f"ContractsSaved: {s['contracts_saved']}")
         return "\n".join(lines)
 
     def test_growing_when_contracts_and_domain(self, youk_root, claude_root):
@@ -1315,6 +1316,56 @@ class TestComputeKnowledgeVelocity:
         from health import _compute_knowledge_velocity
         result = _compute_knowledge_velocity([audit], "test")
         assert result["learn_rate"] == 0.5
+
+    # ── Bug fix tests ────────────────────────────────────────────────────────
+    # Fix 2: project_contracts_total must count only "- " prefixed lines
+
+    def test_separator_lines_not_counted_in_contracts_total(self, youk_root, claude_root):
+        """Prose headers and --- separators must not inflate the contract count."""
+        proj = youk_root / "knowledge" / "projects" / "sep-proj"
+        proj.mkdir(parents=True, exist_ok=True)
+        (proj / "contracts.md").write_text(
+            "# Contracts\n"
+            "---\n"
+            "- real contract one\n"
+            "- real contract two\n"
+            "Some prose line without a dash\n"
+        )
+        audit = self._write_audit(claude_root, [{"skills": "learn"}])
+        from health import _compute_knowledge_velocity
+        result = _compute_knowledge_velocity([audit], "sep-proj")
+        assert result["project_contracts_total"] == 2
+
+    # Fix 3: avg_contracts_per_session must read ContractsSaved (capitalised)
+
+    def test_avg_contracts_per_session_reads_capitalised_field(self, youk_root, claude_root):
+        """avg_contracts_per_session must be non-zero when ContractsSaved lines exist."""
+        proj = youk_root / "knowledge" / "projects" / "cap-proj"
+        proj.mkdir(parents=True, exist_ok=True)
+        (proj / "contracts.md").write_text("- contract a\n- contract b\n")
+        # _write_audit now emits ContractsSaved: (capitalised) via updated helper
+        audit = self._write_audit(claude_root, [
+            {"skills": "learn", "contracts_saved": 3},
+            {"skills": "learn", "contracts_saved": 1},
+        ])
+        from health import _compute_knowledge_velocity
+        result = _compute_knowledge_velocity([audit], "cap-proj")
+        assert result["avg_contracts_per_session"] == 2.0  # (3+1)/2
+
+    def test_file_based_fallback_when_no_audit_contracts_saved(self, youk_root, claude_root):
+        """When audit has no ContractsSaved lines, fall back to file total / session count."""
+        proj = youk_root / "knowledge" / "projects" / "fallback-proj"
+        proj.mkdir(parents=True, exist_ok=True)
+        (proj / "contracts.md").write_text("- c1\n- c2\n- c3\n- c4\n")
+        # Audit with no ContractsSaved field (simulates pre-fix historical sessions)
+        audit = self._write_audit(claude_root, [
+            {"skills": "code-review"},
+            {"skills": "code-review"},
+        ])
+        from health import _compute_knowledge_velocity
+        result = _compute_knowledge_velocity([audit], "fallback-proj")
+        # 4 contracts / 2 sessions = 2.0 fallback rate
+        assert result["avg_contracts_per_session"] == 2.0
 
 
 # ── _analyze_promotion_candidates ─────────────────────────────────────────────
