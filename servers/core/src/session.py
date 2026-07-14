@@ -1626,9 +1626,17 @@ def start_session(project_dir: str) -> SessionState:
                     "Running /build now to catch any missed direction gates and NFR checks."
                 )
 
-    # 3B2 — Skill-skip warning: capability skills unused for 3+ consecutive sessions
-    _, consecutive_skill_skips = _compute_skill_invocation_rate(audit_dir)
-    if consecutive_skill_skips >= 3:
+    # 3B2 — Skill-skip warning: capability skills unused for 3+ consecutive sessions OR rolling rate < 50%.
+    # When rate < 50% the warning is prepended to session_plan[0] (not appended) so it cannot be
+    # buried below advisory items. This makes it a blocking signal, not a suggestion.
+    skill_rate_pct, consecutive_skill_skips = _compute_skill_invocation_rate(audit_dir)
+    if skill_rate_pct is not None and skill_rate_pct < 50:
+        session_plan.insert(0,
+            f"⚠ Skill rate: {skill_rate_pct}% — below 50% threshold. "
+            "This session: /build before any M+ task, /done at end (includes /learn). "
+            "Sessions without skills do not compound — the score stays flat."
+        )
+    elif consecutive_skill_skips >= 3:
         session_plan.append(
             f"⚠ No capability skill invoked in last {consecutive_skill_skips} sessions — "
             "compounding has stalled. Today: use /build for code tasks, /review before commits, "
