@@ -2107,3 +2107,157 @@ class TestCheckReleaseReadiness:
             assert any("install.sh" in i for i in issues)
         finally:
             health.YOUK_ROOT = old_root
+
+
+def _audit_block_with_findings(
+    n: int,
+    critical: int = 0,
+    high: int = 0,
+    categories: list[str] | None = None,
+    nfr_gaps: list[str] | None = None,
+    direction_reversal: bool = False,
+) -> str:
+    parts = [f"### Session — 2026-07-{n:02d} 10:00 UTC\n"]
+    parts.append("Skills: code-review\n")
+    parts.append("CloseCluster: yes\n")
+    parts.append("Commits: yes\n")
+    total = critical + high
+    if total > 0:
+        severity_parts = []
+        if critical:
+            severity_parts.append(f"CRITICAL={critical}")
+        if high:
+            severity_parts.append(f"HIGH={high}")
+        parts.append(f"Findings: {total} ({', '.join(severity_parts)})\n")
+    if categories:
+        parts.append(f"FindingCategories: {','.join(categories)}\n")
+    if nfr_gaps:
+        for gap in nfr_gaps:
+            parts.append(f"NFRGap: {gap}\n")
+    if direction_reversal:
+        parts.append("DirectionReversal: yes\n")
+    return "".join(parts)
+
+
+class TestComputePreventedCost:
+    def test_zero_when_no_findings(self):
+        from health import _parse_audit_sessions, _compute_prevented_cost
+        blocks = [_audit_block(n=1, skills="code-review")]
+        sessions = _parse_audit_sessions(blocks)
+        result = _compute_prevented_cost(sessions)
+        assert result["critical_findings"] == 0
+        assert result["high_findings"] == 0
+        assert result["direction_reversals"] == 0
+        assert result["nfr_gaps_flagged"] == 0
+
+    def test_critical_findings_counted(self):
+        from health import _parse_audit_sessions, _compute_prevented_cost
+        blocks = [_audit_block_with_findings(n=1, critical=2, high=1)]
+        sessions = _parse_audit_sessions(blocks)
+        result = _compute_prevented_cost(sessions)
+        assert result["critical_findings"] == 2
+        assert result["high_findings"] == 1
+
+    def test_direction_reversal_counted(self):
+        from health import _parse_audit_sessions, _compute_prevented_cost
+        blocks = [_audit_block_with_findings(n=1, direction_reversal=True)]
+        sessions = _parse_audit_sessions(blocks)
+        result = _compute_prevented_cost(sessions)
+        assert result["direction_reversals"] == 1
+
+    def test_nfr_gaps_counted(self):
+        from health import _parse_audit_sessions, _compute_prevented_cost
+        blocks = [_audit_block_with_findings(n=1, nfr_gaps=["idempotency", "caching"])]
+        sessions = _parse_audit_sessions(blocks)
+        result = _compute_prevented_cost(sessions)
+        assert result["nfr_gaps_flagged"] == 2
+
+    def test_accumulates_across_sessions(self):
+        from health import _parse_audit_sessions, _compute_prevented_cost
+        blocks = [
+            _audit_block_with_findings(n=1, critical=1),
+            _audit_block_with_findings(n=2, critical=2, nfr_gaps=["auth"]),
+            _audit_block_with_findings(n=3, direction_reversal=True),
+        ]
+        sessions = _parse_audit_sessions(blocks)
+        result = _compute_prevented_cost(sessions)
+        assert result["critical_findings"] == 3
+        assert result["nfr_gaps_flagged"] == 1
+        assert result["direction_reversals"] == 1
+
+    def test_sessions_with_findings_count(self):
+        from health import _parse_audit_sessions, _compute_prevented_cost
+        blocks = [
+            _audit_block_with_findings(n=1, critical=1),
+            _audit_block_with_findings(n=2),
+            _audit_block_with_findings(n=3, high=2),
+        ]
+        sessions = _parse_audit_sessions(blocks)
+        result = _compute_prevented_cost(sessions)
+        assert result["sessions_with_findings"] == 2
+
+
+class TestDetectRecurringFindings:
+    def test_no_patterns_when_category_appears_twice(self):
+        from health import _parse_audit_sessions, _detect_recurring_findings
+        blocks = [
+            _audit_block_with_findings(n=1, categories=["auth"]),
+            _audit_block_with_findings(n=2, categories=["auth"]),
+        ]
+        sessions = _parse_audit_sessions(blocks)
+        # min_sessions=3 — two appearances is not yet a pattern
+        patterns = _detect_recurring_findings(sessions, min_sessions=3)
+        assert patterns == []
+
+    def test_pattern_detected_at_threshold(self):
+        from health import _parse_audit_sessions, _detect_recurring_findings
+        blocks = [
+            _audit_block_with_findings(n=1, categories=["auth"]),
+            _audit_block_with_findings(n=2, categories=["auth"]),
+            _audit_block_with_findings(n=3, categories=["auth"]),
+        ]
+        sessions = _parse_audit_sessions(blocks)
+        patterns = _detect_recurring_findings(sessions, min_sessions=3)
+        assert len(patterns) == 1
+        assert patterns[0]["category"] == "auth"
+        assert patterns[0]["count"] == 3
+
+    def test_multiple_categories_tracked_independently(self):
+        from health import _parse_audit_sessions, _detect_recurring_findings
+        blocks = [
+            _audit_block_with_findings(n=1, categories=["auth", "idempotency"]),
+            _audit_block_with_findings(n=2, categories=["auth", "idempotency"]),
+            _audit_block_with_findings(n=3, categories=["auth"]),
+        ]
+        sessions = _parse_audit_sessions(blocks)
+        patterns = _detect_recurring_findings(sessions, min_sessions=3)
+        names = [p["category"] for p in patterns]
+        assert "auth" in names
+        assert "idempotency" not in names  # only 2 sessions
+
+    def test_category_per_session_not_per_occurrence(self):
+        # Same category appearing twice in one session counts once
+        from health import _parse_audit_sessions, _detect_recurring_findings
+        blocks = [
+            _audit_block_with_findings(n=1, categories=["auth", "auth"]),
+            _audit_block_with_findings(n=2, categories=["auth"]),
+        ]
+        sessions = _parse_audit_sessions(blocks)
+        patterns = _detect_recurring_findings(sessions, min_sessions=3)
+        # Max 2 sessions hit threshold, pattern should NOT appear at min_sessions=3
+        assert patterns == []
+
+    def test_patterns_sorted_by_count_descending(self):
+        from health import _parse_audit_sessions, _detect_recurring_findings
+        blocks = [
+            _audit_block_with_findings(n=1, categories=["auth", "retry"]),
+            _audit_block_with_findings(n=2, categories=["auth", "retry"]),
+            _audit_block_with_findings(n=3, categories=["auth", "retry"]),
+            _audit_block_with_findings(n=4, categories=["auth"]),
+        ]
+        sessions = _parse_audit_sessions(blocks)
+        patterns = _detect_recurring_findings(sessions, min_sessions=3)
+        assert patterns[0]["category"] == "auth"
+        assert patterns[0]["count"] == 4
+        assert patterns[1]["category"] == "retry"
+        assert patterns[1]["count"] == 3
