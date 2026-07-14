@@ -94,6 +94,32 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
             s["tokens_actual"] = 0
             s["tokens_budget"] = 0
             s["tokens_ratio"] = None
+
+        # Outcome quality fields
+        findings_match = re.search(r"^Findings:\s*(\d+)(.*)?$", block, re.MULTILINE)
+        if findings_match:
+            s["findings_total"] = int(findings_match.group(1))
+            critical_match = re.search(r"CRITICAL=(\d+)", findings_match.group(2) or "")
+            high_match = re.search(r"HIGH=(\d+)", findings_match.group(2) or "")
+            s["findings_critical"] = int(critical_match.group(1)) if critical_match else 0
+            s["findings_high"] = int(high_match.group(1)) if high_match else 0
+        else:
+            s["findings_total"] = 0
+            s["findings_critical"] = 0
+            s["findings_high"] = 0
+
+        categories_match = re.search(r"^FindingCategories:\s*(.+)$", block, re.MULTILINE)
+        s["finding_categories"] = (
+            [c.strip() for c in categories_match.group(1).split(",") if c.strip()]
+            if categories_match else []
+        )
+
+        nfr_gaps = re.findall(r"^NFRGap:\s*(.+)$", block, re.MULTILINE)
+        s["nfr_gaps"] = [g.strip() for g in nfr_gaps]
+
+        reversal_match = re.search(r"^DirectionReversal:\s*yes$", block, re.MULTILINE | re.IGNORECASE)
+        s["direction_reversal"] = bool(reversal_match)
+
         sessions.append(s)
     return sessions[-150:]  # cap: most recent 150 sessions regardless of window size
 
@@ -132,6 +158,96 @@ def _compute_gap_resolution_rate(sessions: list[dict]) -> float:
     unique_total = len(gap_session_count)
     recurring = sum(1 for count in gap_session_count.values() if count >= 2)
     return (unique_total - recurring) / unique_total
+
+
+def _compute_prevented_cost(sessions: list[dict], days: int = 30) -> dict:
+    """
+    Compute outcome-quality signals from audit log fields.
+
+    Returns a dict with:
+    - critical_findings: total CRITICAL findings caught before commit (30d)
+    - high_findings: total HIGH findings
+    - direction_reversals: sessions where challenge rejected initial direction
+    - nfr_gaps_flagged: NFR gaps caught pre-build
+    - sessions_with_findings: count of sessions that had any findings
+
+    These feed the PREVENTED block in the /health report — the product value claim.
+    """
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    critical = 0
+    high = 0
+    reversals = 0
+    nfr_gaps = 0
+    sessions_with_findings = 0
+
+    for s in sessions:
+        # Parse session date from raw block header "### Session — YYYY-MM-DD HH:MM UTC"
+        date_match = re.search(r"### Session — (\d{4}-\d{2}-\d{2})", s.get("raw", ""))
+        if date_match:
+            try:
+                session_date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
+                if session_date < cutoff:
+                    continue
+            except ValueError:
+                pass
+
+        critical += s.get("findings_critical", 0)
+        high += s.get("findings_high", 0)
+        if s.get("direction_reversal"):
+            reversals += 1
+        nfr_gaps += len(s.get("nfr_gaps", []))
+        if s.get("findings_total", 0) > 0:
+            sessions_with_findings += 1
+
+    return {
+        "critical_findings": critical,
+        "high_findings": high,
+        "direction_reversals": reversals,
+        "nfr_gaps_flagged": nfr_gaps,
+        "sessions_with_findings": sessions_with_findings,
+        "days": days,
+    }
+
+
+def _detect_recurring_findings(sessions: list[dict], min_sessions: int = 3, days: int = 30) -> list[dict]:
+    """
+    Detect finding categories that appear in 3+ sessions within 30 days.
+
+    Returns a list of dicts: [{category, count, sessions_pct}]
+    These surface as PATTERN items in the /health report — the "you keep doing this" signal.
+    """
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    category_session_count: dict[str, int] = {}
+
+    for s in sessions:
+        date_match = re.search(r"### Session — (\d{4}-\d{2}-\d{2})", s.get("raw", ""))
+        if date_match:
+            try:
+                session_date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
+                if session_date < cutoff:
+                    continue
+            except ValueError:
+                pass
+
+        seen_in_session: set[str] = set()
+        for cat in s.get("finding_categories", []):
+            seen_in_session.add(cat)
+        for cat in seen_in_session:
+            category_session_count[cat] = category_session_count.get(cat, 0) + 1
+
+    total_sessions = max(len(sessions), 1)
+    patterns = []
+    for cat, count in sorted(category_session_count.items(), key=lambda x: -x[1]):
+        if count >= min_sessions:
+            patterns.append({
+                "category": cat,
+                "count": count,
+                "sessions_pct": round(count / total_sessions * 100),
+            })
+    return patterns
 
 
 def _score_org(audit_texts: list[str]) -> float:
@@ -1132,6 +1248,11 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         pass
     knowledge_velocity = _compute_knowledge_velocity(audit_texts, _slug)
 
+    # Outcome quality signals — what youk actually prevented (product value claim)
+    sessions_parsed = _parse_audit_sessions(audit_texts)
+    prevented_cost = _compute_prevented_cost(sessions_parsed, days=30)
+    recurring_patterns = _detect_recurring_findings(sessions_parsed, min_sessions=3, days=30)
+
     base = {
         "org_score": report.org_score,
         "sessions_analyzed": report.sessions_analyzed,
@@ -1140,7 +1261,43 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         "proposals_count": len(report.proposals),
         "improvement_velocity": velocity,
         "knowledge_velocity": knowledge_velocity,
+        "prevented_this_month": prevented_cost,
     }
+
+    # PREVENTED block — leads the health report as the product value claim
+    prevented_items = []
+    if prevented_cost["critical_findings"] > 0:
+        prevented_items.append(
+            f"{prevented_cost['critical_findings']} CRITICAL finding(s) caught before commit"
+        )
+    if prevented_cost["high_findings"] > 0:
+        prevented_items.append(
+            f"{prevented_cost['high_findings']} HIGH finding(s) flagged in review"
+        )
+    if prevented_cost["direction_reversals"] > 0:
+        prevented_items.append(
+            f"{prevented_cost['direction_reversals']} direction reversal(s) — "
+            "wrong-path work avoided"
+        )
+    if prevented_cost["nfr_gaps_flagged"] > 0:
+        prevented_items.append(
+            f"{prevented_cost['nfr_gaps_flagged']} NFR gap(s) caught pre-build"
+        )
+    if prevented_items:
+        base["prevented_summary"] = "PREVENTED THIS MONTH: " + "; ".join(prevented_items)
+    else:
+        base["prevented_summary"] = (
+            "PREVENTED: no outcome data yet — pass findings/direction_reversal/nfr_gaps "
+            "to session_end after review skills run"
+        )
+
+    if recurring_patterns:
+        base["recurring_patterns"] = recurring_patterns
+        pattern_names = ", ".join(p["category"] for p in recurring_patterns[:3])
+        base["recurring_patterns_warning"] = (
+            f"RECURRING: {pattern_names} — same finding category in 3+ sessions. "
+            "This is a systematic weakness, not an individual error."
+        )
 
     # Surface knowledge velocity warnings when stalled or empty
     if knowledge_velocity["verdict"].startswith(("STALLED", "EMPTY")):
