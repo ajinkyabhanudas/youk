@@ -12,16 +12,30 @@ Add this block to your project's `CLAUDE.md` (or `~/.claude/CLAUDE.md` for globa
 # Working memory — youk-lite
 
 ## Contracts
-<!-- Working agreements — load verbatim every session, never paraphrase -->
+<!-- Load verbatim every session — never paraphrase.
+     When the user states a working agreement (always, never, from now on,
+     remember to, make sure you): write it here immediately. Do not wait for
+     end of session. -->
 
 ## Resume point
-<!-- One sentence: where we stopped last session -->
+<!-- One sentence: where we stopped last session.
+     If this was written more than 14 days ago: tell the user before loading it. -->
 
 ## Active decisions
 <!-- Architecture/design decisions with date and rationale -->
+
+## Direction gate (M+ tasks only)
+
+REQUIRED before writing any code or making architecture decisions:
+1. State what you're about to do in one sentence.
+2. Name the assumption that, if wrong, makes this the wrong thing to do.
+3. Name the simpler version of this that achieves 80% of the outcome.
+
+If step 2 or 3 cannot be named: stop and ask the user one question before proceeding.
+You MUST NOT proceed to implementation without completing this gate.
 ```
 
-Tell Claude "remember: [agreement]" to add contracts. Tell Claude "update the resume point" at session end. Works in Claude Code, Claude.ai Projects, Cursor, Windsurf — anything that reads `CLAUDE.md`.
+Just say a working agreement aloud — Claude writes it immediately (no "remember:" prefix needed). Tell Claude "update the resume point" at session end. Works in Claude Code, Claude.ai Projects, Cursor, Windsurf — anything that reads `CLAUDE.md`.
 
 → [Full youk-lite guide](youk-lite.md)
 
@@ -175,7 +189,7 @@ This pulls the latest code and rebuilds Docker images. Restart Claude Code after
 **Session start:** youk-core loads contracts, resume point, and session plan from the project you're in. Pending improvement proposals surface once: "youk flagged N proposals — review them?"
 
 **During the session:** `route_task` runs silently for every non-trivial task. Small tasks get no ceremony. For M+ tasks (features, new modules, anything non-trivial), three gates run in sequence before implementation starts:
-1. `optimize_intent` — if the task is ambiguous, models the solution fork and asks the one question that collapses it. You answer once; implementation proceeds on the resolved scope.
+1. `optimize_intent` — runs two checks: (a) scope ambiguity — if the implementation forks, models both paths and asks the one question that collapses it; (b) intent opacity — if the goal contains quality words ("better", "right") or mindset language ("discover the pattern"), surfaces a goal-translation question before proceeding. Both checks block until resolved. You answer once; implementation proceeds on the resolved scope and intent.
 2. `nfr_check` — four questions (performance, reliability, security, observability) answered in-session. Takes seconds, produces an NFR Decision Block that anchors the implementation.
 3. `check_nfr_gate` — confirms the NFR block is present before code is written. Blocked = re-run nfr_check. Passed = dev-loop starts.
 

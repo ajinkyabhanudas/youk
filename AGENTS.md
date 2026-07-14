@@ -38,7 +38,7 @@ skills/          — capability skills (learn, challenge, dev-loop, code-review,
 knowledge/       — gitignored: per-project contracts, decisions, domain concepts
 plugin/          — Claude Code plugin (hooks: PreCompact, UserPromptSubmit, PostToolUse)
 docs/            — guides, templates, architecture docs
-tests/           — pytest suite (~530 tests)
+tests/           — pytest suite (~725 tests)
 ```
 
 ---

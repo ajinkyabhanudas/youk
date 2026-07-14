@@ -70,9 +70,9 @@ Run `/health` at any point. It returns an `org_score` (0–10) and a `loop_verdi
 | **COLD** | Fewer than 3 sessions — not enough data yet |
 | **REGRESSING** | Score falling — review recent proposals and skipped skills |
 
-The score is driven by three signals: skill_invocation_rate (did a capability skill fire? — primary, 2.0 weight), close_cluster_rate (did you type `/done`? — completion bonus, 0.5 weight), and gap_resolution_rate (are recurring gaps being fixed?). The primary lever is **capability skill invocation** — a session where you used `/build`, `/review`, or `/done` (includes `/learn`) compounds your ability. Close rate matters but doesn't dominate. A discipline gate caps org_score at 6.5 if 3+ consecutive sessions have zero capability skills — the gate lifts when you next invoke one. The 7.5 target requires ≥85% capability skill rate and regular session close.
+The score is driven by five signals: skill_invocation_rate (did a capability skill fire? — primary, 2.0 weight), close_cluster_rate (did you type `/done`? — 0.5 weight), gap_resolution_rate (are recurring gaps being fixed? — 0.5 weight), prevented_cost_score (did skills catch real findings, reversals, NFR gaps? — 0.5 weight), framing_accuracy_rate (was the goal correctly translated before work started? — 0.5 weight). The primary lever is **capability skill invocation** — a session where you used `/build`, `/review`, or `/done` (includes `/learn`) compounds your ability. A discipline gate caps org_score at 6.5 if 3+ consecutive sessions have zero capability skills — the gate lifts when you next invoke one. Maximum score is 9.0 (all signals at 1.0).
 
-**M+ gate chain (what `/build` runs):** For features and non-trivial tasks, three gates run before code is written: (1) `optimize_intent` collapses ambiguous scope with one question, (2) `nfr_check` answers four questions (performance, reliability, security, observability) to produce an NFR Decision Block, (3) `check_nfr_gate` confirms the block is present before dev-loop starts. Each gate is tool-enforced — skipping it requires the tool to return `blocked=false`, not just deciding to proceed.
+**M+ gate chain (what `/build` runs):** For features and non-trivial tasks, four gates run before code is written: (1) `optimize_intent` collapses scope ambiguity — but also detects intent-opaque goals (quality words like "better", mindset language like "discover the pattern") and surfaces a goal-translation question before proceeding, (2) `route_task` enforces both gates — blocks on scope ambiguity AND intent opacity, (3) `nfr_check` answers four questions (performance, reliability, security, observability) to produce an NFR Decision Block, (4) `check_nfr_gate` confirms the block is present before dev-loop starts. Each gate is tool-enforced — skipping it requires the tool to return `blocked=false`, not just deciding to proceed.
 
 **What to do when STALLED:** use `/build` for code tasks and `/done` at session end. The score responds to capability skill invocation first, close rate second.
 
@@ -102,16 +102,32 @@ Add this to your project's `CLAUDE.md`:
 # Working memory — youk-lite
 
 ## Contracts
-<!-- Working agreements — load verbatim every session, never paraphrase -->
+<!-- Load verbatim every session — never paraphrase.
+     When the user states a working agreement (always, never, from now on,
+     remember to, make sure you): write it here immediately. Do not wait for
+     end of session. -->
 
 ## Resume point
-<!-- One sentence: where we stopped last session -->
+<!-- One sentence: where we stopped last session.
+     If this was written more than 14 days ago: tell the user before loading it.
+     First session: type "save resume point: [what you did today]" before closing. -->
 
 ## Active decisions
-<!-- Architecture/design decisions with date and rationale -->
+<!-- Architecture/design decisions with date and rationale.
+     Format: ## YYYY-MM-DD: Decision — rationale in one sentence -->
+
+## Direction gate (M+ tasks only)
+
+REQUIRED before writing any code or making architecture decisions:
+1. State what you're about to do in one sentence.
+2. Name the assumption that, if wrong, makes this the wrong thing to do.
+3. Name the simpler version of this that achieves 80% of the outcome.
+
+If step 2 or 3 cannot be named: stop and ask the user one question before proceeding.
+You MUST NOT proceed to implementation without completing this gate.
 ```
 
-Tell Claude "remember: [agreement]" to add contracts. At the end of your **first session**, type `save resume point: [one sentence about what you did today]` — that seeds session 2. After that, "update the resume point" at session end keeps it current.
+Just say a working agreement aloud ("always run tests before committing") — Claude writes it immediately. At the end of your **first session**, type `save resume point: [one sentence]` to seed session 2.
 
 → [Full youk-lite guide](docs/youk-lite.md)
 
