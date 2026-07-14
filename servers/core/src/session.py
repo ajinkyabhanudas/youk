@@ -1943,6 +1943,13 @@ def write_session_goal(
         "written_at": _dt.datetime.utcnow().isoformat(),
         "goal_met": False,
     }))
+    # Reset coverage accumulator — stale coverage from a prior goal or project
+    # would cause premature goal_met=True on the new goal.
+    coverage_file = goal_file.parent / "session-goal-coverage.json"
+    try:
+        coverage_file.write_text(json.dumps({"covered": []}))
+    except Exception:
+        pass
 
 
 def _check_session_goal(completed_task: str) -> dict | None:
