@@ -240,7 +240,7 @@ Guard rails are machine-readable contracts in `config/guardrails.yaml`. Hard rul
 
 | Rule | What it stops |
 |---|---|
-| `no-auto-apply-proposals` | Self-heal proposals auto-applying without your review |
+| `no-auto-apply-proposals` | CODE_EDIT and CONFIG_EDIT proposals auto-applying without your review (SKILL_EDIT/FILE_CREATE are auto-applicable — see ADR-002) |
 | `no-credential-commits` | `.env`, `*secret*`, `*api_key*` files entering a commit |
 | `knowledge-extraction-not-logging` | Raw conversation transcripts being stored |
 | `no-destructive-without-confirm` | `rm -rf`, `reset --hard`, force push without confirmation |
@@ -548,7 +548,7 @@ Ten principles drive every design decision in youk. The full document is [PHILOS
 
 1. **Ambient over activated** — no "activate" phrase, always on
 2. **Extract, don't log** — knowledge is insights, not transcripts
-3. **Propose, never auto-apply** — self-healing requires founder approval
+3. **Gate by blast radius** — structural changes (code, config) require founder approval; skill text edits auto-apply because their failure is immediately visible and recoverable within a session (see ADR-002)
 4. **Guard rails are versioned contracts** — committed YAML, not prompt text
 5. **Ceremony proportional to risk** — XS task gets no ceremony, XL task gets full architecture review
 6. **Variants are forms of intelligence** — specialization, not sprawl

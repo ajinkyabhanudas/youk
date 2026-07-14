@@ -2036,8 +2036,14 @@ def apply_proposal(
     confirmed=True  → executes write per change_type, marks APPLIED in PENDING.md.
 
     safe_types: when provided, only change_types in this list are applied.
-    Types not in safe_types return blocked=True — caller must review manually.
-    Use safe_types=["SKILL_EDIT","FILE_CREATE"] for autonomous /improve runs.
+    Types not in safe_types return blocked=True — caller must surface to founder.
+
+    Tier 1 (require human approval): CODE_EDIT, CONFIG_EDIT — silent blast radius,
+    may break gates or guardrails, requires Docker rebuild to recover.
+    Tier 2 (auto-applicable): SKILL_EDIT, FILE_CREATE — visible blast radius,
+    recoverable within a session without rebuild. See ADR-002 for full rationale.
+
+    Use safe_types=["SKILL_EDIT","FILE_CREATE"] for autonomous /improve and /forge runs.
     """
     proposals = _load_pending_proposals()
     target = next((p for p in proposals if p.id == proposal_id), None)
