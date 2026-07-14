@@ -1053,11 +1053,25 @@ def run_health_check() -> HealthReport:
     )
 
 
+def _parse_skill_patch_signals(audit_texts: list[str]) -> dict[str, int]:
+    """Return {skill_name: patch_count} for all SkillPatch: lines in audit."""
+    patches: dict[str, int] = {}
+    for text in audit_texts:
+        for line in text.splitlines():
+            if line.startswith("SkillPatch:"):
+                rest = line[len("SkillPatch:"):].strip()
+                skill = rest.split(" — ")[0].strip() if " — " in rest else rest
+                patches[skill] = patches.get(skill, 0) + 1
+    return patches
+
+
 def _analyze_promotion_candidates(audit_texts: list[str]) -> list[dict]:
     """
     Scan SkillGap: lines across all audit sessions.
     A gap appearing 3+ times for the same skill → propose a SKILL_EDIT.
     A gap appearing across 2+ distinct projects → flag for cross-project.md addition.
+    When a skill has both SkillGap and SkillPatch entries in the same window,
+    flag as a patch-cycle: the auto-applied fix didn't resolve the gap.
     Returns a list of candidates; callers queue them as proposals (never auto-apply).
     """
     from collections import defaultdict
@@ -1087,6 +1101,8 @@ def _analyze_promotion_candidates(audit_texts: list[str]) -> list[dict]:
     _CODE_SIGNALS = (".py", ".sh", "def ", "()", "function", "session_start", "route_task",
                      "session.py", "health.py", "routing.py", "compaction.py")
 
+    patch_counts = _parse_skill_patch_signals(audit_texts)
+
     candidates = []
     for skill, occurrences in by_skill.items():
         count = len(occurrences)
@@ -1104,6 +1120,7 @@ def _analyze_promotion_candidates(audit_texts: list[str]) -> list[dict]:
             else:
                 change_type = "SKILL_EDIT"
                 promotion_target = f"skills/{skill}/SKILL.md"
+            patch_cycle = patch_counts.get(skill, 0) > 0
             candidates.append({
                 "skill": skill,
                 "occurrence_count": count,
@@ -1111,6 +1128,8 @@ def _analyze_promotion_candidates(audit_texts: list[str]) -> list[dict]:
                 "sample_gaps": list({gap for _, gap in occurrences})[:3],
                 "promotion_target": promotion_target,
                 "change_type": change_type,
+                "patch_cycle": patch_cycle,
+                "patch_count": patch_counts.get(skill, 0),
             })
     return sorted(candidates, key=lambda x: -x["occurrence_count"])
 
@@ -1486,6 +1505,16 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         base["promotion_note"] = (
             f"{promotion_queued} skill(s) crossed the 3-occurrence threshold — "
             "proposals queued in PENDING.md for review."
+        )
+
+    # Patch-cycle detection: skills with both SkillGap and SkillPatch entries
+    # indicate that an auto-applied SKILL_EDIT didn't resolve the gap.
+    patch_cycles = [c for c in promotion_candidates if c.get("patch_cycle")]
+    if patch_cycles:
+        base["patch_cycle_warning"] = (
+            f"{len(patch_cycles)} skill(s) have both SkillGap and SkillPatch entries — "
+            "auto-applied patches did not resolve the gap. Manual review required: "
+            + ", ".join(c["skill"] for c in patch_cycles)
         )
 
     # Proactive-improvement signal — skill-forge run (the forward half of the loop).
@@ -1982,6 +2011,15 @@ def _execute_proposal(proposal: Proposal) -> dict:
         if count == 0:
             new_content = current.rstrip() + f"\n\n## {section}\n{proposal.content}\n"
         skill_path.write_text(new_content)
+        # Write audit trail so self-heal can detect patch→gap cycles.
+        try:
+            month = datetime.utcnow().strftime("%Y-%m")
+            audit_file = CLAUDE_ROOT / "audit" / f"{month}.md"
+            if audit_file.exists():
+                with open(audit_file, "a") as _af:
+                    _af.write(f"SkillPatch: {proposal.target} — section '{section}' auto-applied (proposal {proposal.id})\n")
+        except Exception:
+            pass  # audit write failure must never block the apply
         return {"applied": True, "target_file": str(skill_path), "change_type": ct, "section": section}
 
     if ct == "CONFIG_EDIT":
