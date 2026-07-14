@@ -2079,6 +2079,7 @@ def end_session(
     finding_categories: list[str] | None = None,
     nfr_gaps: list[str] | None = None,
     direction_reversal: bool = False,
+    developer_caught: list[str] | None = None,
 ) -> dict:
     """
     Write structured audit log entry, detect and save contract phrases.
@@ -2099,6 +2100,11 @@ def end_session(
 
     direction_reversal: True when challenge skill rejected the initial direction.
     Written as DirectionReversal: yes line. Feeds prevented_cost_score.
+
+    developer_caught: list of skill names where the developer's prompt already
+    answered the questions before the skill ran (e.g. ["nfr_check", "challenge"]).
+    Written as DeveloperCaught: {skill1},{skill2} line. Parsed by health.py to
+    compute developer_autonomy_rate — the signal that the compounding loop is working.
     """
     # 3B — Auto-draft summary when developer passes empty string or "done"
     # Reads the session plan written by session_start so the audit entry is useful
@@ -2160,6 +2166,11 @@ def end_session(
     # FramingCorrect: yes when the goal translation was correct (no direction reversal).
     # Parsed by health._parse_audit_sessions() to compute framing_accuracy_rate in org_score.
     framing_correct_line = f"FramingCorrect: {'no' if direction_reversal else 'yes'}\n"
+    # DeveloperCaught: skills the developer pre-empted by answering questions unprompted.
+    # Rising count across sessions = the compounding loop is working — developer internalised the pattern.
+    developer_caught_line = ""
+    if developer_caught:
+        developer_caught_line = f"DeveloperCaught: {','.join(developer_caught)}\n"
 
     token_data = _read_and_clear_tokens()
     total_tokens = token_data["total_input"] + token_data["total_output"]
@@ -2187,6 +2198,7 @@ def end_session(
         f"{nfr_gap_lines}"
         f"{direction_reversal_line}"
         f"{framing_correct_line}"
+        f"{developer_caught_line}"
     )
 
     with open(audit_file, "a") as f:

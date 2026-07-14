@@ -128,6 +128,14 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         else:
             s["framing_correct"] = None  # unknown — old audit entry predates this signal
 
+        # DeveloperCaught: skills the developer pre-empted by answering unprompted.
+        # Rising presence across sessions = compounding loop working.
+        caught_match = re.search(r"^DeveloperCaught:\s*(.+)$", block, re.MULTILINE | re.IGNORECASE)
+        if caught_match:
+            s["developer_caught"] = [c.strip() for c in caught_match.group(1).split(",") if c.strip()]
+        else:
+            s["developer_caught"] = []
+
         sessions.append(s)
     return sessions[-150:]  # cap: most recent 150 sessions regardless of window size
 
@@ -273,6 +281,44 @@ def _compute_prevented_cost_score(prevented_cost: dict) -> float:
     return min(signals / 10.0, 1.0)
 
 
+def _compute_autonomy_rate(sessions: list[dict]) -> float:
+    """
+    Fraction of sessions where the developer pre-empted at least one capability skill
+    by providing the answers unprompted (DeveloperCaught field).
+
+    Session 1–5: no data expected → returns 0.0 (neutral, not penalised).
+    Session 6+: rising rate means the compounding loop is working.
+    """
+    if len(sessions) < 6:
+        return 0.0  # not enough history to measure — no penalty, no bonus
+    tracked = [s for s in sessions if s.get("developer_caught") is not None]
+    if not tracked:
+        return 0.0
+    caught_count = sum(1 for s in tracked if s["developer_caught"])
+    return caught_count / len(tracked)
+
+
+def _compute_depth_multiplier(sessions: list[dict]) -> float:
+    """
+    Score multiplier based on session depth with this project.
+
+    Early sessions (1–5): multiplier 0.7 — a 9/10 process score on session 3
+    means youk followed its checklist, not that compounding happened.
+    Mature sessions (20+): multiplier 1.0 — score is fully earned.
+
+    This prevents a new project from reading as 9/10 on pure process compliance.
+    The score has to be earned over time, not just in one session.
+    """
+    n = len(sessions)
+    if n <= 5:
+        return 0.7
+    if n <= 10:
+        return 0.8
+    if n <= 20:
+        return 0.9
+    return 1.0
+
+
 def _score_org(audit_texts: list[str]) -> float:
     if not audit_texts:
         return 5.0
@@ -308,12 +354,32 @@ def _score_org(audit_texts: list[str]) -> float:
     else:
         framing_accuracy_rate = 1.0  # no data → assume correct (no penalty)
 
+    # Developer autonomy rate: fraction of sessions where developer pre-empted a skill.
+    # Only meaningful after session 5 — returns 0.0 earlier (no bonus, no penalty).
+    # At 6+ sessions, a rising rate is the primary signal that compounding is real.
+    autonomy_rate = _compute_autonomy_rate(sessions)
+
+    # Depth multiplier: a 9/10 on session 3 = checklist compliance, not compounding.
+    # Score is discounted until the project has enough sessions to demonstrate growth.
+    depth_multiplier = _compute_depth_multiplier(sessions)
+
     # capability_skill_rate (2.0 weight): primary signal — did developer ability compound?
     # close_rate (0.5 weight): completion bonus only — /done matters but doesn't dominate
     # gap_resolution_rate (0.5 weight): are gaps being detected as new (not recurring)?
     # prevented_score (0.5 weight): outcome quality — did skills catch something real?
     # framing_accuracy_rate (0.5 weight): was the goal correctly translated before work started?
-    score = 5.0 + (capability_skill_rate * 2.0) + (close_rate * 0.5) + (gap_resolution_rate * 0.5) + prevented_score + (framing_accuracy_rate * 0.5) + token_penalty
+    # autonomy_rate (1.0 weight): developer pre-empting skills = proof the loop is working
+    raw_score = (
+        5.0
+        + (capability_skill_rate * 2.0)
+        + (close_rate * 0.5)
+        + (gap_resolution_rate * 0.5)
+        + prevented_score
+        + (framing_accuracy_rate * 0.5)
+        + (autonomy_rate * 1.0)
+        + token_penalty
+    )
+    score = raw_score * depth_multiplier
 
     # Discipline gate: 3+ consecutive sessions with zero capability skills → cap at 6.5.
     # Reaching 7.0+ requires demonstrated use of capability skills, not just /done ritual.
@@ -471,6 +537,36 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
         findings.append(
             f"Capability skills used in only {capability_count}/{total} sessions ({1 - capability_skip_rate:.0%}). "
             "Aim for ≥50% of sessions invoking at least one capability skill."
+        )
+
+    # Developer autonomy signal — the proof the compounding loop is actually working.
+    # Only surfaces after session 5; before that there's not enough history to measure.
+    autonomy_rate = _compute_autonomy_rate(sessions)
+    depth_multiplier = _compute_depth_multiplier(sessions)
+    if total >= 6:
+        if autonomy_rate >= 0.4:
+            findings.append(
+                f"Developer autonomy: {autonomy_rate:.0%} of sessions — developer pre-empted at least one "
+                f"capability skill (DeveloperCaught). The compounding loop is working: developer judgment "
+                f"is internalising what youk was previously catching."
+            )
+        elif autonomy_rate > 0:
+            findings.append(
+                f"Developer autonomy: {autonomy_rate:.0%} of sessions ({total} total). "
+                "Rising trend expected by session 20 — developer should be catching NFR gaps "
+                "before nfr_check runs. Pass developer_caught=['nfr_check'] to session_end when observed."
+            )
+        else:
+            findings.append(
+                f"Developer autonomy: 0% across {total} sessions. "
+                "Target: developer pre-empts nfr_check by including performance/reliability/"
+                "security answers in their initial request. No DeveloperCaught signal recorded yet. "
+                "When observed, pass developer_caught=['nfr_check'] to session_end."
+            )
+    if depth_multiplier < 1.0:
+        findings.append(
+            f"Depth discount active ({depth_multiplier:.0%} multiplier, {total} sessions). "
+            f"Score reflects process compliance, not compounding — full weight reached at session 20+."
         )
 
     # Retrospective recovery: a session closed without /done is recovered when the *next*
@@ -1292,6 +1388,9 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     prevented_cost = _compute_prevented_cost(sessions_parsed, days=30)
     recurring_patterns = _detect_recurring_findings(sessions_parsed, min_sessions=3, days=30)
 
+    autonomy_rate = _compute_autonomy_rate(sessions_parsed)
+    depth_multiplier = _compute_depth_multiplier(sessions_parsed)
+
     base = {
         "org_score": report.org_score,
         "sessions_analyzed": report.sessions_analyzed,
@@ -1301,6 +1400,14 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         "improvement_velocity": velocity,
         "knowledge_velocity": knowledge_velocity,
         "prevented_this_month": prevented_cost,
+        "developer_autonomy_rate": round(autonomy_rate, 2),
+        "depth_multiplier": depth_multiplier,
+        "compounding_verdict": (
+            "ELITE — developer pre-empting skills; compounding loop closed"
+            if autonomy_rate >= 0.4
+            else "GROWING — autonomy signal emerging" if autonomy_rate > 0
+            else "EARLY — not enough sessions or no DeveloperCaught signal yet"
+        ),
     }
 
     # PREVENTED block — leads the health report as the product value claim

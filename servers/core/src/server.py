@@ -55,6 +55,7 @@ def session_end(
     finding_categories: list[str] | None = None,
     nfr_gaps: list[str] | None = None,
     direction_reversal: bool = False,
+    developer_caught: list[str] | None = None,
 ) -> dict:
     """
     End a youk session. Writes audit log entry, saves contracts, checks session-close cluster.
@@ -105,6 +106,13 @@ def session_end(
     Written as DirectionReversal: yes. Feeds prevented_cost_score — each reversal
     represents saved wrong-path sessions.
 
+    developer_caught: List of skill names where the developer's prompt already answered
+    the questions before the skill ran (e.g. ["nfr_check"] when the developer included
+    performance/reliability/security/observability decisions in their initial request).
+    Written as DeveloperCaught: nfr_check line. Parsed by health.py to compute
+    developer_autonomy_rate — a rising rate across sessions signals the compounding
+    loop is working: the developer is internalising what youk was previously catching.
+
     Returns: knowledge_extracted, proposals_added, audit_written,
              session_close_cluster_detected, contracts_saved.
     """
@@ -117,6 +125,7 @@ def session_end(
         summary, commits_made, explicit_contracts, skills_used, close_cluster,
         skill_gaps, mid_session_adaptations_applied,
         findings, finding_categories, nfr_gaps, direction_reversal,
+        developer_caught,
     )
 
 
