@@ -1598,9 +1598,18 @@ def start_session(project_dir: str) -> SessionState:
         else:
             commits_summary = " (no commits — patterns still worth capturing)"
         session_plan.insert(0,
-            f"⚠ Last session closed without /done{commits_summary}. "
-            "Run /learn now to extract patterns before starting new work."
+            f"⚠ [BLOCKED] Last session closed without /done{commits_summary}. "
+            "Run /learn NOW before anything else — this session will not compound without it."
         )
+        # Write pending_action so session_start returns force_learn=true explicitly.
+        # The return field makes CLAUDE.md Option C unambiguous: force_learn=true
+        # is an instruction, not a suggestion.
+        try:
+            pending_action_file = YOUK_ROOT / "state" / "pending-action.json"
+            pending_action_file.parent.mkdir(parents=True, exist_ok=True)
+            pending_action_file.write_text(json.dumps({"action": "learn", "reason": "close_cluster_missed"}))
+        except Exception:
+            pass
 
     # Routing recovery: detect M+ work that started without route_task.
     # Reads route-task-ran.json (written by server.py) to check if routing fired.
@@ -1789,6 +1798,7 @@ def start_session(project_dir: str) -> SessionState:
         brief=brief,
         nfr_autonomy_mode=_nfr_autonomy_mode,
         developer_autonomy_rate=round(_nfr_autonomy_rate, 2),
+        force_learn=close_cluster_missed and days_since_last != 0,
     )
 
 

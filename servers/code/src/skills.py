@@ -143,6 +143,17 @@ def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> d
     if handoff:
         skill_content = handoff + "\n\n---\n\n" + skill_content
 
+    # Clear force_learn pending action when /learn fires — the gate is satisfied.
+    if skill_name == "learn":
+        try:
+            pending_action_file = Path("/youk/state/pending-action.json")
+            if pending_action_file.exists():
+                data = json.loads(pending_action_file.read_text())
+                if data.get("action") == "learn":
+                    pending_action_file.unlink()
+        except Exception:
+            pass
+
     return {
         "mode": "in_session",
         "skill_name": skill_name,

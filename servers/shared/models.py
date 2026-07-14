@@ -115,6 +115,10 @@ class SessionState:
     nfr_autonomy_mode: str = "standard"
     # Raw developer autonomy rate for this project (fraction of sessions with DeveloperCaught ≥ 1)
     developer_autonomy_rate: float = 0.0
+    # force_learn: True when last session closed without /done. Signals CLAUDE.md Option C to run
+    # /learn immediately as the FIRST action — not as a plan item the model may skip.
+    # Cleared when route_to_skill("learn") fires (pending-action.json deleted).
+    force_learn: bool = False
     # Convergence state — tracks which of the seven angles have converged on external pressure.
     # Updated mechanically from exchange structure: user-generated pressure that didn't move
     # the answer = convergence signal. Model-generated pressure = noise, not counted.
@@ -154,6 +158,7 @@ class SessionState:
             "mid_session_adaptations_applied": self.mid_session_adaptations_applied,
             "nfr_autonomy_mode": self.nfr_autonomy_mode,
             "developer_autonomy_rate": self.developer_autonomy_rate,
+            "force_learn": self.force_learn,
             "convergence_state": self.convergence_state,
         }
 
