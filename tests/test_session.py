@@ -201,7 +201,6 @@ class TestGenerateSessionPlan:
     def _plan_with_root(self, youk_root, **kwargs):
         """Helper that patches YOUK_ROOT so stack bootstrap checks run."""
         import session
-        import importlib
         old_root = session.YOUK_ROOT
         session.YOUK_ROOT = youk_root
         try:
@@ -983,10 +982,8 @@ class TestRetrospectiveRecoveryPlanItem:
 
     def test_retrospective_item_format_with_commits(self):
         """When close_cluster_missed and new_commits > 0, plan item includes commit subjects."""
-        close_cluster_missed = True
         new_commits = 3
         git_log = "abc1234 fix auth bug\ndef5678 add rate limiting\nghi9012 update deps"
-        days_since_last = 1
 
         recent_subjects = []
         for ln in git_log.splitlines()[:3]:
@@ -1008,19 +1005,14 @@ class TestRetrospectiveRecoveryPlanItem:
 
     def test_retrospective_item_format_no_commits(self):
         """When close_cluster_missed and new_commits == 0, item still fires with no-commits note."""
-        close_cluster_missed = True
-        new_commits = 0
-        days_since_last = 1
-
         commits_summary = " (no commits — patterns still worth capturing)"
         item = (
             f"⚠ Last session closed without /done{commits_summary}. "
             "Run /learn now to extract patterns before starting new work."
         )
 
-        # Condition now fires even with no commits
-        should_trigger = close_cluster_missed and days_since_last != 0
-        assert should_trigger
+        # Condition fires even with no commits — days_since_last != 0 is the only gate
+        assert item.startswith("⚠ Last session closed without /done")
         assert "no commits — patterns still worth capturing" in item
         assert "Run /learn now" in item
 
@@ -1178,7 +1170,8 @@ class TestBuildBriefResumeCandidate:
     """compact_context writes resume_candidate to session-checkpoint.json."""
 
     def test_resume_candidate_extracted_from_plan(self, tmp_path, monkeypatch):
-        import compaction, json
+        import compaction
+        import json
         youk_root = tmp_path / "youk"
         (youk_root / "state").mkdir(parents=True)
         (youk_root / "knowledge" / "projects" / "myproject").mkdir(parents=True)
@@ -1197,7 +1190,8 @@ class TestBuildBriefResumeCandidate:
         assert cp["resume_candidate"] == "Work on auth refactor"
 
     def test_resume_candidate_skips_warning_items(self, tmp_path, monkeypatch):
-        import compaction, json
+        import compaction
+        import json
         youk_root = tmp_path / "youk"
         (youk_root / "state").mkdir(parents=True)
         (youk_root / "knowledge" / "projects" / "myproject").mkdir(parents=True)
@@ -1215,7 +1209,8 @@ class TestBuildBriefResumeCandidate:
         assert cp["resume_candidate"] == "Continue auth work"
 
     def test_resume_candidate_empty_when_no_plan(self, tmp_path, monkeypatch):
-        import compaction, json
+        import compaction
+        import json
         youk_root = tmp_path / "youk"
         (youk_root / "state").mkdir(parents=True)
         monkeypatch.setattr(compaction, "YOUK_ROOT", youk_root)
@@ -1285,7 +1280,8 @@ class TestColdStart:
 
     def test_cold_start_to_dict_serializable(self, youk_root, tmp_path):
         """to_dict() must produce a JSON-serializable result on cold start."""
-        import session, json
+        import session
+        import json
 
         project_dir = tmp_path / "serialize-project"
         project_dir.mkdir()

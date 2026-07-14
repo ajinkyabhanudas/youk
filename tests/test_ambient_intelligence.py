@@ -10,12 +10,10 @@ Tests for ambient intelligence additions:
 8. Health: git outcome findings (_check_git_outcomes)
 """
 from __future__ import annotations
-import json
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "core" / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "shared"))

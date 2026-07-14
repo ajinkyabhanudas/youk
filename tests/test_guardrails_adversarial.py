@@ -20,7 +20,7 @@ class TestCredentialFileGuardrail:
             check_credential_file(".env")
 
     def test_blocks_dotenv_local(self):
-        """.env.local is a real bypass of the old \.env$ pattern."""
+        r""".env.local is a real bypass of the old \.env$ pattern."""
         with pytest.raises(HardRuleViolation, match="no-credential-commits"):
             check_credential_file(".env.local")
 

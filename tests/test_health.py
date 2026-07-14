@@ -269,7 +269,7 @@ class TestSkillInvocationRateMetric:
         return _compute_improvement_velocity([audit], score)
 
     def test_100_percent_when_all_sessions_have_capability_skill(self, youk_root, claude_root):
-        result = self._run_velocity(youk_root, claude_root, [
+        self._run_velocity(youk_root, claude_root, [
             {"skills": "code-review", "close_cluster": True},
             {"skills": "learn", "close_cluster": True},
         ])
@@ -278,7 +278,7 @@ class TestSkillInvocationRateMetric:
         assert entry["skill_invocation_rate"] == 1.0
 
     def test_zero_when_no_capability_skills(self, youk_root, claude_root):
-        result = self._run_velocity(youk_root, claude_root, [
+        self._run_velocity(youk_root, claude_root, [
             {"skills": "self_heal", "close_cluster": False},
             {"skills": "none", "close_cluster": False},
         ])
@@ -339,7 +339,7 @@ class TestContractsTotalMetric:
         for slug, lines in contract_lines.items():
             proj = youk_root / "knowledge" / "projects" / slug
             proj.mkdir(parents=True, exist_ok=True)
-            (proj / "contracts.md").write_text("\n".join(f"- {l}" for l in lines) + "\n")
+            (proj / "contracts.md").write_text("\n".join(f"- {line}" for line in lines) + "\n")
         audit = _audit_with([{"skills": "code-review", "close_cluster": True}])
         (claude_root / "audit" / "2026-07.md").write_text(audit)
         from health import _compute_improvement_velocity, _score_org
@@ -1377,8 +1377,8 @@ class TestAnalyzePromotionCandidates:
         for i, (proj, skill, desc) in enumerate(gaps):
             lines.append(f"### Session — 2026-07-0{i+1} 10:00 UTC")
             lines.append(f"Project: {proj}")
-            lines.append(f"Skills: code-review")
-            lines.append(f"CloseCluster: yes")
+            lines.append("Skills: code-review")
+            lines.append("CloseCluster: yes")
             lines.append(f"SkillGap: {skill} — {desc}")
         return "\n".join(lines)
 
@@ -1435,7 +1435,6 @@ class TestAnalyzePromotionCandidates:
 
 class TestQueuePromotionProposals:
     def test_queues_skill_edit_proposal(self, youk_root, claude_root):
-        import health
         (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
         candidates = [{
             "skill": "verify",
@@ -1531,7 +1530,6 @@ class TestGenerateFindingsExtended:
 
     def test_nominal_finding_when_no_issues(self, youk_root, claude_root):
         # Need token data (suppress no-token finding) + a proposal (suppress starved finding)
-        import health
         (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
         (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text("## PENDING-001\n")
         blocks = []
@@ -1563,13 +1561,14 @@ class TestGenerateFindingsExtended:
         assert any("under budget" in f.lower() for f in findings)
 
     def test_consecutive_no_close_with_done_skill(self, youk_root, claude_root, tmp_path):
-        import json, health
+        import json
+        import health
         # Create a project with .claude/skills/done
         project_dir = tmp_path / "myproject"
         (project_dir / ".claude" / "skills" / "done").mkdir(parents=True)
         state = youk_root / "state" / "session.json"
         state.write_text(json.dumps({"last_project": str(project_dir)}))
-        monkeypatch_root = youk_root  # already patched via fixture
+        # already patched via fixture — youk_root is the monkeypatched root
         # 3 consecutive no-close sessions
         audit = self._make_sessions(3, close=False, skills="code-review")
         findings = health._generate_findings([audit], score=6.0)
@@ -1662,8 +1661,6 @@ class TestImprovementVelocityExtended:
             "## PENDING-002\n**Status:** APPLIED — 2026-07-02\n\n"
             "## PENDING-003\n**Status:** PENDING\n"
         )
-        import health
-        monkeypatch_path = pending_file
         import health as h
         orig = h.PROPOSALS_FILE
         h.PROPOSALS_FILE = pending_file
@@ -1735,7 +1732,7 @@ class TestKnowledgeVelocityStalled:
 # ── _compute_diff_preview — REFERENCE_ADD, CONFIG_EDIT, CODE_EDIT branches ────
 
 class TestComputeDiffPreviewExtended:
-    def _make_proposal(self, change_type: str, target: str, content: str, target_section: str = "") -> "Proposal":
+    def _make_proposal(self, change_type: str, target: str, content: str, target_section: str = ""):
         from models import Proposal
         return Proposal(
             id="PENDING-TEST-001",
@@ -1756,7 +1753,6 @@ class TestComputeDiffPreviewExtended:
         (skills_dir / "verify" / "references").mkdir(parents=True)
         proposal = self._make_proposal("REFERENCE_ADD", "verify", "ref content", "my-ref.md")
         import health
-        monkeypatch_claude = claude_root
         orig = health.CLAUDE_ROOT
         health.CLAUDE_ROOT = claude_root
         try:
@@ -1825,7 +1821,7 @@ class TestComputeDiffPreviewExtended:
 # ── _execute_proposal — REFERENCE_ADD, CONFIG_EDIT, CODE_EDIT branches ────────
 
 class TestExecuteProposalExtended:
-    def _make_proposal(self, change_type: str, target: str, content: str, target_section: str = "") -> "Proposal":
+    def _make_proposal(self, change_type: str, target: str, content: str, target_section: str = ""):
         from models import Proposal
         return Proposal(
             id="PENDING-EXT-001",
@@ -2036,7 +2032,7 @@ class TestCheckReleaseReadiness:
         if install_sh:
             (scripts_dir / "install.sh").write_text("#!/bin/bash\necho ok")
             (scripts_dir / "doctor.sh").write_text("#!/bin/bash\necho ok")
-        readme = youk_root.parent.parent / "README.md"  # won't exist — that's fine
+        _ = youk_root.parent.parent / "README.md"  # won't exist — that's fine
 
     def test_no_issues_when_everything_valid(self, youk_root):
         import health

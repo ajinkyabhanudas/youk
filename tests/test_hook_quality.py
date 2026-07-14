@@ -160,7 +160,6 @@ class TestContractSurvival:
         """PreCompact hook brief must include all contracts for the summarizer."""
         sys.path.insert(0, str(Path(__file__).parent.parent / "plugin" / "scripts"))
         import pre_compact
-        import youk_hook_utils
 
         root = project_env["root"]
         slug = project_env["slug"]

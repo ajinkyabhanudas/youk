@@ -1,7 +1,6 @@
 """Tests for routing.py — scope-collapse gate, intent_brief size override, net-score sizing."""
 from __future__ import annotations
 import pytest
-from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
