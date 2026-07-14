@@ -18,6 +18,14 @@ YOUK_ROOT = Path("/youk")
 
 _TIER_INSTRUCTION = """CONTRACT lines are load-bearing behavioral agreements — preserve them VERBATIM through any further compaction. Never paraphrase, shorten, or omit them. They are exactly what must survive."""
 
+# Tier tags embedded in brief sections so Claude's auto-compaction honors the hierarchy.
+# When Claude summarizes a [TIER:CONTRACT] block it sees the tag and knows: verbatim only.
+# Without tags the brief is a flat string and all tiers get compressed equally.
+TIER_CONTRACT = "[TIER:CONTRACT — PRESERVE VERBATIM]"
+TIER_DECISION = "[TIER:DECISION — key fact + rationale, 1-2 sentences max]"
+TIER_EXPLORATION = "[TIER:EXPLORATION — compress to 1 sentence]"
+TIER_CLARIFICATION = "[TIER:CLARIFICATION — DROP on compaction]"
+
 
 def _slug(project_dir: str) -> str:
     return Path(project_dir).name or "unknown"
@@ -230,16 +238,24 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
         sections.append("[/YOUK CONTEXT BRIEF]")
     else:
         # Full model: everything (session_start, compact_context)
+        # Each section is tagged with its compaction tier so Claude's auto-compaction
+        # honors the CONTRACT > DECISION > EXPLORATION > CLARIFICATION hierarchy.
         if contracts:
-            sections.append("## Pinned Contracts (verbatim — never summarize or paraphrase)")
+            sections.append(
+                f"## Pinned Contracts {TIER_CONTRACT}\n"
+                "(verbatim — never summarize or paraphrase)"
+            )
             for c in contracts:
                 sections.append(f"- {c}")
         else:
-            sections.append("## Pinned Contracts\n(none saved yet — call session_end to capture working agreements)")
+            sections.append(
+                f"## Pinned Contracts {TIER_CONTRACT}\n"
+                "(none saved yet — call session_end to capture working agreements)"
+            )
 
-        # Decisions: verbatim when they match intent keywords, compressed otherwise
+        # Decisions: tagged as DECISION tier — summarize to key fact + rationale
         if decisions:
-            sections.append("## Active Decisions")
+            sections.append(f"## Active Decisions {TIER_DECISION}")
             for d in decisions:
                 dlines = d.strip().splitlines()
                 heading = dlines[0] if dlines else ""
@@ -251,27 +267,38 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
 
         project = state.get("last_project", project_dir)
         session_n = state.get("session_counter", "?")
+        # Session state is DECISION tier — key fact (what project, what session)
         sections.append(
-            f"## Session state\n"
+            f"## Session state {TIER_DECISION}\n"
             f"Project: {slug} | Session #{session_n} | Dir: {project}"
         )
 
         if session_plan:
             plan_lines = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(session_plan))
-            sections.append(f"## Session plan (from last session_start)\n{plan_lines}")
+            # Session plan is EXPLORATION tier — compress to 1 sentence on compaction
+            sections.append(
+                f"## Session plan {TIER_EXPLORATION}\n{plan_lines}"
+            )
 
         survey_summary = _load_survey_summary(slug)
         if survey_summary:
-            sections.append(f"## Codebase survey\n{survey_summary}\n(run /survey to refresh)")
+            # Survey is EXPLORATION tier — high compression acceptable
+            sections.append(
+                f"## Codebase survey {TIER_EXPLORATION}\n"
+                f"{survey_summary}\n(run /survey to refresh)"
+            )
 
         domain_summary = _load_domain_knowledge_summary()
         if domain_summary:
-            sections.append(f"## Domain knowledge\n{domain_summary} — /learn adds more")
+            sections.append(
+                f"## Domain knowledge {TIER_EXPLORATION}\n"
+                f"{domain_summary} — /learn adds more"
+            )
 
         domain_gaps = _load_domain_gaps()
         if domain_gaps:
             sections.append(
-                "## Active knowledge gaps (HIGH priority)\n"
+                f"## Active knowledge gaps (HIGH priority) {TIER_DECISION}\n"
                 + ", ".join(domain_gaps)
                 + " — address with /learn"
             )

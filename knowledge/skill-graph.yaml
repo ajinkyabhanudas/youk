@@ -222,8 +222,6 @@ skills:
     stack_aware: false
     domain_aware: false
 
----
-
 knowledge_flows:
 
   session_start_reads:
@@ -260,8 +258,6 @@ knowledge_flows:
       purpose: "stack-specific patterns from prior sessions"
     - source: "skills/{skill}/SKILL.md"
       purpose: "base skill content — overlay must not duplicate what's already there"
-
----
 
 critical_paths:
   # The flows that move org_score — must fire every session on M+ tasks
