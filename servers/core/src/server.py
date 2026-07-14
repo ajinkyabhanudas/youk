@@ -138,8 +138,31 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
     Returns: problem, success_criteria, constraints, architecture_recommendation,
              anti_patterns, out_of_scope, ambiguity_detected, clarifying_questions,
              estimated_size, token_efficiency_gain, mode.
+
+    Side effect: when a non-empty success_criteria is returned and ambiguity is not
+    detected, writes state/session-goal.json so task_checkpoint and /done can
+    re-evaluate whether the goal is met after each task completes.
     """
-    return _optimize_intent(raw_input, clarified_context)
+    result = _optimize_intent(raw_input, clarified_context)
+    # Persist the goal so the loop can re-evaluate it at every task_checkpoint.
+    # Only write when the intent is unblocked and success_criteria is concrete.
+    _PLACEHOLDER_CRITERIA = {
+        "Task completed as described.",
+        "Deliverables match the architecture recommendation.",
+    }
+    if (
+        not result.get("ambiguity_detected")
+        and result.get("goal_translation", {}).get("translation_risk") != "high"
+        and result.get("success_criteria")
+        and result["success_criteria"] not in _PLACEHOLDER_CRITERIA
+    ):
+        from session import write_session_goal
+        write_session_goal(
+            raw_input,
+            result["success_criteria"],
+            result.get("goal_translation", {}).get("observable_outcome", ""),
+        )
+    return result
 
 
 @mcp.tool()
@@ -428,7 +451,12 @@ def save_contract(contract: str, project_dir: str) -> dict:
 
 
 @mcp.tool()
-def task_checkpoint(project_dir: str, task_label: str, size: str = "M") -> dict:
+def task_checkpoint(
+    project_dir: str,
+    task_label: str,
+    size: str = "M",
+    session_learnings: dict | None = None,
+) -> dict:
     """
     Write a mid-session checkpoint when a task completes and the user moves on.
 
@@ -443,10 +471,18 @@ def task_checkpoint(project_dir: str, task_label: str, size: str = "M") -> dict:
     project_dir: Current project directory (same as session_start).
     task_label: Short description of the completed task (e.g. "fixed login bug").
     size: Task size — XS, S, M, L, or XL (defaults to M).
+    session_learnings: optional observations from the current sub-task, e.g.
+      {"contract_unsaved": "always use async", "skill_gap": "nfr_check skipped",
+       "route_correction": "S→M override"}.
+      When the same gap_type appears 2+ times across checkpoints, returns
+      pattern_trigger so Claude acts immediately (mid-session adaptation).
 
-    Returns: brief (paste verbatim), checkpoint_written.
+    Returns: brief (paste verbatim), checkpoint_written, pattern_trigger (if any),
+             goal_check (if a session goal is active — goal_met: bool, goal_gap: str).
+             IMPORTANT: if goal_check.goal_met is False, do NOT close the session.
+             Derive the next task toward the stated goal and continue.
     """
-    return _task_checkpoint(project_dir, task_label, size)
+    return _task_checkpoint(project_dir, task_label, size, session_learnings)
 
 
 @mcp.tool()

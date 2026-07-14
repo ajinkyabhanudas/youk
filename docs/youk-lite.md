@@ -55,6 +55,20 @@ REQUIRED before writing any code or making architecture decisions:
 
 If step 2 or 3 cannot be named: stop and ask the user one question before proceeding.
 You MUST NOT proceed to implementation without completing this gate.
+
+## Session goal
+
+<!-- When the user states a multi-step or outcome-oriented goal ("don't stop until X",
+     "make this production-ready", "get it working end-to-end"):
+     Write one line here: GOAL: {what the user said} | CRITERIA: {what observable outcome satisfies it}
+
+     After each task completes, re-read this section and ask:
+     "Does what we just finished satisfy the CRITERIA above?"
+     - Yes → close the session normally
+     - No → derive the next task that moves toward CRITERIA and continue
+
+     Do NOT close the session on plan exhaustion — close only on goal satisfaction.
+     Update CRITERIA if the user refines what "done" means mid-session. -->
 ```
 
 That's it. Claude reads this at every session start.

@@ -20,6 +20,20 @@ with `close_cluster=True` so the compounding score updates.
 
 ## Execution sequence
 
+**Step 0 — Goal check (before anything else)**
+
+Read `state/session-goal.json` if it exists (path: `~/.claude/youk/state/session-goal.json`).
+
+If the file exists and `goal_met` is `false`:
+1. Surface: "Goal not yet met: {success_criteria}"
+2. State what observable outcome the user set at session start
+3. Derive the next concrete task that moves toward that outcome
+4. Continue working — do NOT proceed to Step 1 (code-review / session close)
+
+If the file does not exist, or `goal_met` is `true`, proceed to Step 1.
+
+**Goal close:** If you determine the goal is now met (all criteria satisfied by work done this session), call `youk-core.task_checkpoint(project_dir, "goal achieved: {stated_goal}", size="M")` — this persists `goal_met=True` and returns `goal_check.goal_met=True`. Then proceed to Step 1.
+
 **Step 1 — Code review**
 
 Call `youk-code.route_to_skill("code-review", "end-of-session review")`.

@@ -1893,7 +1893,130 @@ def task_checkpoint(
             "assess_skill → add_proposal → apply_proposal(confirmed=True) for SKILL_EDIT gaps. "
             "Do not defer to /done."
         )
+
+    # Goal re-evaluation: check whether the completed task satisfies the session goal.
+    # If goal_met=False and goal_gap is non-empty, CLAUDE.md's loop instruction fires:
+    # derive the next task toward the stated goal and continue — do not stop.
+    goal_check = _check_session_goal(task_label)
+    if goal_check:
+        result["goal_check"] = goal_check
+
     return result
+
+
+def write_session_goal(
+    raw_input: str,
+    success_criteria: str,
+    observable_outcome: str = "",
+) -> None:
+    """
+    Persist a session goal to state/session-goal.json.
+
+    Called by optimize_intent in server.py after it confirms the goal is
+    non-ambiguous and the success_criteria is concrete. Extracted here so
+    tests can verify goal persistence without importing the MCP-dependent server.
+    """
+    goal_file = YOUK_ROOT / "state" / "session-goal.json"
+    import datetime as _dt
+
+    goal_file.parent.mkdir(parents=True, exist_ok=True)
+    goal_file.write_text(json.dumps({
+        "stated_goal": raw_input,
+        "success_criteria": success_criteria,
+        "observable_outcome": observable_outcome,
+        "written_at": _dt.datetime.utcnow().isoformat(),
+        "goal_met": False,
+    }))
+
+
+def _check_session_goal(completed_task: str) -> dict | None:
+    """
+    Read state/session-goal.json and evaluate whether completed_task satisfies it.
+
+    Returns None if no goal file exists (goal-tracking not active).
+    Returns {goal_met: bool, stated_goal: str, success_criteria: str, goal_gap: str}
+    where goal_gap is empty when goal_met=True.
+    """
+    goal_file = YOUK_ROOT / "state" / "session-goal.json"
+    if not goal_file.exists():
+        return None
+
+    try:
+        goal_data = json.loads(goal_file.read_text())
+    except Exception:
+        return None
+
+    if goal_data.get("goal_met"):
+        return {
+            "goal_met": True,
+            "stated_goal": goal_data.get("stated_goal", ""),
+            "success_criteria": goal_data.get("success_criteria", ""),
+            "goal_gap": "",
+        }
+
+    stated_goal = goal_data.get("stated_goal", "")
+    success_criteria = goal_data.get("success_criteria", "")
+    observable_outcome = goal_data.get("observable_outcome", "")
+
+    # Heuristic: if the task label references a key term from success_criteria or
+    # observable_outcome, mark as partially satisfied but not done.
+    # The loop continues until all criteria terms are addressed by a checkpoint.
+    criteria_words = set(
+        w.lower()
+        for w in (success_criteria + " " + observable_outcome).split()
+        if len(w) > 4
+    )
+    task_words = set(w.lower() for w in completed_task.split())
+    overlap = criteria_words & task_words
+
+    # Accumulate covered criteria across checkpoints in a separate state file
+    coverage_file = YOUK_ROOT / "state" / "session-goal-coverage.json"
+    covered: set[str] = set()
+    try:
+        if coverage_file.exists():
+            covered = set(json.loads(coverage_file.read_text()).get("covered", []))
+    except Exception:
+        pass
+
+    covered |= overlap
+    try:
+        coverage_file.write_text(json.dumps({"covered": list(covered)}))
+    except Exception:
+        pass
+
+    # Goal is met when covered words represent ≥60% of criteria words,
+    # or when the task explicitly states goal completion.
+    completion_signals = {"complete", "done", "finished", "shipped", "merged", "deployed"}
+    explicit_done = bool(completion_signals & task_words) and bool(overlap)
+
+    coverage_ratio = len(covered) / len(criteria_words) if criteria_words else 1.0
+    goal_met = explicit_done or coverage_ratio >= 0.6
+
+    if goal_met:
+        # Persist the goal_met flag so future checkpoints don't re-evaluate
+        try:
+            goal_data["goal_met"] = True
+            goal_file.write_text(json.dumps(goal_data))
+        except Exception:
+            pass
+        return {
+            "goal_met": True,
+            "stated_goal": stated_goal,
+            "success_criteria": success_criteria,
+            "goal_gap": "",
+        }
+
+    goal_gap = (
+        f"Goal not yet satisfied. Criteria: '{success_criteria}'. "
+        f"Covered so far: {', '.join(sorted(covered)) or 'none'}. "
+        f"Derive the next task that moves closer to this outcome."
+    )
+    return {
+        "goal_met": False,
+        "stated_goal": stated_goal,
+        "success_criteria": success_criteria,
+        "goal_gap": goal_gap,
+    }
 
 
 def _compute_session_delta(
