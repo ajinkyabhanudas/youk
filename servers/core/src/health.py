@@ -1564,7 +1564,135 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
                 + "; ".join(research_topics)
             )
 
+    # Multi-directional convergence check — applies uniform pressure across all seven
+    # angles against the current state of youk. Not structured adversary personas —
+    # the same question applied from every direction until all angles converge or
+    # unknown-unknowns are flagged. Stops only when no new divergence appears.
+    convergence_check = _run_convergence_check(sessions_parsed, report)
+    if convergence_check:
+        base["convergence_check"] = convergence_check
+
     return base
+
+
+def _run_convergence_check(sessions: list[dict], report: object) -> dict:
+    """
+    Multi-directional convergence check for youk itself.
+
+    Applies pressure from all seven angles against the current state of youk.
+    Returns findings per angle and overall verdict. Called at every health cycle.
+    Stops when all angles return the same answer or flags unknown-unknowns.
+
+    This is the "is there more?" loop made structural — not a question but a
+    convergence engine that finds holes the four lenses and structured adversaries miss.
+    """
+    _YOUK_ROOT = Path("/youk")
+
+    findings: dict[str, str] = {}
+    unknown_unknowns: list[str] = []
+
+    # STRUCTURAL — what weak links exist regardless of feature quality?
+    structural_gaps = []
+    if not (_YOUK_ROOT / "CHANGELOG.md").exists():
+        structural_gaps.append("no CHANGELOG — upgrade path undocumented")
+    if not (_YOUK_ROOT / "SECURITY.md").exists():
+        structural_gaps.append("no SECURITY.md — threat model undocumented")
+    # Check Dockerfile pinning
+    for df_path in [_YOUK_ROOT / "servers" / "core" / "Dockerfile",
+                    _YOUK_ROOT / "servers" / "code" / "Dockerfile"]:
+        if df_path.exists():
+            content = df_path.read_text()
+            if "FROM python:" in content and "@sha256:" not in content:
+                structural_gaps.append(f"{df_path.name} base image not pinned to digest")
+    # Check state bug — coverage file should not accumulate across goals
+    coverage_file = _YOUK_ROOT / "state" / "session-goal-coverage.json"
+    goal_file = _YOUK_ROOT / "state" / "session-goal.json"
+    if coverage_file.exists() and not goal_file.exists():
+        structural_gaps.append("session-goal-coverage.json exists without active goal — stale coverage")
+    findings["structural"] = "CLEAR" if not structural_gaps else "GAPS: " + "; ".join(structural_gaps)
+
+    # OPERATIONAL — can a stranger use this without hand-holding?
+    operational_gaps = []
+    if not (_YOUK_ROOT / "scripts" / "install.sh").exists():
+        operational_gaps.append("no install script")
+    if not (_YOUK_ROOT / "scripts" / "doctor.sh").exists():
+        operational_gaps.append("no doctor script")
+    if not (_YOUK_ROOT / "docs" / "getting-started.md").exists():
+        operational_gaps.append("no getting-started doc")
+    findings["operational"] = "CLEAR" if not operational_gaps else "GAPS: " + "; ".join(operational_gaps)
+
+    # EXPERIENTIAL — would a principal engineer deploying to 50 engineers approve?
+    # Proxy: are there enough sessions with skill invocation to demonstrate real value?
+    total_sessions = len(sessions)
+    sessions_with_skills = sum(1 for s in sessions if s.get("capability_skills"))
+    skill_rate = sessions_with_skills / total_sessions if total_sessions else 0.0
+    if total_sessions < 5:
+        findings["experiential"] = "UNKNOWN — insufficient session history for principal engineer assessment"
+        unknown_unknowns.append("experiential: requires real principal engineer evaluation after 20+ sessions")
+    elif skill_rate < 0.5:
+        findings["experiential"] = f"WEAK — only {skill_rate:.0%} of sessions invoked capability skills; principal engineer would question ROI"
+    else:
+        findings["experiential"] = f"CLEAR — {skill_rate:.0%} skill invocation rate across {total_sessions} sessions"
+
+    # ADVERSARIAL — what would a competitor with deeper context reject?
+    adversarial_gaps = []
+    if total_sessions < 20:
+        adversarial_gaps.append(f"only {total_sessions} sessions — compounding claims unverifiable before session 20")
+    framing_sessions = [s for s in sessions if s.get("framing_correct") is not None]
+    if framing_sessions:
+        wrong_framing = sum(1 for s in framing_sessions if not s["framing_correct"])
+        if wrong_framing > 0:
+            adversarial_gaps.append(f"{wrong_framing} session(s) with wrong goal framing — competitor would call this an autonomy gap")
+    if not adversarial_gaps:
+        unknown_unknowns.append("adversarial: requires real competitor analysis — cannot be self-assessed")
+        findings["adversarial"] = "UNKNOWN — self-assessment cannot substitute for real competitor analysis"
+    else:
+        findings["adversarial"] = "GAPS: " + "; ".join(adversarial_gaps)
+
+    # TEMPORAL — does this hold across model generations?
+    # Proxy: are contracts and skills version-controlled? Is there a continuity mechanism?
+    temporal_gaps = []
+    if not (_YOUK_ROOT / "knowledge").exists():
+        temporal_gaps.append("no knowledge directory — nothing to persist across model generations")
+    if not (_YOUK_ROOT / "config").exists():
+        temporal_gaps.append("no config directory — behavioral contracts not versioned")
+    unknown_unknowns.append("temporal: model generation transition requires real testing when next model ships")
+    findings["temporal"] = "PARTIALLY CLEAR — contracts versioned; real model transition test pending" if not temporal_gaps else "GAPS: " + "; ".join(temporal_gaps)
+
+    # OUTCOME — do predictions match reality? (lagged signal — requires real usage)
+    outcome_sessions_with_convergence = [
+        s for s in sessions if "ConvergenceAtClose" in s.get("raw", "")
+    ]
+    if not outcome_sessions_with_convergence:
+        unknown_unknowns.append("outcome: no sessions with ConvergenceAtClose audit field yet — loop just instrumented")
+        findings["outcome"] = "UNKNOWN — outcome tracking just instrumented; requires sessions to accumulate"
+    else:
+        findings["outcome"] = f"TRACKING — {len(outcome_sessions_with_convergence)} session(s) with convergence data"
+
+    # SEMANTIC — given angles 1-6, does the label "elite" fit?
+    gap_angles = [a for a, v in findings.items() if v.startswith(("GAPS", "WEAK", "UNKNOWN"))]
+    if len(gap_angles) == 0:
+        findings["semantic"] = "CONVERGED — all angles clear; label is justified"
+        verdict = "CONVERGED"
+    elif len(gap_angles) <= 2 and all(findings[a].startswith("UNKNOWN") for a in gap_angles):
+        findings["semantic"] = f"PARTIALLY CONVERGED — {len(gap_angles)} angle(s) require external validation"
+        verdict = "PARTIALLY_CONVERGED"
+    else:
+        findings["semantic"] = f"LABEL NOT YET JUSTIFIED — {len(gap_angles)} angle(s) not clear: {', '.join(gap_angles)}"
+        verdict = "DIVERGED"
+
+    return {
+        "angles": findings,
+        "unknown_unknowns": unknown_unknowns,
+        "verdict": verdict,
+        "angles_clear": sum(1 for v in findings.values() if v.startswith("CLEAR")),
+        "distance_from_optimum": f"{len(gap_angles)}/7 angles not yet clear",
+        "note": (
+            "This check applies uniform pressure from all seven angles. "
+            "Contradictions between angles are the signal — follow them. "
+            "Unknown-unknowns require real external collision to resolve."
+        ),
+    }
 
 
 def _archive_applied_proposals() -> int:

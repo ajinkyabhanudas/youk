@@ -2314,6 +2314,27 @@ def end_session(
         except Exception:
             pass
 
+    # Write convergence state to audit — distance from optimum at session close.
+    # Reality writeback: if convergence-state.json exists, log angles_converged
+    # and any unknown_unknowns so self_heal can track cross-session drift.
+    cs_file = YOUK_ROOT / "state" / "convergence-state.json"
+    if cs_file.exists():
+        try:
+            cs = json.loads(cs_file.read_text())
+            angles_converged = cs.get("angles_converged", 0)
+            distance = cs.get("distance_from_optimum", "unknown")
+            unknown_unknowns = cs.get("unknown_unknowns", [])
+            uu_line = f"UnknownUnknowns: {'; '.join(unknown_unknowns)}\n" if unknown_unknowns else ""
+            with open(audit_file, "a") as f:
+                f.write(f"ConvergenceAtClose: {angles_converged}/7 angles — {distance}\n")
+                if uu_line:
+                    f.write(uu_line)
+            # Reset convergence state for next session — angles earned this session
+            # don't carry over; next session starts from unknown and earns convergence fresh.
+            cs_file.unlink()
+        except Exception:
+            pass
+
     # Clear both recovery files — session_end is the authoritative audit entry.
     # If these aren't cleared, next session_start would write duplicate entries.
     for _recovery_file in [
