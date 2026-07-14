@@ -47,6 +47,12 @@ The question that distinguishes the interpretations most efficiently is the righ
 A question is only worth asking if the answer changes what gets written by more than trivially.
 Never ask about something you can infer from context or assume safely.
 
+There are two distinct ways a request can be unclear:
+1. SCOPE AMBIGUITY: the implementation forks — "5 lines vs 80 lines" depending on interpretation. Caught by solution_fork + ambiguity_detected.
+2. INTENT OPACITY: the stated goal doesn't map to an observable outcome. The user said something that requires a translation step before it becomes a task, and that translation could be wrong. Caught by goal_translation.
+
+Intent opacity is NOT scope ambiguity. "Get it to elite level" is not scope-ambiguous (both readings lead to roughly the same size task). But it IS intent-opaque — "elite" has no observable referent. The translation from "elite" to a concrete deliverable happens silently and could be entirely wrong.
+
 Output ONLY valid JSON matching this schema:
 {
   "problem": "1-2 sentences, specific and actionable",
@@ -62,14 +68,25 @@ Output ONLY valid JSON matching this schema:
     "collapsing_question": "the single question whose answer makes A vs B obvious"
   },
   "ambiguity_detected": true/false,
-  "clarifying_questions": ["at most one question — the collapsing_question if ambiguity_detected, else empty"],
+  "goal_translation": {
+    "stated_as": "what the user said, verbatim",
+    "interpreted_as": "what I am about to build — the concrete deliverable I inferred",
+    "observable_outcome": "what the user would see or experience when this works — stated in terms of developer experience, not system output",
+    "translation_risk": "none | low | high",
+    "translation_question": "the single question that collapses the gap, if translation_risk is high — otherwise null"
+  },
+  "clarifying_questions": ["at most one question — the collapsing_question if ambiguity_detected, else the translation_question if translation_risk is high, else empty"],
   "estimated_size": "XS/S/M/L/XL",
   "token_efficiency_gain": "estimated token reduction vs. proceeding with raw input (e.g. '60%')"
 }
 
 Rules:
 - solution_fork is required when ambiguity_detected is true. When ambiguity_detected is false, set solution_fork to null.
-- clarifying_questions must contain AT MOST ONE item — the question from solution_fork.collapsing_question.
+- goal_translation is ALWAYS required. Never omit it.
+- translation_risk is "high" when ANY of: (a) goal contains quality words without referents — "better", "elite", "cleaner", "properly", "right"; (b) goal is about a feeling or mindset — "I want to trust it", "it should feel right"; (c) goal references a pattern or principle not yet operationalized — "discover the underlying pattern", "surface the mindset"; (d) the observable_outcome I would write describes system behavior, not developer experience.
+- translation_risk is "low" when the stated goal maps directly to a deliverable the user would recognize without explanation.
+- translation_risk is "none" when the request is a specific technical task with no quality-word translation required.
+- clarifying_questions must contain AT MOST ONE item. Scope ambiguity takes priority over translation risk — if both, ask the scope question.
 - Never ask about something answerable from context. Never ask multiple questions.
 - If the input is already clear and specific, set ambiguity_detected to false and clarifying_questions to [].
 - If the input mentions multiple unrelated concerns, separate them and note that in constraints.
@@ -215,6 +232,13 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
             "mode": "fast_pattern_match",
             "success_criteria": fast_result.get("success_criteria", "Deliverables match the architecture recommendation."),
             "constraints": fast_result.get("constraints", []),
+            "goal_translation": {
+                "stated_as": raw_input,
+                "interpreted_as": fast_result.get("problem", raw_input),
+                "observable_outcome": fast_result.get("success_criteria", "Deliverables match the architecture recommendation."),
+                "translation_risk": "none",
+                "translation_question": None,
+            },
         }
 
     # Check interpretation patterns from knowledge base
@@ -225,6 +249,8 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
 
     if not _ANTHROPIC_AVAILABLE:
         is_ambiguous = len(raw_input.split()) < 8
+        _OPAQUE_WORDS = {"elite", "better", "cleaner", "properly", "right", "trust", "feel", "mindset", "pattern", "principle"}
+        is_opaque = any(w in raw_input.lower().split() for w in _OPAQUE_WORDS)
         return {
             "problem": raw_input,
             "success_criteria": "Task completed as described.",
@@ -236,6 +262,13 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
                 "collapsing_question": "Could you describe the expected output in concrete terms?"
             } if is_ambiguous else None,
             "ambiguity_detected": is_ambiguous,
+            "goal_translation": {
+                "stated_as": raw_input,
+                "interpreted_as": raw_input,
+                "observable_outcome": "Task completed as described.",
+                "translation_risk": "high" if is_opaque else ("low" if is_ambiguous else "none"),
+                "translation_question": "What would you observe at the end of this that tells you it worked — in terms of your own experience, not the system's output?" if is_opaque else None,
+            },
             "clarifying_questions": ["Could you describe the expected output in concrete terms?"] if is_ambiguous else [],
             "estimated_size": "M",
             "token_efficiency_gain": "n/a",
@@ -283,6 +316,13 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
             "out_of_scope": [],
             "solution_fork": None,
             "ambiguity_detected": False,
+            "goal_translation": {
+                "stated_as": raw_input,
+                "interpreted_as": raw_input,
+                "observable_outcome": "Task completed as described.",
+                "translation_risk": "none",
+                "translation_question": None,
+            },
             "clarifying_questions": [],
             "estimated_size": "M",
             "token_efficiency_gain": "n/a",

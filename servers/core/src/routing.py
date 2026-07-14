@@ -84,6 +84,27 @@ def route_task(
             collapsing_question=question,
         )
 
+    # Intent-collapse gate: scope-ambiguity (above) catches "which of two implementations?"
+    # This gate catches "what does the user actually want to experience?" — a different failure.
+    # A request with quality words ("elite", "better") or mindset goals ("discover the pattern")
+    # is not scope-ambiguous but IS intent-opaque: either reading leads to the same size task,
+    # but the translation from stated goal to concrete deliverable may be entirely wrong.
+    gt = (intent_brief or {}).get("goal_translation") or {}
+    if gt.get("translation_risk") == "high":
+        question = (
+            gt.get("translation_question")
+            or "What would you observe at the end of this that tells you it worked — in terms of your own experience, not the system's output?"
+        )
+        return RoutingDecision(
+            task=task,
+            size=TaskSize.M,
+            ceremony="blocked",
+            skills=[],
+            nfr_mode="none",
+            blocked=True,
+            collapsing_question=question,
+        )
+
     routes = _load_routes()
     # If a resolved intent brief was provided, prefer its estimated size over
     # keyword scoring — the brief has already reasoned about the problem.
