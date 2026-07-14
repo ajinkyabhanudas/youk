@@ -153,6 +153,10 @@ dashboard: ## Terminal dashboard — org score, session history, skill gaps, pro
 report: ## Write HTML dashboard to ~/.claude/youk/reports/dashboard-YYYY-MM-DD.html
 	@python3 scripts/dashboard.py --html
 
+.PHONY: export-stats
+export-stats: ## Export session stats to STATS.md — shareable evidence of compounding
+	@python3 scripts/export_stats.py
+
 # ── Code quality ──────────────────────────────────────────────────────────────
 
 .PHONY: verify-mcp

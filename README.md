@@ -76,6 +76,8 @@ The score is driven by five signals: skill_invocation_rate (did a capability ski
 
 **What to do when STALLED:** use `/build` for code tasks and `/done` at session end. The score responds to capability skill invocation first, close rate second.
 
+**Exporting your stats:** Run `make export-stats` to write a `STATS.md` file — org_score trajectory, skill invocation rate, and session close rate in shareable markdown. The export includes a caveat: org_score measures process discipline (did the gates fire?), not outcome quality (was the code correct?). Stats are meaningful above 15 sessions; the export warns if you're below that threshold. [Author's stats →](STATS.md)
+
 ---
 
 ## Quick start
