@@ -250,6 +250,21 @@ def _detect_recurring_findings(sessions: list[dict], min_sessions: int = 3, days
     return patterns
 
 
+def _compute_prevented_cost_score(prevented_cost: dict) -> float:
+    """
+    Convert prevented_cost dict to a 0.0–1.0 score.
+    Weighted sum of outcome signals, normalized on ~10 events/month.
+    Each CRITICAL finding caught = 2.0 pts, HIGH = 1.0, reversal = 1.5, NFR gap = 0.8.
+    """
+    signals = (
+        prevented_cost.get("critical_findings", 0) * 2.0
+        + prevented_cost.get("high_findings", 0) * 1.0
+        + prevented_cost.get("direction_reversals", 0) * 1.5
+        + prevented_cost.get("nfr_gaps_flagged", 0) * 0.8
+    )
+    return min(signals / 10.0, 1.0)
+
+
 def _score_org(audit_texts: list[str]) -> float:
     if not audit_texts:
         return 5.0
@@ -271,10 +286,15 @@ def _score_org(audit_texts: list[str]) -> float:
     over_budget_count = sum(1 for s in token_sessions if s["tokens_ratio"] > 2.0)
     token_penalty = -1.0 if len(token_sessions) >= 2 and over_budget_count / max(len(token_sessions), 1) > 0.5 else 0.0
 
+    # Outcome quality: prevented_cost_score rewards catching real findings, reversals, NFR gaps
+    prevented_cost = _compute_prevented_cost(sessions, days=30)
+    prevented_score = _compute_prevented_cost_score(prevented_cost) * 0.5
+
     # capability_skill_rate (2.0 weight): primary signal — did developer ability compound?
     # close_rate (0.5 weight): completion bonus only — /done matters but doesn't dominate
     # gap_resolution_rate (0.5 weight): are gaps being detected as new (not recurring)?
-    score = 5.0 + (capability_skill_rate * 2.0) + (close_rate * 0.5) + (gap_resolution_rate * 0.5) + token_penalty
+    # prevented_score (0.5 weight): outcome quality — did skills catch something real?
+    score = 5.0 + (capability_skill_rate * 2.0) + (close_rate * 0.5) + (gap_resolution_rate * 0.5) + prevented_score + token_penalty
 
     # Discipline gate: 3+ consecutive sessions with zero capability skills → cap at 6.5.
     # Reaching 7.0+ requires demonstrated use of capability skills, not just /done ritual.

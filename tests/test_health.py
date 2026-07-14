@@ -2261,3 +2261,76 @@ class TestDetectRecurringFindings:
         assert patterns[0]["count"] == 4
         assert patterns[1]["category"] == "retry"
         assert patterns[1]["count"] == 3
+
+
+class TestComputePreventedCostScore:
+    def test_zero_with_no_outcomes(self):
+        from health import _compute_prevented_cost_score
+        result = _compute_prevented_cost_score({
+            "critical_findings": 0,
+            "high_findings": 0,
+            "direction_reversals": 0,
+            "nfr_gaps_flagged": 0,
+        })
+        assert result == 0.0
+
+    def test_caps_at_one(self):
+        from health import _compute_prevented_cost_score
+        # Far over the 10-event normalization ceiling
+        result = _compute_prevented_cost_score({
+            "critical_findings": 10,
+            "high_findings": 10,
+            "direction_reversals": 10,
+            "nfr_gaps_flagged": 10,
+        })
+        assert result == 1.0
+
+    def test_partial_score_computed_correctly(self):
+        from health import _compute_prevented_cost_score
+        # 1 CRITICAL (×2.0) + 2 HIGH (×1.0) = 4.0 → 4.0/10 = 0.4
+        result = _compute_prevented_cost_score({
+            "critical_findings": 1,
+            "high_findings": 2,
+            "direction_reversals": 0,
+            "nfr_gaps_flagged": 0,
+        })
+        assert abs(result - 0.4) < 0.001
+
+    def test_missing_keys_default_to_zero(self):
+        from health import _compute_prevented_cost_score
+        # Empty dict — should not raise
+        result = _compute_prevented_cost_score({})
+        assert result == 0.0
+
+
+class TestScoreOrgWithPreventedCost:
+    def test_org_score_ceiling_is_8_5(self, claude_root):
+        """With all rates 1.0 and prevented_score 1.0, ceiling is 8.5."""
+        from health import _score_org
+
+        # 3 sessions: all close_cluster, all capability, all with findings (CRITICAL)
+        blocks = [
+            _audit_block_with_findings(n=i, critical=5, high=3, direction_reversal=True)
+            for i in range(1, 4)
+        ]
+        score = _score_org(blocks)
+        # Score = process perfect (8.0) + up to 0.5 (outcome) = 8.5
+        assert score >= 8.0
+        assert score <= 8.5
+
+    def test_org_score_rises_with_prevented_cost(self, claude_root):
+        """Adding outcome findings lifts score above process-only baseline."""
+        from health import _score_org
+
+        # Baseline: sessions with skills but no findings
+        baseline_blocks = [_audit_block(n=i, skills="code-review") for i in range(1, 4)]
+        baseline_score = _score_org(baseline_blocks)
+
+        # With findings: same process quality + outcome signals
+        findings_blocks = [
+            _audit_block_with_findings(n=i, critical=2, high=1)
+            for i in range(1, 4)
+        ]
+        findings_score = _score_org(findings_blocks)
+
+        assert findings_score >= baseline_score
