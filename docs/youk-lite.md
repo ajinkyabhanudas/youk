@@ -69,6 +69,25 @@ You MUST NOT proceed to implementation without completing this gate.
 
      Do NOT close the session on plan exhaustion — close only on goal satisfaction.
      Update CRITERIA if the user refines what "done" means mid-session. -->
+
+## Growth
+
+<!-- Tracks developer autonomy — when this developer starts answering NFR questions
+     before being asked, the loop is working. Update this at session end.
+
+     NFR pre-empts: 0
+     (Increment when the developer included performance/reliability/security/observability
+     answers in their request WITHOUT being prompted by the direction gate.)
+
+     At NFR pre-empts ≥ 8: note aloud once — "You've been catching NFR gaps before I ask.
+     Running the gate in validation mode only — I'll surface gaps, not ask questions you've
+     already answered." Then reduce the direction gate to gap-check only for that session.
+
+     Direction gate pre-empts: 0
+     (Increment when the developer named the assumption and the simpler version unprompted.)
+
+     At Direction gate pre-empts ≥ 5: reduce the gate to silent mode for that session —
+     run it internally, only surface if a BLOCKING objection is found. -->
 ```
 
 That's it. Claude reads this at every session start.

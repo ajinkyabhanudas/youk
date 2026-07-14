@@ -1752,6 +1752,20 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass
 
+    # Adaptive ceremony: compute nfr_check autonomy rate from recent audit.
+    # When rate ≥ 0.4, nfr_check runs in validate mode (coverage check only, no prompting).
+    # This is the compounding signal made visible: ceremony reduces as developer grows.
+    _nfr_autonomy_rate = 0.0
+    _nfr_autonomy_mode = "standard"
+    try:
+        from health import _parse_audit_sessions, _compute_skill_autonomy_rate, _read_recent_audit_logs
+        _recent_texts = _read_recent_audit_logs(days=90)
+        _recent_sessions = _parse_audit_sessions(_recent_texts)
+        _nfr_autonomy_rate = _compute_skill_autonomy_rate(_recent_sessions, "nfr_check")
+        _nfr_autonomy_mode = "validate" if _nfr_autonomy_rate >= 0.4 else "standard"
+    except Exception:
+        pass  # degrade gracefully — standard mode is always safe
+
     return SessionState(
         project=slug,
         resume_point=resume_point,
@@ -1773,6 +1787,8 @@ def start_session(project_dir: str) -> SessionState:
         },
         dashboard_summary=dashboard_summary,
         brief=brief,
+        nfr_autonomy_mode=_nfr_autonomy_mode,
+        developer_autonomy_rate=round(_nfr_autonomy_rate, 2),
     )
 
 

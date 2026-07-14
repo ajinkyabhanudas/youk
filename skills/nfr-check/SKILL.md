@@ -72,11 +72,31 @@ Invoke the full 5-phase check when:
 
 ---
 
+## Adaptive Mode (auto-selected from session state)
+
+Before running any other mode, read `nfr_autonomy_mode` from the session_start return
+(available in the context brief as `nfr_autonomy_mode: standard | validate`).
+
+| Mode | When | Behaviour |
+|------|------|-----------|
+| `standard` | `nfr_autonomy_mode: standard` (default) | Full 4-question block — ask all questions |
+| `validate` | `nfr_autonomy_mode: validate` (autonomy_rate ≥ 0.4) | Developer has internalized the gate. Scan the task description for existing NFR coverage. Only surface gaps — do not ask questions that are already answered. Emit `[NFR — VALIDATE]` block listing covered + missing. If all 4 are covered: emit `[NFR COVERED — developer pre-empted]` and proceed. |
+
+When `validate` mode fires, emit a one-line note:
+`[Adaptive] Running nfr_check in validate mode — you've been catching these before I ask.`
+
+This is the signal to the developer that compounding is observable: youk is adjusting
+its ceremony because their judgment has grown. Do NOT silently skip nfr_check —
+always run it, even in validate mode, and always emit the [NFR DECISION BLOCK].
+The block content is what changes (gaps only vs. all decisions), not whether it runs.
+
+---
+
 ## Invocation Grammar
 
 | Invocation | Behaviour |
 |------------|-----------|
-| *(no directive, S/M feature)* | 4-question quick block — default |
+| *(no directive, S/M feature)* | Auto-mode from session state (standard or validate) |
 | `full` | Full 5-phase check — for L/XL features |
 | `caching` | Caching category only |
 | `retry` | Retry + timeout + idempotency only |

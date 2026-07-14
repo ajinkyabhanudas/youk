@@ -109,6 +109,12 @@ class SessionState:
     # apply_proposal within the session, before session_end). Lets self_heal know that
     # some gaps were already addressed and shouldn't be re-flagged.
     mid_session_adaptations_applied: int = 0
+    # Adaptive ceremony mode for nfr_check, derived from developer_autonomy_rate at session start.
+    # "standard": ask all 4 questions (default, autonomy_rate < 0.4)
+    # "validate":  developer has internalized the gate — run quick coverage check only, no prompting
+    nfr_autonomy_mode: str = "standard"
+    # Raw developer autonomy rate for this project (fraction of sessions with DeveloperCaught ≥ 1)
+    developer_autonomy_rate: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -129,6 +135,8 @@ class SessionState:
             "dashboard_summary": self.dashboard_summary,
             "brief": self.brief,
             "mid_session_adaptations_applied": self.mid_session_adaptations_applied,
+            "nfr_autonomy_mode": self.nfr_autonomy_mode,
+            "developer_autonomy_rate": self.developer_autonomy_rate,
         }
 
 

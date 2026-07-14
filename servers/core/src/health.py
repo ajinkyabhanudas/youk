@@ -298,6 +298,27 @@ def _compute_autonomy_rate(sessions: list[dict]) -> float:
     return caught_count / len(tracked)
 
 
+def _compute_skill_autonomy_rate(sessions: list[dict], skill: str) -> float:
+    """
+    Autonomy rate for a specific skill — fraction of sessions (after session 5)
+    where developer_caught contains that skill name.
+
+    Used to determine adaptive ceremony mode per skill (e.g. nfr_check → validate mode).
+    Returns 0.0 when fewer than 6 sessions exist (no adaptation before history exists).
+    """
+    if len(sessions) < 6:
+        return 0.0
+    skill_lower = skill.lower().replace("-", "_")
+    tracked = [s for s in sessions if s.get("developer_caught") is not None]
+    if not tracked:
+        return 0.0
+    caught_count = sum(
+        1 for s in tracked
+        if any(c.lower().replace("-", "_") == skill_lower for c in s["developer_caught"])
+    )
+    return caught_count / len(tracked)
+
+
 def _compute_depth_multiplier(sessions: list[dict]) -> float:
     """
     Score multiplier based on session depth with this project.
