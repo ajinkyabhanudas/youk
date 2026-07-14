@@ -51,6 +51,10 @@ def session_end(
     close_cluster: bool = False,
     skill_gaps: dict | None = None,
     mid_session_adaptations_applied: int = 0,
+    findings: dict | None = None,
+    finding_categories: list[str] | None = None,
+    nfr_gaps: list[str] | None = None,
+    direction_reversal: bool = False,
 ) -> dict:
     """
     End a youk session. Writes audit log entry, saves contracts, checks session-close cluster.
@@ -84,6 +88,23 @@ def session_end(
     as MidSessionAdaptations: N in the audit log so self_heal can skip re-flagging
     gaps that were already fixed this session.
 
+    findings: Dict with severity keys (CRITICAL, HIGH, MEDIUM, LOW) mapping to int counts.
+    Written as Findings: N (CRITICAL=X, HIGH=Y) line. Pass when code-review or
+    security-review ran and produced findings. Used by health.py to compute
+    finding_actionability_rate and prevented_cost_score.
+
+    finding_categories: List of finding category labels (e.g. ["auth", "idempotency"]).
+    Written as FindingCategories: auth,idempotency line. Parsed by health.py for
+    recurring pattern detection across sessions.
+
+    nfr_gaps: List of NFR gap categories flagged pre-build (e.g. ["idempotency", "caching"]).
+    Written as NFRGap: {category} lines. Feeds prevented_cost_score — each pre-build gap
+    flagged = prevented incident candidate.
+
+    direction_reversal: True if challenge skill rejected the initial direction this session.
+    Written as DirectionReversal: yes. Feeds prevented_cost_score — each reversal
+    represents saved wrong-path sessions.
+
     Returns: knowledge_extracted, proposals_added, audit_written,
              session_close_cluster_detected, contracts_saved.
     """
@@ -92,7 +113,11 @@ def session_end(
     except HardRuleViolation as e:
         return {"error": str(e), "blocked": True, "rule_id": e.rule_id}
 
-    return end_session(summary, commits_made, explicit_contracts, skills_used, close_cluster, skill_gaps, mid_session_adaptations_applied)
+    return end_session(
+        summary, commits_made, explicit_contracts, skills_used, close_cluster,
+        skill_gaps, mid_session_adaptations_applied,
+        findings, finding_categories, nfr_gaps, direction_reversal,
+    )
 
 
 @mcp.tool()

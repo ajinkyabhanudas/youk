@@ -1949,6 +1949,10 @@ def end_session(
     close_cluster: bool = False,
     skill_gaps: dict[str, list[str]] | None = None,
     mid_session_adaptations_applied: int = 0,
+    findings: dict | None = None,
+    finding_categories: list[str] | None = None,
+    nfr_gaps: list[str] | None = None,
+    direction_reversal: bool = False,
 ) -> dict:
     """
     Write structured audit log entry, detect and save contract phrases.
@@ -1956,6 +1960,19 @@ def end_session(
     explicit_contracts: Contract lines to save directly (e.g. extracted from
     conversation by Claude before calling session_end). These take priority over
     the phrase-detected ones and are written verbatim to contracts.md.
+
+    findings: dict with keys CRITICAL, HIGH, MEDIUM, LOW (int counts) from
+    code-review or security-review. Written as Findings: N (CRITICAL=X, HIGH=Y) line.
+
+    finding_categories: list of finding category labels (e.g. ["auth", "idempotency"]).
+    Written as FindingCategories: auth,idempotency line. Parsed by health.py for
+    recurring pattern detection.
+
+    nfr_gaps: list of NFR gap categories flagged pre-build by nfr-check.
+    Written as NFRGap: {category} lines.
+
+    direction_reversal: True when challenge skill rejected the initial direction.
+    Written as DirectionReversal: yes line. Feeds prevented_cost_score.
     """
     # 3B — Auto-draft summary when developer passes empty string or "done"
     # Reads the session plan written by session_start so the audit entry is useful
@@ -2001,6 +2018,20 @@ def end_session(
                 gap_lines += f"SkillGap: {skill_name} — {gap}\n"
     adaptations_line = f"MidSessionAdaptations: {mid_session_adaptations_applied}\n" if mid_session_adaptations_applied > 0 else ""
 
+    # Outcome quality fields — written when capability review skills ran with findings
+    findings_line = ""
+    if findings:
+        total = sum(findings.values())
+        parts = [f"{k}={v}" for k, v in findings.items() if v > 0]
+        findings_line = f"Findings: {total} ({', '.join(parts)})\n" if parts else f"Findings: {total}\n"
+    finding_categories_line = ""
+    if finding_categories:
+        finding_categories_line = f"FindingCategories: {','.join(finding_categories)}\n"
+    nfr_gap_lines = ""
+    if nfr_gaps:
+        nfr_gap_lines = "".join(f"NFRGap: {gap}\n" for gap in nfr_gaps)
+    direction_reversal_line = "DirectionReversal: yes\n" if direction_reversal else ""
+
     token_data = _read_and_clear_tokens()
     total_tokens = token_data["total_input"] + token_data["total_output"]
     budget = token_data.get("token_budget", 0)
@@ -2022,6 +2053,10 @@ def end_session(
         f"{tokens_line}"
         f"{adaptations_line}"
         f"{gap_lines}"
+        f"{findings_line}"
+        f"{finding_categories_line}"
+        f"{nfr_gap_lines}"
+        f"{direction_reversal_line}"
     )
 
     with open(audit_file, "a") as f:
