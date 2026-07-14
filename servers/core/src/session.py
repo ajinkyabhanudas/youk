@@ -1945,11 +1945,31 @@ def task_checkpoint(
     if _slug_val and size.upper() not in ("XS", "S"):
         _update_resume_point(_slug_val, f"In progress: {task_label[:180]}")
 
+    # Routing breadcrumb gate: for M+ tasks, verify route_task was called before work started.
+    # If the breadcrumb is absent, routing was bypassed — surface it so the model can correct now.
+    routing_missed = False
+    if size.upper() not in ("XS", "S"):
+        breadcrumb_file = YOUK_ROOT / "state" / "routing-breadcrumb.json"
+        if breadcrumb_file.exists():
+            try:
+                breadcrumb_file.unlink()  # consume: one breadcrumb per task
+            except Exception:
+                pass
+        else:
+            routing_missed = True
+
     result = {
         "brief": brief_result.get("brief", ""),
         "checkpoint_written": checkpoint_written,
         "instruction": "Paste the 'brief' verbatim in your response to anchor context.",
     }
+    if routing_missed:
+        result["routing_missed"] = True
+        result["routing_action"] = (
+            "route_task was not called before this M+ task. "
+            "Call route_task now and run the returned skill chain (challenge → nfr_check → dev_loop) "
+            "before continuing. This session will not compound without it."
+        )
     if pattern_trigger:
         result["pattern_trigger"] = pattern_trigger
         result["pattern_action"] = (

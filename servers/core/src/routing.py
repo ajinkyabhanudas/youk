@@ -1,5 +1,7 @@
 from __future__ import annotations
+import json
 import yaml
+from datetime import datetime
 from pathlib import Path
 
 import sys
@@ -8,6 +10,20 @@ from models import TaskSize, RoutingDecision, SoftRuleWarning, ViolationType
 
 YOUK_ROOT = Path("/youk")
 ROUTES_FILE = YOUK_ROOT / "config" / "routes.yaml"
+_BREADCRUMB_FILE = YOUK_ROOT / "state" / "routing-breadcrumb.json"
+
+
+def _write_routing_breadcrumb(task: str, size: str) -> None:
+    """Record that route_task fired for this task. Cleared by task_checkpoint after read."""
+    try:
+        _BREADCRUMB_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _BREADCRUMB_FILE.write_text(json.dumps({
+            "task": task[:200],
+            "size": size,
+            "routed_at": datetime.utcnow().isoformat(),
+        }))
+    except Exception:
+        pass
 
 
 def _load_routes() -> dict:
@@ -154,7 +170,7 @@ def route_task(
             f"Redirect with one line if wrong, otherwise proceeding."
         )
 
-    return RoutingDecision(
+    decision = RoutingDecision(
         task=task,
         size=size,
         ceremony=ceremony,
@@ -164,3 +180,8 @@ def route_task(
         warnings=warnings,
         plan_hook=plan_hook,
     )
+    # Write breadcrumb so task_checkpoint can verify routing ran before M+ work.
+    # Only write for non-blocked M+ decisions — XS/S bypass is intentional.
+    if not decision.blocked and size in (TaskSize.M, TaskSize.L, TaskSize.XL):
+        _write_routing_breadcrumb(task, size.value)
+    return decision
