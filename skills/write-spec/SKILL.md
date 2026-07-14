@@ -190,6 +190,25 @@ Maximum 3 open questions. More than 3 means the spec is not ready.
 
 ---
 
+### Phase 7.5 — SELF-CHECK
+
+Mandatory before EXEC BRIEF. One question — a specific named answer is required.
+
+**Q — Confusion check:**
+"What is the one thing this spec does NOT say that will cause the most confusion during
+implementation? Name it specifically — not 'unclear requirements' but the exact statement
+an engineer will ask about. Then decide: does it belong in the spec, or is it intentionally
+deferred with a named owner?"
+
+Emit one of:
+- `[DEPTH NOTE: {gap named} → {added to spec / deferred to Q{N} with owner}]`
+- `[SHALLOW: {what was not scoped — why the spec is not implementation-ready yet}]`
+
+If the gap belongs in the spec: add it before emitting EXEC BRIEF.
+If deferred: add to OPEN QUESTIONS with a default and owner.
+
+---
+
 ### Phase 8 — EXEC BRIEF
 
 One paragraph. Readable by a non-technical stakeholder in 30 seconds.

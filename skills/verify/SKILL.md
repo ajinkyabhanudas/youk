@@ -116,6 +116,29 @@ Next: {COMMITTED (if all must-pass) / FIX {test N} then re-verify / BLOCKED beca
 
 ---
 
+## Phase 4.5: SELF-CHECK
+
+Mandatory before finalizing REPORT. Two questions — specific named answers only.
+
+**Q1 — State machine check:**
+"Which failure mode did I not test because it required understanding the system's state
+machine rather than just executing the happy path? Name the specific untested state
+transition. If all transitions were tested, state why (e.g., 'stateless operation')."
+
+**Q2 — Leverage check:**
+"Did I test the failure mode most likely to break in production, or the one easiest to
+test in this session? If the answer is 'easiest to test' — what is the harder test I
+should add before calling this VERIFIED?"
+
+Emit one of:
+- `[DEPTH NOTE: {untested transition named or "N/A — stateless"} / {production risk covered}]`
+- `[COVERAGE GAP: {specific failure mode not tested} — VERIFIED conditional on this being out of scope]`
+- `[SHALLOW: {what was not tested and why it's blocking}]` — escalates to NEEDS FIX if the gap is must-pass
+
+If COVERAGE GAP is emitted: add it to REPORT as a known gap with rationale for deferral.
+
+---
+
 ## Quality bars
 
 1. Every error state in the implementation must have a corresponding test.

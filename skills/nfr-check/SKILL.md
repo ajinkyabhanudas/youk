@@ -242,7 +242,15 @@ Emit:
 New ADR triggers:    [list — each is a discrete architectural decision that deserves a DECISIONS.md entry]
 Conflicts found:     [list — any NFR decision that contradicts an existing ADR]
 Dev-loop readiness:  [READY / BLOCKED: reason]
+NFRGap: {category}  [one line per gap found — categories: caching, retry, auth, idempotency,
+                     rate-limiting, observability, consistency, data-volume]
 ```
+
+**NFRGap audit field:** For each mandatory NFR that was found to be MISSING or UNDECIDED
+pre-build (not already addressed in an existing decision block), emit one `NFRGap: {category}`
+line. These lines are parsed by health.py to compute `nfr_gaps_flagged` in prevented_cost_score.
+Each pre-build gap flagged = a potential incident avoided. Pass `nfr_gaps=[list]` to
+`youk-core.session_end()` when closing the session.
 
 If BLOCKED, state what must be resolved before implementation can begin.
 

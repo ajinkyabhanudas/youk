@@ -215,6 +215,30 @@ Priority: HIGH | MEDIUM | LOW
 
 ---
 
+### Phase 4.5 — SELF-CHECK
+
+Mandatory before PERSIST. Two questions — specific named answers only.
+
+**Q1 — Recognition gap check:**
+"Which concept I'm about to persist would I fail to recognize in the next session because
+its surface form will look different? Name the recognition gap — not the concept itself,
+but the specific pattern mismatch that would cause me to miss it when I see it again."
+
+**Q2 — Contract vs. note check:**
+"For each concept: is this worth a contract (a behavioral agreement that changes future
+action) or just a note (interesting but won't change what I do next time)? Classify
+explicitly. Notes do not belong in contracts.md. Contracts that can't be stated as
+behavioral rules don't belong in contracts.md either."
+
+Emit one of:
+- `[DEPTH NOTE: {recognition gap named for concept N} / contracts: {list} / notes: {list}]`
+- `[SHALLOW: {concept was noted because salient, not because it changes behavior}]`
+
+If a concept is classified as "note-only": do not persist it to domain knowledge files.
+If a concept is classified as "contract": route to `save_contract()` instead of domain file.
+
+---
+
 ### Phase 5 — PERSIST
 
 Write learnings to the appropriate knowledge files. Read `references/knowledge-structure.md`

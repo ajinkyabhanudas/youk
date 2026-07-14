@@ -136,6 +136,29 @@ After all checks:
 
 ---
 
+### Phase 3.5 — SELF-CHECK
+
+Mandatory before emitting VERDICT. Two questions — each requires a specific named answer.
+
+**Q1 — Depth check:**
+"What is the attack vector this review would miss if the attacker already has read access
+to the application config? Name the specific escalation path. If I cannot name it, I have
+run a checklist, not a threat model."
+
+**Q2 — Fit check:**
+"Is the most dangerous finding in my output actually dangerous in THIS system's threat model,
+or am I applying a generic checklist to a context that doesn't fit? If the answer is 'generic
+checklist' — the finding gets demoted or removed."
+
+Emit one of:
+- `[DEPTH NOTE: {specific escalation path named, or "none — config read access not applicable"}]`
+- `[FIT CHECK: {N findings confirmed context-specific / "all findings are context-appropriate"}]`
+- `[SHALLOW: {what wasn't looked at — specific surface missed}]`
+
+`[SHALLOW]` is a valid and honest outcome. Do not manufacture a threat.
+
+---
+
 ### Phase 4 — VERDICT
 
 ```

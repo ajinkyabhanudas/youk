@@ -154,6 +154,26 @@ REVERSAL CONDITIONS:
 
 ---
 
+### Phase 4.5 — SELF-CHECK
+
+Mandatory before DOCUMENT. One question — a specific named answer is required.
+
+**Q — Proxy check:**
+"What is the decision I'm avoiding by making this one? Name it explicitly. A good ADR
+records the real decision. A proxy ADR records a symptom of the real decision, which
+means the real decision will resurface. If I cannot name what I'm avoiding, this ADR
+may be a proxy — state that explicitly before documenting."
+
+Emit one of:
+- `[DEPTH NOTE: real decision captured / proxy avoided: {what would have been the proxy}]`
+- `[PROXY RISK: {the avoided decision} — documenting the surface decision; real decision needs separate ADR]`
+- `[SHALLOW: {what wasn't resolved — the decision is not yet scoped enough to be real}]`
+
+If PROXY RISK: continue to DOCUMENT the surface decision, but add a note in Consequences
+identifying the deferred real decision and its trigger.
+
+---
+
 ### Phase 5 — DOCUMENT
 
 Write the canonical DECISIONS.md entry using the format from `references/adr-format.md`.

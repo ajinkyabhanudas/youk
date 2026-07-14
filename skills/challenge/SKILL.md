@@ -148,6 +148,12 @@ After all lenses run:
 - If any HIGH: direction NEEDS SHARPENING — emit findings, propose revised direction, go to Phase 3
 - If any BLOCKING: direction WRONG — stop, surface the blocking objection, ask user to redirect
 
+**Direction reversal audit field:** If the initial direction is rejected (WRONG verdict) or
+substantially revised via ITERATE (the revised direction differs from the original), emit:
+`direction_reversal: yes` — this field is logged in session_end to feed prevented_cost_score.
+A direction reversal = wrong-path sessions avoided. Pass `direction_reversal=True` to
+`youk-core.session_end()` when closing the session.
+
 > Compact summary: "{N} objections found ({n} BLOCKING, {n} HIGH, {n} LOW). Verdict: [PASSED / NEEDS SHARPENING / WRONG]"
 
 ---

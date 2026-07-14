@@ -169,6 +169,30 @@ with no surface in this diff.
 
 ---
 
+### Phase 3.5 — SELF-CHECK
+
+Mandatory before emitting VERDICT. Two questions — each requires a specific named answer.
+Hedging ("I may have missed edge cases") is not an answer.
+
+**Q1 — Depth check:**
+"Name the one class of bug in this diff I would only catch if I understood this system's
+concurrency or state model. If I cannot name it specifically, I have reviewed the surface
+only — not the system."
+
+**Q2 — Signal check:**
+"Would a developer who has worked in this codebase for 6 months consider each HIGH/CRITICAL
+finding worth their attention right now? For any finding where the answer is no — remove it.
+I am producing noise, not signal."
+
+Emit one of:
+- `[DEPTH NOTE: {specific class of bug named or "none — surface-level only if concurrency N/A"}]`
+- `[SIGNAL CHECK: {N findings survive after noise removal / "all findings confirmed signal"}]`
+- `[SHALLOW: {what was not looked at and why}]` — if Q1 cannot be answered with a specific bug class
+
+Do not manufacture depth. `[SHALLOW]` is a valid and honest outcome.
+
+---
+
 ### Phase 4 — VERDICT
 
 ```

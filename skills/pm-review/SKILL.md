@@ -172,6 +172,27 @@ Early signal:   {how will we know within N days if this is failing?}
 
 ---
 
+### Phase 5.5 — SELF-CHECK
+
+Mandatory before RECOMMEND. Two questions — specific named answers only.
+
+**Q1 — Adoption check:**
+"If this feature ships and has zero adoption in 60 days, what is the most specific reason?
+Not 'wrong users' or 'bad timing' — name the exact missing value proposition I can articulate
+right now, from the evidence I have. If I cannot name it, the risk assessment is incomplete."
+
+**Q2 — Rationalization check:**
+"Is this a genuine build/don't-build decision, or am I rationalizing a direction the user
+already decided? If the evidence points one way and my RECOMMEND goes the other — name why."
+
+Emit one of:
+- `[DEPTH NOTE: {specific adoption risk named} / {decision is genuine vs. rationalized}]`
+- `[SHALLOW: {what was not assessed — specific gap in evidence}]`
+
+`[SHALLOW]` is a valid outcome. A pm-review that can't answer Q1 has incomplete product risk.
+
+---
+
 ### Phase 6 — RECOMMEND
 
 Issue a clear recommendation. No hedge words.
