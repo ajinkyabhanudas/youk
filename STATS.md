@@ -28,6 +28,25 @@ Capability skills: `nfr-check`, `dev-loop`, `code-review`, `stress-test`, `adr`,
 
 *Target: >50%. `/done` is what closes the learning loop.*
 
+## developer autonomy
+
+*Did the developer pre-empt gates before youk asked? This is the primary signal that compounding is working — the developer internalised the gate, not just the tool.*
+
+**0%** — developer pre-empted a gate in 0 of 38 sessions where a gate could have fired.
+
+*Target: rising trend over time. 0% is normal in early sessions.*
+
+## skill gap trend
+
+*SkillGap lines written per month — how many times youk detected a missed gate. A decreasing trend means gaps are being fixed. An increasing trend means new patterns are being encountered (expected in early sessions).*
+
+| month | gaps logged |
+|-------|-------------|
+| 2026-06 | 2 |
+| 2026-07 | 23 |
+
+*Target: stable or decreasing after session 20.*
+
 ## trajectory table
 
 | date | org score |

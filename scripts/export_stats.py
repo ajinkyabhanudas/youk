@@ -165,9 +165,45 @@ def _gate_trend(metrics: list[MetricsSnapshot]) -> tuple[float | None, float | N
     return traj[0][1], traj[-1][1]
 
 
+def _developer_autonomy(audit_dir: Path) -> tuple[int, int]:
+    """
+    Returns (caught_sessions, tracked_sessions).
+    caught = sessions where DeveloperCaught: line appears (dev pre-empted a gate).
+    tracked = sessions with any Skills: line (gate could have fired).
+    """
+    caught = 0
+    tracked = 0
+    for f in sorted(audit_dir.glob("*.md")):
+        text = f.read_text(encoding="utf-8")
+        for block in text.split("### Session —")[1:]:
+            has_skills_line = any(
+                re.match(r"^Skills:\s*", line) for line in block.splitlines()
+            )
+            if has_skills_line:
+                tracked += 1
+            if "DeveloperCaught:" in block:
+                caught += 1
+    return caught, tracked
+
+
+def _skill_gap_trend(audit_dir: Path) -> list[tuple[str, int]]:
+    """Returns [(month, gap_count)] sorted oldest→newest — shows whether gaps are shrinking."""
+    by_month: dict[str, int] = {}
+    for f in sorted(audit_dir.glob("*.md")):
+        month = f.stem  # filename is YYYY-MM.md
+        count = f.read_text(encoding="utf-8").count("SkillGap:")
+        if count:
+            by_month[month] = count
+    return sorted(by_month.items())
+
+
 # ── Renderer ───────────────────────────────────────────────────────────────────
 
-def _render(sessions: list[SessionRecord], metrics: list[MetricsSnapshot]) -> str:
+def _render(
+    sessions: list[SessionRecord],
+    metrics: list[MetricsSnapshot],
+    audit_dir: Path | None = None,
+) -> str:
     now = datetime.now(UTC).strftime("%Y-%m-%d")
     total_sessions = len(sessions)
 
@@ -254,6 +290,50 @@ def _render(sessions: list[SessionRecord], metrics: list[MetricsSnapshot]) -> st
     lines.append("*Target: >50%. `/done` is what closes the learning loop.*")
     lines.append("")
 
+    # ── Outcome signals (compounding evidence, not just compliance) ───────────────
+    if audit_dir is not None:
+        caught, tracked = _developer_autonomy(audit_dir)
+        gap_trend = _skill_gap_trend(audit_dir)
+
+        lines.append("## developer autonomy")
+        lines.append("")
+        lines.append(
+            "*Did the developer pre-empt gates before youk asked? "
+            "This is the primary signal that compounding is working — "
+            "the developer internalised the gate, not just the tool.*"
+        )
+        lines.append("")
+        if tracked:
+            pct = round(caught / tracked * 100)
+            lines.append(
+                f"**{pct}%** — developer pre-empted a gate in {caught} of {tracked} "
+                "sessions where a gate could have fired."
+            )
+        else:
+            lines.append("**—** no gate-eligible sessions recorded yet.")
+        lines.append("")
+        lines.append("*Target: rising trend over time. 0% is normal in early sessions.*")
+        lines.append("")
+
+        lines.append("## skill gap trend")
+        lines.append("")
+        lines.append(
+            "*SkillGap lines written per month — how many times youk detected a missed gate. "
+            "A decreasing trend means gaps are being fixed. An increasing trend means new "
+            "patterns are being encountered (expected in early sessions).*"
+        )
+        lines.append("")
+        if gap_trend:
+            lines.append("| month | gaps logged |")
+            lines.append("|-------|-------------|")
+            for month, count in gap_trend:
+                lines.append(f"| {month} | {count} |")
+        else:
+            lines.append("*No SkillGap entries yet.*")
+        lines.append("")
+        lines.append("*Target: stable or decreasing after session 20.*")
+        lines.append("")
+
     lines.append("## trajectory table")
     lines.append("")
     if traj:
@@ -313,7 +393,7 @@ def main() -> None:
             file=sys.stderr,
         )
 
-    content = _render(sessions, metrics)
+    content = _render(sessions, metrics, audit_dir=AUDIT_DIR)
 
     if stdout_mode:
         print(content)
