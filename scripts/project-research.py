@@ -15,7 +15,6 @@ Scheduled by install.sh via launchd (macOS) or cron (Linux).
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from datetime import datetime
