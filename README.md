@@ -287,6 +287,15 @@ Every `session_start` writes `state/session-open.json` — a lightweight record 
 
 **Type `/done` before closing.** The automatic recovery captures that a session happened; `/done` is what captures what happened — code-review, verify, contracts saved, and a `CloseCluster: yes` audit line that feeds the org_score.
 
+**Tab-close without `/done` — what happens next session:**
+The session plan opens with `⚠ [BLOCKED] Last session closed without /done — Run /learn NOW` at position 0 (not appended — prepended). `session_start` returns `force_learn: true` and writes `state/pending-action.json` durably so the block survives across tab-closes. When `route_to_skill("learn")` fires, the pending-action file is cleared. If the file ages past 24 hours without `/learn` running, it is cleared automatically at the next `session_start` (TTL guard prevents stale blocks on returning sessions after a multi-day break).
+
+**Stale routing breadcrumb — prior session's M+ task never closed:**
+If `route_task` ran in the prior session (M/L/XL task) but `task_checkpoint` was never called, `session_start` surfaces `⚠ Last session: route_task ran but task_checkpoint was never called` at session_plan[0]. The breadcrumb file (`state/routing-breadcrumb.json`) is written by `route_task` and consumed by `task_checkpoint`; if it's still present and older than 5 minutes at session open, it was from the prior session. The plan item instructs you to run `/build` to re-establish routing context.
+
+**Skill rate threshold — when compounding stalls:**
+If the skill invocation rate across recent sessions drops below 50%, `session_start` prepends `⚠ Skill rate: N% — below 50% threshold` to session_plan[0] before any other items. This is not a trailing advisory — it is the first thing you see. The item instructs: run `/build` before any M+ task, `/done` at end. When rate is ≥50%, the existing consecutive-skips warning (3+ sessions) still fires but appended rather than prepended.
+
 `self_heal` reads the last 30 days of audit logs and generates improvement proposals. Proposals sit in `PENDING.md` until you review and approve them via `apply_proposal(id, confirmed=True)`. `apply_proposal` supports `CODE_EDIT` (replace a named Python function in-repo), `SKILL_EDIT` (add or replace a section in a SKILL.md), and `CONFIG_EDIT` (patch YAML config files).
 
 ---

@@ -197,7 +197,7 @@ If a skill fails mid-session, youk patches it immediately rather than deferring 
 
 **Session end:** Type `/done` when you finish — or any natural closing phrase: "done", "ship it", "commit", "ok thanks", "that's all", "looks good", "we're done", "wrap it up", "let's call it", "perfect", "good enough". This runs code-review + verify + learn, writes the resume point for next session, saves contracts, and sets `CloseCluster: yes` for org_score.
 
-If you close the tab without `/done`: the audit entry is still written, the resume point is preserved (the `PostToolUse` hook writes active task state continuously), and at next open youk surfaces the unlearned work and prompts `/learn`. The only thing lost on tab-close is `CloseCluster: yes` for org_score.
+If you close the tab without `/done`: the next session opens with `⚠ [BLOCKED] Last session closed without /done — Run /learn NOW` as the first item in the session plan, not a nudge. `session_start` returns `force_learn: true` and writes `state/pending-action.json` durably — the block persists across tab-closes until `/learn` fires. When `route_to_skill("learn")` runs, the pending-action file is cleared and the session proceeds normally. The only thing permanently lost on tab-close is `CloseCluster: yes` for org_score — everything else is recovered.
 
 **Context management:** youk manages context automatically via three hooks installed at setup:
 - `PreCompact` — fires before Claude auto-compacts, injects a structured preservation brief so contracts and active task survive the summarizer verbatim.

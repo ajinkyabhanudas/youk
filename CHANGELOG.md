@@ -35,6 +35,13 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 - SECURITY.md: threat model, credential handling contract, rotation procedure
 - Dockerfile base images pinned to digest — deterministic builds
 
+- Routing breadcrumb gate: `route_task` writes `state/routing-breadcrumb.json` for M/L/XL decisions; `task_checkpoint` reads and consumes it — if absent for an M+ task, returns `routing_missed: true` + `routing_action` surfacing the missed gate
+- Stale breadcrumb detection: `session_start` reads any existing breadcrumb at open; if older than 300 seconds (prior session), surfaces `⚠ Last session: route_task ran but task_checkpoint was never called` at session_plan[0] and consumes the file
+- `force_learn` gate: when a session closes without `/done`, `session_start` writes `state/pending-action.json` and prepends `⚠ [BLOCKED] Last session closed without /done — Run /learn NOW` to session_plan[0]; `route_to_skill("learn")` clears the pending-action file
+- Pending-action TTL: `state/pending-action.json` older than 24 hours is cleared at `session_start` — prevents stale blocks on returning sessions after a multi-day break
+- `force_learn: bool` field on `SessionState` (default `False`) — returned by `session_start`, propagated via `to_dict()`
+- Skill rate threshold: when skill invocation rate across recent sessions drops below 50%, `session_start` prepends the rate warning to session_plan[0] (not appended); consecutive-skips warning (≥3) preserved but only fires when rate ≥ 50%
+
 ### Fixed
 - `session-goal-coverage.json` now resets when `write_session_goal` is called — stale coverage from prior goal or project no longer causes premature `goal_met=True`
 - Audit format regression: old entries without `DeveloperCaught` / `FramingCorrect` parse cleanly, default to None
