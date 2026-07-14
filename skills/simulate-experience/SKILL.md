@@ -330,3 +330,65 @@ addition to youk itself.
 - org_score STALLED despite active development
 
 **Output format:** Same as other personas — ACTUAL vs. PROMISED, GAP, verdict (COMPOUNDING / PARTIAL / FAILING), top 3 friction points, one-line fix each.
+
+---
+
+## Phase 6: ELITE VERDICT (runs after all personas complete)
+
+`[PHASE: ELITE VERDICT]`
+
+COMPOUNDING at elite level requires ALL six criteria:
+
+```
+CRITERION 1 — Junior onboarding (Persona A):
+  readiness_score ≥ 8
+  No jargon terms in session card on first install.
+  Breach: score < 8 or any of (slug, ceremony, L1, MCP) appear unexplained in session_start output.
+
+CRITERION 2 — M+ gate fires without /build (Persona B):
+  nfr_check fired on the first M+ task without the user typing /build or /nfr-check.
+  Breach: route_to_skill("nfr-check") was not called before dev-loop on an M+ task.
+
+CRITERION 3 — Joining dev structural gap surfaced (Persona C):
+  The simulation explicitly names the per-user knowledge store limitation AND proposes
+  a specific mitigation (not just notes it). "STRUCTURAL: knowledge is stored in
+  ~/.claude/youk/knowledge, not in the project repo — joining devs get zero
+  handoff from prior sessions. Mitigation: [specific proposal]."
+  Breach: structural gap is listed as a note without a concrete mitigation proposal.
+
+CRITERION 4 — Returning dev staleness detected (Persona D):
+  Resume point written 14+ days ago triggers a staleness warning before loading.
+  Breach: old resume point loads silently — developer starts from wrong context.
+
+CRITERION 5 — Persona E trend (acid test):
+  Founder corrections per session trending DOWN over the last 3 consecutive sessions.
+  Evidence: compare correction count from session_start briefs for last 3 sessions.
+  Breach: trend is flat or increasing, or fewer than 3 sessions of data.
+
+CRITERION 6 — Contract durability at 100%:
+  Zero contracts verbalized and lost. Every "always X" / "never Y" spoken during
+  any persona's simulation appears in contracts.md after the session.
+  Breach: any contract verbalized but not found in contracts.md.
+```
+
+**Verdict logic:**
+- All 6 criteria met → `overall_verdict: COMPOUNDING` (elite level)
+- Any criterion fails → `overall_verdict: PARTIAL` — state which criterion and the specific gap
+- If overall_verdict is COMPOUNDING but any per-persona readiness_score < 8 → `overall_verdict: CONTRADICTORY` — surface the contradiction explicitly
+
+**Output:**
+```
+[ELITE VERDICT]
+Overall: COMPOUNDING | PARTIAL | CONTRADICTORY
+
+Criterion 1 (Junior onboarding): PASS | FAIL — {reason if fail}
+Criterion 2 (M+ gate auto-fires): PASS | FAIL — {reason if fail}
+Criterion 3 (Structural gap + mitigation): PASS | FAIL — {reason if fail}
+Criterion 4 (Staleness detection): PASS | FAIL — {reason if fail}
+Criterion 5 (Persona E correction trend): PASS | FAIL — {reason if fail}
+Criterion 6 (Contract durability): PASS | FAIL — {reason if fail}
+
+Blocking gap (if PARTIAL): {criterion name} — {one sentence on what specifically fails and what fix would make it pass}
+```
+
+Do not emit COMPOUNDING unless all 6 criteria are explicitly verified, not assumed.
