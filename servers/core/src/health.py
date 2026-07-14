@@ -120,6 +120,14 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         reversal_match = re.search(r"^DirectionReversal:\s*yes$", block, re.MULTILINE | re.IGNORECASE)
         s["direction_reversal"] = bool(reversal_match)
 
+        # FramingCorrect: yes/no — written by session_end when direction_reversal is False/True.
+        # Absent = not yet tracked (treated as correct to avoid penalising old sessions).
+        framing_match = re.search(r"^FramingCorrect:\s*(\w+)$", block, re.MULTILINE | re.IGNORECASE)
+        if framing_match:
+            s["framing_correct"] = framing_match.group(1).lower() == "yes"
+        else:
+            s["framing_correct"] = None  # unknown — old audit entry predates this signal
+
         sessions.append(s)
     return sessions[-150:]  # cap: most recent 150 sessions regardless of window size
 
@@ -290,11 +298,22 @@ def _score_org(audit_texts: list[str]) -> float:
     prevented_cost = _compute_prevented_cost(sessions, days=30)
     prevented_score = _compute_prevented_cost_score(prevented_cost) * 0.5
 
+    # Framing accuracy: sessions where the goal was correctly translated before implementation.
+    # Only counted when FramingCorrect is explicitly written (sessions predating this signal
+    # return None and are excluded — no penalty for old sessions that lacked the gate).
+    framing_sessions = [s for s in sessions if s.get("framing_correct") is not None]
+    if framing_sessions:
+        framing_correct_count = sum(1 for s in framing_sessions if s["framing_correct"])
+        framing_accuracy_rate = framing_correct_count / len(framing_sessions)
+    else:
+        framing_accuracy_rate = 1.0  # no data → assume correct (no penalty)
+
     # capability_skill_rate (2.0 weight): primary signal — did developer ability compound?
     # close_rate (0.5 weight): completion bonus only — /done matters but doesn't dominate
     # gap_resolution_rate (0.5 weight): are gaps being detected as new (not recurring)?
     # prevented_score (0.5 weight): outcome quality — did skills catch something real?
-    score = 5.0 + (capability_skill_rate * 2.0) + (close_rate * 0.5) + (gap_resolution_rate * 0.5) + prevented_score + token_penalty
+    # framing_accuracy_rate (0.5 weight): was the goal correctly translated before work started?
+    score = 5.0 + (capability_skill_rate * 2.0) + (close_rate * 0.5) + (gap_resolution_rate * 0.5) + prevented_score + (framing_accuracy_rate * 0.5) + token_penalty
 
     # Discipline gate: 3+ consecutive sessions with zero capability skills → cap at 6.5.
     # Reaching 7.0+ requires demonstrated use of capability skills, not just /done ritual.

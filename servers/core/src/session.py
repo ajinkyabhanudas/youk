@@ -2034,6 +2034,9 @@ def end_session(
     if nfr_gaps:
         nfr_gap_lines = "".join(f"NFRGap: {gap}\n" for gap in nfr_gaps)
     direction_reversal_line = "DirectionReversal: yes\n" if direction_reversal else ""
+    # FramingCorrect: yes when the goal translation was correct (no direction reversal).
+    # Parsed by health._parse_audit_sessions() to compute framing_accuracy_rate in org_score.
+    framing_correct_line = f"FramingCorrect: {'no' if direction_reversal else 'yes'}\n"
 
     token_data = _read_and_clear_tokens()
     total_tokens = token_data["total_input"] + token_data["total_output"]
@@ -2060,6 +2063,7 @@ def end_session(
         f"{finding_categories_line}"
         f"{nfr_gap_lines}"
         f"{direction_reversal_line}"
+        f"{framing_correct_line}"
     )
 
     with open(audit_file, "a") as f:

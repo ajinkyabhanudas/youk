@@ -2304,8 +2304,8 @@ class TestComputePreventedCostScore:
 
 
 class TestScoreOrgWithPreventedCost:
-    def test_org_score_ceiling_is_8_5(self, claude_root):
-        """With all rates 1.0 and prevented_score 1.0, ceiling is 8.5."""
+    def test_org_score_ceiling_is_9_0(self, claude_root):
+        """With all rates 1.0, prevented_score 1.0, and framing_accuracy 1.0, ceiling is 9.0."""
         from health import _score_org
 
         # 3 sessions: all close_cluster, all capability, all with findings (CRITICAL)
@@ -2314,9 +2314,12 @@ class TestScoreOrgWithPreventedCost:
             for i in range(1, 4)
         ]
         score = _score_org(blocks)
-        # Score = process perfect (8.0) + up to 0.5 (outcome) = 8.5
+        # Score = process perfect (8.0) + prevented (0.5) + framing (0.5) = 9.0
+        # direction_reversal=True means FramingCorrect not written → framing_correct=None
+        # → excluded from framing rate → framing_accuracy_rate=1.0 (no data = assume correct)
+        # This is intentional: old sessions don't get penalised by the new signal
         assert score >= 8.0
-        assert score <= 8.5
+        assert score <= 9.0
 
     def test_org_score_rises_with_prevented_cost(self, claude_root):
         """Adding outcome findings lifts score above process-only baseline."""
