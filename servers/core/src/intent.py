@@ -80,11 +80,36 @@ Output ONLY valid JSON matching this schema:
   "token_efficiency_gain": "estimated token reduction vs. proceeding with raw input (e.g. '60%')"
 }
 
+Multi-level convergence check (runs before scoring translation_risk):
+When the goal contains a quality word or outcome claim, traverse these seven angles
+BOTTOM-UP before assigning translation_risk. Do not start from the semantic label.
+
+1. STRUCTURAL: what weak links or missing fundamentals would prevent this from working
+   for a stranger, regardless of how well the feature is built?
+2. OPERATIONAL: can a stranger use this without hand-holding? what breaks on first run?
+3. EXPERIENTIAL: would a principal engineer deploying this to 50 engineers approve it
+   after 20 sessions? what would make them reject it?
+4. ADVERSARIAL: what would a competitor who has thought about this longer reject?
+   what angle of attack haven't we considered?
+5. TEMPORAL: does this hold across model generations? what assumptions about the current
+   model would break when the model is replaced?
+6. OUTCOME: what predictions does this goal generate that reality can verify?
+   are those predictions falsifiable by someone who has never seen the codebase?
+7. SEMANTIC: given what emerged from angles 1-6, does the quality label ("elite",
+   "production-grade", "bullet-proof") fit what actually exists?
+
+Contradiction between any two angles = translation_risk MUST be "high".
+The semantic label (angle 7) only applies after angles 1-6 converge.
+A label that fits angle 7 but contradicts angle 1 is false unanimity — translation_risk: high.
+
+Adversarial ordering: evaluate the angle most likely to fail FIRST.
+For quality-word goals: structural fails first — evaluate it before experiential or semantic.
+
 Rules:
 - solution_fork is required when ambiguity_detected is true. When ambiguity_detected is false, set solution_fork to null.
 - goal_translation is ALWAYS required. Never omit it.
-- translation_risk is "high" when ANY of: (a) goal contains quality words without referents — "better", "elite", "cleaner", "properly", "right"; (b) goal is about a feeling or mindset — "I want to trust it", "it should feel right"; (c) goal references a pattern or principle not yet operationalized — "discover the underlying pattern", "surface the mindset"; (d) the observable_outcome I would write describes system behavior, not developer experience.
-- translation_risk is "low" when the stated goal maps directly to a deliverable the user would recognize without explanation.
+- translation_risk is "high" when ANY of: (a) goal contains quality words without referents — "better", "elite", "cleaner", "properly", "right"; (b) goal is about a feeling or mindset — "I want to trust it", "it should feel right"; (c) goal references a pattern or principle not yet operationalized — "discover the underlying pattern", "surface the mindset"; (d) the observable_outcome I would write describes system behavior, not developer experience; (e) any contradiction between the seven convergence angles.
+- translation_risk is "low" when the stated goal maps directly to a deliverable the user would recognize without explanation AND all seven angles converge on the same answer.
 - translation_risk is "none" when the request is a specific technical task with no quality-word translation required.
 - clarifying_questions must contain AT MOST ONE item. Scope ambiguity takes priority over translation risk — if both, ask the scope question.
 - Never ask about something answerable from context. Never ask multiple questions.
@@ -249,8 +274,11 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
 
     if not _ANTHROPIC_AVAILABLE:
         is_ambiguous = len(raw_input.split()) < 8
-        _OPAQUE_WORDS = {"elite", "better", "cleaner", "properly", "right", "trust", "feel", "mindset", "pattern", "principle"}
+        _OPAQUE_WORDS = {"elite", "better", "cleaner", "properly", "right", "trust", "feel", "mindset", "pattern", "principle",
+                         "production", "grade", "bullet", "proof", "crystal", "solid", "robust", "mature", "complete"}
         is_opaque = any(w in raw_input.lower().split() for w in _OPAQUE_WORDS)
+        # Multi-level convergence: structural angle always checked first for quality words.
+        # If opaque, translation_risk=high regardless of other angles — structural fails first.
         return {
             "problem": raw_input,
             "success_criteria": "Task completed as described.",

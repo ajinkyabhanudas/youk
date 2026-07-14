@@ -60,6 +60,47 @@ If SESSION_DEPTH > 10: flag that reversing direction now has high cost — weigh
 
 ---
 
+## Multi-Level Convergence (runs before any lens, when goal contains a quality word)
+
+When the task or goal contains a quality word ("elite", "production-grade", "better", "bullet-proof",
+"right", "clean", "solid", "complete") — run the seven-angle convergence check BEFORE the four lenses.
+
+Seven fixed angles, bottom-up, adversarial ordering (most likely to fail first):
+
+1. **STRUCTURAL** — what weak links or missing fundamentals exist regardless of feature quality?
+   (no CHANGELOG, state bug, missing security posture, unpinned dependencies)
+2. **OPERATIONAL** — can a stranger use this without hand-holding on first run?
+3. **EXPERIENTIAL** — would a principal engineer deploying to 50 engineers approve after 20 sessions?
+4. **ADVERSARIAL** — what would a competitor who has thought longer reject? what angle is unchallenged?
+5. **TEMPORAL** — does this hold across model generations? what breaks when the model is replaced?
+6. **OUTCOME** — what predictions does this generate that reality can verify, without seeing the codebase?
+7. **SEMANTIC** — given angles 1-6, does the quality label fit what actually exists?
+
+Rules:
+- Evaluate structural FIRST — it fails most often and is most often skipped
+- Contradiction between any two angles = BLOCKING objection, do not proceed
+- Semantic label (angle 7) only applied after angles 1-6 converge
+- A label that fits angle 7 but contradicts angle 1 is false unanimity — BLOCKING
+- If you cannot name what structural failure looks like: that IS the structural failure
+
+Emit before the four lenses:
+```
+[CONVERGENCE CHECK]
+Structural:    {finding or CLEAR}
+Operational:   {finding or CLEAR}
+Experiential:  {finding or CLEAR}
+Adversarial:   {finding or CLEAR}
+Temporal:      {finding or CLEAR}
+Outcome:       {finding or CLEAR}
+Semantic:      {label fits | label does not fit — reason}
+Verdict:       CONVERGED | CONTRADICTION on {angles} — BLOCKING
+```
+
+If CONTRADICTION: do not proceed to the four lenses. Surface the contradiction as a BLOCKING objection.
+If CONVERGED: proceed to the four lenses with the converged definition as the fixed frame.
+
+---
+
 ## The Four Lenses
 
 Each lens is independent. They do not see each other's output within a round.
