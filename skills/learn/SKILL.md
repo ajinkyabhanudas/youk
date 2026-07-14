@@ -239,6 +239,36 @@ If a concept is classified as "contract": route to `save_contract()` instead of 
 
 ---
 
+### Phase 4.6 — FRAMING CHECK (conditional)
+
+Runs only when: `direction_reversal=true` was set in `session_end`, OR the user explicitly corrected the direction mid-session ("that's not what I meant", "wrong approach", "you misunderstood"), OR `optimize_intent` was called more than once for the same task.
+
+This phase is the retrospective half of the intent-collapse gate. The gate (in `route_task`) catches opaque goals before work starts. This phase captures what slipped through — and writes it so the next session won't repeat the miss.
+
+**Step 1 — Name the original framing:**
+State in one sentence what was built: the concrete deliverable or direction that was pursued.
+
+**Step 2 — Name the corrected framing:**
+State in one sentence what should have been built: the corrected direction after the user's redirect.
+
+**Step 3 — Name where the gap opened:**
+Choose one:
+- `optimize_intent` — the goal was passed through as unambiguous when it was actually intent-opaque (quality words, mindset language)
+- `challenge` — Lens 3 didn't catch the intent assumption because the gap wasn't visible at the implementation level
+- `implementation` — framing was correct but execution drifted
+
+**Step 4 — Write one interpretation pattern:**
+Write a single sentence to `knowledge/interpretation/user-intent.md` (create if missing) in the format:
+```
+When user says "[phrase or pattern]", they mean [concrete observable outcome], not [what was built].
+```
+
+This file is read by `optimize_intent` at the start of every session via `interpretation_context`. The sentence you write here becomes a detection pattern for the next time the same intent-opaque goal appears.
+
+**Skip this phase entirely** if there was no direction correction this session. Do not write a sentence if the framing was correct. Do not write vague sentences ("be more careful about framing") — only write sentences that would have blocked the specific miss.
+
+---
+
 ### Phase 5 — PERSIST
 
 Write learnings to the appropriate knowledge files. Read `references/knowledge-structure.md`

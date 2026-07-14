@@ -84,6 +84,7 @@ What is the direction assuming that hasn't been stated?
 - What does it assume about the current state of the system?
 - What does it assume about what's already been decided?
 - Which assumption, if wrong, would make the entire direction wrong?
+- **Intent assumption:** What does this direction assume about what the user wants to *experience*, vs. what they want *delivered*? If the user's goal was stated in quality words ("elite", "right", "better", "clean", "proper") or mindset language ("discover the pattern", "surface the mindset"), name the specific experience I'm assuming that means. If I cannot name it, that is a BLOCKING objection — the translation is opaque and must be collapsed before proceeding.
 
 **Lens 4 — Opportunity Cost**
 What is NOT being done if we go this direction?
