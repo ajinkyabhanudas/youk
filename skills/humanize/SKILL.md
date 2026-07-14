@@ -32,7 +32,8 @@ same thoughtful engineer, because it did.
 | `decision: [draft]` | Apply voice to a DECISIONS.md rationale |
 | `comment: [draft]` | Apply voice to an inline code comment |
 | `brief: [draft]` | Apply voice to a stakeholder brief (from /pm-review) |
-| `check: [text]` | Audit existing text for voice compliance without rewriting |
+| `check: [text]` | Audit text: voice compliance + signal/noise framework (SUBTRACT + REVEAL), no rewrite |
+| `chat: [reply]` | Apply signal/noise framework to a conversational reply — cut filler, surface the unstated |
 
 ---
 
@@ -41,7 +42,7 @@ same thoughtful engineer, because it did.
 Before applying voice, identify:
 
 ```
-CONTENT TYPE:  [commit | doc section | decision rationale | code comment | stakeholder brief]
+CONTENT TYPE:  [commit | doc section | decision rationale | code comment | stakeholder brief | conversational reply]
 AUDIENCE:      [technical (Pedro) | non-technical (Jajean) | self (project record) | public (GitHub)]
 TONE:          [factual | explanatory | persuasive]
 DRAFT:         [the text to be transformed]
@@ -123,6 +124,13 @@ Remove: "In order to", "It should be noted that", "As part of this change",
 "This commit", "We are pleased to announce", "Leveraging", "Utilizing"
 Replace with: the actual content
 
+**5b. Conversational filler (chat replies specifically)**
+Remove openers: "Good question", "Great", "Sure", "Certainly", "Let me…", "I'll go ahead and…"
+Remove closers: any re-ask of a resolved question, unrequested "let me know if…" / next-step offers
+Remove meta-framing: "worth being precise", "easily-confused", "Put simply", "to be clear",
+"the important thing to note" — commentary about the answer's structure instead of the answer
+Lead with the answer. Match length to information content, not to perceived thoroughness.
+
 **6. Calibrate to audience**
 For Jajean: plain English, no acronyms, no SQL, outcomes over mechanics
 For Pedro: technical precision, SQL can appear, mechanisms matter
@@ -136,10 +144,14 @@ Audit the voiced text against the quality bars from `references/voice-profile.md
 
 - [ ] The first sentence states the reason, not just the action
 - [ ] Active voice throughout (no "was decided", "has been implemented")
-- [ ] No filler language
+- [ ] No filler language (incl. conversational openers/closers/meta-framing — see step 5b)
 - [ ] Trade-off is acknowledged (what was NOT done or chosen)
 - [ ] Length is appropriate for content type
 - [ ] Audience vocabulary level is correct
+
+For `check:` / `chat:` modes, also run the **signal/noise framework**
+(`references/signal-noise-framework.md`): PASS 1 SUBTRACT (cut lines failing the removal test),
+PASS 2 REVEAL (surface the missing line / misleading frame / wrong connotation, load-bearing only).
 
 Flag any violations:
 ```
@@ -189,6 +201,7 @@ This skill passes the hiring committee if it can:
 | `references/voice-profile.md` | VOICE + CHECK phases — canonical voice characteristics |
 | `references/by-content-type.md` | CLASSIFY phase — rules per content type |
 | `references/before-after.md` | VOICE phase — concrete transformation examples |
+| `references/signal-noise-framework.md` | CHECK phase (`check:`/`chat:`) — SUBTRACT + REVEAL passes |
 
 ---
 

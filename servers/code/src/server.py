@@ -10,7 +10,7 @@ from nfr import run_nfr_check
 from skills import route_to_skill as _route_to_skill, write_skill_handoff as _write_skill_handoff, get_skill_list, get_skill_content, get_skill_fast_path
 from review import check_commit_quality as _check_commit_quality
 from skill_loader import list_skills as _list_skills
-from skill_gen import generate_skill as _generate_skill, assess_skill as _assess_skill, detect_skill_gaps as _detect_skill_gaps, generate_stack_overlay as _generate_stack_overlay
+from skill_gen import generate_skill as _generate_skill, assess_skill as _assess_skill, detect_skill_gaps as _detect_skill_gaps, generate_stack_overlay as _generate_stack_overlay, analyze_stack_for_skills as _analyze_stack_for_skills
 
 CLAUDE_ROOT = Path("/claude")
 
@@ -195,6 +195,31 @@ def detect_skill_gaps() -> dict:
     Use this to decide what to generate or assess next. Returns a recommendation field.
     """
     return _detect_skill_gaps()
+
+
+@mcp.tool()
+def analyze_stack_for_skills(
+    stack: str,
+    framework: str | None = None,
+    domain: str | None = None,
+    repo_paths: list[str] | None = None,
+    known_skills: list[str] | None = None,
+    standard: str | None = None,
+) -> dict:
+    """
+    Proactive stack-driven skill discovery (skill-forge Loop A).
+
+    Unlike detect_skill_gaps() (reactive — reads audit history of what already went wrong),
+    this asks what an ELITE engineer in this stack would need before any session proves it,
+    and loops at a rising standard until even an imagined superior engineer has nothing to add.
+
+    Returns mode='in_session' context. The Claude session performs the deep repo + live
+    internet search and derives skills — no API call runs in the server.
+
+    standard: the current elite-bar for this stack. None on first cycle; the session raises
+        it each cycle and passes the raised bar back in. Convergence = bar stops rising.
+    """
+    return _analyze_stack_for_skills(stack, framework, domain, repo_paths, known_skills, standard)
 
 
 @mcp.resource("youk://skills")

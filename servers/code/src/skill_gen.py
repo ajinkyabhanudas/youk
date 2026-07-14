@@ -177,6 +177,11 @@ def generate_skill(
             "This skill encodes a pattern from best-practices knowledge that no existing skill covers. "
             "The quality bars must directly enforce the pattern from cross-project knowledge."
         ),
+        "stack_analysis": (
+            "Derived proactively from stack analysis (skill-forge Loop A), not from a session miss. "
+            "The quality bars must encode the elite pattern the search surfaced, and every bar "
+            "must cite its source (repo location or URL). No aspirational bars without a traceable why."
+        ),
         "engineer_request": "Skill requested directly by the engineer.",
     }.get(signal_type, "")
 
@@ -357,5 +362,76 @@ def detect_skill_gaps() -> dict:
             "For missing_skills: call generate_skill(name, purpose, signal_type='demand_gap'). "
             "For gap_signals: call assess_skill(skill_name) to get proposed_additions. "
             "For knowledge_gaps: assess which skill should encode the pattern, or generate a new one."
+        ),
+    }
+
+
+def analyze_stack_for_skills(
+    stack: str,
+    framework: str | None = None,
+    domain: str | None = None,
+    repo_paths: list[str] | None = None,
+    known_skills: list[str] | None = None,
+    standard: str | None = None,
+) -> dict:
+    """
+    Assemble context for in-session, stack-proactive skill discovery (skill-forge Loop A).
+
+    The proactive counterpart to detect_skill_gaps(). detect_skill_gaps reads audit history
+    (what already went wrong); this asks what an ELITE engineer in this stack would need
+    before any session proves it — then loops at a rising standard until even an imagined
+    superior engineer has nothing to add.
+
+    standard: the current written bar for "what elite means for this stack." On the first
+        cycle this is None; the session raises it each cycle (the RAISE-THE-BAR step) and
+        passes the raised bar back in. Convergence is when the bar stops rising — NOT when
+        skill-count settles.
+
+    Returns mode='in_session' context. No API call runs here; the Claude session performs
+    the deep repo + live internet search and derives skills.
+    """
+    existing = known_skills if known_skills is not None else [s["name"] for s in list_skills()]
+    return {
+        "mode": "in_session",
+        "stack": stack,
+        "framework": framework,
+        "domain": domain,
+        "repo_paths": repo_paths or [],
+        "existing_skills": existing,
+        "current_standard": standard or "",
+        "skill_schema": _load_skill_schema(),
+        "cross_project_knowledge": _load_cross_project_knowledge(),
+        "search_directive": {
+            "repo": "Read repo idioms, dependency graph, test patterns, and failure modes.",
+            "internet": (
+                "WebSearch current best practices, common failure modes, and elite patterns "
+                "for this stack (framework docs, Anthropic/OpenAI guidance, HN, papers). "
+                "Cite sources per derived skill — no skill enters the batch without a traceable why."
+            ),
+        },
+        "raise_the_bar_step": (
+            "Before listing skills this cycle: read current_standard and ask 'what would an "
+            "engineer BETTER than the one who wrote this bar object to or add?' Rewrite the "
+            "standard upward. The raised bar is the loop's real variable — a rising bar can "
+            "surface skills the old bar could not see."
+        ),
+        "derivation_criteria": [
+            "For each candidate skill: WHY it's needed (the failure it prevents), HOW it "
+            "matters (the causal chain to output quality), sources (repo path or URL), and "
+            "covered_by (an existing skill name if already covered — then drop it).",
+        ],
+        "convergence_rule": (
+            "Bar rose this cycle → loop again. Bar stable AND no new skill → converged, exit. "
+            "A cycle that spent tokens but neither raised the bar nor added a skill is a wasted "
+            "cycle — report it. Adaptive ceiling: past soft_cycles, continue only on substantial "
+            "bar-lift; stop at marginal lift or hard_cap, flagging ceiling_hit if not converged."
+        ),
+        "instruction": (
+            "Perform one Loop A cycle: run the raise-the-bar step, then derive the skill set an "
+            "elite engineer in this stack needs under the raised bar. For each genuinely new "
+            "skill (not covered_by an existing one): generate_skill(signal_type='stack_analysis') "
+            "then add_proposal(FILE_CREATE) + apply_proposal(confirmed=True, safe_types=['FILE_CREATE']). "
+            "Return {raised_standard, bar_rose: bool, candidates: [{name, why, how_it_matters, "
+            "sources, covered_by}]} so the forge loop can decide whether to iterate."
         ),
     }

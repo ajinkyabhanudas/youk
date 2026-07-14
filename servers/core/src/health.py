@@ -31,6 +31,18 @@ _CAPABILITY_SKILLS = frozenset({
 _ALLOWED_WRITE_ROOTS = [YOUK_ROOT, CLAUDE_ROOT / "skills"]
 
 
+def _read_forge_run() -> dict | None:
+    """Return the skill-forge run summary from state, or None. Written by skill-forge."""
+    forge_file = YOUK_ROOT / "state" / "skill-forge-run.json"
+    if not forge_file.exists():
+        return None
+    try:
+        import json as _json
+        return _json.loads(forge_file.read_text())
+    except Exception:
+        return None
+
+
 def _read_recent_audit_logs(days: int = 30) -> list[str]:
     if not AUDIT_DIR.exists():
         return []
@@ -1151,6 +1163,27 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
             f"{promotion_queued} skill(s) crossed the 3-occurrence threshold — "
             "proposals queued in PENDING.md for review."
         )
+
+    # Proactive-improvement signal — skill-forge run (the forward half of the loop).
+    # Distinct from reactive proposals above: forge anticipates from stack analysis,
+    # self_heal/proposals correct from past session evidence.
+    forge = _read_forge_run()
+    if forge:
+        created = len(forge.get("skills_created", []))
+        sharpened = len(forge.get("skills_sharpened", []))
+        if created or sharpened:
+            base["proactive_improvement"] = {
+                "stack": forge.get("stack", "unknown"),
+                "skills_created": created,
+                "skills_sharpened": sharpened,
+                "converged": forge.get("converged", False),
+                "ceiling_hit": forge.get("ceiling_hit", False),
+            }
+            _conv = "converged" if forge.get("converged") else "ceiling hit (not converged)"
+            base["proactive_improvement_note"] = (
+                f"skill-forge ran on {forge.get('stack', 'unknown')}: {created} created, "
+                f"{sharpened} sharpened, {_conv}. Proactive half of the improvement loop."
+            )
 
     # Project type coverage gaps — skills that should exist for this project type but don't
     coverage_gap = _check_project_type_coverage()

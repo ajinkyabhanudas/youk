@@ -1321,6 +1321,22 @@ def _routing_ran_last_session(current_slug: str) -> tuple[bool, str]:
     return False, ""
 
 
+def _read_forge_run() -> dict | None:
+    """
+    Return the skill-forge run summary from state/skill-forge-run.json, or None.
+    Written by the skill-forge loop; surfaced in session_delta so a proactive forge
+    run is always visible in the audit (distinct from reactive self_heal).
+    """
+    forge_file = YOUK_ROOT / "state" / "skill-forge-run.json"
+    if not forge_file.exists():
+        return None
+    try:
+        import json as _json
+        return _json.loads(forge_file.read_text())
+    except Exception:
+        return None
+
+
 def _count_pending_proposals() -> int:
     pending_file = YOUK_ROOT / "knowledge" / "proposals" / "PENDING.md"
     if not pending_file.exists():
@@ -1895,14 +1911,21 @@ def _compute_session_delta(
     domain_added = max(0, current_domain - start_domain)
     capability_count = sum(1 for s in (skills_used or []) if s in _CAPABILITY_SKILLS)
 
-    if contracts_saved > 0 or domain_added > 0:
+    forge = _read_forge_run()
+    forge_created = len(forge.get("skills_created", [])) if forge else 0
+    forge_sharpened = len(forge.get("skills_sharpened", [])) if forge else 0
+    forge_active = forge_created > 0 or forge_sharpened > 0
+
+    if forge_active:
+        verdict = f"COMPOUNDING — skill-forge created {forge_created}, sharpened {forge_sharpened} skill(s)"
+    elif contracts_saved > 0 or domain_added > 0:
         verdict = "COMPOUNDING — knowledge base grew this session"
     elif capability_count >= 1:
         verdict = "PARTIAL — skills fired but no new knowledge captured"
     else:
         verdict = "STATIC — no new knowledge, no capability skills"
 
-    return {
+    delta = {
         "contracts_added": contracts_saved,
         "contracts_total": len(_load_contracts(slug)),
         "domain_concepts_added": domain_added,
@@ -1911,6 +1934,11 @@ def _compute_session_delta(
         "capability_skills_count": capability_count,
         "verdict": verdict,
     }
+    if forge:
+        delta["forge_skills_created"] = forge_created
+        delta["forge_skills_sharpened"] = forge_sharpened
+        delta["forge_converged"] = forge.get("converged", False)
+    return delta
 
 
 def end_session(

@@ -44,6 +44,7 @@ for all generated `references/stacks/{framework}.md` overlays (6 sections, WAF-g
 | `/simplify` | Code Quality | After implementation, reduce complexity | ACTIVE |
 | `/run` | DevOps | Run/start the project for manual verification | ACTIVE |
 | `/review` | GitHub PR Review | GitHub PR review | ACTIVE |
+| `/skill-forge` | Skill Architect (proactive) | New stack, or "what skills would an elite need here" — derives + sharpens skills at a rising standard | ACTIVE |
 
 ---
 
@@ -200,6 +201,7 @@ Proposed skills that don't yet exist. Evaluated against the hiring bar before cr
 | 2026-06-27 | Added Playwright MCP protocol to /verify; wired into New Feature Flow | Live browser testing revealed bugs invisible to unit tests — validation mismatches, tab label drift from stale server |
 | 2026-06-27 | /skill-health review — Org score 5.8/10. Added: NFR category 11 (Rendering Environment), ux-designer checklist Rendering Environment section, /verify Test 10 (dark mode rendering check), /adr implicit decisions section, FOUNDER-GUIDE session-close required framing | Rendering environment gap slipped past UX review and reached the user; session-close cluster consistently skipped across multiple sessions |
 | 2026-07-03 | Stack Coverage System added to code-review + nfr-check SKILL.md. generate_stack_overlay() tool added. skill-graph.yaml + stack-overlay-schema.md created. | Generative overlay architecture — skills detect stack gap on first encounter, propose generating overlay, save for future sessions. WAF-grounded schema ensures critical questions > checklists. |
+| 2026-07-14 | Added /skill-forge (proactive stack→skill convergence loop) + analyze_stack_for_skills() tool + signal/noise framework (humanize). | Closes youk's improvement loop forward: forge anticipates skills from stack analysis at a rising standard until convergence; self_heal stays reactive. Signal/noise framework (SUBTRACT+REVEAL) generalizes REVEAL from learn/challenge/stress-test into one reusable source. |
 
 ---
 
