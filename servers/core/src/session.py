@@ -1307,15 +1307,18 @@ def _routing_ran_last_session(current_slug: str) -> tuple[bool, str]:
     """
     Returns (ran, task_label) — True when route_task was called during this session.
     Uses state/route-task-ran.json written by server.py's route_task wrapper.
+    Supports both legacy single-object format and new array format.
     """
     flag_file = YOUK_ROOT / "state" / "route-task-ran.json"
     if not flag_file.exists():
         return False, ""
     try:
         import json as _json
-        data = _json.loads(flag_file.read_text())
-        if data.get("slug") == current_slug:
-            return True, data.get("task", "")
+        raw = _json.loads(flag_file.read_text())
+        entries = raw if isinstance(raw, list) else [raw]
+        for entry in entries:
+            if entry.get("slug") == current_slug:
+                return True, entry.get("task", "")
     except Exception:
         pass
     return False, ""

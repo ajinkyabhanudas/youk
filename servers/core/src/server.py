@@ -173,6 +173,7 @@ def route_task(
     # Write routing flag so session_start can detect when routing ran this session.
     # Analogous to nfr-check-ran.json — enables "routing was missed" recovery at next open.
     if not result.get("blocked"):
+        import hashlib as _hashlib
         import json as _json
         from datetime import datetime as _dt
         flag_file = YOUK_ROOT / "state" / "route-task-ran.json"
@@ -183,12 +184,25 @@ def route_task(
                 slug = _json.loads(open_file.read_text()).get("slug", "unknown")
             except Exception:
                 pass
-        flag_file.write_text(_json.dumps({
+        task_hash = _hashlib.md5(task.encode()).hexdigest()[:8]
+        new_entry = {
             "slug": slug,
             "task": task[:120],
+            "task_hash": task_hash,
             "size": result.get("size", "?"),
             "ts": _dt.utcnow().isoformat(),
-        }))
+        }
+        # Maintain array so multi-task sessions track all routed tasks, not just last
+        existing: list[dict] = []
+        if flag_file.exists():
+            try:
+                raw = _json.loads(flag_file.read_text())
+                existing = raw if isinstance(raw, list) else [raw]
+            except Exception:
+                pass
+        existing = [e for e in existing if e.get("slug") == slug]
+        existing.append(new_entry)
+        flag_file.write_text(_json.dumps(existing))
     return result
 
 

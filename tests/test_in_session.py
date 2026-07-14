@@ -131,8 +131,19 @@ class TestDetectStackContext:
 
 class TestRouteToSkill:
     def test_returns_in_session_dict(self, tmp_path, monkeypatch):
+        import json
         import skills as sk_mod
         monkeypatch.setattr(sk_mod, "load_skill_with_context", lambda name, **_: "# dev-loop\nDo the thing.")
+        # Set up routing state so the dev-loop gate passes
+        state_dir = tmp_path / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        slug = "testproject"
+        (state_dir / "session-open.json").write_text(json.dumps({"slug": slug}))
+        (state_dir / "route-task-ran.json").write_text(json.dumps([
+            {"slug": slug, "task": "build login page", "task_hash": "abc12345", "size": "M", "ts": "2026-07-14T10:00:00"}
+        ]))
+        monkeypatch.setattr(sk_mod, "_ROUTE_TASK_RAN", state_dir / "route-task-ran.json")
+        monkeypatch.setattr(sk_mod, "_SESSION_OPEN", state_dir / "session-open.json")
 
         result = sk_mod.route_to_skill("dev-loop", "build login page")
         assert result["mode"] == "in_session"

@@ -275,20 +275,25 @@ def detect_task_size(prompt: str) -> str | None:
     Detect if the prompt implies an M+ task that needs /build routing.
     Returns 'M' if detected, None if not clearly M+.
     Deliberately conservative — false positives are more annoying than misses.
+    Exception: short prompts containing explicit BUILD_SIGNALS still trigger
+    ("build page", "add auth") — length filter was blocking valid M+ detection.
     """
     lower = prompt.lower().strip()
-    # Skip very short prompts — not enough signal
+    # Skip explicit slash commands — user is already routing
+    if lower.startswith("/"):
+        return None
+    # Check build signals first — short prompts with clear signals should fire
+    if any(sig in lower for sig in _BUILD_SIGNALS):
+        # Skip if clearly a question even with a build word
+        if lower.startswith(("what", "why", "how", "where", "when", "which", "does", "is ", "are ")):
+            return None
+        return "M"
+    # Skip very short prompts with no build signal — not enough signal
     if len(lower) < 15:
         return None
     # Skip prompts that are clearly questions or clarifications
     if lower.startswith(("what", "why", "how", "where", "when", "which", "does", "is ", "are ")):
         return None
-    # Skip explicit slash commands — user is already routing
-    if lower.startswith("/"):
-        return None
-    # Check build signals
-    if any(sig in lower for sig in _BUILD_SIGNALS):
-        return "M"
     return None
 
 
@@ -312,6 +317,26 @@ def nfr_check_ran_this_session(root: Path, slug: str) -> bool:
     try:
         data = json.loads(state_file.read_text())
         return data.get("slug") == slug
+    except Exception:
+        return False
+
+
+def routing_ran_for_task(root: Path, slug: str, task_hash: str) -> bool:
+    """
+    Check whether route_task was called for this specific task this session.
+    Returns False if route_task was never called, or was called for different tasks only.
+    Uses the array format written by server.py's route_task wrapper.
+    """
+    flag_file = root / "state" / "route-task-ran.json"
+    if not flag_file.exists():
+        return False
+    try:
+        raw = json.loads(flag_file.read_text())
+        entries = raw if isinstance(raw, list) else [raw]
+        return any(
+            e.get("slug") == slug and e.get("task_hash") == task_hash
+            for e in entries
+        )
     except Exception:
         return False
 

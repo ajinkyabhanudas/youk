@@ -76,6 +76,28 @@ def write_skill_handoff(from_skill: str, content: str) -> dict:
         return {"saved": False, "error": str(e)}
 
 
+_ROUTE_TASK_RAN = Path("/youk/state/route-task-ran.json")
+_SESSION_OPEN = Path("/youk/state/session-open.json")
+
+# Skills that require route_task to have run first (M+ gate)
+_GATED_SKILLS = {"dev-loop"}
+
+
+def _routing_ran_this_session() -> bool:
+    """Return True if route_task was called at any point this session for the current slug."""
+    if not _ROUTE_TASK_RAN.exists():
+        return False
+    try:
+        slug = "unknown"
+        if _SESSION_OPEN.exists():
+            slug = json.loads(_SESSION_OPEN.read_text()).get("slug", "unknown")
+        raw = json.loads(_ROUTE_TASK_RAN.read_text())
+        entries = raw if isinstance(raw, list) else [raw]
+        return any(e.get("slug") == slug for e in entries)
+    except Exception:
+        return False
+
+
 def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> dict:
     """
     Load a skill and return context for in-session execution by Claude Code.
@@ -90,7 +112,20 @@ def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> d
     references/stacks/ and domain/ — adds ~300-500 tokens, not the full knowledge base.
 
     Returns: {mode, skill_name, skill_content, task, context, instruction}
+    For gated skills (dev-loop): returns {blocked=True, reason} if route_task hasn't run.
     """
+    # Hard gate: dev-loop requires route_task to have run this session
+    if skill_name in _GATED_SKILLS and not _routing_ran_this_session():
+        return {
+            "blocked": True,
+            "skill_name": skill_name,
+            "reason": (
+                f"route_to_skill('{skill_name}') blocked — route_task has not run this session. "
+                "Call route_task first, then nfr_check + check_nfr_gate, then dev-loop. "
+                "This gate exists to ensure M+ tasks are challenged and NFR-checked before implementation."
+            ),
+        }
+
     # Merge: explicit context overrides session-detected values
     session_ctx = _read_session_stack_context()
     ctx = {**session_ctx, **(context or {})}
