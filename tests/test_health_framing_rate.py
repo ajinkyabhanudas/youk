@@ -110,10 +110,11 @@ class TestFramingAccuracyRateInOrgScore:
         Formula: 5.0 + (CSR 2.0) + (CR 0.5) + (GRR 0.5) + (prevented 0.5) + (framing 0.5) = 9.0
         In practice prevented_score requires real finding data so we test that
         framing adds 0.5 over the process-only baseline.
+        Use 25 sessions so depth_multiplier=1.0 (full weight, no early-session discount).
         """
         from health import _score_org
-        # Five sessions: close=yes, skills=yes, framing=yes, no reversals
-        blocks = [_make_audit_block(framing_correct=True) for _ in range(5)]
+        # 25 sessions: close=yes, skills=yes, framing=yes, no reversals
+        blocks = [_make_audit_block(framing_correct=True) for _ in range(25)]
         score = _score_org(blocks)
         # Process-only max (no prevented cost, no framing) was 8.0
         # With framing_accuracy_rate=1.0 at 0.5 weight → should exceed 8.0
