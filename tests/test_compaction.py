@@ -257,3 +257,197 @@ class TestCompactionFaithfulness:
         assert "always run ruff before committing" in brief
         assert "never use print() for debugging" in brief
         assert "Pinned Contracts" in brief
+
+
+class TestTierTags:
+    """Tier tags in build_brief() output — compaction-by-intent enforcement.
+
+    Each section must carry its tier tag so Claude's auto-compaction can honor
+    CONTRACT > DECISION > EXPLORATION > CLARIFICATION without needing to infer
+    importance from content alone.
+    """
+
+    def _seed(self, youk_root: Path, slug: str, contracts: list[str]) -> None:
+        proj_dir = youk_root / "knowledge" / "projects" / slug
+        proj_dir.mkdir(parents=True, exist_ok=True)
+        if contracts:
+            (proj_dir / "contracts.md").write_text(
+                "\n".join(f"- {c}" for c in contracts) + "\n"
+            )
+        (youk_root / "state" / "session-plan.json").write_text(
+            json.dumps({"plan": ["work on auth"], "slug": slug})
+        )
+        (youk_root / "state" / "session.json").write_text(
+            json.dumps({"last_project": slug, "session_counter": 1})
+        )
+
+    def test_contract_section_has_tier_tag(self, youk_root, tmp_path):
+        self._seed(youk_root, "p", ["always test before commit"])
+        from compaction import build_brief, TIER_CONTRACT
+        brief = build_brief(str(tmp_path / "p"))["brief"]
+        assert TIER_CONTRACT in brief
+
+    def test_tier_contract_tag_on_pinned_contracts_header(self, youk_root, tmp_path):
+        self._seed(youk_root, "p", ["never skip NFR check"])
+        from compaction import build_brief
+        brief = build_brief(str(tmp_path / "p"))["brief"]
+        # Tag must appear adjacent to the Pinned Contracts section header
+        idx_header = brief.find("Pinned Contracts")
+        idx_tag = brief.find("[TIER:CONTRACT")
+        assert idx_header != -1 and idx_tag != -1
+        # Tag must be within 120 chars of the header (same line/section)
+        assert abs(idx_tag - idx_header) < 120
+
+    def test_session_state_has_decision_tier_tag(self, youk_root, tmp_path):
+        self._seed(youk_root, "p", [])
+        from compaction import build_brief, TIER_DECISION
+        brief = build_brief(str(tmp_path / "p"))["brief"]
+        assert TIER_DECISION in brief
+
+    def test_session_plan_has_exploration_tier_tag(self, youk_root, tmp_path):
+        self._seed(youk_root, "p", [])
+        from compaction import build_brief, TIER_EXPLORATION
+        brief = build_brief(str(tmp_path / "p"))["brief"]
+        assert TIER_EXPLORATION in brief
+
+    def test_contract_tier_tag_says_preserve_verbatim(self, youk_root, tmp_path):
+        self._seed(youk_root, "p", ["always run ruff"])
+        from compaction import build_brief
+        brief = build_brief(str(tmp_path / "p"))["brief"]
+        assert "PRESERVE VERBATIM" in brief
+
+    def test_tier_constants_exported(self, youk_root, tmp_path):
+        from compaction import TIER_CONTRACT, TIER_DECISION, TIER_EXPLORATION, TIER_CLARIFICATION
+        assert "[TIER:CONTRACT" in TIER_CONTRACT
+        assert "[TIER:DECISION" in TIER_DECISION
+        assert "[TIER:EXPLORATION" in TIER_EXPLORATION
+        assert "[TIER:CLARIFICATION" in TIER_CLARIFICATION
+
+    def test_contract_content_still_verbatim_with_tags(self, youk_root, tmp_path):
+        contract = "never mutate global state in tests — use parameter threading"
+        self._seed(youk_root, "p", [contract])
+        from compaction import build_brief
+        brief = build_brief(str(tmp_path / "p"))["brief"]
+        # The contract text must survive verbatim even after tier tags added
+        assert contract in brief
+
+    def test_no_contract_section_still_has_tier_tag(self, youk_root, tmp_path):
+        """Even when no contracts exist the section header must carry the CONTRACT tag."""
+        self._seed(youk_root, "p", [])
+        from compaction import build_brief, TIER_CONTRACT
+        brief = build_brief(str(tmp_path / "p"))["brief"]
+        assert TIER_CONTRACT in brief
+
+
+class TestSkillHandoff:
+    """Skill handoff roundtrip: write → route_to_skill reads handoff for successor.
+
+    skills.py uses a module-level _SESSION_STATE path constant pointing to /youk/...
+    We patch it to the tmp youk_root so tests remain isolated.
+    """
+
+    @staticmethod
+    def _patch(monkeypatch, youk_root: Path):
+        import skills
+        monkeypatch.setattr(skills, "_SESSION_STATE", youk_root / "state" / "session.json")
+        # skill-graph.yaml also referenced — point to real repo graph
+        graph_path = Path(__file__).parent.parent / "knowledge" / "skill-graph.yaml"
+        monkeypatch.setattr(skills, "_SKILL_GRAPH", graph_path)
+
+    def test_write_handoff_saves_to_session_json(self, youk_root, monkeypatch):
+        import json as _json
+        self._patch(monkeypatch, youk_root)
+        from skills import write_skill_handoff
+        result = write_skill_handoff("nfr-check", "NFR block content here")
+        assert result["saved"] is True
+        state = _json.loads((youk_root / "state" / "session.json").read_text())
+        assert state["pending_handoff"]["nfr-check"] == "NFR block content here"
+
+    def test_read_and_clear_handoff_returns_content(self, youk_root, monkeypatch):
+        self._patch(monkeypatch, youk_root)
+        from skills import write_skill_handoff, _read_and_clear_pending_handoff
+        write_skill_handoff("nfr-check", "CACHING: key=sha256, TTL=24h")
+        content = _read_and_clear_pending_handoff("dev-loop")
+        assert content is not None
+        assert "CACHING" in content
+        assert "## Handoff from nfr-check" in content
+
+    def test_handoff_cleared_after_read(self, youk_root, monkeypatch):
+        self._patch(monkeypatch, youk_root)
+        from skills import write_skill_handoff, _read_and_clear_pending_handoff
+        write_skill_handoff("nfr-check", "some NFR decision")
+        _read_and_clear_pending_handoff("dev-loop")
+        # Second read must return None — consumed once
+        second = _read_and_clear_pending_handoff("dev-loop")
+        assert second is None
+
+    def test_no_handoff_returns_none(self, youk_root, monkeypatch):
+        self._patch(monkeypatch, youk_root)
+        from skills import _read_and_clear_pending_handoff
+        result = _read_and_clear_pending_handoff("dev-loop")
+        assert result is None
+
+    def test_handoff_only_consumed_by_correct_successor(self, youk_root, monkeypatch):
+        """code-review handoff must not appear for a skill that doesn't follow it."""
+        self._patch(monkeypatch, youk_root)
+        from skills import write_skill_handoff, _read_and_clear_pending_handoff
+        write_skill_handoff("code-review", "CRITICAL: missing tenant filter")
+        # nfr-check is not a successor of code-review in the graph
+        result = _read_and_clear_pending_handoff("nfr-check")
+        assert result is None
+
+    def test_write_handoff_missing_session_json(self, youk_root, monkeypatch):
+        """write_skill_handoff must create session.json if absent."""
+        import json as _json
+        self._patch(monkeypatch, youk_root)
+        (youk_root / "state" / "session.json").unlink(missing_ok=True)
+        from skills import write_skill_handoff
+        result = write_skill_handoff("code-review", "findings block")
+        assert result["saved"] is True
+        state = _json.loads((youk_root / "state" / "session.json").read_text())
+        assert "code-review" in state["pending_handoff"]
+
+
+class TestSkillGraph:
+    """Skill graph edge validation — the wiring that makes handoffs flow correctly."""
+
+    GRAPH = Path(__file__).parent.parent / "knowledge" / "skill-graph.yaml"
+
+    def _load_graph(self) -> dict:
+        import yaml
+        return yaml.safe_load(self.GRAPH.read_text())
+
+    def test_graph_file_exists(self):
+        assert self.GRAPH.exists()
+
+    def test_nfr_check_precedes_dev_loop(self):
+        g = self._load_graph()
+        assert "dev-loop" in g["skills"]["nfr-check"]["precedes"]
+
+    def test_dev_loop_precedes_code_review(self):
+        g = self._load_graph()
+        assert "code-review" in g["skills"]["dev-loop"]["precedes"]
+
+    def test_code_review_precedes_security_review(self):
+        g = self._load_graph()
+        assert "security-review" in g["skills"]["code-review"]["precedes"]
+
+    def test_code_review_precedes_verify(self):
+        g = self._load_graph()
+        assert "verify" in g["skills"]["code-review"]["precedes"]
+
+    def test_verify_precedes_learn(self):
+        g = self._load_graph()
+        assert "learn" in g["skills"]["verify"]["precedes"]
+
+    def test_all_precedes_targets_are_known_skills(self):
+        """No dangling edge — every target in precedes must be a defined skill or a known lifecycle endpoint."""
+        # session_end is a server MCP call, not a skill — it's a valid terminal node
+        lifecycle_endpoints = {"session_end"}
+        g = self._load_graph()
+        known = set(g["skills"].keys()) | lifecycle_endpoints
+        for skill, meta in g["skills"].items():
+            for target in meta.get("precedes", []):
+                assert target in known, (
+                    f"skill '{skill}' precedes '{target}' which is not defined in skill-graph.yaml"
+                )
