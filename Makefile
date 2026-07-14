@@ -157,6 +157,10 @@ report: ## Write HTML dashboard to ~/.claude/youk/reports/dashboard-YYYY-MM-DD.h
 export-stats: ## Export session stats to STATS.md — shareable evidence of compounding
 	@python3 scripts/export_stats.py
 
+.PHONY: eval-routing
+eval-routing: ## Routing accuracy eval — 20 labelled cases vs config/routes.yaml heuristic
+	@python3 scripts/eval_routing.py
+
 # ── Code quality ──────────────────────────────────────────────────────────────
 
 .PHONY: verify-mcp

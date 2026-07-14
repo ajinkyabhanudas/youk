@@ -1,5 +1,5 @@
-version: "1.1"
-updated: "2026-06-30"
+version: "1.2"
+updated: "2026-07-15"
 
 task_sizes:
   XS:
@@ -25,14 +25,20 @@ task_sizes:
       - single function
       - config change
       - test addition
+      - add a test
+      - add test
       - fix the
       - correct the
       - update the
+      - review
     negative_signals:
       - multiple
       - system
       - architecture
       - refactor
+      - single variable
+      - single line
+      - one-liner
     ceremony: minimal
     skills:
       - nfr_check
@@ -58,6 +64,9 @@ task_sizes:
       - single function
       - comment
       - wording
+      - add a test
+      - add test
+      - test addition
     ceremony: standard
     skills:
       - nfr_check
@@ -76,6 +85,9 @@ task_sizes:
       - redesign
       - overhaul
       - migrate
+      - pipeline
+      - multi-component
+      - multi-phase
     negative_signals:
       - typo
       - rename
@@ -101,6 +113,10 @@ task_sizes:
       - major migration
       - new service
       - greenfield
+      - new variant
+      - new youk
+      - product management variant
+      - analytics variant
     negative_signals:
       - fix
       - update
