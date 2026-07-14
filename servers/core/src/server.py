@@ -6,7 +6,7 @@ sys.path.insert(0, "/shared")
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
-from session import start_session, end_session, task_checkpoint as _task_checkpoint
+from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state
 from routing import route_task as _route_task
 from health import (
     run_health_check_with_skill_signals,
@@ -492,6 +492,44 @@ def task_checkpoint(
              Derive the next task toward the stated goal and continue.
     """
     return _task_checkpoint(project_dir, task_label, size, session_learnings)
+
+
+@mcp.tool()
+def update_convergence_state(
+    angle: str,
+    status: str,
+    pressure_source: str = "model",
+    unknown_unknown: str | None = None,
+) -> dict:
+    """
+    Update the convergence state for a single angle of the seven-angle traversal.
+
+    Call this when external pressure (user push, user correction, real outcome) arrives
+    and an angle's convergence status changes.
+
+    angle: structural | operational | experiential | adversarial | temporal | outcome | semantic
+    status: converged | diverged | unknown
+    pressure_source: user | model — only user pressure credits convergence.
+                     Model-generated pressure that doesn't move the answer = noise.
+    unknown_unknown: describe the angle if it cannot be resolved without real external collision.
+
+    Returns the updated convergence_state with distance_from_optimum.
+    """
+    import json as _json
+    cs_file = YOUK_ROOT / "state" / "convergence-state.json"
+    current = {}
+    try:
+        if cs_file.exists():
+            current = _json.loads(cs_file.read_text())
+    except Exception:
+        pass
+    updated = _update_convergence_state(current, angle, status, pressure_source, unknown_unknown)
+    try:
+        cs_file.parent.mkdir(parents=True, exist_ok=True)
+        cs_file.write_text(_json.dumps(updated, indent=2))
+    except Exception:
+        pass
+    return updated
 
 
 @mcp.tool()

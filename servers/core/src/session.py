@@ -1821,6 +1821,54 @@ def _write_session_stub(slug: str, session_counter: int) -> None:
         pass
 
 
+def update_convergence_state(
+    current_state: dict,
+    angle: str,
+    status: str,
+    pressure_source: str = "model",
+    unknown_unknown: str | None = None,
+) -> dict:
+    """
+    Update the convergence state for a single angle.
+
+    angle: one of structural | operational | experiential | adversarial | temporal | outcome | semantic
+    status: "converged" | "diverged" | "unknown"
+    pressure_source: "user" | "model" — only user-generated pressure that didn't move
+                     the answer counts as a convergence signal. Model-generated = noise.
+    unknown_unknown: if the angle cannot be resolved without external collision, describe it here.
+
+    Returns the updated convergence_state dict.
+    """
+    _ANGLES = {"structural", "operational", "experiential", "adversarial", "temporal", "outcome", "semantic"}
+    cs = dict(current_state) if current_state else {
+        a: "unknown" for a in _ANGLES
+    }
+    cs.setdefault("unknown_unknowns", [])
+    cs.setdefault("last_external_pressure", None)
+    cs.setdefault("angles_converged", 0)
+
+    if angle not in _ANGLES:
+        return cs
+
+    # Only credit convergence when pressure came from the user — not the model.
+    if status == "converged" and pressure_source != "user":
+        status = "unknown"
+
+    cs[angle] = status
+    if unknown_unknown and unknown_unknown not in cs["unknown_unknowns"]:
+        cs["unknown_unknowns"].append(unknown_unknown)
+
+    if pressure_source == "user":
+        cs["last_external_pressure"] = angle
+
+    converged_count = sum(1 for a in _ANGLES if cs.get(a) == "converged")
+    cs["angles_converged"] = converged_count
+    unknown_count = sum(1 for a in _ANGLES if cs.get(a) in ("unknown", "diverged"))
+    cs["distance_from_optimum"] = f"{unknown_count}/7 not yet converged"
+
+    return cs
+
+
 def task_checkpoint(
     project_dir: str,
     task_label: str,
@@ -1916,6 +1964,25 @@ def task_checkpoint(
     goal_check = _check_session_goal(task_label)
     if goal_check:
         result["goal_check"] = goal_check
+
+    # Surface convergence state so the model can track distance from optimum.
+    # The model reads this and updates angles via update_convergence_state() as
+    # external pressure arrives. Included in every M+ checkpoint return.
+    if size.upper() not in ("XS", "S"):
+        cs_file = YOUK_ROOT / "state" / "convergence-state.json"
+        try:
+            if cs_file.exists():
+                result["convergence_state"] = json.loads(cs_file.read_text())
+            else:
+                result["convergence_state"] = {
+                    "structural": "unknown", "operational": "unknown",
+                    "experiential": "unknown", "adversarial": "unknown",
+                    "temporal": "unknown", "outcome": "unknown", "semantic": "unknown",
+                    "unknown_unknowns": [], "last_external_pressure": None,
+                    "angles_converged": 0, "distance_from_optimum": "7/7 not yet converged",
+                }
+        except Exception:
+            pass
 
     return result
 

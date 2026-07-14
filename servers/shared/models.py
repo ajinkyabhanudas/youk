@@ -115,6 +115,23 @@ class SessionState:
     nfr_autonomy_mode: str = "standard"
     # Raw developer autonomy rate for this project (fraction of sessions with DeveloperCaught ≥ 1)
     developer_autonomy_rate: float = 0.0
+    # Convergence state — tracks which of the seven angles have converged on external pressure.
+    # Updated mechanically from exchange structure: user-generated pressure that didn't move
+    # the answer = convergence signal. Model-generated pressure = noise, not counted.
+    # unknown_unknowns: angles that cannot be resolved without external collision with reality.
+    convergence_state: dict = field(default_factory=lambda: {
+        "structural": "unknown",
+        "operational": "unknown",
+        "experiential": "unknown",
+        "adversarial": "unknown",
+        "temporal": "unknown",
+        "outcome": "unknown",
+        "semantic": "unknown",
+        "unknown_unknowns": [],
+        "last_external_pressure": None,
+        "angles_converged": 0,
+        "distance_from_optimum": "7/7 unknown",
+    })
 
     def to_dict(self) -> dict:
         return {
@@ -137,6 +154,7 @@ class SessionState:
             "mid_session_adaptations_applied": self.mid_session_adaptations_applied,
             "nfr_autonomy_mode": self.nfr_autonomy_mode,
             "developer_autonomy_rate": self.developer_autonomy_rate,
+            "convergence_state": self.convergence_state,
         }
 
 
