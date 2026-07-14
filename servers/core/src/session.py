@@ -1533,6 +1533,41 @@ def start_session(project_dir: str) -> SessionState:
     audit_dir = CLAUDE_ROOT / "audit"
     close_cluster_missed, orchestrate_pending = _parse_last_session_flags(audit_dir)
 
+    # Pending-action TTL: if pending-action.json is >24h old, clear it.
+    # A stale force_learn block from a session 2+ days ago is noise — the window
+    # to learn from that session has passed. Clearing prevents compounding false-positive
+    # blocking across multiple returning sessions.
+    _pending_action_file = YOUK_ROOT / "state" / "pending-action.json"
+    if _pending_action_file.exists():
+        try:
+            _pa_data = json.loads(_pending_action_file.read_text())
+            _pa_written = _pa_data.get("written_at", "")
+            if _pa_written:
+                _pa_age_secs = (datetime.utcnow() - datetime.fromisoformat(_pa_written)).total_seconds()
+                if _pa_age_secs > 86400:  # 24h
+                    _pending_action_file.unlink()
+                    close_cluster_missed = False  # stale — suppress force_learn
+        except Exception:
+            pass
+
+    # Stale breadcrumb detection: if routing-breadcrumb.json exists and was written
+    # in a prior session (>5 min ago at session_start time), route_task ran last session
+    # but task_checkpoint never consumed it — the work loop didn't close.
+    # Surface it so the model re-establishes routing context before continuing.
+    _stale_breadcrumb = False
+    _breadcrumb_file = YOUK_ROOT / "state" / "routing-breadcrumb.json"
+    if _breadcrumb_file.exists():
+        try:
+            _bc_data = json.loads(_breadcrumb_file.read_text())
+            _bc_written = _bc_data.get("routed_at", "")
+            if _bc_written:
+                _bc_age_secs = (datetime.utcnow() - datetime.fromisoformat(_bc_written)).total_seconds()
+                if _bc_age_secs > 300:  # older than 5 min = prior session
+                    _stale_breadcrumb = True
+                    _breadcrumb_file.unlink()  # consume — don't carry forward indefinitely
+        except Exception:
+            pass
+
     pending = _count_pending_proposals()
     counter = state["session_counter"]
     health_check_due = counter % 3 == 0
@@ -1607,9 +1642,21 @@ def start_session(project_dir: str) -> SessionState:
         try:
             pending_action_file = YOUK_ROOT / "state" / "pending-action.json"
             pending_action_file.parent.mkdir(parents=True, exist_ok=True)
-            pending_action_file.write_text(json.dumps({"action": "learn", "reason": "close_cluster_missed"}))
+            pending_action_file.write_text(json.dumps({
+                "action": "learn",
+                "reason": "close_cluster_missed",
+                "written_at": datetime.utcnow().isoformat(),
+            }))
         except Exception:
             pass
+
+    # Stale breadcrumb: route_task ran last session but task_checkpoint never consumed it.
+    # Means the work loop didn't close — routing context was established but never acted on.
+    if _stale_breadcrumb:
+        session_plan.insert(0,
+            "⚠ Last session: route_task ran but task_checkpoint was never called — "
+            "routing gate fired but the work loop didn't close. Run /build to re-establish routing context."
+        )
 
     # Routing recovery: detect M+ work that started without route_task.
     # Reads route-task-ran.json (written by server.py) to check if routing fired.
