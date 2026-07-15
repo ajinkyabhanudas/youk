@@ -142,6 +142,10 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         rounds_match = re.search(r"^ChallengeRounds:\s*(\d+)$", block, re.MULTILINE)
         s["challenge_rounds"] = int(rounds_match.group(1)) if rounds_match else None
 
+        # HumanPrecision: written by session_end when developer pre-loaded context AND
+        # challenge resolved in ≤1 round. Feeds human_precision_rate in _score_org().
+        s["human_precision"] = bool(re.search(r"^HumanPrecision:\s*yes$", block, re.MULTILINE | re.IGNORECASE))
+
         sessions.append(s)
     return sessions[-150:]  # cap: most recent 150 sessions regardless of window size
 
@@ -325,6 +329,95 @@ def _compute_skill_autonomy_rate(sessions: list[dict], skill: str) -> float:
     return caught_count / len(tracked)
 
 
+def _compute_convergence_velocity(sessions: list[dict]) -> dict:
+    """
+    Measure whether challenge loops are reaching global optimum in fewer rounds over time.
+
+    challenge_rounds per session is already written to audit as ChallengeRounds: N.
+    Velocity = slope of rounds across the last 10 challenge sessions (negative = improving).
+
+    Returns:
+        mean_rounds: average rounds across recent challenge sessions
+        trend: "improving" | "stable" | "degrading" | "insufficient_data"
+        velocity: float (negative = fewer rounds over time = improving)
+        sessions_with_data: int
+    """
+    challenge_sessions_with_rounds = [
+        s for s in sessions
+        if "challenge" in ",".join(s.get("skills", []))
+        and s.get("challenge_rounds") is not None
+        and s["challenge_rounds"] > 0
+    ]
+    if len(challenge_sessions_with_rounds) < 3:
+        return {
+            "mean_rounds": None,
+            "trend": "insufficient_data",
+            "velocity": 0.0,
+            "sessions_with_data": len(challenge_sessions_with_rounds),
+        }
+
+    recent = challenge_sessions_with_rounds[-10:]
+    rounds_seq = [s["challenge_rounds"] for s in recent]
+    mean_rounds = sum(rounds_seq) / len(rounds_seq)
+
+    # Simple linear slope: velocity = (last half mean - first half mean) / half_size
+    mid = len(rounds_seq) // 2
+    first_half = rounds_seq[:mid] if mid > 0 else rounds_seq[:1]
+    second_half = rounds_seq[mid:] if mid > 0 else rounds_seq[1:]
+    first_mean = sum(first_half) / len(first_half)
+    second_mean = sum(second_half) / len(second_half)
+    velocity = round(second_mean - first_mean, 2)  # negative = improving
+
+    if velocity < -0.3:
+        trend = "improving"
+    elif velocity > 0.3:
+        trend = "degrading"
+    else:
+        trend = "stable"
+
+    return {
+        "mean_rounds": round(mean_rounds, 1),
+        "trend": trend,
+        "velocity": velocity,
+        "sessions_with_data": len(challenge_sessions_with_rounds),
+    }
+
+
+def _compute_human_precision_rate(sessions: list[dict]) -> float:
+    """
+    Proxy for how well the human front-loads context, reducing challenge loop depth.
+
+    High-precision sessions: HumanPrecision: yes in audit (written by session_end when
+    developer pre-empted ≥1 skill AND challenge resolved in ≤1 round).
+
+    Also accepts proxy computation from DeveloperCaught + challenge_rounds when
+    HumanPrecision field is absent (pre-fix sessions).
+
+    Returns fraction of challenge sessions (after session 5) that are high-precision.
+    Returns 0.0 when fewer than 6 total sessions (not enough history).
+    """
+    if len(sessions) < 6:
+        return 0.0
+
+    challenge_sessions = [
+        s for s in sessions
+        if "challenge" in ",".join(s.get("skills", []))
+    ]
+    if not challenge_sessions:
+        return 0.0
+
+    high_precision = sum(
+        1 for s in challenge_sessions
+        if s.get("human_precision")  # direct field (sessions after this change)
+        or (  # proxy for pre-fix sessions
+            s.get("developer_caught")
+            and (s.get("challenge_rounds") or 0) <= 1
+            and (s.get("challenge_rounds") or 0) >= 1
+        )
+    )
+    return high_precision / len(challenge_sessions)
+
+
 def _compute_depth_multiplier(sessions: list[dict]) -> float:
     """
     Score multiplier based on session depth with this project.
@@ -399,6 +492,17 @@ def _score_org(audit_texts: list[str]) -> float:
     else:
         loop_dry_rate = 1.0  # no data → no penalty
 
+    # Human precision rate: fraction of challenge sessions where human front-loaded context
+    # (DeveloperCaught ≥1 AND challenge_rounds ≤ 1). Rising rate = human is learning to
+    # support the reasoning loop — fewer correction rounds needed because input is precise.
+    human_precision_rate = _compute_human_precision_rate(sessions)
+
+    # Convergence velocity: trend of challenge_rounds across sessions.
+    # Negative velocity = improving (fewer rounds to reach optimum over time).
+    # Only contributes to score when trend is "improving" — no penalty for early sessions.
+    conv_velocity = _compute_convergence_velocity(sessions)
+    convergence_bonus = 0.5 if conv_velocity["trend"] == "improving" else 0.0
+
     # Depth multiplier: a 9/10 on session 3 = checklist compliance, not compounding.
     # Score is discounted until the project has enough sessions to demonstrate growth.
     depth_multiplier = _compute_depth_multiplier(sessions)
@@ -410,6 +514,8 @@ def _score_org(audit_texts: list[str]) -> float:
     # framing_accuracy_rate (0.5 weight): was the goal correctly translated before work started?
     # autonomy_rate (1.0 weight): developer pre-empting skills = proof the loop is working
     # loop_dry_rate (1.0 weight): reasoning loops reaching global optimum before verdict
+    # human_precision_rate (0.5 weight): human front-loading context = shorter loops
+    # convergence_bonus (0.5 max): reward when rounds-to-optimum trend is improving
     raw_score = (
         5.0
         + (capability_skill_rate * 2.0)
@@ -419,6 +525,8 @@ def _score_org(audit_texts: list[str]) -> float:
         + (framing_accuracy_rate * 0.5)
         + (autonomy_rate * 1.0)
         + (loop_dry_rate * 1.0)
+        + (human_precision_rate * 0.5)
+        + convergence_bonus
         + token_penalty
     )
     score = raw_score * depth_multiplier
@@ -639,6 +747,55 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
                 f"not holding: {challenge_sessions_count - loop_dry_sessions}/{challenge_sessions_count} "
                 "challenge sessions had post-verdict corrections or gaps. "
                 "Run assess_skill('challenge') to diagnose."
+            )
+
+    # Convergence velocity: is the challenge loop reaching optimum in fewer rounds over time?
+    # Surfaces when enough challenge sessions exist to compute a trend (≥3 with round data).
+    # "Improving" means the skill+human system is learning — first-pass reasoning is deepening.
+    conv_velocity = _compute_convergence_velocity(sessions)
+    if conv_velocity["sessions_with_data"] >= 3:
+        mean_r = conv_velocity["mean_rounds"]
+        trend = conv_velocity["trend"]
+        vel = conv_velocity["velocity"]
+        n = conv_velocity["sessions_with_data"]
+        if trend == "improving":
+            findings.append(
+                f"Convergence velocity: improving — challenge loop averaging {mean_r} rounds "
+                f"({vel:+.1f} rounds/half-window, {n} sessions). First-pass reasoning depth is growing: "
+                "fewer correction rounds needed to reach global optimum."
+            )
+        elif trend == "degrading":
+            findings.append(
+                f"Convergence velocity: degrading — challenge loop rounds increasing "
+                f"({vel:+.1f} rounds/half-window, avg {mean_r} over {n} sessions). "
+                "First-pass reasoning is shallowing or task complexity is rising faster than skill depth. "
+                "Run assess_skill('challenge') to diagnose."
+            )
+        # stable: no finding — stable is expected baseline, not worth surfacing
+
+    # Human precision rate: are humans front-loading enough context to shorten the loop?
+    # Only surfaces after session 5 and when challenge has run at least 3 times.
+    human_prec = _compute_human_precision_rate(sessions)
+    challenge_sessions_count = sum(1 for s in sessions if "challenge" in ",".join(s.get("skills", [])))
+    if total >= 6 and challenge_sessions_count >= 3:
+        if human_prec >= 0.5:
+            findings.append(
+                f"Human precision: {human_prec:.0%} of challenge sessions resolved in ≤1 round with "
+                "pre-loaded context (DeveloperCaught). Human articulation is compounding: "
+                "requests are precise enough that the loop converges fast."
+            )
+        elif human_prec > 0:
+            findings.append(
+                f"Human precision: {human_prec:.0%} — human front-loading is partial. "
+                "To reduce challenge rounds: include key tradeoffs, constraints, and failure modes "
+                "in your initial request before the skill runs."
+            )
+        else:
+            findings.append(
+                "Human precision: 0% — no sessions where human pre-loaded context AND challenge "
+                f"completed in ≤1 round ({challenge_sessions_count} challenge sessions tracked). "
+                "Tip: state the key angles you've already considered in your request — "
+                "this is the fastest path to reducing correction rounds."
             )
 
     # Retrospective recovery: a session closed without /done is recovered when the *next*
@@ -1319,6 +1476,10 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
                 existing_entries = json.loads(metrics_file.read_text()).get("entries", [])
             except Exception:
                 pass
+        # Compute convergence and human precision for persistence
+        sessions_for_conv = _parse_audit_sessions(audit_texts)
+        _conv = _compute_convergence_velocity(sessions_for_conv)
+        _hpr = _compute_human_precision_rate(sessions_for_conv)
         entry = {
             "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "org_score": current_score,
@@ -1330,6 +1491,10 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
             "nfr_check_hit_rate": nfr_check_hit_rate,
             "contracts_total": contracts_total,
             "skill_patch_rate": skill_patch_rate,
+            "convergence_velocity": _conv.get("velocity", 0.0),
+            "convergence_trend": _conv.get("trend", "insufficient_data"),
+            "convergence_mean_rounds": _conv.get("mean_rounds"),
+            "human_precision_rate": round(_hpr, 2),
         }
         existing_entries.append(entry)
         existing_entries = existing_entries[-20:]  # keep last 20 health cycles
@@ -1481,6 +1646,8 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
 
     autonomy_rate = _compute_autonomy_rate(sessions_parsed)
     depth_multiplier = _compute_depth_multiplier(sessions_parsed)
+    conv_velocity = _compute_convergence_velocity(sessions_parsed)
+    human_precision_rate = _compute_human_precision_rate(sessions_parsed)
 
     base = {
         "org_score": report.org_score,
@@ -1493,6 +1660,8 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         "prevented_this_month": prevented_cost,
         "developer_autonomy_rate": round(autonomy_rate, 2),
         "depth_multiplier": depth_multiplier,
+        "convergence_velocity": conv_velocity,
+        "human_precision_rate": round(human_precision_rate, 2),
         "compounding_verdict": (
             "ELITE — developer pre-empting skills; compounding loop closed"
             if autonomy_rate >= 0.4

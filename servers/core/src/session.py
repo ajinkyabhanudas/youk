@@ -1821,12 +1821,35 @@ def start_session(project_dir: str) -> SessionState:
     # This is the compounding signal made visible: ceremony reduces as developer grows.
     _nfr_autonomy_rate = 0.0
     _nfr_autonomy_mode = "standard"
+    _human_precision_rate = 0.0
     try:
-        from health import _parse_audit_sessions, _compute_skill_autonomy_rate, _read_recent_audit_logs
+        from health import (
+            _parse_audit_sessions, _compute_skill_autonomy_rate, _read_recent_audit_logs,
+            _compute_human_precision_rate, _compute_convergence_velocity,
+        )
         _recent_texts = _read_recent_audit_logs(days=90)
         _recent_sessions = _parse_audit_sessions(_recent_texts)
         _nfr_autonomy_rate = _compute_skill_autonomy_rate(_recent_sessions, "nfr_check")
         _nfr_autonomy_mode = "validate" if _nfr_autonomy_rate >= 0.4 else "standard"
+        _human_precision_rate = _compute_human_precision_rate(_recent_sessions)
+        _conv_velocity = _compute_convergence_velocity(_recent_sessions)
+
+        # Human precision nudge: surface when rate is consistently low after enough sessions.
+        # This is the "help the human learn to front-load context" feedback loop.
+        # Only fires once per session (appended to plan, not inserted — lower priority than blockers).
+        _challenge_sessions_count = sum(
+            1 for s in _recent_sessions if "challenge" in ",".join(s.get("skills", []))
+        )
+        if len(_recent_sessions) >= 6 and _challenge_sessions_count >= 3:
+            if _human_precision_rate < 0.2:
+                _avg_rounds = _conv_velocity.get("mean_rounds")
+                _rounds_str = f" (averaging {_avg_rounds} rounds)" if _avg_rounds else ""
+                session_plan.append(
+                    f"Precision tip: your last {_challenge_sessions_count} challenge sessions "
+                    f"averaged {_human_precision_rate:.0%} high-precision starts{_rounds_str}. "
+                    "Front-load key tradeoffs and constraints in your request — "
+                    "the loop reaches optimum faster when angles are pre-answered."
+                )
     except Exception:
         pass  # degrade gracefully — standard mode is always safe
 
@@ -2365,6 +2388,15 @@ def end_session(
     if developer_caught:
         developer_caught_line = f"DeveloperCaught: {','.join(developer_caught)}\n"
 
+    # HumanPrecision: yes when this session shows evidence of high-precision input —
+    # developer pre-empted ≥1 skill AND challenge resolved in ≤1 round. This is the
+    # per-session signal that feeds human_precision_rate in health.py.
+    # Written as a structured line so _parse_audit_sessions can read it directly.
+    human_precision = (
+        bool(developer_caught) and challenge_rounds <= 1 and challenge_rounds >= 1
+    )
+    human_precision_line = "HumanPrecision: yes\n" if human_precision else ""
+
     token_data = _read_and_clear_tokens()
     total_tokens = token_data["total_input"] + token_data["total_output"]
     budget = token_data.get("token_budget", 0)
@@ -2395,6 +2427,7 @@ def end_session(
         f"{loop_correction_line}"
         f"{loop_gap_line}"
         f"{challenge_rounds_line}"
+        f"{human_precision_line}"
     )
 
     with open(audit_file, "a") as f:

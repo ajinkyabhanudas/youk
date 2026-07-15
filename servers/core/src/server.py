@@ -160,6 +160,24 @@ def session_end(
         summary_lower = summary.lower()
         loop_correction_detected = any(p in summary_lower for p in _CORRECTION_PHRASES)
 
+    # Persist correction state to loop-correction.json so check_loop_dry can read it
+    # structurally (without re-scanning the summary). Written here, read by check_loop_dry.
+    try:
+        import json as _jc
+        from datetime import datetime as _dtc
+        open_file_lc = YOUK_ROOT / "state" / "session-open.json"
+        slug_lc = ""
+        if open_file_lc.exists():
+            slug_lc = _jc.loads(open_file_lc.read_text()).get("slug", "")
+        correction_file = YOUK_ROOT / "state" / "loop-correction.json"
+        correction_file.write_text(_jc.dumps({
+            "slug": slug_lc,
+            "correction_detected": loop_correction_detected,
+            "ts": _dtc.utcnow().isoformat(),
+        }))
+    except Exception:
+        pass
+
     # Structural rounds reading: read challenge_rounds from state file written by
     # mark_challenge_ran() — each call increments the counter, so this is the
     # authoritative count of challenge invocations, not a Claude memory estimate.
@@ -439,6 +457,75 @@ def check_challenge_gate(task: str, size: str) -> dict:
         except Exception:
             pass
     return result
+
+
+@mcp.tool()
+def check_loop_dry(task: str = "") -> dict:
+    """
+    Structural sensor for whether the last challenge loop was dry.
+
+    Reads challenge-ran.json (rounds counter written by mark_challenge_ran) and
+    the loop_correction state derived from the summary scan in session_end. Returns
+    a per-session verdict without requiring Claude to reconstruct this from memory.
+
+    Called automatically by session_end when close_cluster=True. Also exposed as an
+    explicit MCP tool so the done skill can call it for transparency at /done.
+
+    task: optional — the task label to validate against the recorded challenge task.
+
+    Returns: {
+        "dry": bool — True when challenge ran AND no correction detected this session,
+        "rounds": int — number of mark_challenge_ran calls this session,
+        "challenge_ran": bool — whether challenge ran at all,
+        "loop_correction_in_state": bool — whether a correction was written to state,
+        "session_slug": str,
+    }
+    """
+    try:
+        import json as _json
+        flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
+        open_file = YOUK_ROOT / "state" / "session-open.json"
+        correction_file = YOUK_ROOT / "state" / "loop-correction.json"
+
+        current_slug = ""
+        if open_file.exists():
+            current_slug = _json.loads(open_file.read_text()).get("slug", "")
+
+        rounds = 0
+        challenge_ran = False
+        if flag_file.exists():
+            data = _json.loads(flag_file.read_text())
+            if data.get("slug") == current_slug:
+                rounds = data.get("rounds", 0)
+                challenge_ran = rounds > 0
+
+        # Read loop-correction state — written by session_end when correction language
+        # detected in summary. This is the structural half of loop_gap detection.
+        correction_in_state = False
+        if correction_file.exists():
+            try:
+                corr_data = _json.loads(correction_file.read_text())
+                if corr_data.get("slug") == current_slug:
+                    correction_in_state = corr_data.get("correction_detected", False)
+            except Exception:
+                pass
+
+        dry = challenge_ran and not correction_in_state
+        return {
+            "dry": dry,
+            "rounds": rounds,
+            "challenge_ran": challenge_ran,
+            "loop_correction_in_state": correction_in_state,
+            "session_slug": current_slug,
+        }
+    except Exception:
+        return {
+            "dry": False,
+            "rounds": 0,
+            "challenge_ran": False,
+            "loop_correction_in_state": False,
+            "session_slug": "",
+        }
 
 
 @mcp.tool()
