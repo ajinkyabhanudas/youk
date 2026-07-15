@@ -16,6 +16,7 @@ from health import (
 )
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
 from nfr_gate import check_nfr_gate as _check_nfr_gate
+from challenge_gate import check_challenge_gate as _check_challenge_gate
 from intent import optimize_intent as _optimize_intent
 from compaction import build_brief, write_contracts
 from tokens import init_token_tracker, record_checkpoint
@@ -284,6 +285,81 @@ def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) 
             if open_file.exists():
                 slug = _json.loads(open_file.read_text()).get("slug", "unknown")
             flag_file = YOUK_ROOT / "state" / "nfr-check-ran.json"
+            flag_file.write_text(_json.dumps({
+                "slug": slug,
+                "ts": _dt.utcnow().isoformat(),
+            }))
+        except Exception:
+            pass
+    return result
+
+
+@mcp.tool()
+def mark_challenge_ran(task: str) -> dict:
+    """
+    Record that the challenge skill has run and passed for the current M+ task.
+    Call this immediately after challenge emits [CHALLENGE PASSED] or
+    [CHALLENGE PASSED — revised direction].
+
+    task: The task label — used for logging context only.
+
+    Returns: {"recorded": bool}
+    """
+    try:
+        import json as _json
+        from datetime import datetime as _dt
+        slug = "unknown"
+        open_file = YOUK_ROOT / "state" / "session-open.json"
+        if open_file.exists():
+            slug = _json.loads(open_file.read_text()).get("slug", "unknown")
+        flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
+        flag_file.write_text(_json.dumps({
+            "slug": slug,
+            "task": task,
+            "ts": _dt.utcnow().isoformat(),
+        }))
+        return {"recorded": True}
+    except Exception:
+        return {"recorded": False}
+
+
+@mcp.tool()
+def check_challenge_gate(task: str, size: str) -> dict:
+    """
+    Gate that blocks M+ implementation when challenge skill has not run for this task.
+    Call this after nfr_check passes and before invoking dev-loop on M+ tasks.
+
+    task: The task being implemented (for logging context).
+    size: The routing size returned by route_task — XS, S, M, L, or XL.
+
+    Returns: {"blocked": bool, "reason": str}
+    When blocked=True: run challenge skill first (route_to_skill('challenge', task)),
+    then call mark_challenge_ran(task), then re-call check_challenge_gate.
+    When blocked=False: proceed to dev-loop.
+    """
+    challenge_ran = False
+    try:
+        import json as _json
+        flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
+        if flag_file.exists():
+            data = _json.loads(flag_file.read_text())
+            open_file = YOUK_ROOT / "state" / "session-open.json"
+            if open_file.exists():
+                current_slug = _json.loads(open_file.read_text()).get("slug", "")
+                challenge_ran = data.get("slug", "") == current_slug
+    except Exception:
+        pass
+
+    result = _check_challenge_gate(task, size, challenge_ran)
+    if not result["blocked"] and size in {"M", "L", "XL"}:
+        try:
+            import json as _json
+            from datetime import datetime as _dt
+            slug = "unknown"
+            open_file = YOUK_ROOT / "state" / "session-open.json"
+            if open_file.exists():
+                slug = _json.loads(open_file.read_text()).get("slug", "unknown")
+            flag_file = YOUK_ROOT / "state" / "challenge-gate-passed.json"
             flag_file.write_text(_json.dumps({
                 "slug": slug,
                 "ts": _dt.utcnow().isoformat(),
