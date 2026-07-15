@@ -136,6 +136,12 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         else:
             s["developer_caught"] = []
 
+        # Loop-dry tracking — measures run-until-dry behavioral DNA health.
+        s["loop_correction"] = bool(re.search(r"^LoopCorrection:\s*yes$", block, re.MULTILINE | re.IGNORECASE))
+        s["loop_gap"] = bool(re.search(r"^LoopGap:\s*yes$", block, re.MULTILINE | re.IGNORECASE))
+        rounds_match = re.search(r"^ChallengeRounds:\s*(\d+)$", block, re.MULTILINE)
+        s["challenge_rounds"] = int(rounds_match.group(1)) if rounds_match else None
+
         sessions.append(s)
     return sessions[-150:]  # cap: most recent 150 sessions regardless of window size
 
@@ -380,6 +386,19 @@ def _score_org(audit_texts: list[str]) -> float:
     # At 6+ sessions, a rising rate is the primary signal that compounding is real.
     autonomy_rate = _compute_autonomy_rate(sessions)
 
+    # Loop-dry rate: fraction of challenge sessions with no correction and no gap detected.
+    # Measures whether run-until-dry behavioral DNA is working as intended.
+    # Only counted when challenge skill ran (has Skills: containing "challenge").
+    challenge_sessions = [s for s in sessions if "challenge" in ",".join(s.get("skills", []))]
+    if challenge_sessions:
+        clean_loops = sum(
+            1 for s in challenge_sessions
+            if not s.get("loop_correction") and not s.get("loop_gap")
+        )
+        loop_dry_rate = clean_loops / len(challenge_sessions)
+    else:
+        loop_dry_rate = 1.0  # no data → no penalty
+
     # Depth multiplier: a 9/10 on session 3 = checklist compliance, not compounding.
     # Score is discounted until the project has enough sessions to demonstrate growth.
     depth_multiplier = _compute_depth_multiplier(sessions)
@@ -390,6 +409,7 @@ def _score_org(audit_texts: list[str]) -> float:
     # prevented_score (0.5 weight): outcome quality — did skills catch something real?
     # framing_accuracy_rate (0.5 weight): was the goal correctly translated before work started?
     # autonomy_rate (1.0 weight): developer pre-empting skills = proof the loop is working
+    # loop_dry_rate (1.0 weight): reasoning loops reaching global optimum before verdict
     raw_score = (
         5.0
         + (capability_skill_rate * 2.0)
@@ -398,6 +418,7 @@ def _score_org(audit_texts: list[str]) -> float:
         + prevented_score
         + (framing_accuracy_rate * 0.5)
         + (autonomy_rate * 1.0)
+        + (loop_dry_rate * 1.0)
         + token_penalty
     )
     score = raw_score * depth_multiplier
@@ -589,6 +610,36 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
             f"Depth discount active ({depth_multiplier:.0%} multiplier, {total} sessions). "
             f"Score reflects process compliance, not compounding — full weight reached at session 20+."
         )
+
+    # Loop-dry rate: measures whether run-until-dry behavioral DNA is working.
+    # Only surfaces when challenge has run at least 3 sessions (enough signal to measure).
+    challenge_sessions_count = sum(1 for s in sessions if "challenge" in ",".join(s.get("skills", [])))
+    if challenge_sessions_count >= 3:
+        loop_dry_sessions = sum(
+            1 for s in sessions
+            if "challenge" in ",".join(s.get("skills", []))
+            and not s.get("loop_correction") and not s.get("loop_gap")
+        )
+        loop_dry_pct = loop_dry_sessions / challenge_sessions_count
+        if loop_dry_pct >= 0.9:
+            findings.append(
+                f"Loop-dry rate: {loop_dry_pct:.0%} ({loop_dry_sessions}/{challenge_sessions_count} "
+                "challenge sessions reached global optimum without correction). Run-until-dry DNA is working."
+            )
+        elif loop_dry_pct >= 0.7:
+            corrections = challenge_sessions_count - loop_dry_sessions
+            findings.append(
+                f"Loop-dry rate: {loop_dry_pct:.0%} — {corrections} challenge session(s) had post-verdict "
+                "corrections or retrospective gaps. Loop exits before dry in ~{1-loop_dry_pct:.0%} of sessions. "
+                "Review challenge skill exit condition."
+            )
+        else:
+            findings.append(
+                f"Loop-dry rate: {loop_dry_pct:.0%} — BELOW THRESHOLD. Run-until-dry behavioral DNA is "
+                f"not holding: {challenge_sessions_count - loop_dry_sessions}/{challenge_sessions_count} "
+                "challenge sessions had post-verdict corrections or gaps. "
+                "Run assess_skill('challenge') to diagnose."
+            )
 
     # Retrospective recovery: a session closed without /done is recovered when the *next*
     # session opened with /learn (youk detects the missed close and runs /learn automatically).

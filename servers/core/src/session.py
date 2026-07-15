@@ -2255,6 +2255,9 @@ def end_session(
     nfr_gaps: list[str] | None = None,
     direction_reversal: bool = False,
     developer_caught: list[str] | None = None,
+    loop_correction_detected: bool = False,
+    loop_gap_detected: bool = False,
+    challenge_rounds: int = 0,
 ) -> dict:
     """
     Write structured audit log entry, detect and save contract phrases.
@@ -2280,6 +2283,17 @@ def end_session(
     answered the questions before the skill ran (e.g. ["nfr_check", "challenge"]).
     Written as DeveloperCaught: {skill1},{skill2} line. Parsed by health.py to
     compute developer_autonomy_rate — the signal that the compounding loop is working.
+
+    loop_correction_detected: True when the user corrected a reasoning verdict this
+    session (said "you missed", "what about", "unchallenged", etc. after a verdict).
+    Written as LoopCorrection: yes. Feeds loop_dry_rate in health.py.
+
+    loop_gap_detected: True when the /done retrospective lens check found an objection
+    that the original challenge loop missed. Written as LoopGap: yes.
+    Triggers mid-session assess_skill("challenge") before session closes.
+
+    challenge_rounds: Total ITERATE phases across all challenge invocations this session.
+    Written as ChallengeRounds: N. Low values (0 or 1) combined with corrections = early exit signal.
     """
     # 3B — Auto-draft summary when developer passes empty string or "done"
     # Reads the session plan written by session_start so the audit entry is useful
@@ -2341,6 +2355,10 @@ def end_session(
     # FramingCorrect: yes when the goal translation was correct (no direction reversal).
     # Parsed by health._parse_audit_sessions() to compute framing_accuracy_rate in org_score.
     framing_correct_line = f"FramingCorrect: {'no' if direction_reversal else 'yes'}\n"
+    # Loop-dry tracking — measures whether run-until-dry behavioral DNA is working.
+    loop_correction_line = "LoopCorrection: yes\n" if loop_correction_detected else ""
+    loop_gap_line = "LoopGap: yes\n" if loop_gap_detected else ""
+    challenge_rounds_line = f"ChallengeRounds: {challenge_rounds}\n" if challenge_rounds > 0 else ""
     # DeveloperCaught: skills the developer pre-empted by answering questions unprompted.
     # Rising count across sessions = the compounding loop is working — developer internalised the pattern.
     developer_caught_line = ""
@@ -2374,6 +2392,9 @@ def end_session(
         f"{direction_reversal_line}"
         f"{framing_correct_line}"
         f"{developer_caught_line}"
+        f"{loop_correction_line}"
+        f"{loop_gap_line}"
+        f"{challenge_rounds_line}"
     )
 
     with open(audit_file, "a") as f:
