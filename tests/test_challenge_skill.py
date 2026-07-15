@@ -197,9 +197,10 @@ class TestChallengeSkillQualityBars:
             "if this bar is removed, BLOCKING becomes advisory and the gate breaks"
         )
 
-    def test_two_round_maximum_bar_present(self, skill_content):
-        assert "two rounds" in skill_content.lower() or "maximum" in skill_content.lower(), (
-            "Quality bar: two-round maximum must be enforced — "
+    def test_round_cap_bar_present(self, skill_content):
+        # Cap is 5 rounds (emergency brake) — exit condition is zero new objections
+        assert "five rounds" in skill_content.lower() or "emergency brake" in skill_content.lower(), (
+            "Quality bar: round cap (emergency brake) must be present — "
             "without this, the loop has no exit condition"
         )
 
@@ -221,13 +222,13 @@ class TestChallengeSkillQualityBars:
 # ---------------------------------------------------------------------------
 
 class TestChallengeSkillExitCondition:
-    """Two-round cap and BLOCKING hard stop must be encoded in phase logic."""
+    """Five-round emergency brake and BLOCKING hard stop must be encoded in phase logic."""
 
-    def test_two_round_cap_in_phase_3(self, skill_content):
-        # Phase 3 is the iteration phase — must have explicit exit rule
-        assert "Maximum two rounds" in skill_content or "two round" in skill_content.lower(), (
-            "Phase 3 must encode the two-round maximum — "
-            "infinite loops produce paralysis, not quality"
+    def test_round_cap_in_phase_3(self, skill_content):
+        # Phase 3 is the iteration phase — must have explicit emergency brake
+        assert "five rounds" in skill_content.lower() or "emergency brake" in skill_content.lower(), (
+            "Phase 3 must encode the emergency brake — "
+            "run-to-dry is the exit condition, round count is only the brake"
         )
 
     def test_blocking_triggers_stop_not_footnote(self, skill_content):

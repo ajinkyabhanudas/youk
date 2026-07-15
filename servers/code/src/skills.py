@@ -10,6 +10,40 @@ from skill_loader import load_skill, load_skill_with_context, list_skills, load_
 _SESSION_STATE = Path("/youk/state/session.json")
 _SKILL_GRAPH = Path("/youk/knowledge/skill-graph.yaml")
 
+# Sections that are reference-only (not needed for in-session execution).
+# Quality Bars and all phases above them are preserved — these sections are below.
+_STRIP_SECTIONS = (
+    "## Example Flows",
+    "## Hiring Validation",
+    "## Reference Files",
+    "## Examples",
+    "## Validation",
+)
+
+
+def _strip_reference_sections(content: str) -> str:
+    """
+    Remove reference-only sections from SKILL.md before returning to Claude.
+
+    Preserves: frontmatter, description, invocation grammar, phases, quality bars,
+    stack coverage system, and any handoff blocks.
+    Strips: Example Flows, Hiring Validation, Reference Files — pure reader content,
+    not needed for in-session skill execution. Saves 35-50% per skill load.
+    """
+    lines = content.splitlines(keepends=True)
+    result: list[str] = []
+    skip = False
+    for line in lines:
+        stripped = line.rstrip()
+        if any(stripped == section or stripped.startswith(section + "\n") for section in _STRIP_SECTIONS):
+            skip = True
+        elif skip and stripped.startswith("## ") and not any(stripped == s for s in _STRIP_SECTIONS):
+            # New top-level section that is NOT a strip target — resume
+            skip = False
+        if not skip:
+            result.append(line)
+    return "".join(result).rstrip() + "\n"
+
 
 def _read_session_stack_context() -> dict:
     """Read stack/framework/domain written by session_start() — zero tokens."""
@@ -138,6 +172,8 @@ def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> d
         )
     except FileNotFoundError as e:
         return {"error": str(e)}
+
+    skill_content = _strip_reference_sections(skill_content)
 
     handoff = _read_and_clear_pending_handoff(skill_name)
     if handoff:

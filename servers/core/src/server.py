@@ -24,6 +24,28 @@ from tokens import init_token_tracker, record_checkpoint
 YOUK_ROOT = Path("/youk")
 CLAUDE_ROOT = Path("/claude")
 
+_TOOL_CALL_COUNT_FILE = YOUK_ROOT / "state" / "tool-call-count.json"
+
+
+def _increment_tool_call_count() -> int:
+    """Increment per-session tool call counter. Returns new count."""
+    import json as _json
+    count = 0
+    if _TOOL_CALL_COUNT_FILE.exists():
+        try:
+            count = _json.loads(_TOOL_CALL_COUNT_FILE.read_text()).get("count", 0)
+        except Exception:
+            pass
+    count += 1
+    _TOOL_CALL_COUNT_FILE.write_text(_json.dumps({"count": count}))
+    return count
+
+
+def _reset_tool_call_count() -> None:
+    """Reset counter when compact_context fires."""
+    _TOOL_CALL_COUNT_FILE.write_text('{"count": 0}')
+
+
 mcp = FastMCP(
     "youk-core",
     instructions=(
@@ -311,6 +333,7 @@ def route_task(
         existing = [e for e in existing if e.get("slug") == slug]
         existing.append(new_entry)
         flag_file.write_text(_json.dumps(existing))
+    result["calls_since_compact"] = _increment_tool_call_count()
     return result
 
 
@@ -722,11 +745,14 @@ def task_checkpoint(
       pattern_trigger so Claude acts immediately (mid-session adaptation).
 
     Returns: brief (paste verbatim), checkpoint_written, pattern_trigger (if any),
-             goal_check (if a session goal is active — goal_met: bool, goal_gap: str).
+             goal_check (if a session goal is active — goal_met: bool, goal_gap: str),
+             calls_since_compact (int — compact if > 8).
              IMPORTANT: if goal_check.goal_met is False, do NOT close the session.
              Derive the next task toward the stated goal and continue.
     """
-    return _task_checkpoint(project_dir, task_label, size, session_learnings)
+    result = _task_checkpoint(project_dir, task_label, size, session_learnings)
+    result["calls_since_compact"] = _increment_tool_call_count()
+    return result
 
 
 @mcp.tool()
@@ -792,6 +818,7 @@ def compact_context(project_dir: str, intent: str = "") -> dict:
 
     Returns: brief (pin this), contracts_count, decisions_count, instruction.
     """
+    _reset_tool_call_count()
     return build_brief(project_dir, intent)
 
 
