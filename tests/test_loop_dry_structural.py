@@ -8,10 +8,7 @@ correction detection fires from the summary without requiring Claude to set the 
 from __future__ import annotations
 import json
 import sys
-import tempfile
 from pathlib import Path
-
-import pytest
 
 # Point at shared + core src
 sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "core" / "src"))
