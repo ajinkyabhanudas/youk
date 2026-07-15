@@ -217,12 +217,29 @@ For each CRITICAL or HIGH finding:
 
 ---
 
+### Phase 4b — ITERATE (before verdict, when new attack surfaces emerge)
+
+After triage, before surfacing verdict: self-check both conditions:
+1. Did the last attack round produce zero new findings from all three agents?
+2. Is there any attack surface, angle, or compound interaction not yet probed?
+
+If either is false — run another attack round targeting only the uncovered surface.
+Repeat until both conditions are true. Only then proceed to verdict.
+
+Emergency brake: 5 attack rounds. On cap hit: surface "Round 5 reached — attack
+surface [X] remains unresolved. User input needed before verdict." Do not exit silently.
+
+This is the run-to-dry exit condition. Round count is an emergency brake, not the exit condition.
+
+---
+
 ### Phase 5 — RETEST (conditional)
 
 If the subject is revised based on remediation suggestions, run a focused retest:
 1. For each CRITICAL/HIGH finding from the original run: does the revision address it?
 2. Did the revision introduce any new attack surfaces?
-3. Issue a new verdict.
+3. Run Phase 4b iterate check on the revised subject before issuing new verdict.
+4. Issue a new verdict.
 
 > Retest is faster than the full attack — agents focus only on the changed areas and
 > prior findings, not the full surface.
@@ -231,6 +248,7 @@ If the subject is revised based on remediation suggestions, run a focused retest
 
 ## Quality Bars (Non-Negotiable)
 
+- **Run to dry, not to round count.** Before surfacing any verdict, both must be true: (1) the last attack round produced zero new findings from all three agents, (2) no attack surface or compound interaction remains unprobed. Emergency brake is 5 rounds — cap hit surfaces the unresolved tension explicitly, never silently exits.
 - **Findings must be specific.** "This could fail under load" is not a finding. "When 50 simultaneous users submit queries, the thread pool exhausts at 10 threads and new requests queue indefinitely" is a finding.
 - **Agents must be independent.** If the three agents produce identical findings, the attack was not independent. Revise.
 - **SURVIVES does not mean "perfect."** It means "no CRITICAL or HIGH findings in this pass." LOW findings still get documented.
