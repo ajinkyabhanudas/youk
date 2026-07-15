@@ -67,6 +67,22 @@ For each unsaved contract found:
 
 Collect the list as `explicit_contracts`.
 
+**Step 5a — Loop-dry retrospective check**
+
+Scan the conversation for every `[CHALLENGE PASSED]` or `[CHALLENGE PASSED — revised direction]` verdict emitted this session.
+
+For each verdict found:
+1. Determine the rotated lens: `lens_number = (session_number % 4) + 1` where session_number comes from the session_start return value.
+2. Re-run that single lens silently against the challenged direction.
+3. If the lens finds a new objection: set `loop_gap_detected = True`. Surface: "Retrospective lens {N} found a gap in the challenge loop: {objection}. Running assess_skill('challenge') now."
+4. Then call `youk-code.route_to_skill("assess_skill", "challenge — retrospective gap found")` and apply any SKILL_EDIT proposals immediately before session closes.
+
+Also scan the conversation for correction language after any verdict token ("you missed", "what about", "unchallenged", "you didn't consider", "still not at floor", "loop not dry"). If found: set `loop_correction_detected = True`.
+
+Count total ITERATE phases across all challenge invocations this session → `challenge_rounds`.
+
+If no `[CHALLENGE PASSED]` verdicts exist this session: skip silently.
+
 **Step 5b — Doc-staleness sweep**
 
 Call `youk-core.check_doc_graph()`.
@@ -85,7 +101,7 @@ Skip silently if check_doc_graph() returns no stale concepts.
 
 Call `youk-core.track_tokens(approx_input, approx_output, "final")`
 Call `youk-core.compact_context(project_dir)`  — paste the returned `brief` verbatim
-Call `youk-core.session_end("done", commits_made=<bool>, explicit_contracts=explicit_contracts, close_cluster=True)`
+Call `youk-core.session_end("done", commits_made=<bool>, explicit_contracts=explicit_contracts, close_cluster=True, loop_correction_detected=<bool>, loop_gap_detected=<bool>, challenge_rounds=<int>)`
 
 ---
 

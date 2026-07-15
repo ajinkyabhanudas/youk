@@ -148,6 +148,37 @@ def session_end(
     except HardRuleViolation as e:
         return {"error": str(e), "blocked": True, "rule_id": e.rule_id}
 
+    # Structural correction detection: scan the summary for post-verdict correction language.
+    # This is server-side — doesn't rely on Claude passing loop_correction_detected=True.
+    # The summary is the only cross-session artifact we can scan reliably.
+    _CORRECTION_PHRASES = [
+        "you missed", "what about", "unchallenged", "you didn't consider",
+        "still not at floor", "loop not dry", "not at floor", "still not done",
+        "angle unchallenged", "you forgot", "missed this",
+    ]
+    if not loop_correction_detected and summary:
+        summary_lower = summary.lower()
+        loop_correction_detected = any(p in summary_lower for p in _CORRECTION_PHRASES)
+
+    # Structural rounds reading: read challenge_rounds from state file written by
+    # mark_challenge_ran() — each call increments the counter, so this is the
+    # authoritative count of challenge invocations, not a Claude memory estimate.
+    # Use the state-file value when it exceeds the caller-passed value (take max).
+    try:
+        import json as _j
+        flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
+        if flag_file.exists():
+            _flag_data = _j.loads(flag_file.read_text())
+            open_file = YOUK_ROOT / "state" / "session-open.json"
+            current_slug = ""
+            if open_file.exists():
+                current_slug = _j.loads(open_file.read_text()).get("slug", "")
+            if _flag_data.get("slug") == current_slug:
+                state_rounds = _flag_data.get("rounds", 0)
+                challenge_rounds = max(challenge_rounds, state_rounds)
+    except Exception:
+        pass
+
     return end_session(
         summary, commits_made, explicit_contracts, skills_used, close_cluster,
         skill_gaps, mid_session_adaptations_applied,
@@ -327,9 +358,13 @@ def mark_challenge_ran(task: str) -> dict:
     Call this immediately after challenge emits [CHALLENGE PASSED] or
     [CHALLENGE PASSED — revised direction].
 
+    Each call increments the challenge_rounds counter — this is the structural
+    measure of how many ITERATE/verdict cycles ran. session_end reads this count
+    directly from state rather than trusting Claude's passed-in value.
+
     task: The task label — used for logging context only.
 
-    Returns: {"recorded": bool}
+    Returns: {"recorded": bool, "challenge_rounds": int}
     """
     try:
         import json as _json
@@ -339,14 +374,25 @@ def mark_challenge_ran(task: str) -> dict:
         if open_file.exists():
             slug = _json.loads(open_file.read_text()).get("slug", "unknown")
         flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
+        # Read existing data to increment rounds counter
+        existing_rounds = 0
+        if flag_file.exists():
+            try:
+                existing = _json.loads(flag_file.read_text())
+                if existing.get("slug") == slug:
+                    existing_rounds = existing.get("rounds", 0)
+            except Exception:
+                pass
+        new_rounds = existing_rounds + 1
         flag_file.write_text(_json.dumps({
             "slug": slug,
             "task": task,
             "ts": _dt.utcnow().isoformat(),
+            "rounds": new_rounds,
         }))
-        return {"recorded": True}
+        return {"recorded": True, "challenge_rounds": new_rounds}
     except Exception:
-        return {"recorded": False}
+        return {"recorded": False, "challenge_rounds": 0}
 
 
 @mcp.tool()
