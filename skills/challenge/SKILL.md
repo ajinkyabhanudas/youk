@@ -36,6 +36,7 @@ One loop. Exit on silence.
 | `assumptions only` | Lens 3 (hidden assumptions) only — fastest path |
 | `retest: [revised direction]` | Given a revised direction, run one more challenge round to confirm it survives |
 | `silent` | Run challenge internally, only surface if a blocking objection is found |
+| `plan: [task list]` | Plan coherence check — Lens 2+3 across the full task list as a unit, then Lens 3 quick on tasks that need sharpening. Fires before any task is implemented. |
 
 ---
 
@@ -132,6 +133,42 @@ What is NOT being done if we go this direction?
 - What would be lost by not taking an alternative path?
 - Is this the highest-leverage use of the next N exchanges?
 - Is there a direction that addresses this AND a prior open question simultaneously?
+
+---
+
+## Plan Coherence Phase (fires only in `plan:` mode)
+
+`[PHASE: PLAN COHERENCE]`
+
+Runs once across the full task list before any per-task challenge. Single agent, Lens 2 + Lens 3 applied to the plan as a unit. File context from conversation (recently read files, mentioned modules) is used opportunistically — no explicit loading required.
+
+**Input:** task list (N items), FIXED_CONSTRAINTS, file context in conversation.
+
+**Three questions, in order:**
+
+1. **Redundancy** (Lens 2): Which tasks solve the same problem as another task in this list, or as something already in the codebase? Name the overlap specifically.
+2. **Already solved** (Lens 3): Which tasks assume a problem exists that the codebase already addresses? Name the file/function that already solves it if visible in context.
+3. **Broken ordering** (Lens 3): Which tasks assume a state produced by another task that comes after it in the list?
+
+**Output per task:**
+
+```
+Task N: {task description}
+Verdict: PASSED | NEEDS SHARPENING | WRONG
+Reason: {one sentence — only required for WRONG and NEEDS SHARPENING}
+```
+
+**After all tasks assessed:**
+- PASSED tasks: proceed to implementation, no further challenge
+- NEEDS SHARPENING tasks: run Lens 3 `assumptions only` quick on that task alone, then re-emit verdict
+- WRONG tasks: surface with default-yes confirmation before dropping:
+  `"Task N flagged WRONG: {reason}. Drop it? (default yes — say no to keep)"`
+
+**Rules:**
+- PASSED tasks are silent — do not list them unless user asks
+- Only surface WRONG and NEEDS SHARPENING
+- Do not challenge FIXED_CONSTRAINTS
+- If zero tasks come back WRONG or NEEDS SHARPENING: emit `[PLAN COHERENCE PASSED]` and proceed immediately
 
 ---
 
@@ -286,3 +323,30 @@ ORIENT: Stakes low. Specific, bounded task. No ambiguity.
 `silent` mode auto-selected.
 All lenses: zero objections.
 No output. Proceed to implementation.
+
+**Plan coherence check — 7-task plan, 4 WRONG:**
+> Planning phase produces: [1. add retry logic, 2. add caching layer, 3. add rate limiting, 4. refactor query loop, 5. add connection pooling, 6. add timeout handling, 7. add circuit breaker]
+> File context in conversation: `query.py` already has retry decorator, `db.py` has connection pool.
+
+`challenge plan: [task list]`
+
+PLAN COHERENCE — Lens 2+3 across full list:
+- Task 1 (retry logic): WRONG — `query.py` has `@retry` decorator already. Redundant.
+- Task 2 (caching): PASSED
+- Task 3 (rate limiting): NEEDS SHARPENING — assumes rate limiting belongs in the query layer; likely belongs at the API boundary
+- Task 4 (refactor query loop): PASSED
+- Task 5 (connection pooling): WRONG — `db.py` has `ConnectionPool` class already. Redundant.
+- Task 6 (timeout handling): PASSED
+- Task 7 (circuit breaker): NEEDS SHARPENING — assumes circuit breaker is needed; no evidence of downstream instability in context
+
+Surface:
+```
+Task 1 flagged WRONG: retry logic already exists in query.py (@retry decorator). Drop it? (default yes)
+Task 5 flagged WRONG: connection pool already exists in db.py (ConnectionPool). Drop it? (default yes)
+Task 3 needs sharpening: rate limiting assumption → running Lens 3 quick...
+  Assumption: rate limiting belongs in query layer. Risk: already handled at API gateway. Confirm placement before building.
+Task 7 needs sharpening: circuit breaker assumption → running Lens 3 quick...
+  Assumption: downstream instability exists. No evidence in context. Add only if instability is confirmed.
+```
+
+`[PLAN COHERENCE — 2 WRONG dropped, 2 NEEDS SHARPENING flagged, 3 PASSED proceeding]`
