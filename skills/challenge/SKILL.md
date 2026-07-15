@@ -249,8 +249,12 @@ Only runs when verdict is NEEDS SHARPENING.
 4. If the revised direction survives: emit `[CHALLENGE PASSED — revised direction]`
 5. If new BLOCKING/HIGH objections emerge: surface them and ask user — do not iterate a third time automatically
 
-**Exit rule:** Maximum two rounds. If direction hasn't stabilised after two rounds,
-surface the unresolved tension to the user and let them decide. Do not loop indefinitely.
+**Exit rule:** The loop exits when a round produces zero new objections — not when a
+round count is reached. Run as many rounds as needed until silence. Two rounds is the
+emergency brake only: if round 2 still has HIGH/BLOCKING objections, surface the
+unresolved tension to the user and stop — do not propose a third revision autonomously.
+Before surfacing any verdict, self-check: did the last round produce zero new objections?
+If not, the loop has not exited — keep going internally.
 
 > Compact summary: "Revised direction: [one sentence]. New challenge round result: [verdict]."
 
@@ -261,7 +265,7 @@ surface the unresolved tension to the user and let them decide. Do not loop inde
 - **Objections must be specific.** "This might be the wrong approach" is not an objection. "We're about to build a cross-project pattern scanner when the user's actual complaint was about a single contract not promoting — the scope is 10x larger than the problem" is an objection.
 - **Fixed constraints are never attacked.** If the user said "we're using SQLite", Lens 3 does not produce "assumes SQLite is the right database." That constraint is a wall.
 - **BLOCKING means stop.** If a BLOCKING objection is found, work does not start. The objection is surfaced, the user redirects. Not negotiable.
-- **Two rounds maximum.** The loop exits after two challenge rounds. Infinite loops produce paralysis, not quality.
+- **Zero new objections = exit.** The loop exits when a full round produces nothing new to object to — not when a round count is reached. Two rounds is the emergency brake, not the exit condition. Self-check before every verdict: did the last round produce zero new objections? If not, keep going internally.
 - **LOW objections do not block.** They are noted and carried forward as context. They do not trigger Phase 3.
 - **silent mode only speaks on BLOCKING.** In silent mode, LOW and HIGH findings are held internally and influence the answer without surfacing friction to the user. Only BLOCKING objections break silence.
 
@@ -273,7 +277,7 @@ This skill passes the hiring committee if it can:
 2. **BLOCKING stop:** Given a task where the stated goal contradicts something already decided this session, the skill emits `[DIRECTION WRONG]` and stops — it does not proceed to implementation with a footnote.
 3. **Scope lens fires:** Given "build a two-level reasoning system with reconciliation gate" — Lens 2 identifies "minimum version is a single forced-failure pass, not a dual-layer system" before work starts. This is the rabbit hole prevention case.
 4. **Silent mode discipline:** In `silent` mode on a task with only LOW objections, the skill produces no output visible to the user — it influences the answer silently. It does not surface "I challenged this and found nothing" — that is noise.
-5. **Two-round exit:** If round 2 still has HIGH objections on a revised direction, the skill surfaces the unresolved tension to the user and stops — it does not propose a third revision autonomously.
+5. **Run-until-dry exit:** The skill keeps iterating internally until a round produces zero new objections. Only then does it surface a verdict. If objections persist after two rounds, it surfaces the unresolved tension to the user and stops — it does not propose further revisions autonomously.
 
 ---
 
