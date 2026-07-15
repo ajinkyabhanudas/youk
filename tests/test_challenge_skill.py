@@ -441,3 +441,121 @@ class TestChallengeSkillDriftSentinels:
             "Per-lens objection cap (≤2) must be stated — "
             "without it, lenses produce unbounded findings and overwhelm the synthesis"
         )
+
+
+# ---------------------------------------------------------------------------
+# Plan Mode — per-task coherence gate
+# ---------------------------------------------------------------------------
+
+class TestChallengeSkillPlanMode:
+    """
+    plan: mode adds a plan-coherence gate before multi-task implementation.
+    Tests encode the structural and behavioral requirements of the new mode.
+
+    Drift risk: someone edits plan: mode and removes the default-yes confirmation,
+    the silent-pass rule, or the Lens 2+3 specification — breaking the gate silently.
+    """
+
+    def test_plan_mode_in_invocation_grammar(self, skill_content):
+        assert "plan:" in skill_content, (
+            "plan: invocation mode must appear in Invocation Grammar — "
+            "removing it breaks the multi-task coherence gate"
+        )
+
+    def test_plan_coherence_phase_present(self, skill_content):
+        assert "PLAN COHERENCE" in skill_content, (
+            "PLAN COHERENCE phase must be present — "
+            "this is the structural gate for multi-task plans"
+        )
+
+    def test_plan_mode_uses_lens_2_and_3(self, skill_content):
+        # Plan coherence runs Lens 2 (scope) + Lens 3 (assumptions) — not all four
+        plan_section = skill_content[
+            skill_content.find("## Plan Coherence"):
+            skill_content.find("## The Three Phases")
+        ] if "## Plan Coherence" in skill_content else ""
+        assert "Lens 2" in plan_section and "Lens 3" in plan_section, (
+            "Plan coherence phase must specify Lens 2 and Lens 3 — "
+            "these are the lenses that catch redundancy and already-solved problems"
+        )
+
+    def test_plan_mode_wrong_verdict_requires_confirmation(self, skill_content):
+        # WRONG tasks must not be silently dropped — user confirms with default-yes
+        assert "default yes" in skill_content.lower() or "default: yes" in skill_content.lower(), (
+            "WRONG verdict in plan: mode must require default-yes confirmation — "
+            "silently dropping tasks changes the user's plan without consent"
+        )
+
+    def test_plan_mode_passed_tasks_are_silent(self, skill_content):
+        assert "PASSED tasks are silent" in skill_content or (
+            "PASSED" in skill_content and "silent" in skill_content
+        ), (
+            "PASSED tasks in plan: mode must be silent — "
+            "surfacing all verdicts creates noise proportional to plan size"
+        )
+
+    def test_plan_mode_has_example_flow(self, skill_content):
+        # The canopy 7-task case is the canonical example
+        assert "plan coherence" in skill_content.lower(), (
+            "Example flows must include a plan: mode case — "
+            "without it, plan: mode behavior is theoretical and untested"
+        )
+
+    def test_plan_coherence_passed_token_present(self, skill_content):
+        assert "[PLAN COHERENCE PASSED]" in skill_content or "PLAN COHERENCE PASSED" in skill_content, (
+            "[PLAN COHERENCE PASSED] output token must be present — "
+            "callers check for this token to proceed without further challenge"
+        )
+
+    def test_plan_mode_catches_already_solved(self, skill_content):
+        # Lens 3 in plan mode must probe for problems already solved in codebase
+        plan_section = skill_content[
+            skill_content.find("## Plan Coherence"):
+            skill_content.find("## The Three Phases")
+        ] if "## Plan Coherence" in skill_content else skill_content
+        assert "already" in plan_section.lower(), (
+            "Plan coherence must probe for already-solved problems — "
+            "this is the primary failure mode the canopy session exposed"
+        )
+
+    def test_plan_mode_catches_redundancy(self, skill_content):
+        plan_section = skill_content[
+            skill_content.find("## Plan Coherence"):
+            skill_content.find("## The Three Phases")
+        ] if "## Plan Coherence" in skill_content else skill_content
+        assert "redundan" in plan_section.lower() or "same problem" in plan_section.lower(), (
+            "Plan coherence must probe for cross-task redundancy — "
+            "two tasks solving the same problem is a plan coherence failure"
+        )
+
+    def test_plan_mode_catches_broken_ordering(self, skill_content):
+        plan_section = skill_content[
+            skill_content.find("## Plan Coherence"):
+            skill_content.find("## The Three Phases")
+        ] if "## Plan Coherence" in skill_content else skill_content
+        assert "order" in plan_section.lower() or "depends" in plan_section.lower(), (
+            "Plan coherence must probe for broken task ordering — "
+            "task N depending on task M that comes after it is a structural failure"
+        )
+
+    def test_plan_mode_does_not_require_explicit_file_loading(self, skill_content):
+        # File context is opportunistic — no explicit load required
+        plan_section = skill_content[
+            skill_content.find("## Plan Coherence"):
+            skill_content.find("## The Three Phases")
+        ] if "## Plan Coherence" in skill_content else skill_content
+        assert "opportunistic" in plan_section.lower() or "conversation" in plan_section.lower(), (
+            "Plan coherence must use file context opportunistically from conversation — "
+            "requiring explicit file loading adds friction equal to the problem it solves"
+        )
+
+    def test_plan_mode_wrong_tasks_surface_with_reason(self, skill_content):
+        # WRONG verdict must include the reason, not just the label
+        plan_section = skill_content[
+            skill_content.find("## Plan Coherence"):
+            skill_content.find("## The Three Phases")
+        ] if "## Plan Coherence" in skill_content else skill_content
+        assert "reason" in plan_section.lower() or "Reason" in plan_section, (
+            "WRONG verdict in plan: mode must surface the reason — "
+            "a verdict without a reason gives the developer nothing to act on"
+        )
