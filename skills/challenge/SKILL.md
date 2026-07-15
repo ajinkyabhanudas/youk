@@ -249,12 +249,16 @@ Only runs when verdict is NEEDS SHARPENING.
 4. If the revised direction survives: emit `[CHALLENGE PASSED — revised direction]`
 5. If new BLOCKING/HIGH objections emerge: surface them and ask user — do not iterate a third time automatically
 
-**Exit rule:** The loop exits when a round produces zero new objections — not when a
-round count is reached. Run as many rounds as needed until silence. Two rounds is the
-emergency brake only: if round 2 still has HIGH/BLOCKING objections, surface the
-unresolved tension to the user and stop — do not propose a third revision autonomously.
-Before surfacing any verdict, self-check: did the last round produce zero new objections?
-If not, the loop has not exited — keep going internally.
+**Exit rule:** The loop exits when two conditions are both true:
+1. The last round produced zero new objections from the lenses that ran.
+2. No angle exists that hasn't been run yet.
+
+Before surfacing any verdict, self-check both explicitly:
+- "Did the last round produce zero new objections?" — if not, iterate.
+- "Is there any lens, angle, or dimension I haven't challenged yet?" — if yes, run it now.
+
+Only when both are true is the loop dry. Two rounds is the emergency brake for
+unresolvable/circular objections only — not the exit condition.
 
 > Compact summary: "Revised direction: [one sentence]. New challenge round result: [verdict]."
 
@@ -265,7 +269,7 @@ If not, the loop has not exited — keep going internally.
 - **Objections must be specific.** "This might be the wrong approach" is not an objection. "We're about to build a cross-project pattern scanner when the user's actual complaint was about a single contract not promoting — the scope is 10x larger than the problem" is an objection.
 - **Fixed constraints are never attacked.** If the user said "we're using SQLite", Lens 3 does not produce "assumes SQLite is the right database." That constraint is a wall.
 - **BLOCKING means stop.** If a BLOCKING objection is found, work does not start. The objection is surfaced, the user redirects. Not negotiable.
-- **Zero new objections = exit.** The loop exits when a full round produces nothing new to object to — not when a round count is reached. Two rounds is the emergency brake, not the exit condition. Self-check before every verdict: did the last round produce zero new objections? If not, keep going internally.
+- **Global optimum exit condition.** Before surfacing any verdict, two checks must both pass: (1) did the last round produce zero new objections from every lens that ran? (2) is there any lens, angle, or dimension not yet challenged? If either fails — keep going internally. "Zero objections from lenses I ran" is not the exit condition. "Zero objections from all angles, none skipped" is.
 - **LOW objections do not block.** They are noted and carried forward as context. They do not trigger Phase 3.
 - **silent mode only speaks on BLOCKING.** In silent mode, LOW and HIGH findings are held internally and influence the answer without surfacing friction to the user. Only BLOCKING objections break silence.
 

@@ -24,7 +24,18 @@ from tokens import init_token_tracker, record_checkpoint
 YOUK_ROOT = Path("/youk")
 CLAUDE_ROOT = Path("/claude")
 
-mcp = FastMCP("youk-core")
+mcp = FastMCP(
+    "youk-core",
+    instructions=(
+        "youk behavioral DNA — always active.\n"
+        "1. Reasoning loops exit on zero new objections from ALL angles, not on round count. "
+        "Before any verdict: (a) did the last round produce zero new objections? "
+        "(b) is any angle unchallenged? Both must be true to exit.\n"
+        "2. No filler. No openers. Lead with the answer.\n"
+        "3. M+ tasks: challenge → nfr_check → check_nfr_gate → check_challenge_gate → dev-loop. "
+        "Never skip. Never reorder."
+    ),
+)
 
 
 @mcp.tool()
