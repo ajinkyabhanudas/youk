@@ -163,6 +163,44 @@ def _contract_matches(contract: str, keywords: set[str]) -> bool:
     return bool({w.lower() for w in contract.split()} & keywords)
 
 
+def _load_routing_gate_state() -> str:
+    """
+    Read challenge-ran.json and route-task-ran.json to surface which routing gates
+    ran this session. Included in the brief so post-compaction self-check has
+    file-backed state rather than relying on conversation text that may be lost.
+    Returns empty string when neither file exists (no gates ran yet).
+    """
+    parts: list[str] = []
+
+    route_file = YOUK_ROOT / "state" / "route-task-ran.json"
+    if route_file.exists():
+        try:
+            raw = json.loads(route_file.read_text())
+            # Written as a list of route_task calls; use the most recent entry
+            entry = raw[-1] if isinstance(raw, list) and raw else (raw if isinstance(raw, dict) else {})
+            task = entry.get("task", "")[:80]
+            size = entry.get("size", "?")
+            parts.append(f"route_task: ran (size={size}, task={task!r})")
+        except Exception:
+            parts.append("route_task: ran (unreadable)")
+
+    challenge_file = YOUK_ROOT / "state" / "challenge-ran.json"
+    if challenge_file.exists():
+        try:
+            data = json.loads(challenge_file.read_text())
+            rounds = data.get("rounds", 0)
+            parts.append(f"challenge: ran ({rounds} round(s))")
+        except Exception:
+            parts.append("challenge: ran (unreadable)")
+
+    if not parts:
+        return ""
+    return (
+        "\n".join(parts)
+        + "\nSelf-check: if about to write M+ code and route_task is absent above — stop and route first."
+    )
+
+
 def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
     """
     Build a structured context brief from youk's knowledge store.
@@ -301,6 +339,14 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
                 f"## Active knowledge gaps (HIGH priority) {TIER_DECISION}\n"
                 + ", ".join(domain_gaps)
                 + " — address with /learn"
+            )
+
+        # Routing gate state — survives compaction so post-compaction self-check has
+        # file-backed evidence of which gates ran this session, not just conversation text.
+        gate_state = _load_routing_gate_state()
+        if gate_state:
+            sections.append(
+                f"## Routing gate state {TIER_DECISION}\n{gate_state}"
             )
 
         sections.append(f"## Compaction instruction\n{_TIER_INSTRUCTION}")
