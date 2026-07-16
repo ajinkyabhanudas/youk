@@ -30,10 +30,22 @@ hard_rules:
   - id: no-destructive-without-confirm
     name: "Destructive ops require explicit confirmation"
     description: >
-      rm -rf, DROP TABLE, force push, reset --hard: must confirm intent before
-      executing. Confirmation is per-operation, not per-session.
-    enforced_by: "CLAUDE.md proactive pattern + pre-bash hook"
+      rm -rf, DROP TABLE, force push, reset --hard, git commit --no-verify:
+      must confirm intent before executing. Confirmation is per-operation, not per-session.
+      --no-verify is treated as destructive because it bypasses contract enforcement
+      (pre-commit hook). The bypass must be auditable.
+    enforced_by: "CLAUDE.md proactive pattern + check_command() MCP tool + pre-bash hook"
     violation: "BLOCK — surface confirmation prompt"
+
+  - id: lint-before-commit
+    name: "Run lint and tests before every commit"
+    description: >
+      ruff check servers/ and python -m pytest tests/ must pass before any commit.
+      Enforced by .git/hooks/pre-commit (auto-generated from contracts.md action-type rules
+      via scripts/generate_precommit_hook.py). Bypassing via --no-verify is itself
+      blocked by check_command() as a destructive operation.
+    enforced_by: ".git/hooks/pre-commit + check_command() blocks --no-verify"
+    violation: "BLOCK — pre-commit exits 1, commit does not proceed"
 
 soft_rules:
   - id: session-close-cluster

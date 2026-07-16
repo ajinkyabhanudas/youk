@@ -93,6 +93,9 @@ def session_end(
     loop_correction_detected: bool = False,
     loop_gap_detected: bool = False,
     challenge_rounds: int = 0,
+    decision_retrospectives: list[dict] | None = None,
+    autonomy_depth: dict[str, str] | None = None,
+    contract_violations: list[str] | None = None,
 ) -> dict:
     """
     End a youk session. Writes audit log entry, saves contracts, checks session-close cluster.
@@ -157,6 +160,26 @@ def session_end(
 
     loop_gap_detected: True when the /done retrospective lens check found an objection
     the original loop missed. Written as LoopGap: yes. When True, run
+
+    decision_retrospectives: Prior decisions validated or invalidated this session.
+    Each entry: {"decision": str, "outcome": "VALIDATED"|"INVALIDATED", "evidence": str}.
+    Written as Retrospectives: N (VALIDATED=X, INVALIDATED=Y) in audit log.
+    Feeds decision_durability_rate in health.py — rising rate = decisions getting more
+    durable over time. This is the closest the system gets to validating its own value
+    hypothesis without external telemetry.
+
+    autonomy_depth: Depth level at which the developer caught each skill this session.
+    Keys match developer_caught entries. Values: SURFACE | WORKING | DEEP | ELITE.
+    Example: {"nfr_check": "DEEP", "challenge": "WORKING"}.
+    Written as AutonomyDepth: nfr_check=DEEP,challenge=WORKING in audit log.
+    Feeds autonomy_depth_score in health.py — replaces binary autonomy_rate with a
+    weighted score that rewards genuine depth over surface-level recognition.
+
+    contract_violations: Contracts that were not followed this session.
+    Each entry is a contract text (or short description) that was violated.
+    Written as ContractViolation: {text} lines in audit log.
+    Feeds contract_compliance_rate in health.py — surfaces when the system's
+    behavioral contracts are eroding rather than being internalized.
     assess_skill("challenge") before closing — mid-session self-correction.
 
     challenge_rounds: Total ITERATE phases across all challenge invocations this session.
@@ -224,6 +247,7 @@ def session_end(
         skill_gaps, mid_session_adaptations_applied,
         findings, finding_categories, nfr_gaps, direction_reversal,
         developer_caught, loop_correction_detected, loop_gap_detected, challenge_rounds,
+        decision_retrospectives, autonomy_depth, contract_violations,
     )
 
 

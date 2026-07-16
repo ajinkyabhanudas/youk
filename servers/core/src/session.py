@@ -2281,6 +2281,9 @@ def end_session(
     loop_correction_detected: bool = False,
     loop_gap_detected: bool = False,
     challenge_rounds: int = 0,
+    decision_retrospectives: list[dict] | None = None,
+    autonomy_depth: dict[str, str] | None = None,
+    contract_violations: list[str] | None = None,
 ) -> dict:
     """
     Write structured audit log entry, detect and save contract phrases.
@@ -2317,6 +2320,17 @@ def end_session(
 
     challenge_rounds: Total ITERATE phases across all challenge invocations this session.
     Written as ChallengeRounds: N. Low values (0 or 1) combined with corrections = early exit signal.
+
+    decision_retrospectives: Prior decisions validated or invalidated this session.
+    Each entry: {"decision": str, "outcome": "VALIDATED"|"INVALIDATED", "evidence": str}.
+    Written as Retrospectives: N (VALIDATED=X, INVALIDATED=Y) in audit log.
+
+    autonomy_depth: Depth level per skill in developer_caught.
+    Values: SURFACE | WORKING | DEEP | ELITE.
+    Written as AutonomyDepth: nfr_check=DEEP,challenge=WORKING in audit log.
+
+    contract_violations: Contracts not followed this session.
+    Written as ContractViolation: {text} lines in audit log.
     """
     # 3B — Auto-draft summary when developer passes empty string or "done"
     # Reads the session plan written by session_start so the audit entry is useful
@@ -2397,6 +2411,33 @@ def end_session(
     )
     human_precision_line = "HumanPrecision: yes\n" if human_precision else ""
 
+    # Decision retrospectives — Loop A: did prior decisions hold up?
+    retrospectives_line = ""
+    if decision_retrospectives:
+        validated = sum(1 for r in decision_retrospectives if r.get("outcome") == "VALIDATED")
+        invalidated = sum(1 for r in decision_retrospectives if r.get("outcome") == "INVALIDATED")
+        total_r = len(decision_retrospectives)
+        retrospectives_line = f"Retrospectives: {total_r} (VALIDATED={validated}, INVALIDATED={invalidated})\n"
+        for r in decision_retrospectives:
+            evidence = r.get("evidence", "")
+            decision_text = r.get("decision", "")[:60]
+            outcome = r.get("outcome", "")
+            evidence_suffix = f" ({evidence})" if evidence else ""
+            retrospectives_line += f"  - {decision_text}: {outcome}{evidence_suffix}\n"
+
+    # Autonomy depth — Loop B: how deeply did the developer engage when they caught something?
+    autonomy_depth_line = ""
+    if autonomy_depth:
+        parts = [f"{skill}={level}" for skill, level in autonomy_depth.items()]
+        autonomy_depth_line = f"AutonomyDepth: {','.join(parts)}\n"
+
+    # Contract violations — Loop C: which contracts were not followed this session?
+    contract_violation_lines = ""
+    if contract_violations:
+        contract_violation_lines = "".join(
+            f"ContractViolation: {v}\n" for v in contract_violations
+        )
+
     token_data = _read_and_clear_tokens()
     total_tokens = token_data["total_input"] + token_data["total_output"]
     budget = token_data.get("token_budget", 0)
@@ -2428,6 +2469,9 @@ def end_session(
         f"{loop_gap_line}"
         f"{challenge_rounds_line}"
         f"{human_precision_line}"
+        f"{retrospectives_line}"
+        f"{autonomy_depth_line}"
+        f"{contract_violation_lines}"
     )
 
     with open(audit_file, "a") as f:

@@ -146,6 +146,34 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         # challenge resolved in ≤1 round. Feeds human_precision_rate in _score_org().
         s["human_precision"] = bool(re.search(r"^HumanPrecision:\s*yes$", block, re.MULTILINE | re.IGNORECASE))
 
+        # Loop A — Decision retrospectives: decisions validated/invalidated this session.
+        retro_match = re.search(r"^Retrospectives:\s*(\d+)\s*\(VALIDATED=(\d+),\s*INVALIDATED=(\d+)\)", block, re.MULTILINE)
+        if retro_match:
+            s["retrospectives_total"] = int(retro_match.group(1))
+            s["retrospectives_validated"] = int(retro_match.group(2))
+            s["retrospectives_invalidated"] = int(retro_match.group(3))
+        else:
+            s["retrospectives_total"] = 0
+            s["retrospectives_validated"] = 0
+            s["retrospectives_invalidated"] = 0
+
+        # Loop B — Autonomy depth: depth level per skill when developer caught something.
+        depth_match = re.search(r"^AutonomyDepth:\s*(.+)$", block, re.MULTILINE | re.IGNORECASE)
+        if depth_match:
+            depth_raw = depth_match.group(1).strip()
+            depth_dict: dict[str, str] = {}
+            for part in depth_raw.split(","):
+                if "=" in part:
+                    skill_d, level_d = part.strip().split("=", 1)
+                    depth_dict[skill_d.strip()] = level_d.strip().upper()
+            s["autonomy_depth"] = depth_dict
+        else:
+            s["autonomy_depth"] = {}
+
+        # Loop C — Contract violations: contracts not followed this session.
+        violations = re.findall(r"^ContractViolation:\s*(.+)$", block, re.MULTILINE)
+        s["contract_violations"] = [v.strip() for v in violations]
+
         sessions.append(s)
     return sessions[-150:]  # cap: most recent 150 sessions regardless of window size
 
@@ -329,6 +357,81 @@ def _compute_skill_autonomy_rate(sessions: list[dict], skill: str) -> float:
     return caught_count / len(tracked)
 
 
+_AUTONOMY_DEPTH_WEIGHTS: dict[str, float] = {
+    "SURFACE": 0.25,
+    "WORKING": 0.5,
+    "DEEP": 1.0,
+    "ELITE": 1.5,
+}
+
+
+def _compute_decision_durability_rate(sessions: list[dict]) -> float | None:
+    """
+    Fraction of retrospective entries that are VALIDATED over recent sessions.
+
+    None when fewer than 3 sessions have retrospective data (insufficient history).
+    Rising rate over time = developer's decisions are getting more durable.
+    This is the closest measurable proxy for the system's core value hypothesis.
+    """
+    retro_sessions = [s for s in sessions if s.get("retrospectives_total", 0) > 0]
+    if len(retro_sessions) < 3:
+        return None
+    total_validated = sum(s.get("retrospectives_validated", 0) for s in retro_sessions)
+    total_all = sum(s.get("retrospectives_total", 0) for s in retro_sessions)
+    if total_all == 0:
+        return None
+    return round(total_validated / total_all, 2)
+
+
+def _compute_autonomy_depth_score(sessions: list[dict]) -> float:
+    """
+    Weighted autonomy score that rewards depth of engagement, not just presence.
+
+    Replaces binary autonomy_rate with a weighted score:
+      SURFACE=0.25, WORKING=0.5, DEEP=1.0, ELITE=1.5
+    Normalized to [0, 1] against the ELITE ceiling.
+
+    Sessions with developer_caught but no autonomy_depth get WORKING weight (backward compat).
+    Sessions before session 6 contribute 0 (no history yet).
+    """
+    if len(sessions) < 6:
+        return 0.0
+    tracked = [s for s in sessions if s.get("developer_caught")]
+    if not tracked:
+        return 0.0
+    total_weight = 0.0
+    for s in tracked:
+        depth_map = s.get("autonomy_depth", {})
+        caught = s.get("developer_caught", [])
+        if not caught:
+            continue
+        if depth_map:
+            # Average depth weight across all caught skills this session
+            weights = [_AUTONOMY_DEPTH_WEIGHTS.get(depth_map.get(skill, "WORKING"), 0.5) for skill in caught]
+            session_weight = sum(weights) / len(weights)
+        else:
+            session_weight = 0.5  # default: WORKING weight for sessions before depth tracking
+        total_weight += session_weight
+    # Normalize: max possible weight per session is ELITE (1.5); divide by that ceiling
+    return min(total_weight / (len(tracked) * 1.5), 1.0)
+
+
+def _compute_contract_compliance_rate(sessions: list[dict]) -> float:
+    """
+    Fraction of sessions (last 20) with zero contract violations.
+
+    Sessions without ContractViolation lines score as compliant (backward compatible —
+    absence of violation data ≠ violation). Only sessions that explicitly log a
+    ContractViolation are counted as non-compliant.
+    Returns 1.0 when no violation data exists (no penalty for old sessions).
+    """
+    window = sessions[-20:]
+    if not window:
+        return 1.0
+    non_compliant = sum(1 for s in window if s.get("contract_violations"))
+    return round(1.0 - (non_compliant / len(window)), 2)
+
+
 def _compute_convergence_velocity(sessions: list[dict]) -> dict:
     """
     Measure whether challenge loops are reaching global optimum in fewer rounds over time.
@@ -474,10 +577,20 @@ def _score_org(audit_texts: list[str]) -> float:
     else:
         framing_accuracy_rate = 1.0  # no data → assume correct (no penalty)
 
-    # Developer autonomy rate: fraction of sessions where developer pre-empted a skill.
-    # Only meaningful after session 5 — returns 0.0 earlier (no bonus, no penalty).
-    # At 6+ sessions, a rising rate is the primary signal that compounding is real.
-    autonomy_rate = _compute_autonomy_rate(sessions)
+    # Autonomy depth score: weighted score rewarding depth of engagement when catching things.
+    # Replaces binary autonomy_rate in the scoring formula.
+    # SURFACE=0.25, WORKING=0.5, DEEP=1.0, ELITE=1.5 (normalized to [0,1]).
+    autonomy_depth_score = _compute_autonomy_depth_score(sessions)
+
+    # Decision durability rate: fraction of retrospective entries that are VALIDATED.
+    # None when insufficient data — treated as neutral (0.5) to avoid penalising early sessions.
+    decision_durability_rate = _compute_decision_durability_rate(sessions)
+    durability_bonus = (decision_durability_rate - 0.5) * 0.5 if decision_durability_rate is not None else 0.0
+
+    # Contract compliance rate: fraction of sessions with zero contract violations.
+    # 1.0 when no data (backward compat). Penalty when violations are recurring.
+    contract_compliance_rate = _compute_contract_compliance_rate(sessions)
+    compliance_penalty = (1.0 - contract_compliance_rate) * -0.5  # up to -0.5 penalty
 
     # Loop-dry rate: fraction of challenge sessions with no correction and no gap detected.
     # Measures whether run-until-dry behavioral DNA is working as intended.
@@ -512,10 +625,13 @@ def _score_org(audit_texts: list[str]) -> float:
     # gap_resolution_rate (0.5 weight): are gaps being detected as new (not recurring)?
     # prevented_score (0.5 weight): outcome quality — did skills catch something real?
     # framing_accuracy_rate (0.5 weight): was the goal correctly translated before work started?
-    # autonomy_rate (1.0 weight): developer pre-empting skills = proof the loop is working
+    # autonomy_depth_score (1.0 weight): developer catching things at DEEP/ELITE depth = compounding
+    #   (replaces binary autonomy_rate — rewards depth, not just presence)
     # loop_dry_rate (1.0 weight): reasoning loops reaching global optimum before verdict
     # human_precision_rate (0.5 weight): human front-loading context = shorter loops
     # convergence_bonus (0.5 max): reward when rounds-to-optimum trend is improving
+    # durability_bonus (±0.25 max): decisions proving correct over time = hypothesis signal
+    # compliance_penalty (up to -0.5): contracts being violated = behavioral regression
     raw_score = (
         5.0
         + (capability_skill_rate * 2.0)
@@ -523,10 +639,12 @@ def _score_org(audit_texts: list[str]) -> float:
         + (gap_resolution_rate * 0.5)
         + prevented_score
         + (framing_accuracy_rate * 0.5)
-        + (autonomy_rate * 1.0)
+        + (autonomy_depth_score * 1.0)
         + (loop_dry_rate * 1.0)
         + (human_precision_rate * 0.5)
         + convergence_bonus
+        + durability_bonus
+        + compliance_penalty
         + token_penalty
     )
     score = raw_score * depth_multiplier
@@ -1645,9 +1763,63 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     recurring_patterns = _detect_recurring_findings(sessions_parsed, min_sessions=3, days=30)
 
     autonomy_rate = _compute_autonomy_rate(sessions_parsed)
+    autonomy_depth_score = _compute_autonomy_depth_score(sessions_parsed)
+    decision_durability_rate = _compute_decision_durability_rate(sessions_parsed)
+    contract_compliance_rate = _compute_contract_compliance_rate(sessions_parsed)
     depth_multiplier = _compute_depth_multiplier(sessions_parsed)
     conv_velocity = _compute_convergence_velocity(sessions_parsed)
     human_precision_rate = _compute_human_precision_rate(sessions_parsed)
+
+    # Developer growth report — five longitudinal signals that answer "is the developer improving?"
+    # Each signal tracks a different dimension of growth. Trend direction is the key reading.
+    framing_sessions = [s for s in sessions_parsed if s.get("framing_correct") is not None]
+    framing_accuracy = (
+        round(sum(1 for s in framing_sessions if s["framing_correct"]) / len(framing_sessions), 2)
+        if framing_sessions else None
+    )
+    growth_signals = []
+    if decision_durability_rate is not None:
+        pct = int(decision_durability_rate * 100)
+        growth_signals.append(f"Decision durability:  {pct}% (decisions proving correct, last sessions with data)")
+    else:
+        growth_signals.append("Decision durability:  — (no retrospective data yet — pass decision_retrospectives to session_end)")
+    depth_pct = int(autonomy_depth_score * 100)
+    growth_signals.append(f"Autonomy depth:       {depth_pct}% weighted score (SURFACE=25%, WORKING=50%, DEEP=100%, ELITE=150%)")
+    compliance_pct = int(contract_compliance_rate * 100)
+    growth_signals.append(f"Contract compliance:  {compliance_pct}% (sessions with zero violations, last 20)")
+    if conv_velocity["trend"] != "insufficient_data":
+        v = conv_velocity.get("velocity", 0)
+        direction = "↓ improving" if v < 0 else "→ stable" if v == 0 else "↑ degrading"
+        growth_signals.append(f"Convergence velocity: {v:+.1f} rounds/session ({direction})")
+    else:
+        growth_signals.append("Convergence velocity: — (need 3+ challenge sessions)")
+    if framing_accuracy is not None:
+        growth_signals.append(f"Framing accuracy:     {int(framing_accuracy * 100)}%")
+    else:
+        growth_signals.append("Framing accuracy:     — (no data yet)")
+
+    positive_signals = sum([
+        decision_durability_rate is not None and decision_durability_rate > 0.6,
+        autonomy_depth_score > 0.4,
+        contract_compliance_rate > 0.85,
+        conv_velocity["trend"] == "improving",
+        framing_accuracy is not None and framing_accuracy > 0.8,
+    ])
+    if positive_signals >= 4:
+        growth_trend = "IMPROVING"
+    elif positive_signals >= 2:
+        growth_trend = "DEVELOPING"
+    else:
+        growth_trend = "EARLY"
+    developer_growth_report = (
+        "[DEVELOPER GROWTH]\n"
+        + "\n".join(f"  {s}" for s in growth_signals)
+        + f"\n  Trend: {growth_trend} — {positive_signals} of 5 growth signals positive"
+    )
+    if compliance_pct < 85:
+        developer_growth_report += f"\n  ⚠ Contract compliance below threshold ({compliance_pct}%) — review ContractViolation entries"
+    if autonomy_depth_score > 0 and autonomy_depth_score < 0.4:
+        developer_growth_report += "\n  ↑ Autonomy depth low — review SURFACE/WORKING/DEEP/ELITE rubrics in skill files"
 
     base = {
         "org_score": report.org_score,
@@ -1659,11 +1831,17 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         "knowledge_velocity": knowledge_velocity,
         "prevented_this_month": prevented_cost,
         "developer_autonomy_rate": round(autonomy_rate, 2),
+        "autonomy_depth_score": round(autonomy_depth_score, 2),
+        "decision_durability_rate": decision_durability_rate,
+        "contract_compliance_rate": contract_compliance_rate,
+        "developer_growth_report": developer_growth_report,
         "depth_multiplier": depth_multiplier,
         "convergence_velocity": conv_velocity,
         "human_precision_rate": round(human_precision_rate, 2),
         "compounding_verdict": (
-            "ELITE — developer pre-empting skills; compounding loop closed"
+            "ELITE — developer pre-empting skills at DEEP/ELITE depth; compounding loop closed"
+            if autonomy_depth_score >= 0.6
+            else "ELITE — developer pre-empting skills; compounding loop closed"
             if autonomy_rate >= 0.4
             else "GROWING — autonomy signal emerging" if autonomy_rate > 0
             else "EARLY — not enough sessions or no DeveloperCaught signal yet"

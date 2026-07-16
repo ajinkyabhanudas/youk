@@ -32,6 +32,7 @@ _DESTRUCTIVE_PATTERNS = [
     r"reset\s+--hard",
     r"checkout\s+\.",
     r"restore\s+\.",
+    r"commit\b.*--no-verify",  # bypasses pre-commit hook — contract enforcement bypass
 ]
 
 
