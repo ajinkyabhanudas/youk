@@ -155,9 +155,9 @@ class TestAdversaryLoopSkill:
         content = _read(_ADVERSARY_SKILL)
         assert "Stuck" in content or "stuck" in content
 
-    def test_five_round_emergency_brake_present(self):
+    def test_ten_round_emergency_brake_present(self):
         content = _read(_ADVERSARY_SKILL)
-        assert "5 rounds" in content or "five rounds" in content.lower() or "Round 5" in content
+        assert "10 rounds" in content or "Round 10" in content
 
     def test_tier_routing_table_present(self):
         content = _read(_ADVERSARY_SKILL)
@@ -170,3 +170,85 @@ class TestAdversaryLoopSkill:
     def test_s_uses_in_session_challenge(self):
         content = _read(_ADVERSARY_SKILL)
         assert "in-session challenge" in content
+
+    def test_patterns_field_in_handoff(self):
+        content = _read(_ADVERSARY_SKILL)
+        assert "failure_patterns" in content
+        assert "shortcut_patterns" in content
+
+    def test_rca_trigger_present(self):
+        content = _read(_ADVERSARY_SKILL)
+        assert "Phase 4" in content and "RCA" in content
+
+    def test_rca_routes_through_learn(self):
+        content = _read(_ADVERSARY_SKILL)
+        assert "learn" in content and "rca" in content.lower()
+
+    def test_verdict_confirmed_on_dry_rerun(self):
+        content = _read(_ADVERSARY_SKILL)
+        assert "VERDICT CONFIRMED" in content
+
+    def test_efficiency_scoring_present(self):
+        content = _read(_ADVERSARY_SKILL)
+        assert "EFFICIENT" in content
+        assert "MODERATE" in content
+        assert "COSTLY" in content
+
+    def test_justified_overrun_present(self):
+        content = _read(_ADVERSARY_SKILL)
+        assert "JUSTIFIED OVERRUN" in content
+
+    def test_depth_reward_is_significant(self):
+        content = _read(_ADVERSARY_SKILL)
+        assert "DEPTH REWARD" in content
+        assert "prevented_cost_score" in content
+
+    def test_shortcut_pattern_from_depth_reward(self):
+        content = _read(_ADVERSARY_SKILL)
+        assert "shortcut pattern" in content.lower() or "Shortcut patterns" in content
+
+    def test_silence_discipline_present(self):
+        content = _read(_ADVERSARY_SKILL)
+        assert "Silence Discipline" in content or "silence" in content.lower()
+
+    def test_verdict_format_has_efficiency(self):
+        content = _read(_ADVERSARY_SKILL)
+        assert "ADVERSARY LOOP PASSED" in content and "EFFICIENT" in content
+
+
+# ---------------------------------------------------------------------------
+# challenge/SKILL.md — round cap updated to 10
+# ---------------------------------------------------------------------------
+
+class TestChallengeRoundCap:
+
+    def test_ten_round_cap_in_exit_rule(self):
+        content = _read(_CHALLENGE_SKILL)
+        assert "Ten rounds" in content or "10 rounds" in content or "Round 10" in content
+
+    def test_five_round_cap_removed(self):
+        content = _read(_CHALLENGE_SKILL)
+        # "Five rounds" should not appear as the cap (may appear in other contexts)
+        assert "Five rounds is the emergency brake" not in content
+
+    def test_efficiency_scoring_in_challenge(self):
+        content = _read(_CHALLENGE_SKILL)
+        assert "EFFICIENT" in content or "Efficiency scoring" in content
+
+
+# ---------------------------------------------------------------------------
+# reasoning-integrity.md — RCA section headers present
+# ---------------------------------------------------------------------------
+
+_REASONING_INTEGRITY = _YOUK_ROOT / "knowledge" / "domain" / "reasoning-integrity.md"
+
+
+class TestReasoningIntegrityRcaSections:
+
+    def test_adversary_failure_patterns_section_present(self):
+        content = _read(_REASONING_INTEGRITY)
+        assert "Adversary Failure Patterns" in content
+
+    def test_adversary_shortcut_patterns_section_present(self):
+        content = _read(_REASONING_INTEGRITY)
+        assert "Adversary Shortcut Patterns" in content
