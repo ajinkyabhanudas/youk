@@ -69,6 +69,16 @@ skills:
     stack_aware: false
     domain_aware: false
 
+  adversary-loop:
+    role: "Context-independent adversary — direction attack until dry for M+ tasks"
+    trigger_events: ["/challenge", "/build on M+", "are we solving the right problem", "challenge this"]
+    trigger_size: [M, L, XL]
+    precedes: [dev-loop]
+    follows: [nfr-check]
+    reads: []
+    stack_aware: false
+    domain_aware: false
+
   stress-test:
     role: "Red Team Lead — attack the design before building"
     trigger_events: ["L/XL feature", "new architecture", "before committing to major design"]

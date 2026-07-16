@@ -291,10 +291,16 @@ Before surfacing any verdict, self-check both explicitly:
 - "Did the last round produce zero new objections?" — if not, iterate.
 - "Is there any lens, angle, or dimension I haven't challenged yet?" — if yes, run it now.
 
-Only when both are true is the loop dry. Five rounds is the emergency brake for
+Only when both are true is the loop dry. Ten rounds is the emergency brake for
 genuinely unresolvable/circular objections — not the exit condition. On cap hit:
-surface the unresolved tension explicitly ("Round 5 reached — objection X remains
+surface the unresolved tension explicitly ("Round 10 reached — objection X remains
 unresolved: [state it]. User input needed before proceeding.") Do not exit silently.
+
+**Efficiency scoring (emitted in verdict, not per-round):**
+- Rounds 1–3: EFFICIENT (silent)
+- Rounds 4–6: MODERATE (silent)
+- Rounds 7–9: COSTLY — note in verdict: "Resolved in {N} rounds — direction may have been under-specified"
+- Round 10 cap: BLOCKED — surface tension, require user input
 
 > Compact summary: "Revised direction: [one sentence]. New challenge round result: [verdict]."
 
@@ -318,7 +324,7 @@ This skill passes the hiring committee if it can:
 2. **BLOCKING stop:** Given a task where the stated goal contradicts something already decided this session, the skill emits `[DIRECTION WRONG]` and stops — it does not proceed to implementation with a footnote.
 3. **Scope lens fires:** Given "build a two-level reasoning system with reconciliation gate" — Lens 2 identifies "minimum version is a single forced-failure pass, not a dual-layer system" before work starts. This is the rabbit hole prevention case.
 4. **Silent mode discipline:** In `silent` mode on a task with only LOW objections, the skill produces no output visible to the user — it influences the answer silently. It does not surface "I challenged this and found nothing" — that is noise.
-5. **Run-until-dry exit:** The skill keeps iterating internally until a round produces zero new objections from all angles. Only then does it surface a verdict. Emergency brake is 5 rounds — on cap hit, surface the unresolved objection explicitly and stop. It does not exit silently on cap hit, and it does not propose further revisions autonomously after surfacing the tension.
+5. **Run-until-dry exit:** The skill keeps iterating internally until a round produces zero new objections from all angles. Only then does it surface a verdict. Emergency brake is 10 rounds — on cap hit, surface the unresolved objection explicitly and stop. It does not exit silently on cap hit, and it does not propose further revisions autonomously after surfacing the tension.
 
 ---
 
