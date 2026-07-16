@@ -393,20 +393,33 @@ def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) 
 
 
 @mcp.tool()
-def mark_challenge_ran(task: str) -> dict:
+def mark_challenge_ran(task: str, angles_checked: list[str], mode: str = "full") -> dict:
     """
     Record that the challenge skill has run and passed for the current M+ task.
-    Call this immediately after challenge emits [CHALLENGE PASSED] or
-    [CHALLENGE PASSED — revised direction].
+    Call this after the challenge loop is dry — when all required angles have been covered.
 
-    Each call increments the challenge_rounds counter — this is the structural
-    measure of how many ITERATE/verdict cycles ran. session_end reads this count
+    angles_checked: List of angle names that were run (e.g. ["framing", "scope",
+        "assumptions", "opportunity", "structural", "operational", "experiential",
+        "adversarial", "temporal", "outcome", "semantic"]).
+        Required — omitting it returns blocked=True.
+    mode: Challenge mode — "full" (default), "quick", "silent", or "plan".
+        Determines which angles are required. "full" requires all 11 angles;
+        "quick"/"silent"/"plan" require the 4 lenses only.
+
+    Each call increments the challenge_rounds counter — session_end reads this
     directly from state rather than trusting Claude's passed-in value.
 
-    task: The task label — used for logging context only.
-
-    Returns: {"recorded": bool, "challenge_rounds": int}
+    Returns: {"recorded": bool, "challenge_rounds": int, "angles_validated": bool}
+    When blocked: {"blocked": True, "missing_angles": [...], "reason": str}
     """
+    from challenge_gate import validate_angles
+    validation = validate_angles(angles_checked, mode)
+    if not validation["valid"]:
+        return {
+            "blocked": True,
+            "missing_angles": validation["missing_angles"],
+            "reason": validation["reason"],
+        }
     try:
         import json as _json
         from datetime import datetime as _dt
@@ -415,7 +428,6 @@ def mark_challenge_ran(task: str) -> dict:
         if open_file.exists():
             slug = _json.loads(open_file.read_text()).get("slug", "unknown")
         flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
-        # Read existing data to increment rounds counter
         existing_rounds = 0
         if flag_file.exists():
             try:
@@ -430,10 +442,12 @@ def mark_challenge_ran(task: str) -> dict:
             "task": task,
             "ts": _dt.utcnow().isoformat(),
             "rounds": new_rounds,
+            "angles_validated": True,
+            "mode": mode,
         }))
-        return {"recorded": True, "challenge_rounds": new_rounds}
+        return {"recorded": True, "challenge_rounds": new_rounds, "angles_validated": True}
     except Exception:
-        return {"recorded": False, "challenge_rounds": 0}
+        return {"recorded": False, "challenge_rounds": 0, "angles_validated": False}
 
 
 @mcp.tool()

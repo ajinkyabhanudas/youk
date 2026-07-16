@@ -222,10 +222,12 @@ Objection {n}:
 **LOW** = worth noting, does not block.
 
 After all lenses run:
-- If zero objections: direction SURVIVES — emit `[CHALLENGE PASSED]` and proceed
-- If only LOW objections: direction SURVIVES WITH NOTES — emit findings inline, proceed
+- If zero objections: direction SURVIVES — call `youk-core.mark_challenge_ran(task, angles_checked=[<list of angles run>], mode=<mode>)`. If it returns `blocked: true`, run the missing angles and call again. On `recorded: true`, the verdict is confirmed — proceed.
+- If only LOW objections: direction SURVIVES WITH NOTES — emit findings inline, then call `mark_challenge_ran` as above and proceed.
 - If any HIGH: direction NEEDS SHARPENING — emit findings, propose revised direction, go to Phase 3
 - If any BLOCKING: direction WRONG — stop, surface the blocking objection, ask user to redirect
+
+**Do not write `[CHALLENGE PASSED]` manually.** The verdict is only valid after `mark_challenge_ran` returns `recorded: true`. This is the dry-loop gate — it blocks if any required angle for the current mode is missing from `angles_checked`.
 
 **Direction reversal audit field:** If the initial direction is rejected (WRONG verdict) or
 substantially revised via ITERATE (the revised direction differs from the original), emit:
@@ -246,7 +248,7 @@ Only runs when verdict is NEEDS SHARPENING.
 1. Propose a revised direction that addresses the HIGH objections
 2. State what changes from the original direction and what stays the same
 3. Re-run lenses against the revised direction (one more round only)
-4. If the revised direction survives: emit `[CHALLENGE PASSED — revised direction]`
+4. If the revised direction survives: call `youk-core.mark_challenge_ran(task, angles_checked=[<all angles run across both rounds>], mode=<mode>)`. On `recorded: true`, the verdict `[CHALLENGE PASSED — revised direction]` is confirmed.
 5. If new BLOCKING/HIGH objections emerge: surface them and ask user — do not iterate a third time automatically
 
 **Exit rule:** The loop exits when two conditions are both true:
