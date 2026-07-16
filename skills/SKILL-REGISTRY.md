@@ -1,7 +1,7 @@
 # Skill Registry — y2k-1
 
 **Company:** y2k-1 | **Activation:** say "activate y2k-1" | **Roster size:** 18
-*Living document. Updated by /skill-health after each review. Last updated: 2026-06-27.*
+*Living document. Updated by /skill-health after each review. Last updated: 2026-07-17.*
 *Owner: Ajinkya Dessai. All skills are scoped to the ~/.claude/skills/ directory.*
 
 ---
@@ -45,6 +45,9 @@ for all generated `references/stacks/{framework}.md` overlays (6 sections, WAF-g
 | `/run` | DevOps | Run/start the project for manual verification | ACTIVE |
 | `/review` | GitHub PR Review | GitHub PR review | ACTIVE |
 | `/skill-forge` | Skill Architect (proactive) | New stack, or "what skills would an elite need here" — derives + sharpens skills at a rising standard | ACTIVE |
+| `/challenge` | Direction Gate | Before any M+ implementation — is this the right problem? | ACTIVE |
+| `/adversary-loop` | Independent Adversary | M+ design decisions — context-independent attack until exhaustion | ACTIVE |
+| `/done` | Session Close | Session end — code-review + verify + humanize + learn in sequence | ACTIVE |
 
 ---
 
@@ -127,10 +130,13 @@ Honest assessment of known gaps. Updated by /skill-health reviews.
 | `/pm-review` | Solo developer calibration still evolving; "do nothing" option sometimes skipped |
 | `/write-spec` | New — may over-specify for small features; use `quick` mode for S |
 | `/orchestrate` | Consistently skipped — no session-start invocation observed. Session planning done informally instead. |
-| `/context-sync` | Session-close cluster (context-sync + learn + humanize) skipped every session. FOUNDER-GUIDE.md now frames these as required, not optional. |
+| `/context-sync` | Superseded by session_start/compact_context MCP tools — registry entry kept for historical flow reference. |
 | `/humanize` | Requires explicit invocation; not yet auto-triggered; Co-Authored-By misapplied when run manually |
-| `/learn` | Consistently skipped at session end. Same root cause as /context-sync. |
-| `/skill-health` | Audit log had zero entries before this review — limits trend analysis. First entry now created. |
+| `/learn` | Running consistently (52% sessions, Jul 2026). Prior gap resolved. |
+| `/skill-health` | dev_loop audit registration gap: M+ sessions not logging dev_loop in Skills: line even when implementation runs. |
+| `/challenge` | Fire rate 4% (1/23 sessions Jul 2026) despite CLAUDE.md contract. High-autonomy developer pre-empts most design challenges. |
+| `/adversary-loop` | New — no gap history yet. Fires for M+ design decisions when /challenge routes to full adversary mode. |
+| `/done` | Fires as /done sequence; skills inside it (code-review, verify, humanize, learn) also logged separately, inflating their counts slightly. |
 
 ---
 
@@ -202,6 +208,7 @@ Proposed skills that don't yet exist. Evaluated against the hiring bar before cr
 | 2026-06-27 | /skill-health review — Org score 5.8/10. Added: NFR category 11 (Rendering Environment), ux-designer checklist Rendering Environment section, /verify Test 10 (dark mode rendering check), /adr implicit decisions section, FOUNDER-GUIDE session-close required framing | Rendering environment gap slipped past UX review and reached the user; session-close cluster consistently skipped across multiple sessions |
 | 2026-07-03 | Stack Coverage System added to code-review + nfr-check SKILL.md. generate_stack_overlay() tool added. skill-graph.yaml + stack-overlay-schema.md created. | Generative overlay architecture — skills detect stack gap on first encounter, propose generating overlay, save for future sessions. WAF-grounded schema ensures critical questions > checklists. |
 | 2026-07-14 | Added /skill-forge (proactive stack→skill convergence loop) + analyze_stack_for_skills() tool + signal/noise framework (humanize). | Closes youk's improvement loop forward: forge anticipates skills from stack analysis at a rising standard until convergence; self_heal stays reactive. Signal/noise framework (SUBTRACT+REVEAL) generalizes REVEAL from learn/challenge/stress-test into one reusable source. |
+| 2026-07-17 | Added /challenge, /adversary-loop, /done to inventory. Updated known gaps table. Org score: 7.2/10 (+1.4 vs. prior review). Top gap: dev_loop not registering in audit for M+ sessions. | skill-health review Jul 2026 |
 
 ---
 
