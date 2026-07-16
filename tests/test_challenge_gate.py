@@ -31,9 +31,10 @@ class TestChallengeGateBlocked:
         result = check_challenge_gate("build feature", "M", challenge_ran=False)
         assert "M" in result["reason"]
 
-    def test_reason_names_mark_challenge_ran(self):
+    def test_reason_names_mark_challenge_ran_with_angles(self):
         result = check_challenge_gate("build feature", "M", challenge_ran=False)
         assert "mark_challenge_ran" in result["reason"]
+        assert "angles_checked" in result["reason"]
 
 
 class TestChallengeGatePasses:
