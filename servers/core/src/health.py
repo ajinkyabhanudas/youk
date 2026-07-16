@@ -80,6 +80,24 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
             sk for sk in s["skills"]
             if sk.lower().replace("-", "_") in _CAPABILITY_SKILLS or sk.lower() in _CAPABILITY_SKILLS
         ]
+        # DeveloperCaught: skills pre-empted by the developer count toward capability_skills.
+        # A developer who answered nfr_check questions unprompted exercised the capability —
+        # the audit should credit it even if route_to_skill("nfr_check") was never called.
+        caught_early = re.search(r"^DeveloperCaught:\s*(.+)$", block, re.MULTILINE | re.IGNORECASE)
+        if caught_early:
+            existing_normalized = {c.lower().replace("-", "_") for c in s["capability_skills"]}
+            for sk in caught_early.group(1).split(","):
+                sk = sk.strip()
+                if sk and (sk.lower().replace("-", "_") in _CAPABILITY_SKILLS or sk.lower() in _CAPABILITY_SKILLS):
+                    if sk.lower().replace("-", "_") not in existing_normalized:
+                        s["capability_skills"].append(sk)
+                        existing_normalized.add(sk.lower().replace("-", "_"))
+        # TaskCheckpoints M+: tool-enforced evidence that M+ routing ran (check_challenge_gate
+        # passed, task_checkpoint called). Credit dev-loop even if route_to_skill("dev-loop")
+        # was skipped — the gate ran, the work happened.
+        if re.search(r"^TaskCheckpoints:\s*\d+.*\((XL|L|M)\)", block, re.MULTILINE | re.IGNORECASE):
+            if "dev-loop" not in s["capability_skills"] and "dev_loop" not in s["capability_skills"]:
+                s["capability_skills"].append("dev-loop")
         close_match = re.search(r"^CloseCluster:\s*(\w+)$", block, re.MULTILINE)
         s["close_cluster"] = (close_match.group(1).lower() == "yes") if close_match else False
         project_match = re.search(r"^Project:\s*(.+)$", block, re.MULTILINE)

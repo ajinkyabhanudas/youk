@@ -853,11 +853,22 @@ def _compute_skill_invocation_rate(audit_dir: Path) -> tuple[int | None, int]:
         hit = []  # True if session had a capability skill
         for entry in entries:
             skills_found: list[str] = []
+            has_developer_caught_capability = False
+            has_m_plus_checkpoint = False
             for line in entry.splitlines():
                 if line.startswith("Skills:"):
                     skills_found = _parse_skills_line(line)
-                    break
-            hit.append(_has_capability_skill(skills_found))
+                elif line.startswith("DeveloperCaught:"):
+                    raw = line[len("DeveloperCaught:"):].strip()
+                    caught = [s.strip() for s in raw.split(",") if s.strip()]
+                    has_developer_caught_capability = _has_capability_skill(caught)
+                elif line.startswith("TaskCheckpoints:"):
+                    has_m_plus_checkpoint = bool(re.search(r"\((XL|L|M)\)", line, re.IGNORECASE))
+            hit.append(
+                _has_capability_skill(skills_found)
+                or has_developer_caught_capability
+                or has_m_plus_checkpoint
+            )
 
         total = len(hit)
         rate_pct = int(sum(hit) / total * 100) if total else None
