@@ -108,6 +108,16 @@ Each lens is independent. They do not see each other's output within a round.
 
 **Lens 1 — Problem Framing**
 Is this the right problem to solve right now?
+
+**Abstraction-level declaration (always first, before any framing question):**
+Declare which level this challenge is operating at:
+- Goal (what outcome are we trying to achieve?)
+- Strategy (what approach achieves the goal?)
+- Tactic (what method implements the approach?)
+- Implementation (what specific tool/code/config carries it out?)
+
+If the task as stated is at Tactic or Implementation: ask first — "Is there a Strategy or Goal-level direction that shapes this one? If yes, challenge that level before this one." Only proceed if the direction being challenged is at the highest relevant level, or if the higher-level direction was already confirmed this session.
+
 - Is there a simpler version of this problem that achieves the same outcome?
 - Is the stated problem a symptom of a deeper problem?
 - Would solving this create a new problem that's harder than the current one?
@@ -217,11 +227,33 @@ Objection {n}:
   Resolved by: {what would make this objection go away — a fact, a decision, a clarification}
 ```
 
+**Steelman gate (runs after each lens, before moving to the next):**
+Before accepting CLEAR on any lens, state the strongest case that this lens SHOULD have found an objection but didn't. Format:
+```
+Steelman: {the most plausible argument that this lens missed something}
+Verdict:  WEAK (the steelman case doesn't hold — CLEAR confirmed) |
+          HOLDS (the steelman case is plausible — this lens is HIGH, not CLEAR)
+```
+If the steelman HOLDS: convert the lens result from CLEAR to HIGH and surface it. Do not move to the next lens until the steelman is explicitly evaluated. A one-word steelman ("nothing") is not valid — name the specific scenario that would have triggered an objection.
+
 **BLOCKING** = if this is correct, the direction is wrong and work must not start.
 **HIGH** = work can start but this should be addressed in the first exchange.
 **LOW** = worth noting, does not block.
 
-After all lenses run:
+**Inter-angle coherence check (runs after all lenses complete, before verdict):**
+State in one clause what problem each lens assumed was being solved:
+```
+[INTER-ANGLE COHERENCE]
+Lens 1 assumed: {problem statement in one clause}
+Lens 2 assumed: {problem statement in one clause}
+Lens 3 assumed: {problem statement in one clause}
+Lens 4 assumed: {problem statement in one clause}
+Coherence:      ALIGNED — all lenses attacked the same problem |
+                DIVERGED on {lenses} — different problem assumed
+```
+If DIVERGED: the divergence is a HIGH objection. Surface it before proceeding. The direction cannot be CLEAR while lenses disagree on what they were challenging. Do not call `mark_challenge_ran` until coherence is ALIGNED.
+
+After all lenses run and coherence is confirmed:
 - If zero objections: direction SURVIVES — call `youk-core.mark_challenge_ran(task, angles_checked=[<list of angles run>], mode=<mode>)`. If it returns `blocked: true`, run the missing angles and call again. On `recorded: true`, the verdict is confirmed — proceed.
 - If only LOW objections: direction SURVIVES WITH NOTES — emit findings inline, then call `mark_challenge_ran` as above and proceed.
 - If any HIGH: direction NEEDS SHARPENING — emit findings, propose revised direction, go to Phase 3
@@ -276,6 +308,7 @@ unresolved: [state it]. User input needed before proceeding.") Do not exit silen
 - **Global optimum exit condition.** Before surfacing any verdict, two checks must both pass: (1) did the last round produce zero new objections from every lens that ran? (2) is there any lens, angle, or dimension not yet challenged? If either fails — keep going internally. "Zero objections from lenses I ran" is not the exit condition. "Zero objections from all angles, none skipped" is.
 - **LOW objections do not block.** They are noted and carried forward as context. They do not trigger Phase 3.
 - **silent mode only speaks on BLOCKING.** In silent mode, LOW and HIGH findings are held internally and influence the answer without surfacing friction to the user. Only BLOCKING objections break silence.
+- **CLEAR requires a positive claim.** "CLEAR" means: this lens does not block the direction, because [specific reason the direction is robust against this lens]. "The team can decide" is not a positive claim — it is a deferred resolution. "It probably works" is not a positive claim — it is an untested assertion. If you found a tension but cannot argue why it doesn't block the direction, mark it HIGH and surface it. Deferral masking as CLEAR is the most common false-convergence pattern.
 
 ### Hiring Validation
 
