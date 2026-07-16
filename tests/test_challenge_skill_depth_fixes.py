@@ -7,6 +7,7 @@ They catch /forge or manual regeneration silently dropping load-bearing instruct
 """
 from __future__ import annotations
 import sys
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "code" / "src"))
@@ -242,13 +243,21 @@ class TestChallengeRoundCap:
 
 _REASONING_INTEGRITY = _YOUK_ROOT / "knowledge" / "domain" / "reasoning-integrity.md"
 
+# knowledge/domain/ is gitignored — these tests only run when the local file exists.
+_reasoning_integrity_present = pytest.mark.skipif(
+    not _REASONING_INTEGRITY.exists(),
+    reason="knowledge/domain/reasoning-integrity.md is local-only (gitignored); skip in CI",
+)
+
 
 class TestReasoningIntegrityRcaSections:
 
+    @_reasoning_integrity_present
     def test_adversary_failure_patterns_section_present(self):
         content = _read(_REASONING_INTEGRITY)
         assert "Adversary Failure Patterns" in content
 
+    @_reasoning_integrity_present
     def test_adversary_shortcut_patterns_section_present(self):
         content = _read(_REASONING_INTEGRITY)
         assert "Adversary Shortcut Patterns" in content
