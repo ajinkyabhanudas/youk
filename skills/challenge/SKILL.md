@@ -306,6 +306,20 @@ unresolved: [state it]. User input needed before proceeding.") Do not exit silen
 
 ---
 
+## Autonomy Depth Rubric
+
+When the developer pre-empts challenge by identifying framing issues or constraints unprompted,
+record both `developer_caught=["challenge"]` and `autonomy_depth={"challenge": "<LEVEL>"}`.
+
+| Level | What the developer provided |
+|-------|----------------------------|
+| SURFACE | Questioned whether the approach is right ("should we even do X?") |
+| WORKING | Named the specific framing issue ("we're solving symptom Y, not root cause Z") |
+| DEEP | Identified the constraint that makes the initial direction wrong + named the correct direction |
+| ELITE | Named a superior alternative that dominates across all lenses before challenge ran |
+
+---
+
 ## Quality Bars (Non-Negotiable)
 
 - **Objections must be specific.** "This might be the wrong approach" is not an objection. "We're about to build a cross-project pattern scanner when the user's actual complaint was about a single contract not promoting — the scope is 10x larger than the problem" is an objection.

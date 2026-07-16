@@ -236,6 +236,21 @@ The user sees only the final verdict line. Internal rounds are the mechanism, no
 
 ---
 
+## Autonomy Depth Rubric
+
+When the developer pre-empts the adversary-loop by raising adversarial angles unprompted
+(before adversary-loop is invoked), record `developer_caught=["adversary-loop"]` and
+`autonomy_depth={"adversary-loop": "<LEVEL>"}`.
+
+| Level | What the developer provided |
+|-------|----------------------------|
+| SURFACE | Raised a doubt ("I'm not sure this is the right approach") |
+| WORKING | Named a specific angle or objection ("the scope assumption here is wrong") |
+| DEEP | Identified a BLOCKING-weight objection with the specific condition under which it fails |
+| ELITE | Exhausted all 4 lenses independently before adversary spawned, or named a direction that made adversary-loop unnecessary |
+
+---
+
 ## Quality Bars
 
 - **Handoff must be stripped.** No proposer reasoning. Re-check before every spawn.

@@ -97,11 +97,29 @@ drifting across docs without requiring a human to remember to check.
 
 Skip silently if check_doc_graph() returns no stale concepts.
 
+**Step 5c — Growth loop sweep**
+
+Scan the conversation to collect three growth signals (answered by reading context — do not ask):
+
+1. **Decision retrospectives:** Were any prior decisions validated or invalidated this session?
+   Look for: prior architectural decisions being confirmed ("caching worked"), or revisited ("retry failed").
+   Collect as: `decision_retrospectives=[{"decision": "...", "outcome": "VALIDATED|INVALIDATED", "evidence": "..."}]`
+   If none found: pass `decision_retrospectives=[]` (empty is fine — data accumulates over sessions).
+
+2. **Autonomy depth:** Did the developer pre-empt any skill (nfr_check, challenge, adversary-loop)?
+   If yes, assess depth using the rubric in each skill's SKILL.md (SURFACE/WORKING/DEEP/ELITE).
+   Collect as: `autonomy_depth={"nfr_check": "DEEP", "challenge": "WORKING"}` (only include caught skills).
+
+3. **Contract violations:** Were any behavioral contracts (from contracts.md) NOT followed this session?
+   Look for: commits without lint, gates skipped, rules overridden.
+   Collect as: `contract_violations=["always run ruff check — skipped before commit at 14:30"]`
+   If none found: pass `contract_violations=[]`.
+
 **Step 6 — Close**
 
 Call `youk-core.track_tokens(approx_input, approx_output, "final")`
 Call `youk-core.compact_context(project_dir)`  — paste the returned `brief` verbatim
-Call `youk-core.session_end("done", commits_made=<bool>, explicit_contracts=explicit_contracts, close_cluster=True, loop_correction_detected=<bool>, loop_gap_detected=<bool>, challenge_rounds=<int>)`
+Call `youk-core.session_end("done", commits_made=<bool>, explicit_contracts=explicit_contracts, close_cluster=True, loop_correction_detected=<bool>, loop_gap_detected=<bool>, challenge_rounds=<int>, decision_retrospectives=decision_retrospectives, autonomy_depth=autonomy_depth, contract_violations=contract_violations)`
 
 ---
 

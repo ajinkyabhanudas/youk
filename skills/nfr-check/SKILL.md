@@ -276,6 +276,26 @@ If BLOCKED, state what must be resolved before implementation can begin.
 
 ---
 
+## Autonomy Depth Rubric
+
+When the developer pre-empts nfr_check by answering NFR questions unprompted, record both
+the fact (`developer_caught=["nfr_check"]`) and the depth of what they provided
+(`autonomy_depth={"nfr_check": "<LEVEL>"}`) in `session_end()`.
+
+Depth levels for nfr_check:
+
+| Level | What the developer provided |
+|-------|----------------------------|
+| SURFACE | Mentioned one NFR category exists (e.g. "we'll need caching") |
+| WORKING | Provided a concrete NFR decision — TTL, retry count, specific approach |
+| DEEP | Full decision with consistency tradeoff: WHY this approach + what it doesn't solve |
+| ELITE | Pre-explained edge cases before being asked: cold start, thundering herd, cascading failure, or cross-cutting tradeoffs across multiple NFR dimensions |
+
+If the developer caught 3+ NFR categories at WORKING or above: pass `autonomy_depth={"nfr_check": "DEEP"}`.
+If they also pre-explained failure modes or tradeoffs: pass `ELITE`.
+
+---
+
 ## Quality Bars (Non-Negotiable)
 
 These apply regardless of invocation mode:
