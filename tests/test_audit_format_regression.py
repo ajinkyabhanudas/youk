@@ -192,3 +192,189 @@ class TestScoreFunctionsOnMixedHistory:
         # Only v2 and v3 have FramingCorrect — v0 and v1 must not appear
         assert len(framing_sessions) == 2
         assert all(s["framing_correct"] is True for s in framing_sessions)
+
+
+# ---------------------------------------------------------------------------
+# 4. Capability signal enrichment — DeveloperCaught and TaskCheckpoints
+# ---------------------------------------------------------------------------
+
+_V4_DEVELOPER_CAUGHT_ONLY = """\
+### Session — 2026-07-01 10:00 UTC
+Project: myproject
+Skills: none
+CloseCluster: yes
+Commits: yes
+DeveloperCaught: nfr_check
+"""
+
+_V4_DEVELOPER_CAUGHT_NON_CAPABILITY = """\
+### Session — 2026-07-02 10:00 UTC
+Project: myproject
+Skills: none
+CloseCluster: yes
+Commits: yes
+DeveloperCaught: humanize
+"""
+
+_V4_TASK_CHECKPOINT_M = """\
+### Session — 2026-07-03 10:00 UTC
+Project: myproject
+Skills: code-review, learn
+CloseCluster: yes
+Commits: yes
+TaskCheckpoints: 1 — implement growth loop (M)
+"""
+
+_V4_TASK_CHECKPOINT_XL = """\
+### Session — 2026-07-04 10:00 UTC
+Project: myproject
+Skills: code-review
+CloseCluster: yes
+Commits: yes
+TaskCheckpoints: 2 — migrate database (XL); add auth layer (L)
+"""
+
+_V4_TASK_CHECKPOINT_S_ONLY = """\
+### Session — 2026-07-05 10:00 UTC
+Project: myproject
+Skills: none
+CloseCluster: no
+Commits: yes
+TaskCheckpoints: 1 — fix typo (S)
+"""
+
+_V4_DEVLOOP_ALREADY_IN_SKILLS = """\
+### Session — 2026-07-06 10:00 UTC
+Project: myproject
+Skills: dev-loop, code-review
+CloseCluster: yes
+Commits: yes
+TaskCheckpoints: 1 — implement feature (M)
+"""
+
+_V4_CAUGHT_ALREADY_IN_SKILLS = """\
+### Session — 2026-07-07 10:00 UTC
+Project: myproject
+Skills: nfr-check, dev-loop
+CloseCluster: yes
+Commits: yes
+DeveloperCaught: nfr_check
+"""
+
+
+class TestCapabilitySignalEnrichment:
+    """DeveloperCaught and TaskCheckpoints M+ must enrich capability_skills."""
+
+    def test_developer_caught_capability_skill_added(self):
+        from health import _parse_audit_sessions
+        sessions = _parse_audit_sessions([_V4_DEVELOPER_CAUGHT_ONLY])
+        assert "nfr_check" in sessions[0]["capability_skills"]
+
+    def test_developer_caught_non_capability_skill_not_added(self):
+        """humanize is not in _CAPABILITY_SKILLS — must not be added."""
+        from health import _parse_audit_sessions
+        sessions = _parse_audit_sessions([_V4_DEVELOPER_CAUGHT_NON_CAPABILITY])
+        assert sessions[0]["capability_skills"] == []
+
+    def test_task_checkpoint_m_adds_dev_loop(self):
+        from health import _parse_audit_sessions
+        sessions = _parse_audit_sessions([_V4_TASK_CHECKPOINT_M])
+        assert "dev-loop" in sessions[0]["capability_skills"]
+
+    def test_task_checkpoint_xl_adds_dev_loop(self):
+        from health import _parse_audit_sessions
+        sessions = _parse_audit_sessions([_V4_TASK_CHECKPOINT_XL])
+        assert "dev-loop" in sessions[0]["capability_skills"]
+
+    def test_task_checkpoint_s_does_not_add_dev_loop(self):
+        """S-size checkpoints are context compactions, not M+ routing evidence."""
+        from health import _parse_audit_sessions
+        sessions = _parse_audit_sessions([_V4_TASK_CHECKPOINT_S_ONLY])
+        assert "dev-loop" not in sessions[0]["capability_skills"]
+        assert sessions[0]["capability_skills"] == []
+
+    def test_dev_loop_not_duplicated_when_already_in_skills(self):
+        from health import _parse_audit_sessions
+        sessions = _parse_audit_sessions([_V4_DEVLOOP_ALREADY_IN_SKILLS])
+        assert sessions[0]["capability_skills"].count("dev-loop") == 1
+
+    def test_developer_caught_not_duplicated_when_already_in_skills(self):
+        from health import _parse_audit_sessions
+        sessions = _parse_audit_sessions([_V4_CAUGHT_ALREADY_IN_SKILLS])
+        nfr_variants = [
+            s for s in sessions[0]["capability_skills"]
+            if "nfr" in s.lower()
+        ]
+        assert len(nfr_variants) == 1
+
+    def test_old_entry_without_developer_caught_unaffected(self):
+        """V0 blocks have no DeveloperCaught — capability_skills from Skills: only."""
+        from health import _parse_audit_sessions
+        sessions = _parse_audit_sessions([_V0_BLOCK])
+        assert set(sessions[0]["capability_skills"]) == {"nfr-check", "dev-loop"}
+
+    def test_session_with_only_developer_caught_counts_as_hit_in_score(self):
+        """A developer-caught session must contribute to capability_count in _score_org."""
+        from health import _parse_audit_sessions
+        sessions = _parse_audit_sessions([_V4_DEVELOPER_CAUGHT_ONLY])
+        assert sessions[0]["capability_skills"]  # non-empty = counts as hit
+
+    def test_session_with_only_task_checkpoint_m_counts_as_hit_in_score(self):
+        from health import _parse_audit_sessions
+        sessions = _parse_audit_sessions([_V4_TASK_CHECKPOINT_S_ONLY])
+        # S-only = no hit
+        assert not sessions[0]["capability_skills"]
+        # Now M
+        sessions_m = _parse_audit_sessions([_V4_TASK_CHECKPOINT_M])
+        assert sessions_m[0]["capability_skills"]
+
+
+class TestSkillInvocationRateEnrichment:
+    """_compute_skill_invocation_rate must also credit DeveloperCaught and M+ checkpoints."""
+
+    def _make_audit_dir(self, tmp_path, content: str) -> Path:
+        f = tmp_path / "2026-07.md"
+        f.write_text(content)
+        return tmp_path
+
+    def test_developer_caught_counts_as_hit(self, tmp_path):
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "core" / "src"))
+        from session import _compute_skill_invocation_rate
+        audit_dir = self._make_audit_dir(tmp_path, _V4_DEVELOPER_CAUGHT_ONLY)
+        rate, skips = _compute_skill_invocation_rate(audit_dir)
+        assert rate == 100
+        assert skips == 0
+
+    def test_task_checkpoint_m_counts_as_hit(self, tmp_path):
+        from session import _compute_skill_invocation_rate
+        audit_dir = self._make_audit_dir(tmp_path, _V4_TASK_CHECKPOINT_M)
+        rate, skips = _compute_skill_invocation_rate(audit_dir)
+        assert rate == 100
+        assert skips == 0
+
+    def test_task_checkpoint_s_does_not_count_as_hit(self, tmp_path):
+        from session import _compute_skill_invocation_rate
+        audit_dir = self._make_audit_dir(tmp_path, _V4_TASK_CHECKPOINT_S_ONLY)
+        rate, skips = _compute_skill_invocation_rate(audit_dir)
+        assert rate == 0
+        assert skips == 1
+
+    def test_consecutive_skips_not_broken_by_enrichment(self, tmp_path):
+        """Two skill-less sessions followed by a developer-caught session → 0 trailing skips."""
+        content = (
+            _V0_NO_SKILLS_BLOCK
+            + _V4_TASK_CHECKPOINT_S_ONLY
+            + _V4_DEVELOPER_CAUGHT_ONLY
+        )
+        from session import _compute_skill_invocation_rate
+        audit_dir = self._make_audit_dir(tmp_path, content)
+        _, skips = _compute_skill_invocation_rate(audit_dir)
+        assert skips == 0  # last session had developer_caught
+
+    def test_non_capability_developer_caught_not_a_hit(self, tmp_path):
+        from session import _compute_skill_invocation_rate
+        audit_dir = self._make_audit_dir(tmp_path, _V4_DEVELOPER_CAUGHT_NON_CAPABILITY)
+        rate, skips = _compute_skill_invocation_rate(audit_dir)
+        assert rate == 0
+        assert skips == 1
