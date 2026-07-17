@@ -256,6 +256,108 @@ _BUILD_SIGNALS = [
     "refactor ", "migrate ", "redesign ", "overhaul ",
 ]
 
+# Route-task gate warning — suppressed after N warnings per session
+_ROUTE_WARNING_SUPPRESS_AFTER = 3
+_HOOK_WARNINGS_FILE = "state/hook-warnings.jsonl"
+
+
+def load_routes_yaml_signals(root: Path) -> list[str]:
+    """
+    Load M/L/XL build signals from config/routes.yaml.
+
+    Falls back to _BUILD_SIGNALS when routes.yaml is absent or unparseable.
+    Merges signals from M, L, and XL size buckets — all imply M+ routing.
+    """
+    try:
+        import yaml  # type: ignore[import-untyped]
+        routes_file = root / "config" / "routes.yaml"
+        if not routes_file.exists():
+            return list(_BUILD_SIGNALS)
+        data = yaml.safe_load(routes_file.read_text())
+        task_sizes = data.get("task_sizes", {})
+        combined: list[str] = []
+        for size in ("M", "L", "XL"):
+            combined.extend(task_sizes.get(size, {}).get("signals", []))
+        return combined if combined else list(_BUILD_SIGNALS)
+    except Exception:
+        return list(_BUILD_SIGNALS)
+
+
+def route_task_ran_this_session(root: Path, slug: str) -> bool:
+    """
+    Check whether route_task was called at any point this session for this slug.
+
+    Session boundary: route-task-ran.json must have been written AFTER the
+    session-open.json file (both written at session start / first tool call).
+    If session-open.json is absent, falls back to slug-only check.
+    """
+    flag_file = root / "state" / "route-task-ran.json"
+    if not flag_file.exists():
+        return False
+    try:
+        raw = json.loads(flag_file.read_text())
+        entries = raw if isinstance(raw, list) else [raw]
+        # Check slug match first
+        slug_match = any(e.get("slug") == slug for e in entries)
+        if not slug_match:
+            return False
+        # Session boundary check: route-task-ran.json must be newer than session-open.json
+        open_file = root / "state" / "session-open.json"
+        if open_file.exists():
+            open_mtime = open_file.stat().st_mtime
+            flag_mtime = flag_file.stat().st_mtime
+            if flag_mtime < open_mtime:
+                return False  # route-task-ran is from a prior session
+        return True
+    except Exception:
+        return False
+
+
+def count_route_warnings_this_session(root: Path, slug: str) -> int:
+    """Count route_task warnings already emitted this session for this slug."""
+    warnings_file = root / _HOOK_WARNINGS_FILE
+    if not warnings_file.exists():
+        return 0
+    try:
+        open_file = root / "state" / "session-open.json"
+        session_start = 0.0
+        if open_file.exists():
+            session_start = open_file.stat().st_mtime
+        count = 0
+        for line in warnings_file.read_text().splitlines():
+            if not line.strip():
+                continue
+            entry = json.loads(line)
+            if entry.get("slug") != slug or entry.get("type") != "route_missing":
+                continue
+            if entry.get("ts", 0.0) >= session_start:
+                count += 1
+        return count
+    except Exception:
+        return 0
+
+
+def log_route_warning(root: Path, slug: str) -> None:
+    """Append a route_missing warning entry to hook-warnings.jsonl."""
+    import time
+    warnings_file = root / _HOOK_WARNINGS_FILE
+    try:
+        warnings_file.parent.mkdir(parents=True, exist_ok=True)
+        entry = json.dumps({"type": "route_missing", "slug": slug, "ts": time.time()})
+        with warnings_file.open("a") as f:
+            f.write(entry + "\n")
+    except Exception:
+        pass
+
+
+def build_route_missing_warning() -> str:
+    """Warning injected when M+ signals are detected but route_task hasn't run."""
+    return (
+        "[YOUK] M+ signals detected — route_task has not run this session. "
+        "Run /build before implementing: route_task → challenge → nfr_check → "
+        "check_nfr_gate → check_challenge_gate → dev-loop."
+    )
+
 # Session-end signals — natural phrases that close a work block
 _SESSION_END_SIGNALS = [
     "ok thanks", "that's all", "that's all for now", "looks good", "we're done",
@@ -270,20 +372,24 @@ _SESSION_END_SIGNALS = [
 _NFR_STATE_FILE = "state/nfr-check-ran.json"
 
 
-def detect_task_size(prompt: str) -> str | None:
+def detect_task_size(prompt: str, signals: list[str] | None = None) -> str | None:
     """
     Detect if the prompt implies an M+ task that needs /build routing.
     Returns 'M' if detected, None if not clearly M+.
     Deliberately conservative — false positives are more annoying than misses.
     Exception: short prompts containing explicit BUILD_SIGNALS still trigger
     ("build page", "add auth") — length filter was blocking valid M+ detection.
+
+    signals: optional list of M/L/XL signals from routes.yaml. Defaults to
+    _BUILD_SIGNALS when None (backward-compatible for existing callers).
     """
+    active_signals = signals if signals is not None else _BUILD_SIGNALS
     lower = prompt.lower().strip()
     # Skip explicit slash commands — user is already routing
     if lower.startswith("/"):
         return None
     # Check build signals first — short prompts with clear signals should fire
-    if any(sig in lower for sig in _BUILD_SIGNALS):
+    if any(sig in lower for sig in active_signals):
         # Skip if clearly a question even with a build word
         if lower.startswith(("what", "why", "how", "where", "when", "which", "does", "is ", "are ")):
             return None
