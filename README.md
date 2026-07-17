@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/ajinkyabhanudas/youk/actions/workflows/ci.yml/badge.svg)](https://github.com/ajinkyabhanudas/youk/actions/workflows/ci.yml)
 [![config valid](https://img.shields.io/badge/config-valid%20YAML-4CAF50)](config/)
-[![health.py coverage](https://img.shields.io/badge/health.py%20coverage-92%25-4CAF50)](tests/test_health.py)
+[![health.py coverage](https://img.shields.io/badge/health.py%20coverage-86%25-4CAF50)](tests/test_health.py)
 [![Python](https://img.shields.io/badge/python-3.13+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-required-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![MCP](https://img.shields.io/badge/protocol-MCP-8B5CF6)](https://modelcontextprotocol.io)
@@ -12,6 +12,8 @@
 [![License](https://img.shields.io/badge/license-MIT-22C55E)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](https://github.com/ajinkyabhanudas/youk)
 [![Wiki](https://img.shields.io/badge/wiki-reference-8B5CF6)](https://github.com/ajinkyabhanudas/youk/wiki)
+
+coverage enforced in CI at ≥85% (`--cov-fail-under`); badge regenerated via `make coverage-badge`
 
 </div>
 
@@ -48,9 +50,9 @@ When youk doesn't have a skill for something you're doing, it generates one from
 
 When a skill fails or gets skipped in a session, it gets patched before that session ends. Not queued for next time. The session that exposed the gap is the one that fixes it.
 
-Self-heal reads the last 30 days of sessions and surfaces structural improvements — recurring gaps, skipped skills, patterns that keep coming back. You review and approve them. Nothing applies automatically.
+Self-heal reads the last 30 days of sessions and surfaces structural improvements — recurring gaps, skipped skills, patterns that keep coming back. You review and approve them. Structural code and config changes never apply without your review. Skill text (SKILL.md) is the one exception — it is patched in-session, with the diff written to the audit trail (see PHILOSOPHY.md §3 for why).
 
-`/learn` isn't logging. It maps what you encountered today to what you already know, explicitly calls out where the analogy breaks down, and writes that to your knowledge base. Cross-project patterns get promoted automatically. You don't extract the lesson manually — it does that.
+`/learn` isn't logging. It maps what you encountered today to what you already know, explicitly calls out where the analogy breaks down, and writes that to your knowledge base. Cross-project patterns are surfaced by self-heal for your review; you approve them via apply_proposal. You don't extract the lesson manually — it does that.
 
 The result: the longer you use it, the fewer corrections you have to make. That's the compounding part.
 
@@ -70,7 +72,7 @@ Run `/health` at any point. It returns an `org_score` (0–10) and a `loop_verdi
 | **COLD** | Fewer than 3 sessions — not enough data yet |
 | **REGRESSING** | Score falling — review recent proposals and skipped skills |
 
-The score is driven by five signals: skill_invocation_rate (did a capability skill fire? — primary, 2.0 weight), close_cluster_rate (did you type `/done`? — 0.5 weight), gap_resolution_rate (are recurring gaps being fixed? — 0.5 weight), prevented_cost_score (did skills catch real findings, reversals, NFR gaps? — 0.5 weight), framing_accuracy_rate (was the goal correctly translated before work started? — 0.5 weight). The primary lever is **capability skill invocation** — a session where you used `/build`, `/review`, or `/done` (includes `/learn`) compounds your ability. A discipline gate caps org_score at 6.5 if 3+ consecutive sessions have zero capability skills — the gate lifts when you next invoke one. Maximum score is 9.0 (all signals at 1.0).
+The score is driven by five signals: skill_invocation_rate (did a capability skill fire? — primary, 2.0 weight), close_cluster_rate (did you type `/done`? — 0.5 weight), gap_resolution_rate (are recurring gaps being fixed? — 0.5 weight), prevented_cost_score (did skills catch real findings, reversals, NFR gaps? — 0.5 weight), framing_accuracy_rate (was the goal correctly translated before work started? — 0.5 weight). The primary lever is **capability skill invocation** — a session where you used `/build`, `/review`, or `/done` (includes `/learn`) compounds your ability. A discipline gate caps org_score at 6.5 if 3+ consecutive sessions have zero capability skills — the gate lifts when you next invoke one. The score is capped at 10.0; in practice scores of 6–8 indicate a healthy loop (author's observed score after ~40 sessions: 6.3).
 
 **M+ gate chain (what `/build` runs):** For features and non-trivial tasks, four gates run before code is written: (1) `optimize_intent` collapses scope ambiguity — but also detects intent-opaque goals (quality words like "better", mindset language like "discover the pattern") and surfaces a goal-translation question before proceeding, (2) `route_task` enforces both gates — blocks on scope ambiguity AND intent opacity, (3) `nfr_check` answers four questions (performance, reliability, security, observability) to produce an NFR Decision Block, (4) `check_nfr_gate` confirms the block is present before dev-loop starts. Each gate is tool-enforced — skipping it requires the tool to return `blocked=false`, not just deciding to proceed.
 
