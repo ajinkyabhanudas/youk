@@ -6,7 +6,7 @@ sys.path.insert(0, "/shared")
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
-from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state
+from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state, _record_outcome_followup
 from routing import route_task as _route_task
 from health import (
     run_health_check_with_skill_signals,
@@ -96,6 +96,8 @@ def session_end(
     decision_retrospectives: list[dict] | None = None,
     autonomy_depth: dict[str, str] | None = None,
     contract_violations: list[str] | None = None,
+    outcome: str = "NONE",
+    outcome_result: str = "UNKNOWN",
 ) -> dict:
     """
     End a youk session. Writes audit log entry, saves contracts, checks session-close cluster.
@@ -185,9 +187,38 @@ def session_end(
     challenge_rounds: Total ITERATE phases across all challenge invocations this session.
     Written as ChallengeRounds: N. Low values with loop_correction_detected=True = early exit signal.
 
+    outcome: What happened to the work at the end of this session.
+    Enum: SHIPPED | STAGED | ABANDONED | NONE (default).
+    SHIPPED = committed and pushed / deployed.
+    STAGED = committed but not yet pushed (e.g. feature branch, awaiting review).
+    ABANDONED = work started but discarded (decision reversed, approach wrong).
+    NONE = no code work happened this session (planning, review, exploration).
+
+    outcome_result: How the shipped/staged work actually performed.
+    Enum: WORKED | FAILED | UNKNOWN | PENDING (default UNKNOWN).
+    WORKED = deployed and confirmed functional in the target environment.
+    FAILED = deployed but produced errors, regressions, or was reverted.
+    PENDING = staged/deployed but not yet observed in production.
+    UNKNOWN = outcome not yet known or not applicable.
+    Written as OutcomeResult: <v> in audit log. Feeds outcome_quality_rate in health.py.
+
     Returns: knowledge_extracted, proposals_added, audit_written,
              session_close_cluster_detected, contracts_saved.
     """
+    _OUTCOME_ENUM = {"SHIPPED", "STAGED", "ABANDONED", "NONE"}
+    _OUTCOME_RESULT_ENUM = {"WORKED", "FAILED", "UNKNOWN", "PENDING"}
+    outcome = (outcome or "NONE").upper()
+    outcome_result = (outcome_result or "UNKNOWN").upper()
+    if outcome not in _OUTCOME_ENUM:
+        return {
+            "error": f"Invalid outcome '{outcome}'. Must be one of: {', '.join(sorted(_OUTCOME_ENUM))}",
+            "blocked": True,
+        }
+    if outcome_result not in _OUTCOME_RESULT_ENUM:
+        return {
+            "error": f"Invalid outcome_result '{outcome_result}'. Must be one of: {', '.join(sorted(_OUTCOME_RESULT_ENUM))}",
+            "blocked": True,
+        }
     try:
         check_knowledge_write(summary)
     except HardRuleViolation as e:
@@ -248,7 +279,40 @@ def session_end(
         findings, finding_categories, nfr_gaps, direction_reversal,
         developer_caught, loop_correction_detected, loop_gap_detected, challenge_rounds,
         decision_retrospectives, autonomy_depth, contract_violations,
+        outcome, outcome_result,
     )
+
+
+@mcp.tool()
+def record_outcome_followup(session_slug: str, outcome_result: str) -> dict:
+    """
+    Amend a prior session's outcome_result in the audit log when the result becomes known.
+
+    Call this when a prior session's work shipped as PENDING or UNKNOWN and the real
+    result is now observable — e.g., deployed and confirmed working (WORKED), or
+    reverted due to a bug (FAILED).
+
+    session_slug: The slug of the prior session whose outcome_result should be updated.
+    Matches the 'Project:' slug line in the audit log. Use the value returned by
+    session_start as 'project' field, or read from state/session.json.
+
+    outcome_result: The observed result. Enum: WORKED | FAILED | UNKNOWN | PENDING.
+    WORKED = confirmed functional in target environment.
+    FAILED = produced errors, regressions, or was reverted.
+    PENDING = still awaiting observation.
+    UNKNOWN = not applicable or cannot be determined.
+
+    Returns: amended (bool), prior_result (str), new_result (str), audit_file (str).
+    On error: error (str), blocked (bool).
+    """
+    _OUTCOME_RESULT_ENUM = {"WORKED", "FAILED", "UNKNOWN", "PENDING"}
+    outcome_result = (outcome_result or "UNKNOWN").upper()
+    if outcome_result not in _OUTCOME_RESULT_ENUM:
+        return {
+            "error": f"Invalid outcome_result '{outcome_result}'. Must be one of: {', '.join(sorted(_OUTCOME_RESULT_ENUM))}",
+            "blocked": True,
+        }
+    return _record_outcome_followup(session_slug, outcome_result)
 
 
 @mcp.tool()

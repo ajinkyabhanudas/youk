@@ -192,6 +192,12 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         violations = re.findall(r"^ContractViolation:\s*(.+)$", block, re.MULTILINE)
         s["contract_violations"] = [v.strip() for v in violations]
 
+        # Outcome signal — what happened to the work and how did it land?
+        outcome_match = re.search(r"^Outcome:\s*(\w+)$", block, re.MULTILINE)
+        s["outcome"] = outcome_match.group(1).upper() if outcome_match else "NONE"
+        result_match = re.search(r"^OutcomeResult:\s*(\w+)$", block, re.MULTILINE)
+        s["outcome_result"] = result_match.group(1).upper() if result_match else "UNKNOWN"
+
         sessions.append(s)
     return sessions[-150:]  # cap: most recent 150 sessions regardless of window size
 
@@ -450,6 +456,49 @@ def _compute_contract_compliance_rate(sessions: list[dict]) -> float:
     return round(1.0 - (non_compliant / len(window)), 2)
 
 
+def _compute_outcome_rates(sessions: list[dict]) -> dict:
+    """
+    Compute outcome_signal_rate and outcome_quality_rate from audit sessions.
+
+    outcome_signal_rate: fraction of SHIPPED/STAGED sessions that have a non-NONE outcome recorded.
+    Active only when ≥10 sessions carry outcome data (warmup gate).
+
+    outcome_quality_rate: fraction of resolved outcomes (WORKED|FAILED) that are WORKED.
+    Active only when ≥10 sessions carry outcome data.
+
+    Returns:
+        outcome_signal_rate: float (0.0–1.0) or None when warmup not met
+        outcome_quality_rate: float (0.0–1.0) or None when warmup not met
+        sessions_with_outcome: int
+        sessions_resolved: int
+    """
+    sessions_with_outcome = [s for s in sessions if s.get("outcome") and s["outcome"] != "NONE"]
+    if len(sessions_with_outcome) < 10:
+        return {
+            "outcome_signal_rate": None,
+            "outcome_quality_rate": None,
+            "sessions_with_outcome": len(sessions_with_outcome),
+            "sessions_resolved": 0,
+        }
+
+    # outcome_signal_rate: sessions that shipped/staged and recorded an outcome
+    shipped_staged = [s for s in sessions if s.get("outcome") in ("SHIPPED", "STAGED")]
+    with_outcome_recorded = [s for s in shipped_staged if s.get("outcome_result") not in (None, "UNKNOWN", "PENDING")]
+    outcome_signal_rate = round(len(with_outcome_recorded) / len(shipped_staged), 2) if shipped_staged else 1.0
+
+    # outcome_quality_rate: among resolved outcomes, fraction that WORKED
+    resolved = [s for s in sessions_with_outcome if s.get("outcome_result") in ("WORKED", "FAILED")]
+    worked = [s for s in resolved if s.get("outcome_result") == "WORKED"]
+    outcome_quality_rate = round(len(worked) / len(resolved), 2) if resolved else None
+
+    return {
+        "outcome_signal_rate": outcome_signal_rate,
+        "outcome_quality_rate": outcome_quality_rate,
+        "sessions_with_outcome": len(sessions_with_outcome),
+        "sessions_resolved": len(resolved),
+    }
+
+
 def _compute_convergence_velocity(sessions: list[dict]) -> dict:
     """
     Measure whether challenge loops are reaching global optimum in fewer rounds over time.
@@ -638,6 +687,20 @@ def _score_org(audit_texts: list[str]) -> float:
     # Score is discounted until the project has enough sessions to demonstrate growth.
     depth_multiplier = _compute_depth_multiplier(sessions)
 
+    # Outcome rates: active only when ≥10 sessions carry outcome data (warmup gate).
+    # outcome_signal_rate: are shipped sessions getting their results recorded?
+    # outcome_quality_rate: when recorded, what fraction worked?
+    # Each contributes ×0.5 when active.
+    outcome_rates = _compute_outcome_rates(sessions)
+    outcome_signal_bonus = (
+        (outcome_rates["outcome_signal_rate"] * 0.5)
+        if outcome_rates["outcome_signal_rate"] is not None else 0.0
+    )
+    outcome_quality_bonus = (
+        (outcome_rates["outcome_quality_rate"] * 0.5)
+        if outcome_rates["outcome_quality_rate"] is not None else 0.0
+    )
+
     # capability_skill_rate (2.0 weight): primary signal — did developer ability compound?
     # close_rate (0.5 weight): completion bonus only — /done matters but doesn't dominate
     # gap_resolution_rate (0.5 weight): are gaps being detected as new (not recurring)?
@@ -650,6 +713,8 @@ def _score_org(audit_texts: list[str]) -> float:
     # convergence_bonus (0.5 max): reward when rounds-to-optimum trend is improving
     # durability_bonus (±0.25 max): decisions proving correct over time = hypothesis signal
     # compliance_penalty (up to -0.5): contracts being violated = behavioral regression
+    # outcome_signal_bonus (0.5 max): shipped work gets outcomes recorded (active ≥10 sessions)
+    # outcome_quality_bonus (0.5 max): recorded outcomes are WORKED (active ≥10 sessions)
     raw_score = (
         5.0
         + (capability_skill_rate * 2.0)
@@ -664,6 +729,8 @@ def _score_org(audit_texts: list[str]) -> float:
         + durability_bonus
         + compliance_penalty
         + token_penalty
+        + outcome_signal_bonus
+        + outcome_quality_bonus
     )
     score = raw_score * depth_multiplier
 

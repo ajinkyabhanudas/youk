@@ -115,11 +115,27 @@ Scan the conversation to collect three growth signals (answered by reading conte
    Collect as: `contract_violations=["always run ruff check — skipped before commit at 14:30"]`
    If none found: pass `contract_violations=[]`.
 
+4. **Outcome:** What happened to the work at the end of this session?
+   Scan the conversation for commit/push/deploy signals:
+   - SHIPPED = committed and pushed / deployed to production or staging
+   - STAGED = committed to a branch but not pushed / awaiting review
+   - ABANDONED = work started but discarded (direction reversed, approach dropped)
+   - NONE = no code work this session (planning, review, exploration only)
+   Collect as: `outcome="SHIPPED"` (or STAGED / ABANDONED / NONE).
+
+5. **Outcome result:** If work was SHIPPED or STAGED, does the developer know the result yet?
+   - WORKED = confirmed functional in the target environment
+   - FAILED = errors, regressions, or reverted
+   - PENDING = shipped but not yet observed (deployed and awaiting)
+   - UNKNOWN = result not applicable or not known
+   Collect as: `outcome_result="WORKED"` (or FAILED / PENDING / UNKNOWN).
+   Default to PENDING when outcome is SHIPPED/STAGED but result isn't yet confirmed.
+
 **Step 6 — Close**
 
 Call `youk-core.track_tokens(approx_input, approx_output, "final")`
 Call `youk-core.compact_context(project_dir)`  — paste the returned `brief` verbatim
-Call `youk-core.session_end("done", commits_made=<bool>, explicit_contracts=explicit_contracts, close_cluster=True, loop_correction_detected=<bool>, loop_gap_detected=<bool>, challenge_rounds=<int>, decision_retrospectives=decision_retrospectives, autonomy_depth=autonomy_depth, contract_violations=contract_violations)`
+Call `youk-core.session_end("done", commits_made=<bool>, explicit_contracts=explicit_contracts, close_cluster=True, loop_correction_detected=<bool>, loop_gap_detected=<bool>, challenge_rounds=<int>, decision_retrospectives=decision_retrospectives, autonomy_depth=autonomy_depth, contract_violations=contract_violations, outcome=outcome, outcome_result=outcome_result)`
 
 ---
 
