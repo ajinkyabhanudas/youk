@@ -11,6 +11,16 @@ help: ## Show this help
 	  /^[a-zA-Z_-]+:.*?##/ { printf "  %-14s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@echo ""
 
+# ── Coverage ───────────────────────────────────────────────────────────────────
+
+.PHONY: coverage-badge
+coverage-badge: ## Run health.py coverage and print the badge URL with current number
+	@PCT=$$(python -m pytest tests/ -q --cov=servers/core/src --cov-report=term 2>&1 \
+	  | grep 'servers/core/src/health\.py' | tail -1 | awk '{print $$4}' | tr -d '%'); \
+	echo "health.py coverage: $${PCT}%"; \
+	echo "Badge URL: https://img.shields.io/badge/health.py%20coverage-$${PCT}%25-4CAF50"; \
+	echo "Update README.md badge line with the new percentage."
+
 # ── Core lifecycle ─────────────────────────────────────────────────────────────
 
 .PHONY: install
