@@ -120,6 +120,18 @@ def main() -> None:
         ok_no_output()
         return
 
+    # Track how many times auto-compact fires per session.
+    # Persisted to state/compact-count.json; read and cleared by session_end.
+    count_file = root / "state" / "compact-count.json"
+    try:
+        import json as _json
+        count = 0
+        if count_file.exists():
+            count = _json.loads(count_file.read_text()).get("count", 0)
+        count_file.write_text(_json.dumps({"count": count + 1}))
+    except Exception:
+        pass
+
     slug = slug_from_cwd(cwd)
     brief = build_pre_compact_brief(root, slug, cwd)
     ok(system_message=brief)

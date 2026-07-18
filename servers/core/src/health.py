@@ -202,6 +202,11 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         commits_match = re.search(r"^Commits:\s*(\w+)$", block, re.MULTILINE | re.IGNORECASE)
         s["commits"] = bool(commits_match and commits_match.group(1).lower() == "yes")
 
+        # CompactCount: N — times Claude auto-compacted this session (pre_compact hook).
+        # Absent in sessions predating this instrumentation; None signals "not measured".
+        compact_match = re.search(r"^CompactCount:\s*(\d+)$", block, re.MULTILINE)
+        s["compact_count"] = int(compact_match.group(1)) if compact_match else None
+
         sessions.append(s)
     return sessions[-150:]  # cap: most recent 150 sessions regardless of window size
 
@@ -1487,6 +1492,23 @@ def _parse_skill_gap_signals(audit_texts: list[str]) -> list[dict]:
     ]
 
 
+def _compute_compaction_frequency(sessions: list[dict]) -> dict:
+    """
+    Summarise auto-compaction frequency across measured sessions.
+    Denominator: sessions where CompactCount is present (post-instrumentation only).
+    R10-labeled to distinguish from total session count.
+    """
+    measured = [s for s in sessions if s.get("compact_count") is not None]
+    if not measured:
+        return {"avg_per_session": 0.0, "high_pressure_sessions": 0, "sessions_measured": 0}
+    counts = [s["compact_count"] for s in measured]
+    return {
+        "avg_per_session": round(sum(counts) / len(counts), 1),
+        "high_pressure_sessions": sum(1 for c in counts if c > 3),
+        "sessions_measured": len(measured),
+    }
+
+
 def run_health_check() -> HealthReport:
     audit_texts = _read_recent_audit_logs(days=30)
     score = _score_org(audit_texts)
@@ -1989,6 +2011,8 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         except ValueError:
             pass
 
+    compaction_frequency = _compute_compaction_frequency(sessions_parsed)
+
     base = {
         "org_score": report.org_score,
         "sessions_analyzed": report.sessions_analyzed,
@@ -2007,6 +2031,7 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         "convergence_velocity": conv_velocity,
         "human_precision_rate": round(human_precision_rate, 2),
         "last_external_review": last_external_review,
+        "compaction_frequency": compaction_frequency,
         "compounding_verdict": (
             "ELITE — developer pre-empting skills at DEEP/ELITE depth; compounding loop closed"
             if autonomy_depth_score >= 0.6

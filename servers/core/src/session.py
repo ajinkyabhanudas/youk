@@ -2553,6 +2553,18 @@ def end_session(
     else:
         tokens_line = ""
 
+    # Compaction frequency — how many times Claude auto-compacted this session.
+    # Counter written by pre_compact.py hook; cleared here so it resets each session.
+    compact_count_file = YOUK_ROOT / "state" / "compact-count.json"
+    compact_count = 0
+    if compact_count_file.exists():
+        try:
+            compact_count = json.loads(compact_count_file.read_text()).get("count", 0)
+            compact_count_file.unlink()
+        except Exception:
+            pass
+    compact_count_line = f"CompactCount: {compact_count}\n" if compact_count > 0 else ""
+
     entry = (
         f"\n### Session — {timestamp}\n"
         f"Project: {_slug(_load_state().get('last_project', ''))}\n"
@@ -2561,6 +2573,7 @@ def end_session(
         f"CloseCluster: {close_line}\n"
         f"Commits: {'yes' if commits_made else 'no'}\n"
         f"{tokens_line}"
+        f"{compact_count_line}"
         f"{adaptations_line}"
         f"{gap_lines}"
         f"{findings_line}"
