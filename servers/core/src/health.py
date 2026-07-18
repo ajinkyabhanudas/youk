@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 import re
 import yaml
 from datetime import datetime, timedelta
@@ -29,6 +30,25 @@ _CAPABILITY_SKILLS = frozenset({
 
 # Paths that FILE_CREATE proposals are permitted to write to
 _ALLOWED_WRITE_ROOTS = [YOUK_ROOT, CLAUDE_ROOT / "skills"]
+
+
+def _read_instrument_boundaries() -> list[dict]:
+    """
+    Load instrument boundaries from knowledge/instrument-boundaries.jsonl.
+    Each entry records when a new metric was introduced — used to split
+    longitudinal exports into pre/post instrument windows.
+    """
+    boundary_file = YOUK_ROOT / "knowledge" / "instrument-boundaries.jsonl"
+    if not boundary_file.exists():
+        return []
+    boundaries = []
+    try:
+        for line in boundary_file.read_text().splitlines():
+            if line.strip():
+                boundaries.append(json.loads(line))
+    except Exception:
+        pass
+    return boundaries
 
 
 def _read_forge_run() -> dict | None:
@@ -191,6 +211,21 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         # Loop C — Contract violations: contracts not followed this session.
         violations = re.findall(r"^ContractViolation:\s*(.+)$", block, re.MULTILINE)
         s["contract_violations"] = [v.strip() for v in violations]
+
+        # Outcome signal — what happened to the work and how did it land?
+        outcome_match = re.search(r"^Outcome:\s*(\w+)$", block, re.MULTILINE)
+        s["outcome"] = outcome_match.group(1).upper() if outcome_match else "NONE"
+        result_match = re.search(r"^OutcomeResult:\s*(\w+)$", block, re.MULTILINE)
+        s["outcome_result"] = result_match.group(1).upper() if result_match else "UNKNOWN"
+
+        # Commits: yes/no — written by session_end when commits_made=True.
+        commits_match = re.search(r"^Commits:\s*(\w+)$", block, re.MULTILINE | re.IGNORECASE)
+        s["commits"] = bool(commits_match and commits_match.group(1).lower() == "yes")
+
+        # Compactions: N — times Claude auto-compacted this session (pre_compact hook).
+        # Absent in sessions predating this instrumentation; None signals "not measured".
+        compact_match = re.search(r"^Compactions:\s*(\d+)$", block, re.MULTILINE)
+        s["compact_count"] = int(compact_match.group(1)) if compact_match else None
 
         sessions.append(s)
     return sessions[-150:]  # cap: most recent 150 sessions regardless of window size
@@ -450,6 +485,64 @@ def _compute_contract_compliance_rate(sessions: list[dict]) -> float:
     return round(1.0 - (non_compliant / len(window)), 2)
 
 
+def _compute_outcome_rates(sessions: list[dict]) -> dict:
+    """
+    Compute outcome_signal_rate and outcome_quality_rate from audit sessions.
+
+    outcome_signal_rate: fraction of real-work sessions that recorded any non-NONE outcome.
+    Real-work = session has capability_skills OR commits=True (reuses STATS.md definition).
+    PENDING counts as "recorded" — the developer signalled intent; exclude only UNKNOWN.
+    Active only when ≥10 sessions carry outcome data (warmup gate).
+
+    outcome_quality_rate: fraction of resolved outcomes (WORKED|FAILED) that are WORKED.
+    PENDING excluded from denominator (not yet resolved).
+    Active only when ≥10 sessions carry outcome data.
+
+    Returns:
+        outcome_signal_rate: float (0.0–1.0) or None when warmup not met or no real-work sessions
+        outcome_quality_rate: float (0.0–1.0) or None when warmup not met
+        sessions_with_outcome: int
+        sessions_resolved: int
+        real_work_sessions: int (denominator for outcome_signal_rate R10 label)
+    """
+    sessions_with_outcome = [s for s in sessions if s.get("outcome") and s["outcome"] != "NONE"]
+    if len(sessions_with_outcome) < 10:
+        return {
+            "outcome_signal_rate": None,
+            "outcome_quality_rate": None,
+            "sessions_with_outcome": len(sessions_with_outcome),
+            "sessions_resolved": 0,
+            "real_work_sessions": 0,
+        }
+
+    # outcome_signal_rate: real-work sessions that recorded any outcome (PENDING counts)
+    # Real-work = capability_skills present OR commits=True (matches STATS.md 70% denominator)
+    real_work = [s for s in sessions if s.get("capability_skills") or s.get("commits")]
+    with_outcome_recorded = [
+        s for s in real_work
+        if s.get("outcome") and s["outcome"] != "NONE" and s.get("outcome_result") != "UNKNOWN"
+    ]
+    # Empty real-work denominator → None (no data, no free bonus)
+    outcome_signal_rate = (
+        round(len(with_outcome_recorded) / len(real_work), 2) if real_work else None
+    )
+
+    # outcome_quality_rate: among resolved outcomes (WORKED|FAILED), fraction that WORKED
+    # PENDING excluded — not yet resolved, not counted as failure
+    resolved = [s for s in sessions_with_outcome if s.get("outcome_result") in ("WORKED", "FAILED")]
+    worked = [s for s in resolved if s.get("outcome_result") == "WORKED"]
+    outcome_quality_rate = round(len(worked) / len(resolved), 2) if resolved else None
+
+    return {
+        "outcome_signal_rate": outcome_signal_rate,
+        "outcome_quality_rate": outcome_quality_rate,
+        "sessions_with_outcome": len(sessions_with_outcome),
+        "sessions_resolved": len(resolved),
+        "real_work_sessions": len(real_work),
+        "outcome_recorded_count": len(with_outcome_recorded),
+    }
+
+
 def _compute_convergence_velocity(sessions: list[dict]) -> dict:
     """
     Measure whether challenge loops are reaching global optimum in fewer rounds over time.
@@ -638,6 +731,20 @@ def _score_org(audit_texts: list[str]) -> float:
     # Score is discounted until the project has enough sessions to demonstrate growth.
     depth_multiplier = _compute_depth_multiplier(sessions)
 
+    # Outcome rates: active only when ≥10 sessions carry outcome data (warmup gate).
+    # outcome_signal_rate: are shipped sessions getting their results recorded?
+    # outcome_quality_rate: when recorded, what fraction worked?
+    # Each contributes ×0.5 when active.
+    outcome_rates = _compute_outcome_rates(sessions)
+    outcome_signal_bonus = (
+        (outcome_rates["outcome_signal_rate"] * 0.5)
+        if outcome_rates["outcome_signal_rate"] is not None else 0.0
+    )
+    outcome_quality_bonus = (
+        (outcome_rates["outcome_quality_rate"] * 0.5)
+        if outcome_rates["outcome_quality_rate"] is not None else 0.0
+    )
+
     # capability_skill_rate (2.0 weight): primary signal — did developer ability compound?
     # close_rate (0.5 weight): completion bonus only — /done matters but doesn't dominate
     # gap_resolution_rate (0.5 weight): are gaps being detected as new (not recurring)?
@@ -650,6 +757,8 @@ def _score_org(audit_texts: list[str]) -> float:
     # convergence_bonus (0.5 max): reward when rounds-to-optimum trend is improving
     # durability_bonus (±0.25 max): decisions proving correct over time = hypothesis signal
     # compliance_penalty (up to -0.5): contracts being violated = behavioral regression
+    # outcome_signal_bonus (0.5 max): shipped work gets outcomes recorded (active ≥10 sessions)
+    # outcome_quality_bonus (0.5 max): recorded outcomes are WORKED (active ≥10 sessions)
     raw_score = (
         5.0
         + (capability_skill_rate * 2.0)
@@ -664,6 +773,8 @@ def _score_org(audit_texts: list[str]) -> float:
         + durability_bonus
         + compliance_penalty
         + token_penalty
+        + outcome_signal_bonus
+        + outcome_quality_bonus
     )
     score = raw_score * depth_multiplier
 
@@ -829,22 +940,26 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     # Only surfaces after session 5; before that there's not enough history to measure.
     autonomy_rate = _compute_autonomy_rate(sessions)
     depth_multiplier = _compute_depth_multiplier(sessions)
+    # Compute n/d for R10 label — inline to avoid duplicating _compute_autonomy_rate logic.
+    _autonomy_tracked = [s for s in sessions if s.get("developer_caught") is not None] if total >= 6 else []
+    _autonomy_n = sum(1 for s in _autonomy_tracked if s["developer_caught"])
+    _autonomy_d = len(_autonomy_tracked)
     if total >= 6:
         if autonomy_rate >= 0.4:
             findings.append(
-                f"Developer autonomy: {autonomy_rate:.0%} of sessions — developer pre-empted at least one "
-                f"capability skill (DeveloperCaught). The compounding loop is working: developer judgment "
-                f"is internalising what youk was previously catching."
+                f"Developer autonomy: {autonomy_rate:.0%} ({_autonomy_n}/{_autonomy_d} tracked sessions) — "
+                "developer pre-empted at least one capability skill (DeveloperCaught). "
+                "The compounding loop is working: developer judgment is internalising what youk was previously catching."
             )
         elif autonomy_rate > 0:
             findings.append(
-                f"Developer autonomy: {autonomy_rate:.0%} of sessions ({total} total). "
+                f"Developer autonomy: {autonomy_rate:.0%} ({_autonomy_n}/{_autonomy_d} tracked sessions). "
                 "Rising trend expected by session 20 — developer should be catching NFR gaps "
                 "before nfr_check runs. Pass developer_caught=['nfr_check'] to session_end when observed."
             )
         else:
             findings.append(
-                f"Developer autonomy: 0% across {total} sessions. "
+                f"Developer autonomy: 0% ({_autonomy_n}/{_autonomy_d} tracked sessions). "
                 "Target: developer pre-empts nfr_check by including performance/reliability/"
                 "security answers in their initial request. No DeveloperCaught signal recorded yet. "
                 "When observed, pass developer_caught=['nfr_check'] to session_end."
@@ -1139,6 +1254,25 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     git_findings = _check_git_outcomes(sessions)
     findings.extend(git_findings[:2])  # cap at 2 so audit findings don't get buried
 
+    # Outcome signal rate (R10-labeled): reported with both values and denominator
+    # so the reader can verify the number independently (R10 = numeric reconciliation rule).
+    outcome_rates = _compute_outcome_rates(sessions)
+    if outcome_rates["outcome_signal_rate"] is not None:
+        n = outcome_rates["outcome_recorded_count"]
+        d = outcome_rates["real_work_sessions"]
+        pct = round(outcome_rates["outcome_signal_rate"] * 100)
+        findings.append(
+            f"Outcome signal rate [R10]: {pct}% ({n}/{d} real-work sessions recorded an outcome). "
+            "Outcome = Commits: yes AND capability skills ran. "
+            "PENDING counts as recorded; UNKNOWN does not."
+        )
+    elif outcome_rates["sessions_with_outcome"] < 10:
+        findings.append(
+            f"Outcome signal rate: warming up "
+            f"({outcome_rates['sessions_with_outcome']}/10 sessions with outcome data). "
+            "Pass outcome= to session_end to activate."
+        )
+
     if not findings:
         findings.append(f"Org health nominal. Score: {score}/10.")
 
@@ -1376,6 +1510,51 @@ def _parse_skill_gap_signals(audit_texts: list[str]) -> list[dict]:
         {"skill": s, "gaps": gaps, "count": len(gaps)}
         for s, gaps in sorted(raw.items(), key=lambda x: -len(x[1]))
     ]
+
+
+def _compute_compaction_frequency(sessions: list[dict]) -> dict:
+    """
+    Summarise auto-compaction frequency across measured sessions.
+    Denominator: sessions where Compactions: is present (post-instrumentation only).
+    R10-labeled. Includes outcome correlation split when ≥10 sessions have both fields.
+    """
+    measured = [s for s in sessions if s.get("compact_count") is not None]
+    if not measured:
+        return {
+            "avg_per_session": 0.0,
+            "high_pressure_sessions": 0,
+            "sessions_measured": 0,
+            "r10_label": "compactions/session [R10]: 0 (0/0 sessions, last 30 days) — insufficient data",
+            "outcome_correlation": "(correlation with outcomes: insufficient data)",
+        }
+    counts = [s["compact_count"] for s in measured]
+    n = len(measured)
+    total = sum(counts)
+    avg = round(total / n, 1)
+    high_pressure = sum(1 for c in counts if c > 3)
+
+    r10_label = f"compactions/session [R10]: {avg} ({total}/{n} sessions, last 30 days)"
+
+    # Outcome correlation: only when ≥10 sessions carry both Compactions and OutcomeResult
+    both_fields = [s for s in measured if s.get("outcome_result") not in ("UNKNOWN", "NONE", None)]
+    if len(both_fields) >= 10:
+        passed = [s["compact_count"] for s in both_fields if s["outcome_result"] in ("PASSED", "SHIPPED")]
+        failed = [s["compact_count"] for s in both_fields if s["outcome_result"] == "FAILED"]
+        outcome_corr = (
+            f"(outcome split: PASSED avg={round(sum(passed)/len(passed), 1) if passed else 'n/a'} "
+            f"FAILED avg={round(sum(failed)/len(failed), 1) if failed else 'n/a'} "
+            f"over {len(both_fields)} sessions)"
+        )
+    else:
+        outcome_corr = f"(correlation with outcomes: insufficient data — {len(both_fields)}/10 sessions needed)"
+
+    return {
+        "avg_per_session": avg,
+        "high_pressure_sessions": high_pressure,
+        "sessions_measured": n,
+        "r10_label": r10_label,
+        "outcome_correlation": outcome_corr,
+    }
 
 
 def run_health_check() -> HealthReport:
@@ -1746,6 +1925,27 @@ def _compute_knowledge_velocity(audit_texts: list[str], slug: str) -> dict:
     }
 
 
+def _get_last_external_review_date_for_root(root: Path) -> str:
+    """Return the ISO date of the most recent external review for a given root, or 'NEVER'."""
+    relay_dir = root / "state" / "relay"
+    if not relay_dir.exists():
+        return "NEVER"
+    review_dirs = sorted(
+        (d for d in relay_dir.iterdir() if d.is_dir() and d.name.startswith("REVIEW-")),
+        reverse=True,
+    )
+    for d in review_dirs:
+        parts = d.name.split("-", 1)
+        if len(parts) == 2:
+            return parts[1]
+    return "NEVER"
+
+
+def _get_last_external_review_date() -> str:
+    """Return the ISO date of the most recent external review, or 'NEVER'."""
+    return _get_last_external_review_date_for_root(YOUK_ROOT)
+
+
 def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     """
     Extended health check that also returns skill gap signals for evolution
@@ -1839,6 +2039,39 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     if autonomy_depth_score > 0 and autonomy_depth_score < 0.4:
         developer_growth_report += "\n  ↑ Autonomy depth low — review SURFACE/WORKING/DEEP/ELITE rubrics in skill files"
 
+    last_external_review = _get_last_external_review_date()
+    _review_nudge = None
+    if last_external_review == "NEVER":
+        _review_nudge = (
+            "consider an external review — self-converged is a claim, externally verified is a fact. "
+            "Call request_external_review(scope='HEALTH') to package the bundle."
+        )
+    else:
+        from datetime import date as _date
+        try:
+            _review_date = _date.fromisoformat(last_external_review)
+            _days_since = (_date.today() - _review_date).days
+            if _days_since > 30:
+                _review_nudge = (
+                    f"last external review was {_days_since} days ago — "
+                    "consider an external review — self-converged is a claim, externally verified is a fact."
+                )
+        except ValueError:
+            pass
+
+    compaction_frequency = _compute_compaction_frequency(sessions_parsed)
+    instrument_boundaries = _read_instrument_boundaries()
+
+    # Knowledge index lifecycle — apply HOT→COLD and emit archive proposals
+    knowledge_lifecycle: dict = {}
+    try:
+        from knowledge_index import apply_lifecycle_rules, load_index_summaries
+        knowledge_lifecycle = apply_lifecycle_rules(YOUK_ROOT, sessions_parsed)
+        knowledge_summary = load_index_summaries(YOUK_ROOT)
+    except Exception:
+        knowledge_summary = {}
+
+
     base = {
         "org_score": report.org_score,
         "sessions_analyzed": report.sessions_analyzed,
@@ -1856,6 +2089,11 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         "depth_multiplier": depth_multiplier,
         "convergence_velocity": conv_velocity,
         "human_precision_rate": round(human_precision_rate, 2),
+        "last_external_review": last_external_review,
+        "compaction_frequency": compaction_frequency,
+        "instrument_boundaries": instrument_boundaries,
+        "knowledge_lifecycle": knowledge_lifecycle,
+        "knowledge_index": knowledge_summary,
         "compounding_verdict": (
             "ELITE — developer pre-empting skills at DEEP/ELITE depth; compounding loop closed"
             if autonomy_depth_score >= 0.6
@@ -1865,6 +2103,25 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
             else "EARLY — not enough sessions or no DeveloperCaught signal yet"
         ),
     }
+
+    if _review_nudge:
+        base["external_review_nudge"] = _review_nudge
+
+    # Task contract metrics — visibility-only, no org_score impact
+    try:
+        from task_contract import compute_contract_edit_rate, compute_accept_risk_bite_rate
+        edit_rate_data = compute_contract_edit_rate(last_n=10)
+        bite_rate_data = compute_accept_risk_bite_rate()
+        base["contract_edit_rate"] = edit_rate_data
+        base["accept_risk_bite_rate"] = bite_rate_data
+        if edit_rate_data["contracts_measured"] > 0:
+            base.setdefault("findings", [])
+            base["findings"].append(edit_rate_data["r10_label"])
+        if bite_rate_data["total_accept_risk"] > 0:
+            base.setdefault("findings", [])
+            base["findings"].append(bite_rate_data["r10_label"])
+    except Exception:
+        pass
 
     # PREVENTED block — leads the health report as the product value claim
     prevented_items = []
@@ -2426,17 +2683,41 @@ def _execute_proposal(proposal: Proposal) -> dict:
         new_content, count = re.subn(pattern, replacement, current, flags=re.DOTALL)
         if count == 0:
             new_content = current.rstrip() + f"\n\n## {section}\n{proposal.content}\n"
+        # Compute unified diff before writing — full diff to audit, truncated preview to return.
+        import difflib as _difflib
+        old_lines = current.splitlines(keepends=True)
+        new_lines = new_content.splitlines(keepends=True)
+        diff_lines = list(_difflib.unified_diff(
+            old_lines, new_lines,
+            fromfile=f"a/{proposal.target}/SKILL.md",
+            tofile=f"b/{proposal.target}/SKILL.md",
+        ))
+        full_diff = "".join(diff_lines)
+        _DIFF_PREVIEW_LINES = 40
+        preview_diff = "".join(diff_lines[:_DIFF_PREVIEW_LINES])
+        if len(diff_lines) > _DIFF_PREVIEW_LINES:
+            preview_diff += f"\n... ({len(diff_lines) - _DIFF_PREVIEW_LINES} more lines truncated)"
         skill_path.write_text(new_content)
-        # Write audit trail so self-heal can detect patch→gap cycles.
+        # Write audit trail with full diff so self-heal can detect patch→gap cycles.
         try:
             month = datetime.utcnow().strftime("%Y-%m")
             audit_file = CLAUDE_ROOT / "audit" / f"{month}.md"
             if audit_file.exists():
                 with open(audit_file, "a") as _af:
-                    _af.write(f"SkillPatch: {proposal.target} — section '{section}' auto-applied (proposal {proposal.id})\n")
+                    _af.write(
+                        f"SkillPatch: {proposal.target} — section '{section}' auto-applied (proposal {proposal.id})\n"
+                        f"```diff\n{full_diff}```\n"
+                    )
         except Exception:
             pass  # audit write failure must never block the apply
-        return {"applied": True, "target_file": str(skill_path), "change_type": ct, "section": section}
+        return {
+            "applied": True,
+            "target_file": str(skill_path),
+            "change_type": ct,
+            "section": section,
+            "diff_preview": preview_diff,
+            "diff_lines_total": len(diff_lines),
+        }
 
     if ct == "CONFIG_EDIT":
         config_path = YOUK_ROOT / "config" / proposal.target
@@ -2540,3 +2821,156 @@ def apply_proposal(
         result["change_summary"] = target.change_description
 
     return result
+
+
+_REVIEW_SCOPE_ENUM = {"GATE", "HEALTH", "SKILL", "ROADMAP"}
+
+
+def _build_review_bundle(
+    scope: str,
+    notes: str = "",
+    youk_root: Path | None = None,
+    claude_root: Path | None = None,
+    health_data: dict | None = None,
+) -> dict:
+    """Package youk state for external discriminator review.
+
+    Extracted from the MCP layer so it can be unit-tested without the mcp module.
+
+    Returns dict with folder_path, instructions, scope, date.
+    On invalid scope returns {blocked: True, error: ...}.
+    Does NOT affect org_score.
+    """
+    import json as _json
+    from datetime import date as _date
+
+    scope = (scope or "HEALTH").upper()
+    if scope not in _REVIEW_SCOPE_ENUM:
+        return {
+            "error": f"Invalid scope '{scope}'. Must be one of: {', '.join(sorted(_REVIEW_SCOPE_ENUM))}",
+            "blocked": True,
+        }
+
+    root = youk_root if youk_root is not None else YOUK_ROOT
+    croot = claude_root if claude_root is not None else CLAUDE_ROOT
+
+    today = _date.today().isoformat()
+    relay_dir = root / "state" / "relay" / f"REVIEW-{today}"
+    relay_dir.mkdir(parents=True, exist_ok=True)
+
+    if health_data is None:
+        health_data = run_health_check_with_skill_signals()
+
+    org_score = health_data.get("org_score", "?")
+    sessions_analyzed = health_data.get("sessions_analyzed", "?")
+
+    git_sha = "unknown"
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, cwd=str(root)
+        )
+        if result.returncode == 0:
+            git_sha = result.stdout.strip()
+    except Exception:
+        pass
+
+    manifest_lines = [
+        f"# External Review Package — {scope}",
+        "",
+        f"Date: {today}",
+        f"Git SHA: {git_sha}",
+        f"Scope: {scope}",
+        f"Notes: {notes or '(none)'}",
+        "",
+        "## R10 Metric Block",
+        "(all rates show numerator/denominator/window per R10 — no bare percentages)",
+        "",
+        f"org_score: {org_score}/10  (sessions_analyzed: {sessions_analyzed})",
+    ]
+    skill_rate_raw = health_data.get("developer_autonomy_rate")
+    if skill_rate_raw is not None:
+        manifest_lines.append(
+            f"developer_autonomy_rate: {round(skill_rate_raw * 100)}%  "
+            "(autonomy sessions / total sessions)"
+        )
+    compliance_raw = health_data.get("contract_compliance_rate")
+    if compliance_raw is not None:
+        manifest_lines.append(
+            f"contract_compliance_rate: {round(compliance_raw * 100)}%  "
+            "(sessions with zero violations / last 20 sessions)"
+        )
+    dur_raw = health_data.get("decision_durability_rate")
+    if dur_raw is not None:
+        manifest_lines.append(
+            f"decision_durability_rate: {round(dur_raw * 100)}%  "
+            "(VALIDATED retrospectives / all retrospectives)"
+        )
+    last_review = _get_last_external_review_date_for_root(root)
+    manifest_lines += [
+        f"last_external_review: {last_review}",
+        "",
+        "## Instructions for Discriminator",
+        "1. Read RUBRIC.md — it defines what to check and how to grade.",
+        "2. Read the evidence bundle (health.json, audit-tail.md, PENDING.md).",
+        "3. Fill in the grading memo template from RUBRIC.md.",
+        "4. Place your completed memo as MEMO.md in this folder.",
+        "5. Corrections go to the analyst as a structured list (C1, C2, ...).",
+    ]
+    (relay_dir / "MANIFEST.md").write_text("\n".join(manifest_lines) + "\n")
+
+    (relay_dir / "health.json").write_text(_json.dumps(health_data, indent=2, default=str))
+
+    pending_src = root / "knowledge" / "proposals" / "PENDING.md"
+    if pending_src.exists():
+        import shutil
+        shutil.copy(pending_src, relay_dir / "PENDING.md")
+    else:
+        (relay_dir / "PENDING.md").write_text("No pending proposals.\n")
+
+    audit_texts = _read_recent_audit_logs(days=60)
+    full_audit = "\n".join(audit_texts)
+    blocks = full_audit.split("### Session —")
+    last_10 = "### Session —".join([""] + blocks[-10:]).lstrip()
+    (relay_dir / "audit-tail.md").write_text(last_10 or "No audit entries found.\n")
+
+    if scope == "SKILL" and notes:
+        skill_file = croot / "skills" / notes / "SKILL.md"
+        if skill_file.exists():
+            import shutil
+            shutil.copy(skill_file, relay_dir / f"{notes}-SKILL.md")
+
+    rubric_src = croot / "skills" / "adversarial-planning" / "SKILL.md"
+    if rubric_src.exists():
+        content = rubric_src.read_text()
+        start = content.find("### Discriminator Grading-Rubric Template")
+        if start != -1:
+            rubric_content = content[start:]
+            end = rubric_content.find("\n---\n", 10)
+            if end != -1:
+                rubric_content = rubric_content[:end]
+            (relay_dir / "RUBRIC.md").write_text(rubric_content)
+        else:
+            (relay_dir / "RUBRIC.md").write_text(
+                "RUBRIC source not found — copy from adversarial-planning/SKILL.md manually.\n"
+            )
+    else:
+        (relay_dir / "RUBRIC.md").write_text(
+            "adversarial-planning skill not installed — install it first.\n"
+        )
+
+    return {
+        "folder_path": str(relay_dir),
+        "instructions": (
+            f"Review package created at: {relay_dir}\n"
+            "Contents: MANIFEST.md (R10 metrics), health.json, PENDING.md, "
+            "audit-tail.md (last 10 entries), RUBRIC.md (grading template).\n"
+            "To hand off: zip this folder and give to an external grader "
+            "(stronger model or human, no session history).\n"
+            "Grader places completed memo as MEMO.md in the same folder.\n"
+            "Corrections come back as C1, C2, ... in the memo."
+        ),
+        "scope": scope,
+        "date": today,
+    }

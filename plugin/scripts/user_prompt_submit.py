@@ -33,12 +33,18 @@ from youk_hook_utils import (
     detect_task_size,
     detect_session_end,
     nfr_check_ran_this_session,
+    route_task_ran_this_session,
+    count_route_warnings_this_session,
+    log_route_warning,
+    build_route_missing_warning,
+    load_routes_yaml_signals,
     load_session_health,
     build_build_nudge,
     build_session_end_nudge,
     build_health_nudge,
     ok,
     ok_no_output,
+    _ROUTE_WARNING_SUPPRESS_AFTER,
 )
 
 # Token thresholds
@@ -109,14 +115,24 @@ def main() -> None:
     # ── Ambient intelligence injections ──────────────────────────────────────
     nudges: list[str] = []
 
+    routes_signals = load_routes_yaml_signals(root)
+
     if len(user_prompt) >= MIN_PROMPT_LEN:
         # 1. Session-end detection — highest priority signal
         if detect_session_end(user_prompt):
             nudges.append(build_session_end_nudge())
 
-        # 2. M+ task detection — inject build nudge if NFR hasn't run this session
-        elif detect_task_size(user_prompt) == "M":
-            if not nfr_check_ran_this_session(root, slug):
+        # 2. M+ task detection — two-layer gate:
+        #    a. If route_task hasn't run this session: prepend route-missing warning
+        #       (suppressed after _ROUTE_WARNING_SUPPRESS_AFTER warnings to avoid noise)
+        #    b. If route_task ran but NFR hasn't: inject build nudge (existing behavior)
+        elif detect_task_size(user_prompt, routes_signals) == "M":
+            if not route_task_ran_this_session(root, slug):
+                warn_count = count_route_warnings_this_session(root, slug)
+                if warn_count < _ROUTE_WARNING_SUPPRESS_AFTER:
+                    nudges.append(build_route_missing_warning())
+                    log_route_warning(root, slug)
+            elif not nfr_check_ran_this_session(root, slug):
                 nudges.append(build_build_nudge(user_prompt))
 
     # 3. Ambient health — only inject every ~8 turns so it doesn't become noise

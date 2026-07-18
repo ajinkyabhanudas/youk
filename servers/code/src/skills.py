@@ -160,18 +160,34 @@ def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> d
             ),
         }
 
+    # Normalize skill name: routes.yaml uses underscores, skill dirs use hyphens.
+    # Try the name as-given first; fall back to underscore→hyphen so that
+    # route_to_skill("adversarial_planning") resolves to skills/adversarial-planning/.
+    resolved_name = skill_name
     # Merge: explicit context overrides session-detected values
     session_ctx = _read_session_stack_context()
     ctx = {**session_ctx, **(context or {})}
     try:
         skill_content = load_skill_with_context(
-            skill_name,
+            resolved_name,
             stack=ctx.get("stack"),
             framework=ctx.get("framework"),
             domain=ctx.get("domain"),
         )
-    except FileNotFoundError as e:
-        return {"error": str(e)}
+    except FileNotFoundError:
+        hyphen_name = skill_name.replace("_", "-")
+        if hyphen_name == resolved_name:
+            return {"error": f"Skill not found: {skill_name}"}
+        try:
+            skill_content = load_skill_with_context(
+                hyphen_name,
+                stack=ctx.get("stack"),
+                framework=ctx.get("framework"),
+                domain=ctx.get("domain"),
+            )
+            resolved_name = hyphen_name
+        except FileNotFoundError as e:
+            return {"error": str(e)}
 
     skill_content = _strip_reference_sections(skill_content)
 
@@ -192,12 +208,12 @@ def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> d
 
     return {
         "mode": "in_session",
-        "skill_name": skill_name,
+        "skill_name": resolved_name,
         "skill_content": skill_content,
         "task": task,
         "context": ctx,
         "instruction": (
-            f"You have received the '{skill_name}' skill. "
+            f"You have received the '{resolved_name}' skill. "
             "Apply it now using your full session context, tools, and conversation history. "
             "Follow every phase and quality bar defined in skill_content."
         ),

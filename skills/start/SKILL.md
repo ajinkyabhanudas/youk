@@ -99,6 +99,13 @@ I don't have a map of this codebase yet.
   /survey — 12-question map: stack, modules, entry points, integrations
 {END IF}
 
+{IF no knowledge entry for this project slug}
+No knowledge base exists for this project yet.
+  Run a founding analysis? (adversarial-planning, quick mode: claims >= 8, gaps >= 3, single-pass convergence)
+  On yes: route into adversarial-planning and write its verdict + gaps into knowledge/projects/<slug>/ as the founding entries.
+  Never offered again once knowledge entries exist. Opt-in only.
+{END IF}
+
 Ready. What are we building?
 ```
 

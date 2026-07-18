@@ -835,6 +835,41 @@ def _has_capability_skill(skills: list[str]) -> bool:
     return any(s.lower().replace("-", "_") in _CAPABILITY_SKILLS or s.lower() in _CAPABILITY_SKILLS for s in skills)
 
 
+def _read_last_session_outcome(slug: str, audit_dir: Path) -> tuple[str, str] | None:
+    """
+    Read Outcome + OutcomeResult from the most recent audit session entry for slug.
+
+    Returns (outcome, outcome_result) or None if no matching entry found or no outcome recorded.
+    """
+    import re as _re
+    try:
+        months = sorted(
+            [f.stem for f in audit_dir.glob("*.md") if f.suffix == ".md"],
+            reverse=True,
+        )[:2]
+        for month in months:
+            audit_file = audit_dir / f"{month}.md"
+            if not audit_file.exists():
+                continue
+            content = audit_file.read_text()
+            # Split into session blocks
+            blocks = _re.split(r"(?=### Session)", content)
+            session_blocks = [b for b in reversed(blocks) if b.startswith("### Session")]
+            for block in session_blocks:
+                if f"Project: {slug}" not in block:
+                    continue
+                outcome_match = _re.search(r"^Outcome: (\w+)", block, _re.MULTILINE)
+                if not outcome_match:
+                    return None
+                outcome = outcome_match.group(1)
+                result_match = _re.search(r"^OutcomeResult: (\w+)", block, _re.MULTILINE)
+                outcome_result = result_match.group(1) if result_match else "UNKNOWN"
+                return (outcome, outcome_result)
+    except Exception:
+        pass
+    return None
+
+
 def _compute_skill_invocation_rate(audit_dir: Path) -> tuple[int | None, int]:
     """
     Returns (rate_pct, consecutive_skips).
@@ -964,10 +999,31 @@ def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int, slug: st
                 pass
 
         # Recompute /done rate directly from audit — not the stale metrics snapshot.
+        # R10: surface as pct(n/d label) so denominator is always visible.
         close_rate_str = ""
+        done_count = 0
         if session_count:
             done_count = len(re.findall(r"^CloseCluster: yes", full, re.MULTILINE))
-            close_rate_str = f"/done: {int(done_count / session_count * 100)}%"
+            close_rate_str = f"/done: {int(done_count / session_count * 100)}% ({done_count}/{session_count} sessions)"
+
+        # Compute skill rate n/d inline for R10 label (rate_pct already from _compute_skill_invocation_rate).
+        _skill_entries = full.split("### Session —")[1:] if "### Session —" in full else []
+        _capability_skills_set = frozenset({
+            "pm-review", "pm_review", "write-spec", "write_spec", "nfr-check", "nfr_check",
+            "stress-test", "stress_test", "adr", "dev-loop", "dev_loop",
+            "code-review", "code_review", "security-review", "security_review",
+            "verify", "learn",
+        })
+        _skill_hit_count = 0
+        _skill_total = len(_skill_entries)
+        for _e in _skill_entries:
+            for _line in _e.splitlines():
+                if _line.startswith("Skills:"):
+                    _raw = _line[len("Skills:"):].strip()
+                    _skills = [s.strip().lower().replace("-", "_") for s in _raw.split(",") if s.strip()]
+                    if any(s in _capability_skills_set for s in _skills):
+                        _skill_hit_count += 1
+                    break
 
         parts: list[str] = []
         score_part = last_score
@@ -982,7 +1038,7 @@ def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int, slug: st
         if session_count:
             parts.append(f"{session_count} session{'s' if session_count != 1 else ''}")
         if skill_rate_pct is not None:
-            parts.append(f"skills: {skill_rate_pct}%")
+            parts.append(f"skills: {skill_rate_pct}% ({_skill_hit_count}/{_skill_total} sessions)")
         if pending_proposals:
             parts.append(f"{pending_proposals} proposal{'s' if pending_proposals != 1 else ''} pending")
         if close_rate_str:
@@ -1684,6 +1740,21 @@ def start_session(project_dir: str) -> SessionState:
                     "Running /build now to catch any missed direction gates and NFR checks."
                 )
 
+    # Outcome follow-up: if last session shipped or staged with PENDING/UNKNOWN result,
+    # surface a one-line prompt so the developer can confirm what happened.
+    # Only fires on returning sessions (days_since_last != 0) and only appended (never inserted)
+    # so it doesn't displace blocking items like close_cluster_missed or stale breadcrumb.
+    if days_since_last != 0:
+        _prior_outcome = _read_last_session_outcome(slug, audit_dir)
+        if _prior_outcome:
+            _out, _out_result = _prior_outcome
+            if _out in ("SHIPPED", "STAGED") and _out_result in ("PENDING", "UNKNOWN"):
+                session_plan.append(
+                    f"Last session outcome: {_out} / {_out_result} — "
+                    "did it work? Call record_outcome_followup(session_slug, 'WORKED'|'FAILED') "
+                    "to close the feedback loop."
+                )
+
     # 3B2 — Skill-skip warning: capability skills unused for 3+ consecutive sessions OR rolling rate < 50%.
     # When rate < 50% the warning is prepended to session_plan[0] (not appended) so it cannot be
     # buried below advisory items. This makes it a blocking signal, not a suggestion.
@@ -1864,6 +1935,16 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass  # degrade gracefully — standard mode is always safe
 
+    # Knowledge index diet: load HOT summaries only, never entry bodies.
+    # R10-labeled line included in brief for visibility.
+    _knowledge_index_line = ""
+    try:
+        from knowledge_index import load_index_summaries
+        _ki = load_index_summaries(YOUK_ROOT)
+        _knowledge_index_line = _ki.get("r10_line", "")
+    except Exception:
+        pass
+
     return SessionState(
         project=slug,
         resume_point=resume_point,
@@ -1888,6 +1969,7 @@ def start_session(project_dir: str) -> SessionState:
         nfr_autonomy_mode=_nfr_autonomy_mode,
         developer_autonomy_rate=round(_nfr_autonomy_rate, 2),
         force_learn=close_cluster_missed and days_since_last != 0,
+        knowledge_index_line=_knowledge_index_line,
     )
 
 
@@ -2295,6 +2377,8 @@ def end_session(
     decision_retrospectives: list[dict] | None = None,
     autonomy_depth: dict[str, str] | None = None,
     contract_violations: list[str] | None = None,
+    outcome: str = "NONE",
+    outcome_result: str = "UNKNOWN",
 ) -> dict:
     """
     Write structured audit log entry, detect and save contract phrases.
@@ -2343,6 +2427,21 @@ def end_session(
     contract_violations: Contracts not followed this session.
     Written as ContractViolation: {text} lines in audit log.
     """
+    _OUTCOME_ENUM = {"SHIPPED", "STAGED", "ABANDONED", "NONE"}
+    _OUTCOME_RESULT_ENUM = {"WORKED", "FAILED", "UNKNOWN", "PENDING"}
+    outcome = (outcome or "NONE").upper()
+    outcome_result = (outcome_result or "UNKNOWN").upper()
+    if outcome not in _OUTCOME_ENUM:
+        return {
+            "error": f"Invalid outcome '{outcome}'. Must be one of: {', '.join(sorted(_OUTCOME_ENUM))}",
+            "blocked": True,
+        }
+    if outcome_result not in _OUTCOME_RESULT_ENUM:
+        return {
+            "error": f"Invalid outcome_result '{outcome_result}'. Must be one of: {', '.join(sorted(_OUTCOME_RESULT_ENUM))}",
+            "blocked": True,
+        }
+
     # 3B — Auto-draft summary when developer passes empty string or "done"
     # Reads the session plan written by session_start so the audit entry is useful
     # even without a full summary. Structural fix for the 0% close-cluster rate.
@@ -2449,6 +2548,11 @@ def end_session(
             f"ContractViolation: {v}\n" for v in contract_violations
         )
 
+    # Outcome signal — what happened to the work and how did it land?
+    # Written only when non-default to keep audit entries compact for sessions with no code work.
+    outcome_line = f"Outcome: {outcome}\n" if outcome != "NONE" else ""
+    outcome_result_line = f"OutcomeResult: {outcome_result}\n" if outcome != "NONE" else ""
+
     token_data = _read_and_clear_tokens()
     total_tokens = token_data["total_input"] + token_data["total_output"]
     budget = token_data.get("token_budget", 0)
@@ -2460,6 +2564,18 @@ def end_session(
     else:
         tokens_line = ""
 
+    # Compaction frequency — how many times Claude auto-compacted this session.
+    # Counter written by pre_compact.py hook; cleared here so it resets each session.
+    compact_count_file = YOUK_ROOT / "state" / "compact-count.json"
+    compact_count = 0
+    if compact_count_file.exists():
+        try:
+            compact_count = json.loads(compact_count_file.read_text()).get("count", 0)
+            compact_count_file.unlink()
+        except Exception:
+            pass
+    compact_count_line = f"Compactions: {compact_count}\n" if compact_count > 0 else ""
+
     entry = (
         f"\n### Session — {timestamp}\n"
         f"Project: {_slug(_load_state().get('last_project', ''))}\n"
@@ -2468,6 +2584,7 @@ def end_session(
         f"CloseCluster: {close_line}\n"
         f"Commits: {'yes' if commits_made else 'no'}\n"
         f"{tokens_line}"
+        f"{compact_count_line}"
         f"{adaptations_line}"
         f"{gap_lines}"
         f"{findings_line}"
@@ -2483,10 +2600,19 @@ def end_session(
         f"{retrospectives_line}"
         f"{autonomy_depth_line}"
         f"{contract_violation_lines}"
+        f"{outcome_line}"
+        f"{outcome_result_line}"
     )
 
     with open(audit_file, "a") as f:
         f.write(entry)
+
+    # Fold knowledge usage events into INDEX.md — updates last-used/use-count.
+    try:
+        from knowledge_index import fold_usage_into_index
+        fold_usage_into_index(YOUK_ROOT)
+    except Exception:
+        pass
 
     # Roll up mid-session task checkpoints (written by task_checkpoint tool).
     # Appended as a single structured line so self_heal can parse task history.
@@ -2678,4 +2804,85 @@ def end_session(
                 f"{len(emerging_global_patterns)} contract(s) found across 2+ projects — "
                 "call promote_to_global_contracts() to elevate to global intelligence."
             )} if emerging_global_patterns else {}),
+    }
+
+
+def _record_outcome_followup(session_slug: str, outcome_result: str) -> dict:
+    """
+    Amend the OutcomeResult line for a prior session in the audit log.
+
+    Reads the audit log, finds the most recent session entry matching session_slug
+    in its 'Project:' line, and replaces its OutcomeResult value. If no
+    OutcomeResult line exists, appends one after the Outcome line (or at end of entry).
+
+    Returns: amended (bool), prior_result (str), new_result (str), audit_file (str).
+    """
+    audit_dir = CLAUDE_ROOT / "audit"
+    if not audit_dir.exists():
+        return {"error": "No audit directory found", "blocked": True, "amended": False}
+
+    # Search recent months — most recent first
+    months_to_check = sorted(
+        [f.stem for f in audit_dir.glob("*.md") if f.suffix == ".md"],
+        reverse=True,
+    )[:3]
+
+    for month in months_to_check:
+        audit_file = audit_dir / f"{month}.md"
+        try:
+            content = audit_file.read_text()
+        except Exception:
+            continue
+
+        # Split into session blocks — each starts with "### Session"
+        import re as _re
+        blocks = _re.split(r"(?=### Session)", content)
+        header = blocks[0] if not blocks[0].startswith("### Session") else ""
+        session_blocks = [b for b in blocks if b.startswith("### Session")]
+
+        # Find the most recent session block matching this slug
+        target_idx = None
+        for idx in range(len(session_blocks) - 1, -1, -1):
+            block = session_blocks[idx]
+            if f"Project: {session_slug}" in block or f"Project: {_slug(session_slug)}" in block:
+                target_idx = idx
+                break
+
+        if target_idx is None:
+            continue
+
+        block = session_blocks[target_idx]
+        prior_result = "UNKNOWN"
+        result_match = _re.search(r"OutcomeResult: (\w+)", block)
+        if result_match:
+            prior_result = result_match.group(1)
+            new_block = _re.sub(r"OutcomeResult: \w+", f"OutcomeResult: {outcome_result}", block)
+        elif "Outcome:" in block:
+            # Insert OutcomeResult after the Outcome line
+            new_block = _re.sub(
+                r"(Outcome: \w+\n)",
+                f"\\1OutcomeResult: {outcome_result}\n",
+                block,
+            )
+        else:
+            # No Outcome line either — append at end of block
+            new_block = block.rstrip("\n") + f"\nOutcomeResult: {outcome_result}\n"
+
+        session_blocks[target_idx] = new_block
+        new_content = header + "".join(session_blocks)
+        try:
+            audit_file.write_text(new_content)
+        except Exception as e:
+            return {"error": f"Failed to write audit file: {e}", "blocked": True, "amended": False}
+
+        return {
+            "amended": True,
+            "prior_result": prior_result,
+            "new_result": outcome_result,
+            "audit_file": str(audit_file),
+        }
+
+    return {
+        "amended": False,
+        "error": f"No audit entry found for slug '{session_slug}' in recent months",
     }

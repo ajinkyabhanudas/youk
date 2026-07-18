@@ -119,6 +119,8 @@ class SessionState:
     # /learn immediately as the FIRST action — not as a plan item the model may skip.
     # Cleared when route_to_skill("learn") fires (pending-action.json deleted).
     force_learn: bool = False
+    # Knowledge index R10 line: "knowledge: N entries (H hot, C cold, A archived); loaded H summaries (XB)"
+    knowledge_index_line: str = ""
     # Convergence state — tracks which of the seven angles have converged on external pressure.
     # Updated mechanically from exchange structure: user-generated pressure that didn't move
     # the answer = convergence signal. Model-generated pressure = noise, not counted.
@@ -159,6 +161,7 @@ class SessionState:
             "nfr_autonomy_mode": self.nfr_autonomy_mode,
             "developer_autonomy_rate": self.developer_autonomy_rate,
             "force_learn": self.force_learn,
+            "knowledge_index_line": self.knowledge_index_line,
             "convergence_state": self.convergence_state,
         }
 

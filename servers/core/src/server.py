@@ -6,13 +6,14 @@ sys.path.insert(0, "/shared")
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
-from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state
+from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state, _record_outcome_followup
 from routing import route_task as _route_task
 from health import (
     run_health_check_with_skill_signals,
     add_proposal as _add_proposal,
     apply_proposal as _apply_proposal,
     _load_pending_proposals,
+    _build_review_bundle,
 )
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
 from nfr_gate import check_nfr_gate as _check_nfr_gate
@@ -96,6 +97,8 @@ def session_end(
     decision_retrospectives: list[dict] | None = None,
     autonomy_depth: dict[str, str] | None = None,
     contract_violations: list[str] | None = None,
+    outcome: str = "NONE",
+    outcome_result: str = "UNKNOWN",
 ) -> dict:
     """
     End a youk session. Writes audit log entry, saves contracts, checks session-close cluster.
@@ -185,9 +188,38 @@ def session_end(
     challenge_rounds: Total ITERATE phases across all challenge invocations this session.
     Written as ChallengeRounds: N. Low values with loop_correction_detected=True = early exit signal.
 
+    outcome: What happened to the work at the end of this session.
+    Enum: SHIPPED | STAGED | ABANDONED | NONE (default).
+    SHIPPED = committed and pushed / deployed.
+    STAGED = committed but not yet pushed (e.g. feature branch, awaiting review).
+    ABANDONED = work started but discarded (decision reversed, approach wrong).
+    NONE = no code work happened this session (planning, review, exploration).
+
+    outcome_result: How the shipped/staged work actually performed.
+    Enum: WORKED | FAILED | UNKNOWN | PENDING (default UNKNOWN).
+    WORKED = deployed and confirmed functional in the target environment.
+    FAILED = deployed but produced errors, regressions, or was reverted.
+    PENDING = staged/deployed but not yet observed in production.
+    UNKNOWN = outcome not yet known or not applicable.
+    Written as OutcomeResult: <v> in audit log. Feeds outcome_quality_rate in health.py.
+
     Returns: knowledge_extracted, proposals_added, audit_written,
              session_close_cluster_detected, contracts_saved.
     """
+    _OUTCOME_ENUM = {"SHIPPED", "STAGED", "ABANDONED", "NONE"}
+    _OUTCOME_RESULT_ENUM = {"WORKED", "FAILED", "UNKNOWN", "PENDING"}
+    outcome = (outcome or "NONE").upper()
+    outcome_result = (outcome_result or "UNKNOWN").upper()
+    if outcome not in _OUTCOME_ENUM:
+        return {
+            "error": f"Invalid outcome '{outcome}'. Must be one of: {', '.join(sorted(_OUTCOME_ENUM))}",
+            "blocked": True,
+        }
+    if outcome_result not in _OUTCOME_RESULT_ENUM:
+        return {
+            "error": f"Invalid outcome_result '{outcome_result}'. Must be one of: {', '.join(sorted(_OUTCOME_RESULT_ENUM))}",
+            "blocked": True,
+        }
     try:
         check_knowledge_write(summary)
     except HardRuleViolation as e:
@@ -248,7 +280,40 @@ def session_end(
         findings, finding_categories, nfr_gaps, direction_reversal,
         developer_caught, loop_correction_detected, loop_gap_detected, challenge_rounds,
         decision_retrospectives, autonomy_depth, contract_violations,
+        outcome, outcome_result,
     )
+
+
+@mcp.tool()
+def record_outcome_followup(session_slug: str, outcome_result: str) -> dict:
+    """
+    Amend a prior session's outcome_result in the audit log when the result becomes known.
+
+    Call this when a prior session's work shipped as PENDING or UNKNOWN and the real
+    result is now observable — e.g., deployed and confirmed working (WORKED), or
+    reverted due to a bug (FAILED).
+
+    session_slug: The slug of the prior session whose outcome_result should be updated.
+    Matches the 'Project:' slug line in the audit log. Use the value returned by
+    session_start as 'project' field, or read from state/session.json.
+
+    outcome_result: The observed result. Enum: WORKED | FAILED | UNKNOWN | PENDING.
+    WORKED = confirmed functional in target environment.
+    FAILED = produced errors, regressions, or was reverted.
+    PENDING = still awaiting observation.
+    UNKNOWN = not applicable or cannot be determined.
+
+    Returns: amended (bool), prior_result (str), new_result (str), audit_file (str).
+    On error: error (str), blocked (bool).
+    """
+    _OUTCOME_RESULT_ENUM = {"WORKED", "FAILED", "UNKNOWN", "PENDING"}
+    outcome_result = (outcome_result or "UNKNOWN").upper()
+    if outcome_result not in _OUTCOME_RESULT_ENUM:
+        return {
+            "error": f"Invalid outcome_result '{outcome_result}'. Must be one of: {', '.join(sorted(_OUTCOME_RESULT_ENUM))}",
+            "blocked": True,
+        }
+    return _record_outcome_followup(session_slug, outcome_result)
 
 
 @mcp.tool()
@@ -377,6 +442,101 @@ def check_command(command: str) -> dict:
         return {"safe": True, "blocked": False, "reason": ""}
     except HardRuleViolation as e:
         return {"safe": False, "blocked": True, "reason": str(e), "rule_id": e.rule_id}
+
+
+@mcp.tool()
+def task_contract(task: str, size: str | None = None) -> dict:
+    """
+    Generate a task intake contract before heavy work starts.
+
+    Converts the developer's request into a filled, editable contract surfacing:
+    (a) what youk understood, (b) adversarial provocations from frame rotation,
+    (c) what this pass will NOT include. Fill, don't interrogate — present a
+    complete interpretation for editing, never a questionnaire.
+
+    Sizing gate (F6 ceremony-proportionality):
+      XS/S → {contract_required: False, reason: "below contract line"}
+      M    → MINI contract (GOAL, DONE-MEANS, SCOPE-OUT, ≤3 provocations inline)
+      L/XL → FULL contract (all fields, 5-7 provocations, CUT-LIST)
+
+    Flow: present the returned `contract` to the developer → wait for edits →
+    call approve_task_contract() with the edited version → only then proceed.
+    For L/XL: check_task_contract_gate() blocks until an approved contract exists.
+
+    task: One-sentence description of what needs to be done.
+    size: Optional override (XS/S/M/L/XL). If omitted, computed from task signals.
+
+    Returns: contract_required, reason (when False), contract_id, path, contract (markdown), size.
+    """
+    from task_contract import generate_task_contract
+    result = generate_task_contract(task, size)
+    result["calls_since_compact"] = _increment_tool_call_count()
+    return result
+
+
+@mcp.tool()
+def approve_task_contract(
+    contract_id: str,
+    as_approved: str,
+    disposition_map: dict[str, str] | None = None,
+) -> dict:
+    """
+    Record the developer's approved version of the task contract.
+
+    Call this after the developer has reviewed and edited the contract returned
+    by task_contract(). Persists the approved text and records dispositions.
+
+    contract_id: The ID returned by task_contract() (e.g. TC-20260718-001).
+    as_approved: The full contract text after developer edits.
+    disposition_map: {P1: "IN-SCOPE", P2: "DEFER", P3: "ACCEPT-RISK", ...}
+      Valid dispositions: IN-SCOPE, DEFER, ACCEPT-RISK, N/A.
+      ACCEPT-RISK entries are appended to state/risk-ledger.jsonl.
+
+    Returns: saved, fields_edited, edit_rate, unresolved_provocations, blocked.
+    When blocked=True: some provocations have no disposition — resolve before L/XL work.
+    """
+    from task_contract import approve_task_contract as _approve
+    result = _approve(contract_id, as_approved, disposition_map)
+    result["calls_since_compact"] = _increment_tool_call_count()
+    return result
+
+
+@mcp.tool()
+def check_task_contract_gate(size: str) -> dict:
+    """
+    Gate that blocks L/XL implementation when no approved task contract exists this session.
+
+    Call after approve_task_contract(), before dev-loop, for L/XL tasks.
+    Returns blocked=False immediately for M/S/XS — those sizes don't require the gate.
+
+    size: The routing size from route_task (XS/S/M/L/XL).
+
+    Returns: {"blocked": bool, "reason": str, "contract_id": str (when unblocked)}
+    When blocked=True: call task_contract() → present to developer → approve_task_contract()
+    → re-call check_task_contract_gate.
+    """
+    from task_contract import check_task_contract_gate as _gate
+    result = _gate(size)
+    result["calls_since_compact"] = _increment_tool_call_count()
+    return result
+
+
+@mcp.tool()
+def rebuild_knowledge_index() -> dict:
+    """
+    Scan knowledge/ and rebuild INDEX.md with the per-entry table.
+
+    Idempotent: existing usage columns (last-used, use-count) are preserved on rebuild.
+    New entries are added with tier=HOT and use-count=0.
+    This is the CAP-10 knowledge diet tool — call it after /learn adds new entries
+    or after any knowledge/ restructuring.
+
+    Returns: entries_total, hot, cold, archived, index_bytes.
+    """
+    from knowledge_index import rebuild_knowledge_index as _rebuild
+    result = _rebuild(YOUK_ROOT)
+    result["calls_since_compact"] = _increment_tool_call_count()
+    return result
 
 
 @mcp.tool()
@@ -996,6 +1156,26 @@ def promote_to_global_contracts(contracts: list[str]) -> dict:
             promoted += 1
 
     return {"promoted": promoted, "skipped": skipped, "conflicts": conflicts}
+
+
+@mcp.tool()
+def request_external_review(scope: str, notes: str = "") -> dict:
+    """Package the current youk state for external review by a discriminator.
+
+    Creates state/relay/REVIEW-<yyyy-mm-dd>/ containing:
+      - MANIFEST.md: git SHA, date, scope, notes, R10 metric block
+      - evidence bundle: health JSON, PENDING.md, audit tail (last 10 entries),
+        plus target SKILL.md when scope=SKILL
+      - RUBRIC.md: copied from adversarial-planning/SKILL.md Discriminator
+        Grading-Rubric Template (single source of truth, copied at call time)
+
+    scope: GATE | HEALTH | SKILL | ROADMAP
+    notes: optional context for the discriminator (e.g. "focus on CAP-7 acceptance")
+
+    Returns: folder_path, instructions for handing off to external grader.
+    Does NOT affect org_score — scoring the fix for self-scoring recreates the disease.
+    """
+    return _build_review_bundle(scope, notes, youk_root=YOUK_ROOT, claude_root=CLAUDE_ROOT)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@ description: >
 
 # adversary-loop — Context-Independent Direction Attack
 
+For multi-item, stateful audits (products, plans, roadmaps), this skill is invoked as a component of adversarial-planning.
+
 The in-session challenge skill has a structural limitation: the challenger shares context
 with the proposer. It sees why the direction was chosen, what pressure led to it, what
 the proposer is satisfied with. Satisfaction bias leaks through attention. The adversary

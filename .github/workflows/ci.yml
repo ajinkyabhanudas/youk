@@ -25,7 +25,22 @@ jobs:
         run: ruff check servers/
 
       - name: Unit tests
-        run: pytest tests/ -v
+        run: pytest tests/ -v --cov=servers/core/src --cov-report=json
+
+      - name: Enforce health.py coverage ≥85%
+        run: |
+          python - <<'EOF'
+          import json, sys
+          data = json.load(open("coverage.json"))
+          key = next(k for k in data["files"] if k.endswith("servers/core/src/health.py"))
+          pct = data["files"][key]["summary"]["percent_covered_display"]
+          val = float(pct.rstrip("%"))
+          print(f"health.py coverage: {pct}")
+          if val < 85:
+              print(f"FAIL: {pct} is below required 85%")
+              sys.exit(1)
+          print(f"PASS: {pct} meets required 85%")
+          EOF
 
       - name: Validate config YAML
         run: |

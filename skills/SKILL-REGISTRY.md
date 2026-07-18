@@ -1,6 +1,6 @@
 # Skill Registry — y2k-1
 
-**Company:** y2k-1 | **Activation:** say "activate y2k-1" | **Roster size:** 18
+**Company:** y2k-1 | **Activation:** say "activate y2k-1" | **Roster size:** 19
 *Living document. Updated by /skill-health after each review. Last updated: 2026-07-17.*
 *Owner: Ajinkya Dessai. All skills are scoped to the ~/.claude/skills/ directory.*
 
@@ -48,6 +48,7 @@ for all generated `references/stacks/{framework}.md` overlays (6 sections, WAF-g
 | `/challenge` | Direction Gate | Before any M+ implementation — is this the right problem? | ACTIVE |
 | `/adversary-loop` | Independent Adversary | M+ design decisions — context-independent attack until exhaustion | ACTIVE |
 | `/done` | Session Close | Session end — code-review + verify + humanize + learn in sequence | ACTIVE |
+| `/adversarial-planning` | Adversarial Auditor | Adversarial audit of any planning target: claims → verification → convergence → roadmap | ACTIVE |
 
 ---
 

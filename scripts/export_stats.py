@@ -263,8 +263,8 @@ def _render(
     lines.append("")
     if skill_denom:
         lines.append(
-            f"**{skill_pct}%** — capability skill fired in {skill_num} of {skill_denom} "
-            "sessions with real work (commits or skill activity)."
+            f"**{skill_pct}% ({skill_num}/{skill_denom} real-work sessions)** — "
+            "capability skill fired in at least one session with real work (commits or skill activity)."
         )
     else:
         lines.append("**—** no sessions with work recorded yet.")
@@ -281,8 +281,8 @@ def _render(
     lines.append("")
     if close_total:
         lines.append(
-            f"**{close_pct}%** — {close_n} of {close_total} sessions closed with `/done` "
-            "(code-review + verify + learn in sequence)."
+            f"**{close_pct}% ({close_n}/{close_total} all sessions)** — "
+            "sessions closed with `/done` (code-review + verify + learn in sequence)."
         )
     else:
         lines.append("**—** no sessions recorded yet.")
@@ -306,8 +306,8 @@ def _render(
         if tracked:
             pct = round(caught / tracked * 100)
             lines.append(
-                f"**{pct}%** — developer pre-empted a gate in {caught} of {tracked} "
-                "sessions where a gate could have fired."
+                f"**{pct}% ({caught}/{tracked} gate-eligible sessions)** — "
+                "developer pre-empted a gate before youk asked."
             )
         else:
             lines.append("**—** no gate-eligible sessions recorded yet.")
@@ -344,6 +344,31 @@ def _render(
     else:
         lines.append("*No health check data yet — run `/health` to generate.*")
     lines.append("")
+
+    # Reconciliation table — shown when skill rate and close rate use different denominators,
+    # making a single "session %" ambiguous. Two denominators → two rows.
+    if skill_denom and close_total and skill_denom != close_total:
+        lines.append("## denominator reconciliation")
+        lines.append("")
+        lines.append(
+            "> Two metrics use different session pools. "
+            "Skill rate counts only sessions with real work; close rate counts all sessions. "
+            "A session without commits or skills is counted by close rate but not skill rate."
+        )
+        lines.append("")
+        lines.append("| metric | value | numerator | denominator | denominator definition |")
+        lines.append("|--------|-------|-----------|-------------|------------------------|")
+        lines.append(
+            f"| skill invocation rate | {skill_pct}% | {skill_num} | {skill_denom} | sessions with commits or skill activity |"
+        )
+        lines.append(
+            f"| session close rate | {close_pct}% | {close_n} | {close_total} | all recorded sessions |"
+        )
+        if audit_dir is not None and tracked:
+            lines.append(
+                f"| developer autonomy | {round(caught / tracked * 100)}% | {caught} | {tracked} | sessions with a gate-eligible Skills: line |"
+            )
+        lines.append("")
 
     lines.append("---")
     lines.append("")
