@@ -13,6 +13,7 @@ from health import (
     add_proposal as _add_proposal,
     apply_proposal as _apply_proposal,
     _load_pending_proposals,
+    _build_review_bundle,
 )
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
 from nfr_gate import check_nfr_gate as _check_nfr_gate
@@ -1060,6 +1061,26 @@ def promote_to_global_contracts(contracts: list[str]) -> dict:
             promoted += 1
 
     return {"promoted": promoted, "skipped": skipped, "conflicts": conflicts}
+
+
+@mcp.tool()
+def request_external_review(scope: str, notes: str = "") -> dict:
+    """Package the current youk state for external review by a discriminator.
+
+    Creates state/relay/REVIEW-<yyyy-mm-dd>/ containing:
+      - MANIFEST.md: git SHA, date, scope, notes, R10 metric block
+      - evidence bundle: health JSON, PENDING.md, audit tail (last 10 entries),
+        plus target SKILL.md when scope=SKILL
+      - RUBRIC.md: copied from adversarial-planning/SKILL.md Discriminator
+        Grading-Rubric Template (single source of truth, copied at call time)
+
+    scope: GATE | HEALTH | SKILL | ROADMAP
+    notes: optional context for the discriminator (e.g. "focus on CAP-7 acceptance")
+
+    Returns: folder_path, instructions for handing off to external grader.
+    Does NOT affect org_score — scoring the fix for self-scoring recreates the disease.
+    """
+    return _build_review_bundle(scope, notes, youk_root=YOUK_ROOT, claude_root=CLAUDE_ROOT)
 
 
 if __name__ == "__main__":

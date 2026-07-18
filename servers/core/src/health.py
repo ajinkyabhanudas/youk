@@ -1851,6 +1851,27 @@ def _compute_knowledge_velocity(audit_texts: list[str], slug: str) -> dict:
     }
 
 
+def _get_last_external_review_date_for_root(root: Path) -> str:
+    """Return the ISO date of the most recent external review for a given root, or 'NEVER'."""
+    relay_dir = root / "state" / "relay"
+    if not relay_dir.exists():
+        return "NEVER"
+    review_dirs = sorted(
+        (d for d in relay_dir.iterdir() if d.is_dir() and d.name.startswith("REVIEW-")),
+        reverse=True,
+    )
+    for d in review_dirs:
+        parts = d.name.split("-", 1)
+        if len(parts) == 2:
+            return parts[1]
+    return "NEVER"
+
+
+def _get_last_external_review_date() -> str:
+    """Return the ISO date of the most recent external review, or 'NEVER'."""
+    return _get_last_external_review_date_for_root(YOUK_ROOT)
+
+
 def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     """
     Extended health check that also returns skill gap signals for evolution
@@ -1944,6 +1965,26 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     if autonomy_depth_score > 0 and autonomy_depth_score < 0.4:
         developer_growth_report += "\n  ↑ Autonomy depth low — review SURFACE/WORKING/DEEP/ELITE rubrics in skill files"
 
+    last_external_review = _get_last_external_review_date()
+    _review_nudge = None
+    if last_external_review == "NEVER":
+        _review_nudge = (
+            "consider an external review — self-converged is a claim, externally verified is a fact. "
+            "Call request_external_review(scope='HEALTH') to package the bundle."
+        )
+    else:
+        from datetime import date as _date
+        try:
+            _review_date = _date.fromisoformat(last_external_review)
+            _days_since = (_date.today() - _review_date).days
+            if _days_since > 30:
+                _review_nudge = (
+                    f"last external review was {_days_since} days ago — "
+                    "consider an external review — self-converged is a claim, externally verified is a fact."
+                )
+        except ValueError:
+            pass
+
     base = {
         "org_score": report.org_score,
         "sessions_analyzed": report.sessions_analyzed,
@@ -1961,6 +2002,7 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         "depth_multiplier": depth_multiplier,
         "convergence_velocity": conv_velocity,
         "human_precision_rate": round(human_precision_rate, 2),
+        "last_external_review": last_external_review,
         "compounding_verdict": (
             "ELITE — developer pre-empting skills at DEEP/ELITE depth; compounding loop closed"
             if autonomy_depth_score >= 0.6
@@ -1970,6 +2012,9 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
             else "EARLY — not enough sessions or no DeveloperCaught signal yet"
         ),
     }
+
+    if _review_nudge:
+        base["external_review_nudge"] = _review_nudge
 
     # PREVENTED block — leads the health report as the product value claim
     prevented_items = []
@@ -2645,3 +2690,156 @@ def apply_proposal(
         result["change_summary"] = target.change_description
 
     return result
+
+
+_REVIEW_SCOPE_ENUM = {"GATE", "HEALTH", "SKILL", "ROADMAP"}
+
+
+def _build_review_bundle(
+    scope: str,
+    notes: str = "",
+    youk_root: Path | None = None,
+    claude_root: Path | None = None,
+    health_data: dict | None = None,
+) -> dict:
+    """Package youk state for external discriminator review.
+
+    Extracted from the MCP layer so it can be unit-tested without the mcp module.
+
+    Returns dict with folder_path, instructions, scope, date.
+    On invalid scope returns {blocked: True, error: ...}.
+    Does NOT affect org_score.
+    """
+    import json as _json
+    from datetime import date as _date
+
+    scope = (scope or "HEALTH").upper()
+    if scope not in _REVIEW_SCOPE_ENUM:
+        return {
+            "error": f"Invalid scope '{scope}'. Must be one of: {', '.join(sorted(_REVIEW_SCOPE_ENUM))}",
+            "blocked": True,
+        }
+
+    root = youk_root if youk_root is not None else YOUK_ROOT
+    croot = claude_root if claude_root is not None else CLAUDE_ROOT
+
+    today = _date.today().isoformat()
+    relay_dir = root / "state" / "relay" / f"REVIEW-{today}"
+    relay_dir.mkdir(parents=True, exist_ok=True)
+
+    if health_data is None:
+        health_data = run_health_check_with_skill_signals()
+
+    org_score = health_data.get("org_score", "?")
+    sessions_analyzed = health_data.get("sessions_analyzed", "?")
+
+    git_sha = "unknown"
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, cwd=str(root)
+        )
+        if result.returncode == 0:
+            git_sha = result.stdout.strip()
+    except Exception:
+        pass
+
+    manifest_lines = [
+        f"# External Review Package — {scope}",
+        "",
+        f"Date: {today}",
+        f"Git SHA: {git_sha}",
+        f"Scope: {scope}",
+        f"Notes: {notes or '(none)'}",
+        "",
+        "## R10 Metric Block",
+        "(all rates show numerator/denominator/window per R10 — no bare percentages)",
+        "",
+        f"org_score: {org_score}/10  (sessions_analyzed: {sessions_analyzed})",
+    ]
+    skill_rate_raw = health_data.get("developer_autonomy_rate")
+    if skill_rate_raw is not None:
+        manifest_lines.append(
+            f"developer_autonomy_rate: {round(skill_rate_raw * 100)}%  "
+            "(autonomy sessions / total sessions)"
+        )
+    compliance_raw = health_data.get("contract_compliance_rate")
+    if compliance_raw is not None:
+        manifest_lines.append(
+            f"contract_compliance_rate: {round(compliance_raw * 100)}%  "
+            "(sessions with zero violations / last 20 sessions)"
+        )
+    dur_raw = health_data.get("decision_durability_rate")
+    if dur_raw is not None:
+        manifest_lines.append(
+            f"decision_durability_rate: {round(dur_raw * 100)}%  "
+            "(VALIDATED retrospectives / all retrospectives)"
+        )
+    last_review = _get_last_external_review_date_for_root(root)
+    manifest_lines += [
+        f"last_external_review: {last_review}",
+        "",
+        "## Instructions for Discriminator",
+        "1. Read RUBRIC.md — it defines what to check and how to grade.",
+        "2. Read the evidence bundle (health.json, audit-tail.md, PENDING.md).",
+        "3. Fill in the grading memo template from RUBRIC.md.",
+        "4. Place your completed memo as MEMO.md in this folder.",
+        "5. Corrections go to the analyst as a structured list (C1, C2, ...).",
+    ]
+    (relay_dir / "MANIFEST.md").write_text("\n".join(manifest_lines) + "\n")
+
+    (relay_dir / "health.json").write_text(_json.dumps(health_data, indent=2, default=str))
+
+    pending_src = root / "knowledge" / "proposals" / "PENDING.md"
+    if pending_src.exists():
+        import shutil
+        shutil.copy(pending_src, relay_dir / "PENDING.md")
+    else:
+        (relay_dir / "PENDING.md").write_text("No pending proposals.\n")
+
+    audit_texts = _read_recent_audit_logs(days=60)
+    full_audit = "\n".join(audit_texts)
+    blocks = full_audit.split("### Session —")
+    last_10 = "### Session —".join([""] + blocks[-10:]).lstrip()
+    (relay_dir / "audit-tail.md").write_text(last_10 or "No audit entries found.\n")
+
+    if scope == "SKILL" and notes:
+        skill_file = croot / "skills" / notes / "SKILL.md"
+        if skill_file.exists():
+            import shutil
+            shutil.copy(skill_file, relay_dir / f"{notes}-SKILL.md")
+
+    rubric_src = croot / "skills" / "adversarial-planning" / "SKILL.md"
+    if rubric_src.exists():
+        content = rubric_src.read_text()
+        start = content.find("### Discriminator Grading-Rubric Template")
+        if start != -1:
+            rubric_content = content[start:]
+            end = rubric_content.find("\n---\n", 10)
+            if end != -1:
+                rubric_content = rubric_content[:end]
+            (relay_dir / "RUBRIC.md").write_text(rubric_content)
+        else:
+            (relay_dir / "RUBRIC.md").write_text(
+                "RUBRIC source not found — copy from adversarial-planning/SKILL.md manually.\n"
+            )
+    else:
+        (relay_dir / "RUBRIC.md").write_text(
+            "adversarial-planning skill not installed — install it first.\n"
+        )
+
+    return {
+        "folder_path": str(relay_dir),
+        "instructions": (
+            f"Review package created at: {relay_dir}\n"
+            "Contents: MANIFEST.md (R10 metrics), health.json, PENDING.md, "
+            "audit-tail.md (last 10 entries), RUBRIC.md (grading template).\n"
+            "To hand off: zip this folder and give to an external grader "
+            "(stronger model or human, no session history).\n"
+            "Grader places completed memo as MEMO.md in the same folder.\n"
+            "Corrections come back as C1, C2, ... in the memo."
+        ),
+        "scope": scope,
+        "date": today,
+    }

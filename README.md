@@ -544,6 +544,18 @@ Build must run from the repo root. The Makefile handles this — use `make build
 
 ---
 
+## External review loop
+
+youk's quality gates are self-converged by design. Self-convergence catches most issues — but self-converged is a claim, externally verified is a fact. The [Goodhart problem](https://en.wikipedia.org/wiki/Goodhart%27s_law) applies to youk itself: metrics optimized by the same system that generates them eventually hollow out.
+
+The external review loop is youk's structural answer. Call `request_external_review(scope='HEALTH')` to package the current state (org_score, audit tail, metrics, pending proposals) into `state/relay/REVIEW-<date>/`. Hand that folder to any external grader — a stronger model with no session history, or a human reviewer. The grader returns a structured memo; you feed corrections back through the normal `PENDING.md` path.
+
+**Why no score effect:** scoring the fix for self-scoring recreates the disease. External review feeds proposals, not points.
+
+**When to run:** /health surfaces `last_external_review` and nudges after 30 days. No gate or auto-trigger — opt-in by design.
+
+---
+
 ## Philosophy
 
 Ten principles drive every design decision in youk. The full document is [PHILOSOPHY.md](PHILOSOPHY.md). The short version:
