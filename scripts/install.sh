@@ -127,17 +127,21 @@ _conflicts=()
 _installed=0
 
 # Link each skill directory
+# Use relative symlinks so they resolve correctly both on the host and inside
+# Docker containers (where ~/.claude → /claude, ~/.claude/youk → /youk).
+# Absolute symlinks point to host paths that don't exist in the container.
 for entry in "$SKILLS_REPO"/*/; do
   [[ -d "$entry" ]] || continue
   name="$(basename "$entry")"
   dst="$SKILLS_DIR/$name"
+  rel_target="../youk/skills/$name"
   if [[ -L "$dst" ]]; then
-    ln -sf "$entry" "$dst"   # Update existing youk symlink (idempotent)
+    rm "$dst" && ln -s "$rel_target" "$dst"   # Remove + recreate: ln -sf on dir symlinks creates inside target on macOS
     (( _installed++ )) || true
   elif [[ -e "$dst" ]]; then
     _conflicts+=("$name")    # Real directory — collision, skip
   else
-    ln -s "$entry" "$dst"
+    ln -s "$rel_target" "$dst"
     (( _installed++ )) || true
   fi
 done
@@ -147,10 +151,11 @@ for f in "$SKILLS_REPO"/*.md "$SKILLS_REPO"/*.yaml; do
   [[ -f "$f" ]] || continue
   name="$(basename "$f")"
   dst="$SKILLS_DIR/$name"
+  rel_target="../youk/skills/$name"
   if [[ -L "$dst" ]]; then
-    ln -sf "$f" "$dst"
+    ln -sf "$rel_target" "$dst"
   elif [[ ! -e "$dst" ]]; then
-    ln -s "$f" "$dst"
+    ln -s "$rel_target" "$dst"
   fi
 done
 
