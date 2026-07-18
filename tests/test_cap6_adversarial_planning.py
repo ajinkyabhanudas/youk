@@ -2,16 +2,22 @@
 
 Covers:
   - Routing resolution: adversarial_planning appears in routes.yaml XL skills
+  - Resolution layer: route_to_skill("adversarial_planning") maps to skills/adversarial-planning/
   - Registry format: SKILL-REGISTRY.md has a row matching expected format
   - Start skill structural: founding analysis offer text present in start/SKILL.md
 """
 from __future__ import annotations
 from pathlib import Path
+from unittest.mock import patch
 import yaml
 
 YOUK_ROOT = Path(__file__).parent.parent
 SKILLS_DIR = YOUK_ROOT / "skills"
 CONFIG_DIR = YOUK_ROOT / "config"
+
+# The real skill dirs live under ~/.claude/skills/ in Docker, but in tests
+# we patch skill_loader.SKILLS_DIR to point to the repo's skills/ folder.
+_REPO_SKILLS = YOUK_ROOT / "skills"
 
 
 class TestRoutingResolution:
@@ -33,6 +39,37 @@ class TestRoutingResolution:
         required = {"audit", "red-team", "founding analysis"}
         missing = required - set(xl_signals)
         assert not missing, f"XL signals missing: {missing}"
+
+    def test_route_to_skill_resolves_underscore_to_hyphen(self):
+        """route_to_skill('adversarial_planning') resolves to skills/adversarial-planning/.
+
+        routes.yaml uses underscores; skill dir uses hyphens. The resolution layer
+        must bridge this mismatch — a yaml entry that never routes is decorative.
+        """
+        import sys
+        # Make the servers/code/src module importable
+        code_src = YOUK_ROOT / "servers" / "code" / "src"
+        shared_src = YOUK_ROOT / "servers" / "shared"
+        if str(code_src) not in sys.path:
+            sys.path.insert(0, str(code_src))
+        if str(shared_src) not in sys.path:
+            sys.path.insert(0, str(shared_src))
+
+        import skill_loader
+        import skills as skills_mod
+
+        with patch.object(skill_loader, "SKILLS_DIR", _REPO_SKILLS):
+            result = skills_mod.route_to_skill("adversarial_planning", "test task")
+
+        assert "error" not in result, (
+            f"route_to_skill('adversarial_planning') returned error: {result.get('error')}\n"
+            "This means the underscore→hyphen normalization is missing in skills.py."
+        )
+        assert result.get("skill_name") == "adversarial-planning", (
+            f"Expected resolved skill_name 'adversarial-planning', got: {result.get('skill_name')}"
+        )
+        assert result.get("mode") == "in_session"
+        assert len(result.get("skill_content", "")) > 100
 
     def test_adversarial_planning_skill_file_exists(self):
         """skills/adversarial-planning/SKILL.md exists and is non-empty."""
