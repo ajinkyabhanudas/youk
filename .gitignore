@@ -39,6 +39,9 @@ knowledge/user-profile.md
 # Accumulated /learn domain knowledge — grows per-user, never shared across installs
 skills/learn/knowledge/
 
+# install.sh runtime symlinks (self-referential, machine-absolute paths — not portable)
+skills/*/*
+
 # OS
 .DS_Store
 Thumbs.db
