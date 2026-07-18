@@ -212,3 +212,7 @@ simulate: ## Run simulate-experience skill — developer experience audit, feeds
 .PHONY: lint
 lint: ## Run ruff on servers/
 	ruff check servers/
+
+.PHONY: relay-check
+relay-check: ## Verify RELAY/ against Gate Packaging Manifest; prints echo block for gate message
+	@bash scripts/relay_check.sh
