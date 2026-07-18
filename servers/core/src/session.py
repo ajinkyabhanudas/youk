@@ -1935,6 +1935,16 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass  # degrade gracefully — standard mode is always safe
 
+    # Knowledge index diet: load HOT summaries only, never entry bodies.
+    # R10-labeled line included in brief for visibility.
+    _knowledge_index_line = ""
+    try:
+        from knowledge_index import load_index_summaries
+        _ki = load_index_summaries(YOUK_ROOT)
+        _knowledge_index_line = _ki.get("r10_line", "")
+    except Exception:
+        pass
+
     return SessionState(
         project=slug,
         resume_point=resume_point,
@@ -1959,6 +1969,7 @@ def start_session(project_dir: str) -> SessionState:
         nfr_autonomy_mode=_nfr_autonomy_mode,
         developer_autonomy_rate=round(_nfr_autonomy_rate, 2),
         force_learn=close_cluster_missed and days_since_last != 0,
+        knowledge_index_line=_knowledge_index_line,
     )
 
 
@@ -2563,7 +2574,7 @@ def end_session(
             compact_count_file.unlink()
         except Exception:
             pass
-    compact_count_line = f"CompactCount: {compact_count}\n" if compact_count > 0 else ""
+    compact_count_line = f"Compactions: {compact_count}\n" if compact_count > 0 else ""
 
     entry = (
         f"\n### Session — {timestamp}\n"
@@ -2595,6 +2606,13 @@ def end_session(
 
     with open(audit_file, "a") as f:
         f.write(entry)
+
+    # Fold knowledge usage events into INDEX.md — updates last-used/use-count.
+    try:
+        from knowledge_index import fold_usage_into_index
+        fold_usage_into_index(YOUK_ROOT)
+    except Exception:
+        pass
 
     # Roll up mid-session task checkpoints (written by task_checkpoint tool).
     # Appended as a single structured line so self_heal can parse task history.

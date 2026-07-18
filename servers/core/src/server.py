@@ -522,6 +522,24 @@ def check_task_contract_gate(size: str) -> dict:
 
 
 @mcp.tool()
+def rebuild_knowledge_index() -> dict:
+    """
+    Scan knowledge/ and rebuild INDEX.md with the per-entry table.
+
+    Idempotent: existing usage columns (last-used, use-count) are preserved on rebuild.
+    New entries are added with tier=HOT and use-count=0.
+    This is the CAP-10 knowledge diet tool — call it after /learn adds new entries
+    or after any knowledge/ restructuring.
+
+    Returns: entries_total, hot, cold, archived, index_bytes.
+    """
+    from knowledge_index import rebuild_knowledge_index as _rebuild
+    result = _rebuild(YOUK_ROOT)
+    result["calls_since_compact"] = _increment_tool_call_count()
+    return result
+
+
+@mcp.tool()
 def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) -> dict:
     """
     Gate that blocks M+ implementation when no NFR Decision Block is present.

@@ -32,6 +32,7 @@ def youk_root(tmp_path, monkeypatch):
     import compaction
     import review
     import task_contract
+    import knowledge_index
 
     monkeypatch.setattr(session, "YOUK_ROOT", root)
     monkeypatch.setattr(session, "STATE_FILE", root / "state" / "session.json")
@@ -51,6 +52,11 @@ def youk_root(tmp_path, monkeypatch):
     _real_routes = Path(__file__).parent.parent / "config" / "routes.yaml"
     if _real_routes.exists():
         monkeypatch.setattr(task_contract, "_ROUTES_FILE", _real_routes)
+    # knowledge_index patching
+    monkeypatch.setattr(knowledge_index, "YOUK_ROOT", root)
+    monkeypatch.setattr(knowledge_index, "_INDEX_FILE", root / "knowledge" / "INDEX.md")
+    monkeypatch.setattr(knowledge_index, "_USAGE_LOG", root / "state" / "knowledge-usage.jsonl")
+    monkeypatch.setattr(knowledge_index, "_ARCHIVE_DIR", root / "knowledge" / "archive")
 
     return root
 
