@@ -183,7 +183,7 @@ fi
 step "Docker images"
 
 echo "  Building youk-core and youk-code (first run: ~2 min, cached afterwards)..."
-make -C "$YOUK_DIR" build 2>&1 | grep -E "(Step|Successfully|error)" | sed 's/^/    /' || {
+make -C "$YOUK_DIR" build 2>&1 | grep -E "(Step|Successfully|error|DONE|naming)" | sed 's/^/    /'; [[ ${PIPESTATUS[0]} -eq 0 ]] || {
   fail "Docker build failed. Run 'make build' manually to see full output."
   exit 1
 }
