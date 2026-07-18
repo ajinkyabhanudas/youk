@@ -999,10 +999,31 @@ def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int, slug: st
                 pass
 
         # Recompute /done rate directly from audit — not the stale metrics snapshot.
+        # R10: surface as pct(n/d label) so denominator is always visible.
         close_rate_str = ""
+        done_count = 0
         if session_count:
             done_count = len(re.findall(r"^CloseCluster: yes", full, re.MULTILINE))
-            close_rate_str = f"/done: {int(done_count / session_count * 100)}%"
+            close_rate_str = f"/done: {int(done_count / session_count * 100)}% ({done_count}/{session_count} sessions)"
+
+        # Compute skill rate n/d inline for R10 label (rate_pct already from _compute_skill_invocation_rate).
+        _skill_entries = full.split("### Session —")[1:] if "### Session —" in full else []
+        _capability_skills_set = frozenset({
+            "pm-review", "pm_review", "write-spec", "write_spec", "nfr-check", "nfr_check",
+            "stress-test", "stress_test", "adr", "dev-loop", "dev_loop",
+            "code-review", "code_review", "security-review", "security_review",
+            "verify", "learn",
+        })
+        _skill_hit_count = 0
+        _skill_total = len(_skill_entries)
+        for _e in _skill_entries:
+            for _line in _e.splitlines():
+                if _line.startswith("Skills:"):
+                    _raw = _line[len("Skills:"):].strip()
+                    _skills = [s.strip().lower().replace("-", "_") for s in _raw.split(",") if s.strip()]
+                    if any(s in _capability_skills_set for s in _skills):
+                        _skill_hit_count += 1
+                    break
 
         parts: list[str] = []
         score_part = last_score
@@ -1017,7 +1038,7 @@ def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int, slug: st
         if session_count:
             parts.append(f"{session_count} session{'s' if session_count != 1 else ''}")
         if skill_rate_pct is not None:
-            parts.append(f"skills: {skill_rate_pct}%")
+            parts.append(f"skills: {skill_rate_pct}% ({_skill_hit_count}/{_skill_total} sessions)")
         if pending_proposals:
             parts.append(f"{pending_proposals} proposal{'s' if pending_proposals != 1 else ''} pending")
         if close_rate_str:

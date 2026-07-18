@@ -915,22 +915,26 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     # Only surfaces after session 5; before that there's not enough history to measure.
     autonomy_rate = _compute_autonomy_rate(sessions)
     depth_multiplier = _compute_depth_multiplier(sessions)
+    # Compute n/d for R10 label — inline to avoid duplicating _compute_autonomy_rate logic.
+    _autonomy_tracked = [s for s in sessions if s.get("developer_caught") is not None] if total >= 6 else []
+    _autonomy_n = sum(1 for s in _autonomy_tracked if s["developer_caught"])
+    _autonomy_d = len(_autonomy_tracked)
     if total >= 6:
         if autonomy_rate >= 0.4:
             findings.append(
-                f"Developer autonomy: {autonomy_rate:.0%} of sessions — developer pre-empted at least one "
-                f"capability skill (DeveloperCaught). The compounding loop is working: developer judgment "
-                f"is internalising what youk was previously catching."
+                f"Developer autonomy: {autonomy_rate:.0%} ({_autonomy_n}/{_autonomy_d} tracked sessions) — "
+                "developer pre-empted at least one capability skill (DeveloperCaught). "
+                "The compounding loop is working: developer judgment is internalising what youk was previously catching."
             )
         elif autonomy_rate > 0:
             findings.append(
-                f"Developer autonomy: {autonomy_rate:.0%} of sessions ({total} total). "
+                f"Developer autonomy: {autonomy_rate:.0%} ({_autonomy_n}/{_autonomy_d} tracked sessions). "
                 "Rising trend expected by session 20 — developer should be catching NFR gaps "
                 "before nfr_check runs. Pass developer_caught=['nfr_check'] to session_end when observed."
             )
         else:
             findings.append(
-                f"Developer autonomy: 0% across {total} sessions. "
+                f"Developer autonomy: 0% ({_autonomy_n}/{_autonomy_d} tracked sessions). "
                 "Target: developer pre-empts nfr_check by including performance/reliability/"
                 "security answers in their initial request. No DeveloperCaught signal recorded yet. "
                 "When observed, pass developer_caught=['nfr_check'] to session_end."
@@ -2576,17 +2580,41 @@ def _execute_proposal(proposal: Proposal) -> dict:
         new_content, count = re.subn(pattern, replacement, current, flags=re.DOTALL)
         if count == 0:
             new_content = current.rstrip() + f"\n\n## {section}\n{proposal.content}\n"
+        # Compute unified diff before writing — full diff to audit, truncated preview to return.
+        import difflib as _difflib
+        old_lines = current.splitlines(keepends=True)
+        new_lines = new_content.splitlines(keepends=True)
+        diff_lines = list(_difflib.unified_diff(
+            old_lines, new_lines,
+            fromfile=f"a/{proposal.target}/SKILL.md",
+            tofile=f"b/{proposal.target}/SKILL.md",
+        ))
+        full_diff = "".join(diff_lines)
+        _DIFF_PREVIEW_LINES = 40
+        preview_diff = "".join(diff_lines[:_DIFF_PREVIEW_LINES])
+        if len(diff_lines) > _DIFF_PREVIEW_LINES:
+            preview_diff += f"\n... ({len(diff_lines) - _DIFF_PREVIEW_LINES} more lines truncated)"
         skill_path.write_text(new_content)
-        # Write audit trail so self-heal can detect patch→gap cycles.
+        # Write audit trail with full diff so self-heal can detect patch→gap cycles.
         try:
             month = datetime.utcnow().strftime("%Y-%m")
             audit_file = CLAUDE_ROOT / "audit" / f"{month}.md"
             if audit_file.exists():
                 with open(audit_file, "a") as _af:
-                    _af.write(f"SkillPatch: {proposal.target} — section '{section}' auto-applied (proposal {proposal.id})\n")
+                    _af.write(
+                        f"SkillPatch: {proposal.target} — section '{section}' auto-applied (proposal {proposal.id})\n"
+                        f"```diff\n{full_diff}```\n"
+                    )
         except Exception:
             pass  # audit write failure must never block the apply
-        return {"applied": True, "target_file": str(skill_path), "change_type": ct, "section": section}
+        return {
+            "applied": True,
+            "target_file": str(skill_path),
+            "change_type": ct,
+            "section": section,
+            "diff_preview": preview_diff,
+            "diff_lines_total": len(diff_lines),
+        }
 
     if ct == "CONFIG_EDIT":
         config_path = YOUK_ROOT / "config" / proposal.target
