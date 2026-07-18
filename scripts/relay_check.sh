@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-RELAY_DIR="$(cd "$(dirname "$0")/../.." && pwd)/Desktop/youk-audit/RELAY"
+RELAY_DIR="$HOME/Desktop/youk-audit/RELAY"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Allow override for tests
