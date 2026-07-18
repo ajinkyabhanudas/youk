@@ -122,13 +122,19 @@ def main() -> None:
 
     # Track how many times auto-compact fires per session.
     # Persisted to state/compact-count.json; read and cleared by session_end.
+    # Format: {session-day: YYYY-MM-DD, count: N} — session-day enables pre/post splits.
     count_file = root / "state" / "compact-count.json"
     try:
         import json as _json
-        count = 0
+        from datetime import date as _date
+        today = _date.today().isoformat()
+        existing = {}
         if count_file.exists():
-            count = _json.loads(count_file.read_text()).get("count", 0)
-        count_file.write_text(_json.dumps({"count": count + 1}))
+            existing = _json.loads(count_file.read_text())
+        count_file.write_text(_json.dumps({
+            "session-day": existing.get("session-day", today),
+            "count": existing.get("count", 0) + 1,
+        }))
     except Exception:
         pass
 

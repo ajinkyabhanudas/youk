@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 import re
 import yaml
 from datetime import datetime, timedelta
@@ -29,6 +30,25 @@ _CAPABILITY_SKILLS = frozenset({
 
 # Paths that FILE_CREATE proposals are permitted to write to
 _ALLOWED_WRITE_ROOTS = [YOUK_ROOT, CLAUDE_ROOT / "skills"]
+
+
+def _read_instrument_boundaries() -> list[dict]:
+    """
+    Load instrument boundaries from knowledge/instrument-boundaries.jsonl.
+    Each entry records when a new metric was introduced — used to split
+    longitudinal exports into pre/post instrument windows.
+    """
+    boundary_file = YOUK_ROOT / "knowledge" / "instrument-boundaries.jsonl"
+    if not boundary_file.exists():
+        return []
+    boundaries = []
+    try:
+        for line in boundary_file.read_text().splitlines():
+            if line.strip():
+                boundaries.append(json.loads(line))
+    except Exception:
+        pass
+    return boundaries
 
 
 def _read_forge_run() -> dict | None:
@@ -202,9 +222,9 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         commits_match = re.search(r"^Commits:\s*(\w+)$", block, re.MULTILINE | re.IGNORECASE)
         s["commits"] = bool(commits_match and commits_match.group(1).lower() == "yes")
 
-        # CompactCount: N — times Claude auto-compacted this session (pre_compact hook).
+        # Compactions: N — times Claude auto-compacted this session (pre_compact hook).
         # Absent in sessions predating this instrumentation; None signals "not measured".
-        compact_match = re.search(r"^CompactCount:\s*(\d+)$", block, re.MULTILINE)
+        compact_match = re.search(r"^Compactions:\s*(\d+)$", block, re.MULTILINE)
         s["compact_count"] = int(compact_match.group(1)) if compact_match else None
 
         sessions.append(s)
@@ -1495,17 +1515,45 @@ def _parse_skill_gap_signals(audit_texts: list[str]) -> list[dict]:
 def _compute_compaction_frequency(sessions: list[dict]) -> dict:
     """
     Summarise auto-compaction frequency across measured sessions.
-    Denominator: sessions where CompactCount is present (post-instrumentation only).
-    R10-labeled to distinguish from total session count.
+    Denominator: sessions where Compactions: is present (post-instrumentation only).
+    R10-labeled. Includes outcome correlation split when ≥10 sessions have both fields.
     """
     measured = [s for s in sessions if s.get("compact_count") is not None]
     if not measured:
-        return {"avg_per_session": 0.0, "high_pressure_sessions": 0, "sessions_measured": 0}
+        return {
+            "avg_per_session": 0.0,
+            "high_pressure_sessions": 0,
+            "sessions_measured": 0,
+            "r10_label": "compactions/session [R10]: 0 (0/0 sessions, last 30 days) — insufficient data",
+            "outcome_correlation": "(correlation with outcomes: insufficient data)",
+        }
     counts = [s["compact_count"] for s in measured]
+    n = len(measured)
+    total = sum(counts)
+    avg = round(total / n, 1)
+    high_pressure = sum(1 for c in counts if c > 3)
+
+    r10_label = f"compactions/session [R10]: {avg} ({total}/{n} sessions, last 30 days)"
+
+    # Outcome correlation: only when ≥10 sessions carry both Compactions and OutcomeResult
+    both_fields = [s for s in measured if s.get("outcome_result") not in ("UNKNOWN", "NONE", None)]
+    if len(both_fields) >= 10:
+        passed = [s["compact_count"] for s in both_fields if s["outcome_result"] in ("PASSED", "SHIPPED")]
+        failed = [s["compact_count"] for s in both_fields if s["outcome_result"] == "FAILED"]
+        outcome_corr = (
+            f"(outcome split: PASSED avg={round(sum(passed)/len(passed), 1) if passed else 'n/a'} "
+            f"FAILED avg={round(sum(failed)/len(failed), 1) if failed else 'n/a'} "
+            f"over {len(both_fields)} sessions)"
+        )
+    else:
+        outcome_corr = f"(correlation with outcomes: insufficient data — {len(both_fields)}/10 sessions needed)"
+
     return {
-        "avg_per_session": round(sum(counts) / len(counts), 1),
-        "high_pressure_sessions": sum(1 for c in counts if c > 3),
-        "sessions_measured": len(measured),
+        "avg_per_session": avg,
+        "high_pressure_sessions": high_pressure,
+        "sessions_measured": n,
+        "r10_label": r10_label,
+        "outcome_correlation": outcome_corr,
     }
 
 
@@ -2012,6 +2060,17 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
             pass
 
     compaction_frequency = _compute_compaction_frequency(sessions_parsed)
+    instrument_boundaries = _read_instrument_boundaries()
+
+    # Knowledge index lifecycle — apply HOT→COLD and emit archive proposals
+    knowledge_lifecycle: dict = {}
+    try:
+        from knowledge_index import apply_lifecycle_rules, load_index_summaries
+        knowledge_lifecycle = apply_lifecycle_rules(YOUK_ROOT, sessions_parsed)
+        knowledge_summary = load_index_summaries(YOUK_ROOT)
+    except Exception:
+        knowledge_summary = {}
+
 
     base = {
         "org_score": report.org_score,
@@ -2032,6 +2091,9 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         "human_precision_rate": round(human_precision_rate, 2),
         "last_external_review": last_external_review,
         "compaction_frequency": compaction_frequency,
+        "instrument_boundaries": instrument_boundaries,
+        "knowledge_lifecycle": knowledge_lifecycle,
+        "knowledge_index": knowledge_summary,
         "compounding_verdict": (
             "ELITE — developer pre-empting skills at DEEP/ELITE depth; compounding loop closed"
             if autonomy_depth_score >= 0.6
