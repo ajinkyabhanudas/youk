@@ -2045,6 +2045,22 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     if _review_nudge:
         base["external_review_nudge"] = _review_nudge
 
+    # Task contract metrics — visibility-only, no org_score impact
+    try:
+        from task_contract import compute_contract_edit_rate, compute_accept_risk_bite_rate
+        edit_rate_data = compute_contract_edit_rate(last_n=10)
+        bite_rate_data = compute_accept_risk_bite_rate()
+        base["contract_edit_rate"] = edit_rate_data
+        base["accept_risk_bite_rate"] = bite_rate_data
+        if edit_rate_data["contracts_measured"] > 0:
+            base.setdefault("findings", [])
+            base["findings"].append(edit_rate_data["r10_label"])
+        if bite_rate_data["total_accept_risk"] > 0:
+            base.setdefault("findings", [])
+            base["findings"].append(bite_rate_data["r10_label"])
+    except Exception:
+        pass
+
     # PREVENTED block — leads the health report as the product value claim
     prevented_items = []
     if prevented_cost["critical_findings"] > 0:

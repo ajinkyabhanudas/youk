@@ -31,6 +31,7 @@ def youk_root(tmp_path, monkeypatch):
     import health
     import compaction
     import review
+    import task_contract
 
     monkeypatch.setattr(session, "YOUK_ROOT", root)
     monkeypatch.setattr(session, "STATE_FILE", root / "state" / "session.json")
@@ -38,6 +39,18 @@ def youk_root(tmp_path, monkeypatch):
     monkeypatch.setattr(health, "PROPOSALS_FILE", root / "knowledge" / "proposals" / "PENDING.md")
     monkeypatch.setattr(compaction, "YOUK_ROOT", root)
     monkeypatch.setattr(review, "_DOC_MAP_PATH", root / "docs" / "doc-map.yaml")
+    monkeypatch.setattr(task_contract, "YOUK_ROOT", root)
+    monkeypatch.setattr(task_contract, "_CONTRACTS_DIR", root / "state" / "task-contracts")
+    monkeypatch.setattr(task_contract, "_RISK_LEDGER", root / "state" / "risk-ledger.jsonl")
+    monkeypatch.setattr(task_contract, "_AUDIT_DIR", root / "audit")
+    # Frames file — point to the real repo file for frame-source tests
+    _real_frames = Path(__file__).parent.parent / "skills" / "adversarial-planning" / "references" / "frames.md"
+    if _real_frames.exists():
+        monkeypatch.setattr(task_contract, "_FRAMES_FILE", _real_frames)
+    # Routes file — point to real config
+    _real_routes = Path(__file__).parent.parent / "config" / "routes.yaml"
+    if _real_routes.exists():
+        monkeypatch.setattr(task_contract, "_ROUTES_FILE", _real_routes)
 
     return root
 

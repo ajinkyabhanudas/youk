@@ -41,6 +41,17 @@ Call `youk-core.route_task(task)`. Extract:
 
 Call `youk-core.track_tokens(0, 0, "route_task", token_budget=<budget>)`
 
+**Step 1.5 — Task contract (M+ only)**
+
+Call `youk-core.task_contract(task, size=<size>)`.
+- If `contract_required: False` (XS/S) → skip to Step 2.
+- If `contract_required: True`: present the returned `contract` markdown to the developer.
+  Wait for edits/approval. Then call `youk-core.approve_task_contract(contract_id, as_approved, disposition_map)`.
+- For L/XL only: call `youk-core.check_task_contract_gate(size)`. If `blocked: True`, provocation
+  dispositions are unresolved — surface the unresolved list and wait. Do not proceed to Step 2
+  while blocked.
+- See `skills/task-contract/SKILL.md` for template, disposition semantics, and examples.
+
 **Step 2 — Planning gate (M+ only)**
 
 If `plan_hook` is non-empty: output it VERBATIM. Wait for one response.

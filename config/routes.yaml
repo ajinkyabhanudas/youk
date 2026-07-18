@@ -97,6 +97,7 @@ task_sizes:
     skills:
       - pm_review
       - write_spec
+      - task_contract
       - nfr_check
       - adr
       - dev_loop
@@ -134,6 +135,7 @@ task_sizes:
       - orchestrate
       - pm_review
       - write_spec
+      - task_contract
       - nfr_check
       - adr
       - stress_test

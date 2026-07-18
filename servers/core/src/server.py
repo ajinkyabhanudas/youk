@@ -445,6 +445,83 @@ def check_command(command: str) -> dict:
 
 
 @mcp.tool()
+def task_contract(task: str, size: str | None = None) -> dict:
+    """
+    Generate a task intake contract before heavy work starts.
+
+    Converts the developer's request into a filled, editable contract surfacing:
+    (a) what youk understood, (b) adversarial provocations from frame rotation,
+    (c) what this pass will NOT include. Fill, don't interrogate — present a
+    complete interpretation for editing, never a questionnaire.
+
+    Sizing gate (F6 ceremony-proportionality):
+      XS/S → {contract_required: False, reason: "below contract line"}
+      M    → MINI contract (GOAL, DONE-MEANS, SCOPE-OUT, ≤3 provocations inline)
+      L/XL → FULL contract (all fields, 5-7 provocations, CUT-LIST)
+
+    Flow: present the returned `contract` to the developer → wait for edits →
+    call approve_task_contract() with the edited version → only then proceed.
+    For L/XL: check_task_contract_gate() blocks until an approved contract exists.
+
+    task: One-sentence description of what needs to be done.
+    size: Optional override (XS/S/M/L/XL). If omitted, computed from task signals.
+
+    Returns: contract_required, reason (when False), contract_id, path, contract (markdown), size.
+    """
+    from task_contract import generate_task_contract
+    result = generate_task_contract(task, size)
+    result["calls_since_compact"] = _increment_tool_call_count()
+    return result
+
+
+@mcp.tool()
+def approve_task_contract(
+    contract_id: str,
+    as_approved: str,
+    disposition_map: dict[str, str] | None = None,
+) -> dict:
+    """
+    Record the developer's approved version of the task contract.
+
+    Call this after the developer has reviewed and edited the contract returned
+    by task_contract(). Persists the approved text and records dispositions.
+
+    contract_id: The ID returned by task_contract() (e.g. TC-20260718-001).
+    as_approved: The full contract text after developer edits.
+    disposition_map: {P1: "IN-SCOPE", P2: "DEFER", P3: "ACCEPT-RISK", ...}
+      Valid dispositions: IN-SCOPE, DEFER, ACCEPT-RISK, N/A.
+      ACCEPT-RISK entries are appended to state/risk-ledger.jsonl.
+
+    Returns: saved, fields_edited, edit_rate, unresolved_provocations, blocked.
+    When blocked=True: some provocations have no disposition — resolve before L/XL work.
+    """
+    from task_contract import approve_task_contract as _approve
+    result = _approve(contract_id, as_approved, disposition_map)
+    result["calls_since_compact"] = _increment_tool_call_count()
+    return result
+
+
+@mcp.tool()
+def check_task_contract_gate(size: str) -> dict:
+    """
+    Gate that blocks L/XL implementation when no approved task contract exists this session.
+
+    Call after approve_task_contract(), before dev-loop, for L/XL tasks.
+    Returns blocked=False immediately for M/S/XS — those sizes don't require the gate.
+
+    size: The routing size from route_task (XS/S/M/L/XL).
+
+    Returns: {"blocked": bool, "reason": str, "contract_id": str (when unblocked)}
+    When blocked=True: call task_contract() → present to developer → approve_task_contract()
+    → re-call check_task_contract_gate.
+    """
+    from task_contract import check_task_contract_gate as _gate
+    result = _gate(size)
+    result["calls_since_compact"] = _increment_tool_call_count()
+    return result
+
+
+@mcp.tool()
 def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) -> dict:
     """
     Gate that blocks M+ implementation when no NFR Decision Block is present.
