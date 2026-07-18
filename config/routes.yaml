@@ -117,6 +117,13 @@ task_sizes:
       - new youk
       - product management variant
       - analytics variant
+      - audit
+      - red-team
+      - stress-test the plan
+      - does it deliver
+      - derive a roadmap
+      - adversarial analysis
+      - founding analysis
     negative_signals:
       - fix
       - update
@@ -130,6 +137,7 @@ task_sizes:
       - nfr_check
       - adr
       - stress_test
+      - adversarial_planning
       - dev_loop
       - code_review
       - security_review

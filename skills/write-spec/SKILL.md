@@ -13,6 +13,8 @@ description: >
 
 # write-spec — Feature and Product Specification
 
+Roadmap items (CAPs) produced by adversarial-planning are translated to implementation-ready specs with this skill.
+
 Produces a spec that a senior director would call hire-worthy. The standard is not
 length or completeness for its own sake — it's precision and the absence of ambiguity.
 A good spec answers every question an engineer, designer, or reviewer would have before
