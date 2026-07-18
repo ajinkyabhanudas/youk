@@ -12,8 +12,18 @@ import json
 
 # ── Health: _compute_outcome_rates ───────────────────────────────────────────
 
-def _make_sessions(count: int, outcome: str = "SHIPPED", outcome_result: str = "WORKED") -> list[dict]:
-    return [{"outcome": outcome, "outcome_result": outcome_result} for _ in range(count)]
+def _make_sessions(
+    count: int,
+    outcome: str = "SHIPPED",
+    outcome_result: str = "WORKED",
+    real_work: bool = True,
+) -> list[dict]:
+    """Build fake session dicts. real_work=True adds capability_skills so sessions
+    are counted in the real-work denominator for outcome_signal_rate."""
+    base = {"outcome": outcome, "outcome_result": outcome_result}
+    if real_work:
+        base["capability_skills"] = ["dev-loop"]
+    return [dict(base) for _ in range(count)]
 
 
 class TestComputeOutcomeRates:
@@ -76,22 +86,92 @@ class TestComputeOutcomeRates:
         assert result["sessions_resolved"] == 5
 
     def test_signal_rate_when_all_shipped_have_result(self):
-        """signal_rate is 1.0 when all shipped sessions have a resolved outcome."""
+        """signal_rate is 1.0 when all real-work sessions have a non-UNKNOWN outcome."""
         from health import _compute_outcome_rates
         sessions = _make_sessions(10, "SHIPPED", "WORKED")
         result = _compute_outcome_rates(sessions)
         assert result["outcome_signal_rate"] == 1.0
 
-    def test_signal_rate_when_some_still_pending(self):
-        """signal_rate < 1.0 when some shipped sessions have PENDING/UNKNOWN result."""
+    def test_all_abandoned_yields_no_free_bonus(self):
+        """ABANDONED sessions with UNKNOWN result do not grant a free 1.0 signal_rate.
+        If all real-work sessions have UNKNOWN outcome_result, signal_rate should be 0.0,
+        not 1.0 (the old empty-denominator fallback was wrong)."""
+        from health import _compute_outcome_rates
+        # 10 sessions with outcome=ABANDONED but result=UNKNOWN (developer never followed up)
+        sessions = _make_sessions(10, "ABANDONED", "UNKNOWN")
+        result = _compute_outcome_rates(sessions)
+        # warmup met: 10 sessions_with_outcome (ABANDONED != NONE)
+        assert result["sessions_with_outcome"] == 10
+        # signal_rate: 0 of 10 real-work sessions have outcome_result != UNKNOWN
+        assert result["outcome_signal_rate"] == 0.0
+
+    def test_pending_does_not_lower_signal_rate(self):
+        """PENDING counts as recorded — reporting PENDING must not lower signal_rate
+        compared to not reporting anything. UNKNOWN is the only value that misses the signal."""
+        from health import _compute_outcome_rates
+        # 10 sessions: 5 WORKED (clearly recorded) + 5 PENDING (intent recorded)
+        sessions_with_pending = (
+            _make_sessions(5, "SHIPPED", "WORKED")
+            + _make_sessions(5, "SHIPPED", "PENDING")
+        )
+        # 10 sessions: 10 WORKED (all fully resolved)
+        sessions_all_worked = _make_sessions(10, "SHIPPED", "WORKED")
+        result_pending = _compute_outcome_rates(sessions_with_pending)
+        result_worked = _compute_outcome_rates(sessions_all_worked)
+        # PENDING does not lower signal rate vs all-WORKED
+        assert result_pending["outcome_signal_rate"] == result_worked["outcome_signal_rate"]
+
+    def test_r10_label_format_in_findings(self, monkeypatch):
+        """_generate_findings includes R10-labeled outcome signal rate with n/d and 'real-work sessions'.
+        Patches _compute_outcome_rates directly to avoid full session fixture complexity."""
+        import health
+        fake_rates = {
+            "outcome_signal_rate": 0.8,
+            "outcome_quality_rate": 0.9,
+            "sessions_with_outcome": 10,
+            "sessions_resolved": 8,
+            "real_work_sessions": 10,
+            "outcome_recorded_count": 8,
+        }
+        monkeypatch.setattr(health, "_compute_outcome_rates", lambda sessions: fake_rates)
+        # Build sessions list with required fields for _generate_findings internals
+        sessions = [
+            {
+                "close_cluster": True,
+                "capability_skills": ["dev-loop"],
+                "skills": ["dev-loop"],
+                "tokens_ratio": None,
+                "raw": "",
+                "outcome": "SHIPPED",
+                "outcome_result": "WORKED",
+                "commits": True,
+            }
+            for _ in range(10)
+        ]
+        monkeypatch.setattr(health, "_parse_audit_sessions", lambda texts: sessions)
+        monkeypatch.setattr(health, "_consecutive_skill_skips", lambda s: 0)
+        monkeypatch.setattr(health, "_check_project_type_coverage", lambda: None)
+        monkeypatch.setattr(health, "_check_release_readiness", lambda: [])
+        monkeypatch.setattr(health, "_check_git_outcomes", lambda s: [])
+        monkeypatch.setattr(health, "PROPOSALS_FILE", health.YOUK_ROOT / "state" / "nonexistent.md")
+        findings = health._generate_findings(["### Session — dummy\n"], score=7.0)
+        r10_findings = [f for f in findings if "R10" in f and "real-work sessions" in f]
+        assert r10_findings, f"No R10-labeled outcome finding found in: {findings}"
+        label = r10_findings[0]
+        assert "%" in label
+        assert "/" in label
+
+    def test_signal_rate_pending_counts_as_recorded(self):
+        """PENDING counts as recorded in signal_rate (developer signalled intent).
+        Only UNKNOWN is excluded from the numerator."""
         from health import _compute_outcome_rates
         sessions = (
             _make_sessions(5, "SHIPPED", "WORKED")
-            + _make_sessions(5, "SHIPPED", "PENDING")  # not resolved = not signalled
+            + _make_sessions(5, "SHIPPED", "PENDING")  # PENDING = recorded, counts
         )
         result = _compute_outcome_rates(sessions)
-        # 5 of 10 shipped sessions have non-UNKNOWN/non-PENDING result
-        assert result["outcome_signal_rate"] == 0.5
+        # All 10 real-work sessions have outcome recorded (WORKED or PENDING — both non-UNKNOWN)
+        assert result["outcome_signal_rate"] == 1.0
 
 
 # ── Session: enum validation ──────────────────────────────────────────────────

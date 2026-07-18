@@ -289,8 +289,10 @@ def route_task_ran_this_session(root: Path, slug: str) -> bool:
 
     Session boundary: route-task-ran.json must have been written AFTER the
     session-open.json file (both written at session start / first tool call).
-    If session-open.json is absent, falls back to slug-only check.
+    If session-open.json is absent, falls back to same-calendar-day (mtime) check —
+    a flag file from yesterday is treated as a prior session.
     """
+    import datetime as _dt
     flag_file = root / "state" / "route-task-ran.json"
     if not flag_file.exists():
         return False
@@ -308,6 +310,13 @@ def route_task_ran_this_session(root: Path, slug: str) -> bool:
             flag_mtime = flag_file.stat().st_mtime
             if flag_mtime < open_mtime:
                 return False  # route-task-ran is from a prior session
+        else:
+            # No session-open.json — fall back to same-calendar-day check.
+            # A flag written yesterday is a prior session; only today's flag counts.
+            flag_mtime = flag_file.stat().st_mtime
+            flag_day = _dt.date.fromtimestamp(flag_mtime)
+            if flag_day != _dt.date.today():
+                return False  # flag from a different calendar day = stale
         return True
     except Exception:
         return False

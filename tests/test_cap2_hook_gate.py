@@ -121,6 +121,20 @@ class TestRouteTaskRanThisSession:
         from youk_hook_utils import route_task_ran_this_session
         assert route_task_ran_this_session(hook_root, "myproject") is False
 
+    def test_returns_false_when_flag_from_yesterday_no_session_marker(self, hook_root):
+        """When session-open.json is absent, a flag from yesterday is treated as stale
+        (prior session) and returns False — not True as slug-only fallback would give."""
+        import os, datetime as _dt, time as _time
+        flag = hook_root / "state" / "route-task-ran.json"
+        flag.write_text(json.dumps([{"slug": "myproject", "task_hash": "abc"}]))
+        # Backdate the flag to yesterday
+        yesterday = _dt.date.today() - _dt.timedelta(days=1)
+        yesterday_ts = _time.mktime(yesterday.timetuple())
+        os.utime(flag, (yesterday_ts, yesterday_ts))
+        # No session-open.json present
+        from youk_hook_utils import route_task_ran_this_session
+        assert route_task_ran_this_session(hook_root, "myproject") is False
+
 
 # ── count_route_warnings_this_session ────────────────────────────────────────
 

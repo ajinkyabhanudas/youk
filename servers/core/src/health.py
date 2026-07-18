@@ -198,6 +198,10 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         result_match = re.search(r"^OutcomeResult:\s*(\w+)$", block, re.MULTILINE)
         s["outcome_result"] = result_match.group(1).upper() if result_match else "UNKNOWN"
 
+        # Commits: yes/no — written by session_end when commits_made=True.
+        commits_match = re.search(r"^Commits:\s*(\w+)$", block, re.MULTILINE | re.IGNORECASE)
+        s["commits"] = bool(commits_match and commits_match.group(1).lower() == "yes")
+
         sessions.append(s)
     return sessions[-150:]  # cap: most recent 150 sessions regardless of window size
 
@@ -460,17 +464,21 @@ def _compute_outcome_rates(sessions: list[dict]) -> dict:
     """
     Compute outcome_signal_rate and outcome_quality_rate from audit sessions.
 
-    outcome_signal_rate: fraction of SHIPPED/STAGED sessions that have a non-NONE outcome recorded.
+    outcome_signal_rate: fraction of real-work sessions that recorded any non-NONE outcome.
+    Real-work = session has capability_skills OR commits=True (reuses STATS.md definition).
+    PENDING counts as "recorded" — the developer signalled intent; exclude only UNKNOWN.
     Active only when ≥10 sessions carry outcome data (warmup gate).
 
     outcome_quality_rate: fraction of resolved outcomes (WORKED|FAILED) that are WORKED.
+    PENDING excluded from denominator (not yet resolved).
     Active only when ≥10 sessions carry outcome data.
 
     Returns:
-        outcome_signal_rate: float (0.0–1.0) or None when warmup not met
+        outcome_signal_rate: float (0.0–1.0) or None when warmup not met or no real-work sessions
         outcome_quality_rate: float (0.0–1.0) or None when warmup not met
         sessions_with_outcome: int
         sessions_resolved: int
+        real_work_sessions: int (denominator for outcome_signal_rate R10 label)
     """
     sessions_with_outcome = [s for s in sessions if s.get("outcome") and s["outcome"] != "NONE"]
     if len(sessions_with_outcome) < 10:
@@ -479,14 +487,23 @@ def _compute_outcome_rates(sessions: list[dict]) -> dict:
             "outcome_quality_rate": None,
             "sessions_with_outcome": len(sessions_with_outcome),
             "sessions_resolved": 0,
+            "real_work_sessions": 0,
         }
 
-    # outcome_signal_rate: sessions that shipped/staged and recorded an outcome
-    shipped_staged = [s for s in sessions if s.get("outcome") in ("SHIPPED", "STAGED")]
-    with_outcome_recorded = [s for s in shipped_staged if s.get("outcome_result") not in (None, "UNKNOWN", "PENDING")]
-    outcome_signal_rate = round(len(with_outcome_recorded) / len(shipped_staged), 2) if shipped_staged else 1.0
+    # outcome_signal_rate: real-work sessions that recorded any outcome (PENDING counts)
+    # Real-work = capability_skills present OR commits=True (matches STATS.md 70% denominator)
+    real_work = [s for s in sessions if s.get("capability_skills") or s.get("commits")]
+    with_outcome_recorded = [
+        s for s in real_work
+        if s.get("outcome") and s["outcome"] != "NONE" and s.get("outcome_result") != "UNKNOWN"
+    ]
+    # Empty real-work denominator → None (no data, no free bonus)
+    outcome_signal_rate = (
+        round(len(with_outcome_recorded) / len(real_work), 2) if real_work else None
+    )
 
-    # outcome_quality_rate: among resolved outcomes, fraction that WORKED
+    # outcome_quality_rate: among resolved outcomes (WORKED|FAILED), fraction that WORKED
+    # PENDING excluded — not yet resolved, not counted as failure
     resolved = [s for s in sessions_with_outcome if s.get("outcome_result") in ("WORKED", "FAILED")]
     worked = [s for s in resolved if s.get("outcome_result") == "WORKED"]
     outcome_quality_rate = round(len(worked) / len(resolved), 2) if resolved else None
@@ -496,6 +513,8 @@ def _compute_outcome_rates(sessions: list[dict]) -> dict:
         "outcome_quality_rate": outcome_quality_rate,
         "sessions_with_outcome": len(sessions_with_outcome),
         "sessions_resolved": len(resolved),
+        "real_work_sessions": len(real_work),
+        "outcome_recorded_count": len(with_outcome_recorded),
     }
 
 
@@ -1205,6 +1224,25 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     # These are the only outcome metrics that survive beyond session end.
     git_findings = _check_git_outcomes(sessions)
     findings.extend(git_findings[:2])  # cap at 2 so audit findings don't get buried
+
+    # Outcome signal rate (R10-labeled): reported with both values and denominator
+    # so the reader can verify the number independently (R10 = numeric reconciliation rule).
+    outcome_rates = _compute_outcome_rates(sessions)
+    if outcome_rates["outcome_signal_rate"] is not None:
+        n = outcome_rates["outcome_recorded_count"]
+        d = outcome_rates["real_work_sessions"]
+        pct = round(outcome_rates["outcome_signal_rate"] * 100)
+        findings.append(
+            f"Outcome signal rate [R10]: {pct}% ({n}/{d} real-work sessions recorded an outcome). "
+            "Outcome = Commits: yes AND capability skills ran. "
+            "PENDING counts as recorded; UNKNOWN does not."
+        )
+    elif outcome_rates["sessions_with_outcome"] < 10:
+        findings.append(
+            f"Outcome signal rate: warming up "
+            f"({outcome_rates['sessions_with_outcome']}/10 sessions with outcome data). "
+            "Pass outcome= to session_end to activate."
+        )
 
     if not findings:
         findings.append(f"Org health nominal. Score: {score}/10.")
