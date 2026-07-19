@@ -121,3 +121,38 @@ silently, before emitting the response.
 *Format: "When [condition], go deeper on [angle] in round 1-2 instead of waiting for rounds 7+."*
 
 <!-- Shortcut entries appended here by learn skill -->
+
+## Precondition Verification Before Implementation
+*Added: 2026-07-19*
+*Source: youk — cross-project pattern observed during delivery sessions*
+
+**What it is:** Before implementing a fix for a documented gap (a plan item, a
+DECISIONS.md entry, a LIMITATIONS.md line), run the actual failure case live
+first. Written claims about system behavior decay as the system underneath them
+changes — the documented gap may not reproduce, and the empirical check redirects
+the actual work toward a real, previously-uncovered gap instead of a stale one.
+
+**Analogy:** ICE/MoSCoW prioritization — never commit resources to an
+unvalidated assumption; check the premise before scoring the work.
+
+**Where the analogy breaks:** ICE assumes the feature/problem is real and
+asks "how urgent, how confident." This pattern asks a prior question ICE has
+no slot for: "does the reported problem still exist at all?" A written claim
+(a backlog item, a decision record) decays as the system underneath it
+changes — the claim being false isn't a scoring input, it's a reason to
+redirect the whole task.
+
+**Project example:** youk challenge gate — `check_challenge_gate` documented
+as relying on `session-open.json` for slug correlation. Before writing a
+workaround, verified empirically: the gate returned `blocked=true` after
+`mark_challenge_ran` returned `recorded=true`. Root cause was a missing file,
+not a logic bug. The live check redirected the fix from a workaround to a
+proper fallback in `session_slug.py`.
+
+**When to reach for this:** Any time a task is framed as "fix documented gap
+X" — run X's actual failure case live before writing the fix, not after.
+The tell that this pattern applies: a task's premise rests on a *written*
+claim about system behavior (a doc, a backlog item, a prior session's
+finding) rather than something just observed live in the current session.
+
+---
