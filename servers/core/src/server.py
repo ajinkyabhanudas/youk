@@ -21,11 +21,16 @@ from challenge_gate import check_challenge_gate as _check_challenge_gate
 from intent import optimize_intent as _optimize_intent
 from compaction import build_brief, write_contracts
 from tokens import init_token_tracker, record_checkpoint
+from session_slug import get_session_slug as _get_session_slug_impl
 
 YOUK_ROOT = Path("/youk")
 CLAUDE_ROOT = Path("/claude")
 
 _TOOL_CALL_COUNT_FILE = YOUK_ROOT / "state" / "tool-call-count.json"
+
+
+def _get_session_slug() -> str:
+    return _get_session_slug_impl(YOUK_ROOT)
 
 
 def _increment_tool_call_count() -> int:
@@ -607,10 +612,7 @@ def mark_challenge_ran(task: str, angles_checked: list[str], mode: str = "full")
     try:
         import json as _json
         from datetime import datetime as _dt
-        slug = "unknown"
-        open_file = YOUK_ROOT / "state" / "session-open.json"
-        if open_file.exists():
-            slug = _json.loads(open_file.read_text()).get("slug", "unknown")
+        slug = _get_session_slug()
         flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
         existing_rounds = 0
         if flag_file.exists():
@@ -654,10 +656,8 @@ def check_challenge_gate(task: str, size: str) -> dict:
         flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
         if flag_file.exists():
             data = _json.loads(flag_file.read_text())
-            open_file = YOUK_ROOT / "state" / "session-open.json"
-            if open_file.exists():
-                current_slug = _json.loads(open_file.read_text()).get("slug", "")
-                challenge_ran = data.get("slug", "") == current_slug
+            current_slug = _get_session_slug()
+            challenge_ran = data.get("slug", "") == current_slug
     except Exception:
         pass
 
@@ -666,10 +666,7 @@ def check_challenge_gate(task: str, size: str) -> dict:
         try:
             import json as _json
             from datetime import datetime as _dt
-            slug = "unknown"
-            open_file = YOUK_ROOT / "state" / "session-open.json"
-            if open_file.exists():
-                slug = _json.loads(open_file.read_text()).get("slug", "unknown")
+            slug = _get_session_slug()
             flag_file = YOUK_ROOT / "state" / "challenge-gate-passed.json"
             flag_file.write_text(_json.dumps({
                 "slug": slug,
