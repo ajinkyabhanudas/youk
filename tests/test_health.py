@@ -2347,3 +2347,100 @@ class TestScoreOrgWithPreventedCost:
         findings_score = _score_org(findings_blocks)
 
         assert findings_score >= baseline_score
+
+
+class TestRecomputeOrgScore:
+    """Tests for the lightweight /done org_score writeback."""
+
+    def test_writes_entry_to_metrics_file(self, youk_root, claude_root):
+        """recompute_org_score() creates improvement-metrics.json with an entry."""
+        import json
+        (claude_root / "audit" / "2026-07.md").write_text(
+            _audit_block(n=1, skills="code-review")
+            + _audit_block(n=2, skills="nfr-check")
+        )
+        from health import recompute_org_score
+        result = recompute_org_score(slug="myproject")
+        assert result["written"] is True
+        assert result["org_score"] > 0
+
+        metrics_file = youk_root / "state" / "improvement-metrics.json"
+        assert metrics_file.exists()
+        data = json.loads(metrics_file.read_text())
+        assert len(data["entries"]) == 1
+        entry = data["entries"][0]
+        assert entry["source"] == "done_close"
+        assert "org_score" in entry
+
+    def test_skips_write_when_score_unchanged_same_day(self, youk_root, claude_root):
+        """Second call on same day with same score is skipped."""
+        import json
+        from datetime import datetime, timezone
+
+        (claude_root / "audit" / "2026-07.md").write_text(
+            _audit_block(n=1, skills="code-review")
+        )
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        metrics_file = youk_root / "state" / "improvement-metrics.json"
+        # Seed with today's entry at the exact same score recompute_org_score would compute
+        from health import _score_org, _read_recent_audit_logs
+        score = _score_org(_read_recent_audit_logs(days=30))
+        metrics_file.write_text(json.dumps({
+            "entries": [{"timestamp": today, "org_score": score, "source": "done_close"}],
+            "projects": {},
+        }))
+
+        from health import recompute_org_score
+        result = recompute_org_score(slug="myproject")
+        assert result["written"] is False
+        assert result["skipped_reason"] == "score unchanged today"
+        # Entry count must not grow
+        data = json.loads(metrics_file.read_text())
+        assert len(data["entries"]) == 1
+
+    def test_updates_per_project_score(self, youk_root, claude_root):
+        """recompute_org_score() writes per-project org_score under 'projects' key."""
+        import json
+        (claude_root / "audit" / "2026-07.md").write_text(
+            _audit_block(n=1, skills="code-review")
+        )
+        from health import recompute_org_score
+        recompute_org_score(slug="canopy")
+        metrics_file = youk_root / "state" / "improvement-metrics.json"
+        data = json.loads(metrics_file.read_text())
+        assert "canopy" in data["projects"]
+        assert "org_score" in data["projects"]["canopy"]
+
+    def test_caps_entries_at_twenty(self, youk_root, claude_root):
+        """Entries list is capped at 20 — old entries are pruned."""
+        import json
+        from datetime import datetime, timezone
+        (claude_root / "audit" / "2026-07.md").write_text(
+            _audit_block(n=1, skills="code-review")
+        )
+        # Pre-seed with 20 entries from a prior date
+        old_entries = [
+            {"timestamp": "2026-06-01T00:00:00Z", "org_score": 7.0, "source": "done_close"}
+            for _ in range(20)
+        ]
+        metrics_file = youk_root / "state" / "improvement-metrics.json"
+        metrics_file.write_text(json.dumps({"entries": old_entries, "projects": {}}))
+
+        from health import recompute_org_score
+        result = recompute_org_score(slug="myproject")
+        assert result["written"] is True
+        data = json.loads(metrics_file.read_text())
+        assert len(data["entries"]) == 20  # still capped at 20, oldest pruned
+
+    def test_returns_error_dict_on_exception(self, youk_root, claude_root):
+        """recompute_org_score() never raises — returns error in dict."""
+        # Make state/ dir a file to force a write error
+        state_dir = youk_root / "state"
+        import shutil
+        shutil.rmtree(state_dir)
+        state_dir.write_text("not a directory")
+
+        from health import recompute_org_score
+        result = recompute_org_score(slug="myproject")
+        assert result["written"] is False
+        assert "error" in result["skipped_reason"]

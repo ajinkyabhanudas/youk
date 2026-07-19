@@ -1,7 +1,7 @@
 # Skill Registry — y2k-1
 
-**Company:** y2k-1 | **Activation:** say "activate y2k-1" | **Roster size:** 19
-*Living document. Updated by /skill-health after each review. Last updated: 2026-07-17.*
+**Company:** y2k-1 | **Activation:** say "activate y2k-1" | **Roster size:** 22
+*Living document. Updated by /skill-health after each review. Last updated: 2026-07-20.*
 *Owner: Ajinkya Dessai. All skills are scoped to the ~/.claude/skills/ directory.*
 
 ---
@@ -119,7 +119,6 @@ Honest assessment of known gaps. Updated by /skill-health reviews.
 
 | Skill | Known Gaps |
 |---|---|
-| `/dev-loop` | NFR decisions (caching especially) made too late; no "should we build this?" gate; no decision documentation |
 | `/dev-loop` | NFR decisions (caching especially) made too late; no "should we build this?" gate; no decision documentation; no implicit ADR detection in AUDIT phase |
 | `/ux-designer` | Accessibility (WCAG); mobile/responsive; performance budget; **rendering environment now covered by checklist.md Rendering Environment section** |
 | `/code-review` | Architectural drift over time; doesn't catch NFR gaps (that's /nfr-check's job) |
@@ -137,7 +136,8 @@ Honest assessment of known gaps. Updated by /skill-health reviews.
 | `/skill-health` | dev_loop audit registration gap: M+ sessions not logging dev_loop in Skills: line even when implementation runs. |
 | `/challenge` | Fire rate 4% (1/23 sessions Jul 2026) despite CLAUDE.md contract. High-autonomy developer pre-empts most design challenges. |
 | `/adversary-loop` | New — no gap history yet. Fires for M+ design decisions when /challenge routes to full adversary mode. |
-| `/done` | Fires as /done sequence; skills inside it (code-review, verify, humanize, learn) also logged separately, inflating their counts slightly. |
+| `/done` | Fires as /done sequence; skills inside it (code-review, verify, humanize, learn) also logged separately, inflating their counts slightly. **New (2026-07-20): does not call self_heal(), so improvement-metrics.json (org_score trend) is not updated by a /done close — only a separate /self_heal or /improve run writes it. A full 8-phase delivery session (Canopy, 2026-07-19) closed correctly with /done and is still invisible in org_score history.** |
+| `/self_heal` | Called ~9% of sessions this month (3/~35) despite being the sole writer of improvement-metrics.json. Org_score trend, velocity, and per-project scores go stale whenever a session closes via /done without a separate /self_heal call. |
 
 ---
 

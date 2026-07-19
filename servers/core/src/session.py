@@ -2680,6 +2680,14 @@ def end_session(
     with open(audit_file, "a") as f:
         f.write(f"ContractsSaved: {contracts_saved}\n")
 
+    # Lightweight org_score recompute — keeps improvement-metrics.json fresh on every /done
+    # without running the full self_heal() gap-detection and proposal cycle.
+    try:
+        from health import recompute_org_score
+        recompute_org_score(slug=slug)
+    except Exception:
+        pass
+
     # Write the resume point for the next session into external context.md (zero footprint).
     # Extract: first non-empty line after a ## heading, or first non-empty line of summary.
     # Cross-project bleed guard: use the slug from session-open.json (written at session_start)

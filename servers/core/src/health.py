@@ -1855,6 +1855,72 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
     }
 
 
+def recompute_org_score(slug: str = "") -> dict:
+    """Lightweight org_score recompute called by /done's close sequence.
+
+    Reads the audit log, computes org_score, and appends a new entry to
+    improvement-metrics.json. Does NOT run gap detection, proposal generation,
+    or any other self_heal work — it is a metrics writeback only.
+
+    Staleness guard: skips the write if the most recent entry is from the
+    same calendar day AND fewer than 3 sessions have been audited since.
+    This prevents thrashing improvement-metrics.json on multiple /done calls
+    in the same day while still capturing every meaningful session close.
+
+    Returns: {"written": bool, "org_score": float, "skipped_reason": str | None}
+    """
+    import json as _json
+
+    metrics_file = YOUK_ROOT / "state" / "improvement-metrics.json"
+
+    try:
+        audit_texts = _read_recent_audit_logs(days=30)
+        current_score = _score_org(audit_texts)
+
+        # Staleness guard: check last entry timestamp
+        existing_entries: list[dict] = []
+        existing_data: dict = {}
+        if metrics_file.exists():
+            try:
+                existing_data = _json.loads(metrics_file.read_text())
+                existing_entries = existing_data.get("entries", [])
+            except Exception:
+                pass
+
+        if existing_entries:
+            last_ts = existing_entries[-1].get("timestamp", "")
+            if last_ts and last_ts[:10] == datetime.utcnow().strftime("%Y-%m-%d"):
+                # Same day — only write if score changed
+                last_score = existing_entries[-1].get("org_score")
+                if last_score is not None and abs(last_score - current_score) < 0.05:
+                    return {"written": False, "org_score": current_score, "skipped_reason": "score unchanged today"}
+
+        entry = {
+            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "org_score": current_score,
+            "source": "done_close",
+        }
+        existing_entries.append(entry)
+        existing_entries = existing_entries[-20:]
+
+        # Preserve per-project scores and update current slug
+        per_project = existing_data.get("projects", {})
+        if slug:
+            per_project[slug] = {
+                "org_score": current_score,
+                "updated": entry["timestamp"],
+            }
+
+        metrics_file.parent.mkdir(parents=True, exist_ok=True)
+        metrics_file.write_text(_json.dumps(
+            {"entries": existing_entries, "projects": per_project}, indent=2
+        ))
+        return {"written": True, "org_score": current_score, "skipped_reason": None}
+
+    except Exception as exc:
+        return {"written": False, "org_score": 0.0, "skipped_reason": f"error: {exc}"}
+
+
 def _compute_knowledge_velocity(audit_texts: list[str], slug: str) -> dict:
     """Measure how fast the developer's personal knowledge base is growing.
 
