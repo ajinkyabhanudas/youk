@@ -41,6 +41,8 @@ skills/learn/knowledge/
 
 # install.sh runtime symlinks (self-referential, machine-absolute paths — not portable)
 skills/*/*
+# Skill reference files are infrastructure, not accumulated knowledge — track them
+!skills/*/references/
 
 # OS
 .DS_Store
