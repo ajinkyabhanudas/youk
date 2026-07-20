@@ -269,6 +269,36 @@ knowledge_flows:
     - source: "skills/{skill}/SKILL.md"
       purpose: "base skill content — overlay must not duplicate what's already there"
 
+reentry_edges:
+  # Agile skill re-entry: after a skill surfaces a finding at or above the severity threshold,
+  # route back to the target skill before continuing. Once-per-directed-pair limit per session.
+  # Session cap: 4 total re-entries. LOW severity findings carry forward as notes only.
+  # Re-entry NEVER bypasses check_nfr_gate or check_challenge_gate — those must be re-called.
+
+  code-review:
+    - to: nfr-check
+      trigger: "NFR gap found in review (missing error handling, no retry policy, no logging, missing timeout)"
+      severity: HIGH
+      label: "code-review-nfr-reentry"
+
+  security-review:
+    - to: nfr-check
+      trigger: "Auth or credential gap identified that invalidates prior NFR assumptions"
+      severity: HIGH
+      label: "security-nfr-reentry"
+
+  challenge:
+    - to: nfr-check
+      trigger: "Direction change accepted that invalidates the prior NFR decision block"
+      severity: BLOCKING
+      label: "challenge-nfr-reentry"
+
+  adversary-loop:
+    - to: challenge
+      trigger: "Adversary found a structural direction flaw (not an implementation gap — the goal itself is wrong)"
+      severity: BLOCKING
+      label: "adversary-challenge-reentry"
+
 critical_paths:
   # The flows that move org_score — must fire every session on M+ tasks
   new_feature_minimum: [nfr-check, dev-loop, code-review, learn]
