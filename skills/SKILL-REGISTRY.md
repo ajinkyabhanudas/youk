@@ -1,6 +1,6 @@
 # Skill Registry — y2k-1
 
-**Company:** y2k-1 | **Activation:** say "activate y2k-1" | **Roster size:** 22
+**Company:** y2k-1 | **Activation:** say "activate y2k-1" | **Roster size:** 26
 *Living document. Updated by /skill-health after each review. Last updated: 2026-07-20.*
 *Owner: Ajinkya Dessai. All skills are scoped to the ~/.claude/skills/ directory.*
 
@@ -49,6 +49,10 @@ for all generated `references/stacks/{framework}.md` overlays (6 sections, WAF-g
 | `/adversary-loop` | Independent Adversary | M+ design decisions — context-independent attack until exhaustion | ACTIVE |
 | `/done` | Session Close | Session end — code-review + verify + humanize + learn in sequence | ACTIVE |
 | `/adversarial-planning` | Adversarial Auditor | Adversarial audit of any planning target: claims → verification → convergence → roadmap | ACTIVE |
+| `/self-heal` | Improvement Protocol | /health, /improve, org_score check, recurring gap — makes health work register as capability skill | ACTIVE |
+| `/install-experience` | Onboarding Auditor | install.sh changes, pre-release gate, "does install work?" — SCAN → SCRIPT-AUDIT → DOCKER → HANDSHAKE | ACTIVE |
+| `/namespace-safety` | Collision Gate | Before any generate_skill or new MCP tool — checks skill names, MCP tool names, config keys for collisions | ACTIVE |
+| `/dependency-audit` | Dependency Auditor | New dependency added, "are deps safe?", pre-release — INVENTORY → PINNING → VULNERABILITIES → REMEDIATE | ACTIVE |
 
 ---
 
@@ -138,6 +142,10 @@ Honest assessment of known gaps. Updated by /skill-health reviews.
 | `/adversary-loop` | New — no gap history yet. Fires for M+ design decisions when /challenge routes to full adversary mode. |
 | `/done` | Fires as /done sequence; skills inside it (code-review, verify, humanize, learn) also logged separately, inflating their counts slightly. **New (2026-07-20): does not call self_heal(), so improvement-metrics.json (org_score trend) is not updated by a /done close — only a separate /self_heal or /improve run writes it. A full 8-phase delivery session (Canopy, 2026-07-19) closed correctly with /done and is still invisible in org_score history.** |
 | `/self_heal` | Called ~9% of sessions this month (3/~35) despite being the sole writer of improvement-metrics.json. Org_score trend, velocity, and per-project scores go stale whenever a session closes via /done without a separate /self_heal call. |
+| `/self-heal` | New — no gap history yet. Critical quality bar: SKILL_EDIT content must be full section text or apply_proposal destroys existing content. Watch for partial-content proposals. |
+| `/install-experience` | New — no gap history yet. Fast-path relies on git log to detect unchanged install.sh; if git not available, fast-path silently skips. |
+| `/namespace-safety` | New — no gap history yet. Semantic overlap detection is heuristic — may miss overlaps when skill descriptions use different vocabulary for the same concept. |
+| `/dependency-audit` | New — no gap history yet. CVE scan is incomplete without pip-audit installed — must flag this explicitly rather than proceeding silently with training-knowledge checks. |
 
 ---
 
@@ -189,7 +197,7 @@ Proposed skills that don't yet exist. Evaluated against the hiring bar before cr
 | Proposed Skill | Gap It Addresses | Priority | Status |
 |---|---|---|---|
 | `/incident-review` | Post-production incident structured retrospective | LOW | Deferred — promote when first project reaches production |
-| `/dependency-audit` | Review all dependencies for CVEs, updates, deprecation | LOW | Deferred — run as one-time /dev-loop audit at handover; no standing skill needed yet |
+| `/dependency-audit` | Review all dependencies for CVEs, updates, deprecation | LOW | PROMOTED — skill generated 2026-07-20 via stack scan |
 | `/cross-project` | Surface patterns from one project applicable to a new project | MEDIUM | LOW-ACTIVE — invoke at project completion or when starting a second project in the same domain |
 
 ---
@@ -210,6 +218,7 @@ Proposed skills that don't yet exist. Evaluated against the hiring bar before cr
 | 2026-07-03 | Stack Coverage System added to code-review + nfr-check SKILL.md. generate_stack_overlay() tool added. skill-graph.yaml + stack-overlay-schema.md created. | Generative overlay architecture — skills detect stack gap on first encounter, propose generating overlay, save for future sessions. WAF-grounded schema ensures critical questions > checklists. |
 | 2026-07-14 | Added /skill-forge (proactive stack→skill convergence loop) + analyze_stack_for_skills() tool + signal/noise framework (humanize). | Closes youk's improvement loop forward: forge anticipates skills from stack analysis at a rising standard until convergence; self_heal stays reactive. Signal/noise framework (SUBTRACT+REVEAL) generalizes REVEAL from learn/challenge/stress-test into one reusable source. |
 | 2026-07-17 | Added /challenge, /adversary-loop, /done to inventory. Updated known gaps table. Org score: 7.2/10 (+1.4 vs. prior review). Top gap: dev_loop not registering in audit for M+ sessions. | skill-health review Jul 2026 |
+| 2026-07-20 | Added 4 skills from stack scan: /self-heal (closes audit registration gap for health work), /install-experience (first-run install audit), /namespace-safety (collision gate before write), /dependency-audit (Python dep pinning + CVE). Roster: 22 → 26. | Track A stack scan via /improve |
 
 ---
 

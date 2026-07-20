@@ -53,11 +53,14 @@ Answer these 4 questions and emit a compact NFR block:
 
 ─ If task mentions UI / CSS / dark / frontend / component / style ─
 6. Dark mode?        {system preference respected? forced-colors handled? test at implementation time, not at review}
+
+─ If task mentions benchmark / eval / measurement / re-run / scoring ─
+7. Measurement integrity?  {is cache/state cleared before each run? are runs independent? is a baseline (control) included? without clearing, repeated runs measure cache behavior not model behavior}
 ```
 
 These questions cover 80% of production incidents. No ceremony beyond this for S/M.
 Proceed to dev-loop once all applicable questions are answered.
-Q6 is conditional — only ask when the task surface is UI. Skip silently otherwise.
+Q6 and Q7 are conditional — only ask when the task surface matches. Skip silently otherwise.
 
 ---
 
