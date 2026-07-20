@@ -1430,8 +1430,13 @@ class TestAnalyzePromotionCandidates:
 # ── _queue_promotion_proposals ────────────────────────────────────────────────
 
 class TestQueuePromotionProposals:
-    def test_queues_skill_edit_proposal(self, youk_root, claude_root):
+    def test_queues_skill_edit_proposal(self, youk_root, claude_root, monkeypatch):
         (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
+        # Create the SKILL.md so the skill is treated as "evolve existing" not "generate new"
+        (claude_root / "skills" / "verify").mkdir(parents=True, exist_ok=True)
+        (claude_root / "skills" / "verify" / "SKILL.md").write_text("# verify skill")
+        import health
+        monkeypatch.setattr(health, "CLAUDE_ROOT", claude_root)
         candidates = [{
             "skill": "verify",
             "occurrence_count": 4,
@@ -1440,14 +1445,18 @@ class TestQueuePromotionProposals:
             "promotion_target": "skills/verify/SKILL.md",
             "change_type": "SKILL_EDIT",
         }]
-        from health import _queue_promotion_proposals
-        count = _queue_promotion_proposals(candidates)
+        count, gen_pending = health._queue_promotion_proposals(candidates)
         assert count == 1
+        assert "verify" not in gen_pending
         pending = (youk_root / "knowledge" / "proposals" / "PENDING.md").read_text()
         assert "verify" in pending.lower()
 
-    def test_queues_code_edit_proposal(self, youk_root, claude_root):
+    def test_queues_code_edit_proposal(self, youk_root, claude_root, monkeypatch):
         (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
+        (claude_root / "skills" / "learn").mkdir(parents=True, exist_ok=True)
+        (claude_root / "skills" / "learn" / "SKILL.md").write_text("# learn skill")
+        import health
+        monkeypatch.setattr(health, "CLAUDE_ROOT", claude_root)
         candidates = [{
             "skill": "learn",
             "occurrence_count": 5,
@@ -1456,11 +1465,29 @@ class TestQueuePromotionProposals:
             "promotion_target": "servers/core/src/learn.py",
             "change_type": "CODE_EDIT",
         }]
-        from health import _queue_promotion_proposals
-        count = _queue_promotion_proposals(candidates)
+        count, gen_pending = health._queue_promotion_proposals(candidates)
         assert count == 1
+        assert "learn" not in gen_pending
         pending = (youk_root / "knowledge" / "proposals" / "PENDING.md").read_text()
         assert "CODE_EDIT" in pending
+
+    def test_missing_skill_md_goes_to_gen_pending(self, youk_root, claude_root, monkeypatch):
+        """Skills with no SKILL.md are returned in gen_pending, not queued as proposals."""
+        (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
+        import health
+        monkeypatch.setattr(health, "CLAUDE_ROOT", claude_root)
+        # "newskill" has no SKILL.md in claude_root/skills/
+        candidates = [{
+            "skill": "newskill",
+            "occurrence_count": 4,
+            "distinct_projects": 1,
+            "sample_gaps": ["gap1"],
+            "promotion_target": "skills/newskill/SKILL.md",
+            "change_type": "SKILL_EDIT",
+        }]
+        count, gen_pending = health._queue_promotion_proposals(candidates)
+        assert count == 0
+        assert "newskill" in gen_pending
 
 
 # ── _score_org early returns ───────────────────────────────────────────────────
@@ -1993,6 +2020,9 @@ class TestRunHealthCheckWithSkillSignalsExtended:
         (claude_root / "audit" / f"{month}.md").write_text("\n".join(lines))
 
     def test_promotion_queued_when_threshold_met(self, youk_root, claude_root):
+        # Create SKILL.md so "verify" is treated as "evolve existing" not "generate new"
+        (claude_root / "skills" / "verify").mkdir(parents=True)
+        (claude_root / "skills" / "verify" / "SKILL.md").write_text("# verify skill")
         self._write_audit_with_gaps(claude_root, [
             ("proj-a", "verify", "gap 1"),
             ("proj-a", "verify", "gap 2"),
@@ -2444,3 +2474,84 @@ class TestRecomputeOrgScore:
         result = recompute_org_score(slug="myproject")
         assert result["written"] is False
         assert "error" in result["skipped_reason"]
+
+
+class TestReviewRequiredGate:
+    """Tests for the review_required gate in apply_proposal (Track A)."""
+
+    _PENDING_WITH_FLAG = (
+        "# Proposals\n\n"
+        "## PENDING-SKILL-001 — 2026-07-20\n"
+        "**Target:** skills/pm-research/SKILL.md\n**Change:** Generate new skill\n**Reason:** gap\n"
+        "**Before:** \n**After:** \n**Status:** PENDING\n"
+        "**ChangeType:** FILE_CREATE\n**TargetSection:** \n"
+        "**ReviewRequired:** true\n\n"
+        "## PENDING-SKILL-002 — 2026-07-20\n"
+        "**Target:** skills/other/SKILL.md\n**Change:** Generate new skill\n**Reason:** gap\n"
+        "**Before:** \n**After:** \n**Status:** PENDING\n"
+        "**ChangeType:** FILE_CREATE\n**TargetSection:** \n\n"
+    )
+
+    def test_review_required_blocks_without_override(self, youk_root, monkeypatch):
+        """apply_proposal with review_required=true returns blocked until override passed."""
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING_WITH_FLAG)
+        import health as h
+        executed = []
+        monkeypatch.setattr(h, "_execute_proposal", lambda p: (executed.append(p) or {"applied": True}))
+        result = h.apply_proposal("PENDING-SKILL-001", confirmed=True)
+        assert result["blocked"] is True
+        assert result["review_required"] is True
+        assert "review_required_override" in result["message"]
+        assert executed == []  # must not execute
+
+    def test_review_required_proceeds_with_override(self, youk_root, monkeypatch):
+        """review_required_override=True allows apply_proposal to proceed."""
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING_WITH_FLAG)
+        import health as h
+        executed = []
+        monkeypatch.setattr(h, "_execute_proposal", lambda p: (executed.append(p) or {"applied": True}))
+        result = h.apply_proposal("PENDING-SKILL-001", confirmed=True, review_required_override=True)
+        assert result.get("blocked") is not True
+        assert len(executed) == 1
+
+    def test_proposal_without_review_required_not_affected(self, youk_root, monkeypatch):
+        """Proposals without review_required=true pass through normally."""
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING_WITH_FLAG)
+        import health as h
+        executed = []
+        monkeypatch.setattr(h, "_execute_proposal", lambda p: (executed.append(p) or {"applied": True}))
+        result = h.apply_proposal("PENDING-SKILL-002", confirmed=True)
+        assert result.get("blocked") is not True
+        assert len(executed) == 1
+
+    def test_review_required_parsed_from_pending_md(self, youk_root):
+        """_load_pending_proposals correctly reads ReviewRequired: true from PENDING.md."""
+        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING_WITH_FLAG)
+        from health import _load_pending_proposals
+        proposals = _load_pending_proposals()
+        p1 = next(p for p in proposals if p.id == "PENDING-SKILL-001")
+        p2 = next(p for p in proposals if p.id == "PENDING-SKILL-002")
+        assert p1.review_required is True
+        assert p2.review_required is False
+
+    def test_proposal_to_markdown_includes_review_required(self):
+        """Proposal.to_markdown() emits ReviewRequired: true when flag is set."""
+        from models import Proposal
+        p = Proposal(
+            id="PENDING-TEST", target="skills/x/SKILL.md", change_description="test",
+            reason="r", before="", after="", status="PENDING", proposed_date="2026-07-20",
+            change_type="FILE_CREATE", review_required=True,
+        )
+        md = p.to_markdown()
+        assert "**ReviewRequired:** true" in md
+
+    def test_proposal_without_flag_excludes_review_required(self):
+        """Proposal.to_markdown() omits ReviewRequired line when flag is False."""
+        from models import Proposal
+        p = Proposal(
+            id="PENDING-TEST", target="skills/x/SKILL.md", change_description="test",
+            reason="r", before="", after="", status="PENDING", proposed_date="2026-07-20",
+            change_type="FILE_CREATE", review_required=False,
+        )
+        md = p.to_markdown()
+        assert "ReviewRequired" not in md

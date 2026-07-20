@@ -1474,3 +1474,67 @@ class TestRoutingRanLastSession:
         ran, task = _routing_ran_last_session("proj")
         assert ran is True
         assert task == "implement auth flow"
+
+
+class TestGoalAnchorCleanup:
+    """end_session deletes state/goal-anchor.json (Track B lifecycle)."""
+
+    def test_goal_anchor_deleted_on_session_end(self, youk_root, tmp_path, monkeypatch):
+        """goal-anchor.json is removed at session_end."""
+        import json
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+
+        anchor = youk_root / "state" / "goal-anchor.json"
+        anchor.write_text(json.dumps({
+            "stated_goal": "ship Track A",
+            "success_criteria": ["skill generation works"],
+            "set_at": "2026-07-20T10:00:00",
+        }))
+        assert anchor.exists()
+
+        session.end_session(summary="done", commits_made=False)
+        assert not anchor.exists()
+
+    def test_goal_anchor_absent_does_not_error(self, youk_root, tmp_path, monkeypatch):
+        """end_session works normally when goal-anchor.json does not exist."""
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+
+        anchor = youk_root / "state" / "goal-anchor.json"
+        assert not anchor.exists()
+        result = session.end_session(summary="done", commits_made=False)
+        assert "error" not in result
+
+
+class TestReentryLogCleanup:
+    """end_session deletes state/reentry-log.json (Track C lifecycle)."""
+
+    def test_reentry_log_deleted_on_session_end(self, youk_root, tmp_path, monkeypatch):
+        """reentry-log.json is removed at session_end."""
+        import json
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+
+        log = youk_root / "state" / "reentry-log.json"
+        log.write_text(json.dumps([
+            {"from": "code-review", "to": "nfr-check", "ts": "2026-07-20T10:00:00", "label": "code-review-nfr-reentry"}
+        ]))
+        assert log.exists()
+
+        session.end_session(summary="done", commits_made=False)
+        assert not log.exists()
+
+    def test_reentry_log_absent_does_not_error(self, youk_root, tmp_path, monkeypatch):
+        """end_session works normally when reentry-log.json does not exist."""
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+
+        log = youk_root / "state" / "reentry-log.json"
+        assert not log.exists()
+        result = session.end_session(summary="done", commits_made=False)
+        assert "error" not in result
