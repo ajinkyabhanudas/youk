@@ -56,6 +56,20 @@ For each vector listed, ask: "does the subject have a weakness here?"
 - **Partial success**: 3 of 5 operations succeed — is this treated as success or failure?
 - **Cleanup on error**: connection/file/lock not released when exception is raised mid-operation
 
+### First-Match-Wins on Multi-Trigger Input
+- **Loop returns/breaks on first match instead of collecting all matches**: when a
+  loop iterates over N candidates and any candidate can independently satisfy the
+  trigger condition, an early `return`/`break` silently discards correct results
+  for every other candidate that also matched in the same call (e.g. two typos in
+  one query, two validation errors in one form, two matching rules in one
+  dispatch table). Test by constructing an input where ≥2 candidates trigger
+  simultaneously — not just "does this generalize across many candidates" but
+  "what happens when several trigger in the same pass."
+- **Detection heuristic**: a return type of `Optional[X]` (or a single value) on a
+  function whose triggering condition can legitimately fire more than once per
+  call is a signal this vector applies — check whether "at most one" was ever
+  actually verified true, or just assumed.
+
 ### Sequencing / Ordering
 - **Out-of-order operations**: B called before A completes setup
 - **Re-entrant calls**: function called while it's already running (recursion, threading)
