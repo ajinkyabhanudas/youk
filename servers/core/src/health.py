@@ -1480,6 +1480,7 @@ def _load_pending_proposals() -> list[Proposal]:
             change_type=_extract_field(block, "ChangeType"),
             target_section=_extract_field(block, "TargetSection"),
             content=_extract_content_block(block),
+            review_required=_extract_field(block, "ReviewRequired").lower() == "true",
         ))
     return proposals
 
@@ -1657,18 +1658,38 @@ def _analyze_promotion_candidates(audit_texts: list[str]) -> list[dict]:
     return sorted(candidates, key=lambda x: -x["occurrence_count"])
 
 
-def _queue_promotion_proposals(candidates: list[dict]) -> int:
-    """Auto-queue proposals for promotion candidates. Returns count queued."""
+def _queue_promotion_proposals(candidates: list[dict]) -> tuple[int, list[str]]:
+    """Auto-queue proposals for promotion candidates.
+
+    Returns (count_queued, skill_generation_pending) where skill_generation_pending
+    is the list of skill names that crossed the threshold but have no SKILL.md —
+    these need Track A generation, not just a SKILL_EDIT proposal.
+    """
     from datetime import datetime
+    skills_dir = CLAUDE_ROOT / "skills"
+    if not skills_dir.exists():
+        skills_dir = YOUK_ROOT / "skills"
+
     queued = 0
+    skill_generation_pending: list[str] = []
+
     for c in candidates:
+        skill_name = c["skill"]
+        skill_md = skills_dir / skill_name / "SKILL.md"
+        if not skill_md.exists():
+            # No SKILL.md — Track A should generate it, not patch a non-existent file.
+            # Surface it in the return value so run_health_check_with_skill_signals
+            # can add skill_generation_pending to the dict.
+            skill_generation_pending.append(skill_name)
+            continue
+
         is_code_edit = c["change_type"] == "CODE_EDIT"
         proposal = Proposal(
-            id=f"PENDING-PROMO-{c['skill'].upper()}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            id=f"PENDING-PROMO-{skill_name.upper()}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
             target=c["promotion_target"],
-            change_description=f"Promote recurring gap pattern: {c['skill']} ({c['occurrence_count']} occurrences across {c['distinct_projects']} project(s))",
+            change_description=f"Promote recurring gap pattern: {skill_name} ({c['occurrence_count']} occurrences across {c['distinct_projects']} project(s))",
             reason=(
-                f"SkillGap '{c['skill']}' appeared {c['occurrence_count']} times in audit logs. "
+                f"SkillGap '{skill_name}' appeared {c['occurrence_count']} times in audit logs. "
                 f"Sample gaps: {'; '.join(c['sample_gaps'])}. "
                 + (
                     "Code-level gap detected — set target_section to the function name and synthesize content before apply_proposal(confirmed=True)."
@@ -1689,7 +1710,7 @@ def _queue_promotion_proposals(candidates: list[dict]) -> int:
             queued += 1
         except Exception:
             pass
-    return queued
+    return queued, skill_generation_pending
 
 
 def _compute_improvement_velocity(audit_texts: list[str], current_score: float) -> dict:
@@ -2027,9 +2048,29 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     skill_gap_signals = _parse_skill_gap_signals(audit_texts)
     velocity = _compute_improvement_velocity(audit_texts, report.org_score)
 
-    # Auto-queue proposals for skills that have crossed the promotion threshold
+    # Auto-queue proposals for skills that have crossed the promotion threshold.
+    # Skills with no SKILL.md are returned separately as skill_generation_pending
+    # (Track A generation flow, not a SKILL_EDIT on a non-existent file).
     promotion_candidates = _analyze_promotion_candidates(audit_texts)
-    promotion_queued = _queue_promotion_proposals(promotion_candidates) if promotion_candidates else 0
+    if promotion_candidates:
+        promotion_queued, _skill_gen_pending = _queue_promotion_proposals(promotion_candidates)
+    else:
+        promotion_queued, _skill_gen_pending = 0, []
+
+    # Also surface gap signals (count ≥ 2, no SKILL.md) that weren't caught by the
+    # promotion threshold (count < 3 but still warrants generation).
+    skills_dir = CLAUDE_ROOT / "skills"
+    if not skills_dir.exists():
+        skills_dir = YOUK_ROOT / "skills"
+    for sig in skill_gap_signals:
+        name = sig.get("skill", "")
+        if (
+            sig.get("count", 0) >= 2
+            and name
+            and not (skills_dir / name / "SKILL.md").exists()
+            and name not in _skill_gen_pending
+        ):
+            _skill_gen_pending.append(name)
 
     # Knowledge velocity — measures developer-ability growth (separate from org_score)
     import json as _j
@@ -2244,6 +2285,14 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         base["promotion_note"] = (
             f"{promotion_queued} skill(s) crossed the 3-occurrence threshold — "
             "proposals queued in PENDING.md for review."
+        )
+
+    if _skill_gen_pending:
+        base["skill_generation_pending"] = _skill_gen_pending
+        base["skill_generation_note"] = (
+            f"{len(_skill_gen_pending)} skill gap signal(s) have no matching SKILL.md — "
+            "Track A generation required. Present the MECE candidate list to the user "
+            "for confirmation, then call youk-code.generate_skill() for each approved skill."
         )
 
     # Patch-cycle detection: skills with both SkillGap and SkillPatch entries
@@ -2829,6 +2878,7 @@ def apply_proposal(
     proposal_id: str,
     confirmed: bool,
     safe_types: list[str] | None = None,
+    review_required_override: bool = False,
 ) -> dict:
     """
     Two-step proposal application with optional change_type gate.
@@ -2838,6 +2888,10 @@ def apply_proposal(
 
     safe_types: when provided, only change_types in this list are applied.
     Types not in safe_types return blocked=True — caller must surface to founder.
+
+    review_required_override: when True, bypasses the review_required gate for proposals
+    that have review_required=True. Only pass this after the user has reviewed the generated
+    content and explicitly approved it (Track A skill generation confirmation gate).
 
     Tier 1 (require human approval): CODE_EDIT, CONFIG_EDIT — silent blast radius,
     may break gates or guardrails, requires Docker rebuild to recover.
@@ -2871,6 +2925,22 @@ def apply_proposal(
                 f"Proposal {proposal_id} is change_type='{target.change_type}' which is not in "
                 f"safe_types={safe_types}. This requires manual review. "
                 "Call apply_proposal without safe_types to apply explicitly after reviewing."
+            ),
+        }
+
+    # review_required gate — net-new skills from Track A require explicit human override.
+    # review_required=True is set by the Track A skill generation flow to ensure the
+    # founder has seen the generated SKILL.md before it becomes a live capability.
+    if target.review_required and not review_required_override:
+        return {
+            "applied": False,
+            "blocked": True,
+            "proposal_id": proposal_id,
+            "review_required": True,
+            "message": (
+                f"Proposal {proposal_id} has review_required=true — human confirmation needed "
+                "before this net-new skill becomes live. Review the generated SKILL.md content "
+                "in PENDING.md, then re-call apply_proposal with review_required_override=True."
             ),
         }
 
