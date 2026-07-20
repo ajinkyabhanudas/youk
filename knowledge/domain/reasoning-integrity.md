@@ -156,3 +156,48 @@ claim about system behavior (a doc, a backlog item, a prior session's
 finding) rather than something just observed live in the current session.
 
 ---
+
+## Breadth Verified ≠ Concurrency-of-Trigger Verified
+*Added: 2026-07-20*
+*Source: canopy — fuzzy-match multi-column typo design review miss*
+
+**What it is:** A design/stress-test pass validated "does this generalize
+across N possible cases" (a per-column fuzzy-match registry, tested against
+species names and site names independently) and correctly converged with zero
+new objections. It never separately asked "what happens when more than one of
+those N cases is simultaneously true in a single input" — a genuinely
+different question that the breadth check does nothing to answer. The bug
+(first-match-wins across two typo'd columns in one query) shipped past a
+stress-test pass that was run correctly, on the wrong axis.
+
+**Analogy:** Constraint verification (existing pattern in this file) — never
+commit resources to an unvalidated premise; check the premise before scoring
+the work.
+
+**Where the analogy breaks:** Constraint verification is a one-time gate at
+task start, checking whether the premise itself is real. This gap is
+different: the premise WAS real, the design DID correctly generalize to N
+columns, and the stress-test loop DID run to "zero new objections from all
+angles" — and it still missed the bug, because "concurrency-of-trigger" was
+never in the set of angles being run. Youk's own Run-to-Dry Exit Condition
+entry says a loop is only dry when zero new objections survive from ALL
+angles — this is a concrete instance where the angle set itself had a gap,
+so "dry" was reached on an incomplete search space without anyone noticing.
+
+**Project example:** `find_candidates()` in canopy was stress-tested for
+"does this work for any registered column" and passed. It was never asked
+"does this work when two registered columns are simultaneously typo'd in one
+query" until a human asked that exact question after the feature shipped.
+Fixed in code (loop collects all matches, not just the first) and fixed in
+process (added "First-Match-Wins on Multi-Trigger Input" as a named vector
+in `skills/stress-test/references/attack-vectors.md`, Agent B section) —
+the second fix is the one that prevents this from being a one-off catch.
+
+**When to reach for this:** Before declaring any stress-test or challenge
+loop "dry," ask explicitly, as its own question separate from breadth:
+"if this handles case A and case B independently, have I tested what happens
+when A and B are both true in the same single call?" This applies to any
+design with a registry, dispatch table, or loop over independent trigger
+conditions — not just canopy's fuzzy-match feature.
+
+---
