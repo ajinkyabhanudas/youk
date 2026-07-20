@@ -2660,6 +2660,10 @@ def end_session(
     for _recovery_file in [
         YOUK_ROOT / "state" / "session-checkpoint.json",
         YOUK_ROOT / "state" / "session-open.json",
+        # Track B: goal-anchor cleared at session end — never carries across sessions.
+        YOUK_ROOT / "state" / "goal-anchor.json",
+        # Track C: re-entry log cleared at session end — per-session dedup state only.
+        YOUK_ROOT / "state" / "reentry-log.json",
     ]:
         if _recovery_file.exists():
             try:
