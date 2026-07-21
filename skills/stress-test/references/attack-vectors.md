@@ -103,6 +103,22 @@ for the full framework; this is the quick-reference for the attack phase.
 - Assumes enumeration values are stable (won't add new values)
 - Assumes foreign key relationships are consistent
 
+### Registry Completeness (Unvalidated Membership Assumption)
+- **Assumes a candidate registry (allowlist, dispatch table, column/field list) is
+  complete, without ever diffing it against the domain it claims to cover.** The
+  registry was populated once — from an initial example or two — and its iteration
+  logic may be perfectly correct, but a correct loop over an incomplete registry
+  still misses real cases (distinct from First-Match-Wins under Agent B: that vector
+  is about broken iteration over a registry; this one is about unverified membership
+  of the registry itself, before iteration even starts).
+- **Detection heuristic**: state the registry's inclusion criteria in one sentence
+  (e.g. "any free-text column a user might search by name"), then apply that
+  sentence mechanically against an independently-read full domain listing (the
+  actual schema.py / OpenAPI spec / ruleset source) — not against test inputs, which
+  only exercise what's already registered. Flag if the domain source was read or
+  changed after the registry was last updated, with no corresponding "does this need
+  a new entry?" pass.
+
 ### Infrastructure Assumptions
 - Assumes single process / single instance
 - Assumes filesystem is writable and has sufficient space
