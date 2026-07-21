@@ -51,6 +51,8 @@ Every concept defined in PRD.md or well-architected.md has exactly one authority
 | `knowledge-extraction-not-logging` hard rule | No raw conversation transcripts ever stored — enforced at `session_end` tool level |
 | `no-credential-commits` hard rule | `.env`, `*secret*`, `*api_key*` files blocked from commits at `check_commit_quality` |
 | `no-auto-apply-proposals` hard rule | `apply_proposal(confirmed=True)` required — founder must explicitly approve every self-heal change |
+| `no-destructive-without-confirm` hard rule | `rm -rf`, `DROP TABLE`, `reset --hard`, `--no-verify` require explicit per-operation confirmation — enforced by `check_command` |
+| `lint-before-commit` hard rule | `ruff check servers/` + `pytest tests/` must pass before any commit — enforced by `.git/hooks/pre-commit`; `--no-verify` is itself blocked by `check_command` |
 | `check_command` | Destructive shell commands (`rm -rf`, `reset --hard`, force push) blocked until confirmed |
 | `knowledge/projects/` gitignored | Per-project session state never committed to public repos — zero accidental secret exposure |
 
@@ -81,7 +83,7 @@ Every concept defined in PRD.md or well-architected.md has exactly one authority
 | Mechanism | What it does |
 |---|---|
 | `route_task` ceremony sizing | XS tasks get no ceremony; XL tasks get full architecture review. Proportional cost |
-| Hook-based context management | `UserPromptSubmit` hook injects intent-gated brief (~100-150 tokens) before each turn; `PreCompact` hook injects preservation brief before auto-compact; `PostToolUse` hook captures active task state continuously |
+| Hook-based context management | `UserPromptSubmit` hook injects intent-gated brief (~100-200 tokens) before each turn; `PreCompact` hook injects preservation brief before auto-compact; `PostToolUse` hook captures active task state continuously |
 | `optimize_intent` fast path | Pattern-matched intents return instantly (no API call); only truly ambiguous inputs hit the API |
 | `nfr_check` size-gated questions | XS/S: 2-question instant; M: 4-question API; L/XL: full. Cost scales with risk |
 | `track_tokens` | Accumulates token usage per session; `self_heal` detects over-ceremony (>2× budget) or under-ceremony (<0.5×) |

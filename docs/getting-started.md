@@ -124,12 +124,14 @@ claude mcp add --scope user youk-core --transport stdio -- \
   docker run -i --rm \
   -v "$HOME/.claude:/claude" \
   -v "$HOME/.claude/youk:/youk" \
+  -v "$HOME/.claude/youk/servers/shared:/shared" \
   youk-core:latest
 
 claude mcp add --scope user youk-code --transport stdio -- \
   docker run -i --rm \
   -v "$HOME/.claude:/claude:ro" \
   -v "$HOME/.claude/youk:/youk:ro" \
+  -v "$HOME/.claude/youk/servers/shared:/shared" \
   youk-code:latest
 ```
 

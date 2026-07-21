@@ -67,6 +67,14 @@ Each phase begins with a compact token: `[PHASE: NAME]`
 
 ### Phase 1 — UNDERSTAND
 
+0. **Scope-collapse gate** — if `route_task` returned `blocked: true` for this task
+   (check for `blocked=True` in the routing result in recent context): surface the
+   `collapsing_question` to the user immediately. Do NOT proceed to step 1 until the
+   user answers. After their answer, re-call `optimize_intent(raw_input, clarified_context=<answer>)`
+   then re-call `route_task`. Only proceed when `route_task` returns `blocked: false`.
+   This gate mirrors the scope-collapse behavior in `servers/core/src/intent.py` —
+   `ambiguity_detected=true` blocks routing until the implementation fork is resolved.
+
 1. Parse the task. Restate it in one sentence: what must the code do, and what does
    done look like?
 2. Identify the language, framework, runtime, and any constraints.

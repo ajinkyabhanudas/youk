@@ -3,8 +3,9 @@ name: done
 description: >
   Full session close: runs code-review, verify, humanize, and learn in sequence,
   sweeps for unsaved contracts, then calls session_end with close_cluster=True.
-  This is the primary org_score driver — a session that doesn't end with /done
-  barely moves the score even if capability skills ran. Triggers on: "/done",
+  Completion bonus (weight 0.5) — capability skill invocation (weight 2.0) is the
+  primary org_score driver. A session where skills ran but /done was skipped still
+  moves org_score. A session where /done ran but no skill fired barely moves it. Triggers on: "/done",
   "done", "ship it", "commit", "ok thanks", "that's all", "that's all for now",
   "looks good", "we're done", "we're done here", "let's call it", "alright",
   "perfect", "good enough", "that'll do", "wrap it up", "let's wrap",
