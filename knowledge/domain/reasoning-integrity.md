@@ -201,3 +201,62 @@ design with a registry, dispatch table, or loop over independent trigger
 conditions — not just canopy's fuzzy-match feature.
 
 ---
+
+## Registry Iteration Fixed ≠ Registry Membership Verified
+*Added: 2026-07-20*
+*Source: canopy — fuzzy-match column registry, second miss same session*
+
+**What it is:** A second, distinct miss on the exact same feature within the
+same session as "Breadth Verified ≠ Concurrency-of-Trigger Verified" above —
+worth recording separately because it is genuinely a different failure, not a
+recurrence of the first. After fixing `find_candidates()` to correctly check
+every column already in `FUZZY_COLUMNS` (the first miss), the registry itself
+— just 2 entries, `species.scientific_name` and `sites.name` — was never
+re-validated against the actual domain it claims to cover. The live database
+schema (`schema.py`'s `SCHEMA_CONTEXT`, read multiple times over the session
+for unrelated reasons) plainly listed a third free-text column,
+`detections.management_unit`, with 54 real distinct values and an existing
+near-duplicate already in the data (`"Wamani"` vs `"Wamaní"`). It was missed
+until the user asked directly: "are there no more fuzzy-type columns?"
+
+**Analogy:** First-Match-Wins (this file, above) fixed a broken `for` loop —
+a control-flow bug. This is a data-completeness bug: the loop is now
+perfectly correct, and still misses real cases, because the thing it's
+looping *over* was never checked against the domain it claims to represent.
+Closer to an unstated assumption ("this allowlist is complete") than an
+execution bug — confirmed by stress-testing the fix itself: the correct
+detection method is diffing a static registry against a static domain
+listing, not tracing code execution, which is why this landed under Agent C
+(Hidden Assumptions) in `attack-vectors.md`, not Agent B (Edge Cases) where
+First-Match-Wins lives.
+
+**Where the analogy breaks:** Agent B vectors are caught by constructing
+inputs and watching behavior. This vector is caught by a different method
+entirely — reading two static artifacts (the registry's source file, the
+domain's full listing) side by side and checking set membership. No input
+construction, no execution trace, catches this. A stress-test pass that only
+runs Agent B-style input simulation will never surface this class of miss no
+matter how many rounds it runs — the angle itself requires the auditor to sit
+down and read the schema/spec/ruleset in full, independent of any test case.
+
+**Project example:** `FUZZY_COLUMNS` in `src/canopy/query/fuzzy_match.py`
+registered 2 columns at initial design time. `schema.py`'s full table
+listing — which includes `detections.management_unit varchar — conservation
+/ territorial management unit name` — was read multiple times afterward
+(code review, doc updates) without anyone re-running the one-sentence
+inclusion test ("any free-text column a user might search by name") against
+it. Fixed in process: added "Registry Completeness (Unvalidated Membership
+Assumption)" as a named vector under Agent C in `attack-vectors.md`, Data
+Assumptions section — the concrete instruction is to state the registry's
+inclusion criteria in one sentence and apply it mechanically against an
+independently-read full domain listing, not against test inputs.
+
+**When to reach for this:** Any time a registry, allowlist, or dispatch table
+is fixed for HOW it's iterated — ask the separate question of whether its
+MEMBERSHIP was ever re-checked against the full domain, especially if the
+domain's source (a schema file, an API spec, a ruleset) has been read for any
+other reason since the registry was last populated. "I fixed the loop" and "I
+verified the list is complete" are two different claims; shipping the first
+does not imply the second.
+
+---
