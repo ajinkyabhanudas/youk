@@ -10,7 +10,6 @@ import json
 import datetime
 from pathlib import Path
 
-import pytest
 
 from .mcp_client import call_tool, YOUK_DIR
 
@@ -129,6 +128,19 @@ class TestEndToEndSession:
         # reentry-log.json deleted
         assert not (sandbox_state / "reentry-log.json").exists(), (
             "session_end must delete reentry-log.json"
+        )
+
+    def test_step6_self_heal_returns_health(self, sandbox_state):
+        """Health loop is reachable — self_heal returns org_score via real MCP."""
+        r = call_tool("youk-core:latest", "self_heal", {}, state_dir=sandbox_state)
+        assert "org_score" in r, f"self_heal missing org_score: {list(r.keys())}"
+        assert isinstance(r.get("org_score"), int | float), (
+            f"org_score must be numeric, got {type(r.get('org_score'))}"
+        )
+        assert "findings" in r, "self_heal must return findings list"
+        # proposals or skill_gap_signals must be present (may be empty — that's fine)
+        assert "proposals" in r or "skill_gap_signals" in r, (
+            f"self_heal must return proposals or skill_gap_signals, got keys: {list(r.keys())}"
         )
 
     def test_step5_session_counter_increments(self, sandbox_state):

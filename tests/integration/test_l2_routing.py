@@ -1,6 +1,5 @@
 """L2 — Route Reachability: route_task sizing + session lifecycle via real MCP calls."""
 import json
-from pathlib import Path
 
 import pytest
 

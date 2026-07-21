@@ -4,7 +4,6 @@ L4a (class TestStaticIntegrity): YAML parsing + path resolution. No Docker.
 L4b (class TestDynamicIntegrity): check_doc_graph + stale state file audit. Requires L1.
 """
 import re
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -35,7 +34,7 @@ class TestStaticIntegrity:
 
     def test_routes_yaml_valid(self):
         p = CONFIG_DIR / "routes.yaml"
-        assert p.exists(), f"config/routes.yaml missing"
+        assert p.exists(), "config/routes.yaml missing"
         data = yaml.safe_load(p.read_text())
         assert data is not None
 
@@ -139,7 +138,8 @@ class TestDynamicIntegrity:
 
     def test_no_stale_pending_action(self):
         """pending-action.json older than 24h is a blocker that should have been cleared."""
-        import datetime, json as _json
+        import datetime
+        import json as _json
         f = STATE_DIR / "pending-action.json"
         if not f.exists():
             return

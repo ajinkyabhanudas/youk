@@ -21,6 +21,18 @@ YOUK_DIR_STR = str(YOUK_DIR)
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _seed_session(sandbox_state: Path) -> None:
+    """Write minimal session-open.json + routing-breadcrumb.json so route_to_skill doesn't gate."""
+    import json
+    import datetime
+    slug = "checkup-skill-test"
+    (sandbox_state / "session-open.json").write_text(json.dumps({"slug": slug}))
+    (sandbox_state / "routing-breadcrumb.json").write_text(json.dumps({
+        "slug": slug, "size": "M", "task": "checkup test",
+        "ts": datetime.datetime.utcnow().isoformat(),
+    }))
+
+
 def _parse_registry_skills() -> set[str]:
     """Extract skill names from the registry table (rows starting with `| `/name`)."""
     names = set()
@@ -121,7 +133,8 @@ def test_list_skills_contains_capability_skills(sandbox_state):
 
 def test_route_to_skill_dev_loop(sandbox_state):
     # seed a routing breadcrumb so route_to_skill doesn't gate on missing routing
-    import json, datetime
+    import json
+    import datetime
     slug = "checkup-test"
     (sandbox_state / "session-open.json").write_text(json.dumps({"slug": slug}))
     (sandbox_state / "routing-breadcrumb.json").write_text(json.dumps({
@@ -140,6 +153,19 @@ def test_route_to_skill_code_review(sandbox_state):
     }, state_dir=sandbox_state)
     assert r.get("mode") == "in_session"
     assert r.get("skill_content")
+
+
+@pytest.mark.parametrize("skill", sorted(CAPABILITY_SKILLS))
+def test_route_to_skill_capability_skills(skill, sandbox_state):
+    """Every capability skill must return mode=in_session with non-empty skill_content."""
+    _seed_session(sandbox_state)
+    r = call_tool("youk-code:latest", "route_to_skill", {
+        "skill": skill, "task": f"checkup test for {skill}",
+    }, state_dir=sandbox_state)
+    assert r.get("mode") == "in_session", (
+        f"skill={skill!r}: expected mode='in_session', got {r.get('mode')!r}"
+    )
+    assert r.get("skill_content"), f"skill={skill!r}: route_to_skill returned empty skill_content"
 
 
 def test_route_to_skill_unknown_returns_error(sandbox_state):
