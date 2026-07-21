@@ -158,3 +158,10 @@ concepts:
     derived_in:
       - ~/.claude/CLAUDE.md
       - skills/dev-loop/SKILL.md
+
+  - concept: health_checkup_suite
+    description: "Hierarchical integration test suite (L0–L6): make checkup / checkup-fast / checkup-static. Each layer gates the next. L3 exercises all capability skills via real MCP, L5 tests proposal lifecycle, L6 runs full session round-trip."
+    authority: Makefile
+    derived_in:
+      - docs/getting-started.md
+      - docs/well-architected.md

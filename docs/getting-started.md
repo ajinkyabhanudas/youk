@@ -108,9 +108,9 @@ What the installer does:
 4. Builds the `youk-code:latest` Docker image
 5. Registers both as MCP servers in Claude Code
 6. Writes `state/path-map.env` so containers can resolve your host paths
-7. Runs `doctor.sh` to confirm everything works
+7. Runs `make checkup-fast` (L0+L1) to confirm environment and Docker images are healthy
 
-If install fails, run `make doctor` to see specific Fix: lines for each failure.
+If install fails, run `make checkup-fast` to see specific failure lines for each check.
 
 ---
 
@@ -163,16 +163,34 @@ youk routes silently based on task size. Small tasks get no ceremony. Large task
 
 ## Verifying the full setup
 
+youk has a hierarchical checkup suite — each layer must pass before the next runs. Run the command that matches how much you want to verify:
+
 ```bash
-make doctor
+# Fast: environment + Docker images + MCP handshake (< 20s, no state touched)
+make checkup-fast
+
+# Static: registry, YAML integrity, doc-map — no Docker required
+make checkup-static
+
+# Full body checkup L0–L6 (requires built images, ~60s)
+make checkup
 ```
 
-Or directly:
-```bash
-bash ~/.claude/youk/scripts/doctor.sh
-```
+**Layer overview:**
 
-Every check prints `PASS`, `WARN`, or `FAIL`. Every `FAIL` has a `Fix:` line. Re-run after fixing until all checks pass.
+| Layer | What it checks | Docker? |
+|-------|---------------|---------|
+| L0 Environment | Python ≥3.11, docker CLI, PyYAML, model imports | No |
+| L1 Infrastructure | Docker daemon, image existence, MCP handshake, critical tool list | Yes |
+| L2 Route Reachability | `route_task` sizing, session lifecycle, slug correlation | Yes |
+| L3 Skill Completeness | SKILL-REGISTRY.md vs SKILL.md files, `route_to_skill` for all 9 capability skills | Yes |
+| L4 Integrity | YAML validity, doc-map authority paths, stale state detection | No (static) / Yes (dynamic) |
+| L5 Gates | NFR gate, challenge gate, task contract gate, guardrails, proposal lifecycle | No |
+| L6 End-to-End | Full session round-trip: `session_start → route_task → route_to_skill → self_heal → session_end` | Yes |
+
+If a layer fails, subsequent layers are skipped — their results would be meaningless on a broken foundation. Fix the failing layer and re-run.
+
+`make checkup` is the full body check. `make health-check` is the org_score / improvement proposals command (separate — runs `self_heal()` autonomously via Docker, safe for cron).
 
 ---
 

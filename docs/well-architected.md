@@ -69,7 +69,8 @@ Every concept defined in PRD.md or well-architected.md has exactly one authority
 |---|---|
 | Docker isolation | youk-core and youk-code are independent containers — one failure doesn't cascade |
 | stdio transport | No network socket, no port binding — no connection-level failures |
-| `doctor.sh` | Health check with specific `Fix:` lines for every known failure mode |
+| `make checkup` (L0–L6) | Hierarchical integration test suite — each layer gates the next; L3 exercises all 9 capability skills via real MCP, L5 tests gate contracts and proposal lifecycle, L6 runs a full session round-trip |
+| `make checkup-fast` | L0+L1 only — environment + Docker + MCP handshake; replaces `make doctor` for quick infra checks |
 | `_check_doc_freshness()` at session_start | Catches documentation drift before it causes confusion in later sessions |
 | Compounding context loop | `session_end` writes `resume-from:` externally; `session_start` reads it — sessions compound without relying on Claude's context window surviving |
 
