@@ -26,6 +26,9 @@ mcp_tools:
     - {tool: check_doc_graph, refs: [README.md, docs/doc-map.yaml]}
     - {tool: promote_to_global_contracts, refs: [README.md, docs/claude-md-template.md]}
     - {tool: check_nfr_gate, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: task_contract, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: approve_task_contract, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: check_task_contract_gate, refs: [README.md, docs/claude-md-template.md]}
 
   youk-code:
     - {tool: nfr_check, refs: [README.md, docs/claude-md-template.md]}
@@ -130,7 +133,7 @@ concepts:
       - README.md
 
   - concept: intent_gated_brief
-    description: "build_brief mode=index returns ~100-150 token brief gated on intent keywords"
+    description: "build_brief mode=index returns ~100-200 token brief gated on intent keywords"
     authority: servers/core/src/compaction.py
     derived_in:
       - docs/well-architected.md

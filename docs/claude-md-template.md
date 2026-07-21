@@ -22,6 +22,7 @@ For every non-trivial task:
 5. **M+ only, after silence or approval:** call `youk-code.route_to_skill("challenge", task)` BEFORE writing any code. challenge gates the direction — it must pass before nfr_check runs. If challenge returns DIRECTION WRONG or NEEDS SHARPENING: surface the objection, wait for user to resolve, then re-run challenge. Do not proceed to nfr_check while challenge verdict is unresolved.
 5b. **M+ only, after challenge passes:** call `youk-code.route_to_skill("nfr_check", task)`. This is non-negotiable — nfr_check must run before implementation starts on M+ tasks.
 6. **M+ only, after nfr_check returns:** call `youk-core.check_nfr_gate(task, size, nfr_decision_block=<nfr_check output>)`. If it returns `blocked: true`, the NFR block is absent or empty — stop and re-run nfr_check. If `blocked: false`, proceed to dev-loop. This is a tool-enforced hard gate — not a suggestion.
+6c. **L/XL only:** call `youk-core.task_contract(task, size)`. Review the returned contract with the developer — address each provocation (IN-SCOPE / DEFER / ACCEPT-RISK / N/A). Then call `youk-core.approve_task_contract(contract_id, as_approved, disposition_map)`. `youk-core.check_task_contract_gate(size)` blocks dev-loop on L/XL until an approved contract exists.
 
 **Never start M+ implementation before plan_hook appears in the conversation.**
 **Never start M+ implementation before nfr_check has run.**

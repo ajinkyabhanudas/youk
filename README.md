@@ -220,6 +220,9 @@ youk is two Docker containers registered as MCP servers in Claude Code:
 - `add_proposal(title, rationale, action, target, content)` — queue an improvement proposal to PENDING.md (called by skills and by Claude directly)
 - `get_proposals()` / `apply_proposal(id, confirmed)` — proposal review and two-step apply; `apply_proposal` supports `CODE_EDIT` change_type to replace named functions in `.py` files within the youk repo
 - `track_tokens(input_tokens, output_tokens, note)` — record token usage at a session checkpoint; `session_end` writes a `Tokens:` line to the audit log; `self_heal` uses this for cost trend detection across sessions
+- `task_contract(task, size)` — generates a structured contract for the task: scope, risks, success criteria, and provocation questions. For L/XL tasks, `check_task_contract_gate` blocks dev-loop until an approved contract exists.
+- `approve_task_contract(contract_id, as_approved, disposition_map)` — records the developer's approved version of the contract after review. Each provocation is dispositioned (IN-SCOPE / DEFER / ACCEPT-RISK / N/A); ACCEPT-RISK entries go to `state/risk-ledger.jsonl`.
+- `check_task_contract_gate(size)` — blocks L/XL implementation when no approved task contract exists this session
 
 **youk-code** (read-only access):
 - `nfr_check(task, size)` — XS/S: instant 2-question check; M: 4-question API block; L/XL: full check
