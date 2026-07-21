@@ -80,11 +80,11 @@ concepts:
       - ~/.claude/CLAUDE.md
 
   - concept: org_score_definition
-    description: "org_score formula: 5.0 base + capability_skill_rate (2.0) + close_rate (0.5) + gap_resolution (0.5) + prevented_cost (0.5) + framing_accuracy (0.5); ceiling 9.0"
-    authority: docs/well-architected.md
+    description: "org_score formula: 5.0 base + capability_skill_rate (2.0) + close_rate (0.5) + gap_resolution + prevented_cost + framing_accuracy + autonomy_depth + loop_dry_rate + human_precision + convergence/durability bonuses; ceiling 10.0"
+    authority: servers/core/src/health.py
     derived_in:
       - README.md
-      - servers/core/src/health.py
+      - docs/well-architected.md
 
   - concept: compounding_mechanism
     description: "How sessions compound: capability skills + close_cluster + /learn"

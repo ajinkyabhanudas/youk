@@ -22,6 +22,13 @@ The exception is skill text (SKILL.md files). When a skill fails mid-session and
 
 A guard rail that lives in a prompt is a suggestion. A guard rail that lives in `config/guardrails.yaml`, enforced at the tool level, and changed only via a git commit is a contract. Hard rules block. Soft rules nudge. Both are explicit, readable, and auditable.
 
+Current hard rules (see `config/guardrails.yaml` for the authoritative list):
+- `no-auto-apply-proposals` — skill/code changes require explicit `apply_proposal(confirmed=True)`
+- `no-credential-commits` — `.env`, `*secret*`, `*api_key*` files are blocked from commits
+- `knowledge-extraction-not-logging` — raw transcripts never written; only structured insights
+- `no-destructive-without-confirm` — `rm -rf`, `reset --hard`, `--no-verify` require per-operation confirmation
+- `lint-before-commit` — `ruff check servers/` + `pytest tests/` must pass; `--no-verify` is itself blocked
+
 ## 5. Ceremony proportional to risk
 
 XS task: respond directly. XL task: full architecture ceremony. The failure mode to avoid is applying the same process to a typo fix and a new authentication system. `route_task()` sizes first so structure is never a tax on small work.

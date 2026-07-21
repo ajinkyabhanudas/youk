@@ -31,6 +31,7 @@ youk's design maps directly to the six AWS Well-Architected Framework pillars. T
 | `task_checkpoint(session_learnings)` | Per-task learning accumulator — pattern_trigger fires when same gap appears 2+ times in session, enabling immediate mid-session adaptation rather than deferring to session end |
 | `end_session` M+ skill gate | Returns skill_gate_warning when close_cluster=True but no capability skill was invoked — surfaces the gap at the moment it can still be corrected |
 | Org_score discipline gate | Caps org_score at 6.5 when 3+ consecutive sessions invoke zero capability skills — forces skill engagement before 7.0+ is reachable |
+| Org_score formula (derived from `servers/core/src/health.py`) | 5.0 base + capability_skill_rate×2.0 + close_rate×0.5 + gap_resolution×0.5 + prevented_cost×0.5 + framing_accuracy×0.5 + autonomy_depth×1.0 + loop_dry_rate×1.0 + human_precision×0.5 + convergence/durability bonuses; ceiling 10.0 |
 
 **Key invariant:** `session_end` is the only path through which improvement proposals are generated. No implicit side-effects.
 
