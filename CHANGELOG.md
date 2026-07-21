@@ -10,41 +10,80 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ## [unreleased]
 
-### Added
-- Adaptive nfr_check ceremony: `nfr_autonomy_mode: validate` fires when per-skill autonomy rate ≥ 0.4 — youk scans for gaps instead of asking questions the developer already answered
-- `developer_autonomy_rate` field in SessionState and session_start return — measures fraction of sessions where developer pre-empted a capability skill
-- `DeveloperCaught` audit field — written by `session_end(developer_caught=[...])` when developer answered NFR questions unprompted
-- `depth_multiplier` in org_score — discounts early sessions (0.7× at ≤5 sessions, 1.0× at 21+); a 9/10 on session 3 now scores lower than session 30
-- `compounding_verdict: EARLY | GROWING | ELITE` in self_heal return
-- Goal-satisfaction loop: `task_checkpoint` returns `goal_check` — session continues until `goal_met=True`, not on plan exhaustion
-- `session-goal.json` written by `optimize_intent` when goal is concrete and unambiguous
-- `done/SKILL.md` Step 0: checks session goal before closing — surfaces gap and derives next task if goal not satisfied
-- youk-lite `## Growth` section: NFR pre-empts counter and direction gate pre-empts counter — manual autonomy tracking
-- `framing_accuracy_rate` in org_score (0.5 weight) — measures whether goal was correctly translated before work started
-- `FramingCorrect: yes/no` audit field — written by `session_end` from `direction_reversal` param
-- Intent-collapse gate in `route_task`: blocks on `translation_risk: high` in `goal_translation` — quality words ("elite", "better") without observable referent block routing until user clarifies
-- `goal_translation` field in `optimize_intent` output: `stated_as`, `interpreted_as`, `observable_outcome`, `translation_risk`, `translation_question`
-- `/learn` Phase 4.6 — framing retrospective: writes mis-framing patterns to `knowledge/interpretation/user-intent.md`, feeds `optimize_intent` next session
-- Challenge Lens 3 intent assumption question: surfaces "what experience am I assuming this quality word means?" as BLOCKING objection
-- Multi-level traversal framework in `optimize_intent` and `challenge`: seven fixed angles (structural, operational, experiential, adversarial, temporal, outcome, human), bottom-up first, contradiction-first, label only after convergence
-- Convergence state tracking: pressure source tracked (user vs model), convergence only credited on external pressure
-- `self_heal` convergence check: multi-directional pressure against current state, unknown-unknowns flagged explicitly
-- Outcome prediction logging: frame predictions logged at session start, outcomes written back at session end
-- Frame revalidation mechanism: event-triggered + cross-session contradiction accumulation, human required at revalidation
-- Model generation continuity: convergence state and angle set survive model transitions, drift surfaced on transition
-- SECURITY.md: threat model, credential handling contract, rotation procedure
-- Dockerfile base images pinned to digest — deterministic builds
+---
 
-- Routing breadcrumb gate: `route_task` writes `state/routing-breadcrumb.json` for M/L/XL decisions; `task_checkpoint` reads and consumes it — if absent for an M+ task, returns `routing_missed: true` + `routing_action` surfacing the missed gate
-- Stale breadcrumb detection: `session_start` reads any existing breadcrumb at open; if older than 300 seconds (prior session), surfaces `⚠ Last session: route_task ran but task_checkpoint was never called` at session_plan[0] and consumes the file
-- `force_learn` gate: when a session closes without `/done`, `session_start` writes `state/pending-action.json` and prepends `⚠ [BLOCKED] Last session closed without /done — Run /learn NOW` to session_plan[0]; `route_to_skill("learn")` clears the pending-action file
-- Pending-action TTL: `state/pending-action.json` older than 24 hours is cleared at `session_start` — prevents stale blocks on returning sessions after a multi-day break
-- `force_learn: bool` field on `SessionState` (default `False`) — returned by `session_start`, propagated via `to_dict()`
-- Skill rate threshold: when skill invocation rate across recent sessions drops below 50%, `session_start` prepends the rate warning to session_plan[0] (not appended); consecutive-skips warning (≥3) preserved but only fires when rate ≥ 50%
+## [0.3.0-alpha] — 2026-07-21
+
+### Added
+
+**Track A — Proactive skill generation**
+- `review_required` flag on `Proposal` — secondary gate that blocks `apply_proposal` even when `safe_types` permits the change_type, until `review_required_override=True` is passed; prevents silent auto-apply of net-new skills
+- `skill_generation_pending` field in `run_health_check_with_skill_signals` return — when a gap signal has count ≥ 2 and no SKILL.md exists, routes to generation queue instead of SKILL_EDIT proposal; closes the loop between audit signals and new capability creation
+- `_queue_promotion_proposals` return type changed to `tuple[int, list[str]]` — skills without SKILL.md now populate `skill_generation_pending` rather than silently failing
+- `apply_proposal` MCP tool: `review_required_override` parameter exposed — explicit human override for gated proposals
+- SKILL vs MCP_CANDIDATE classification gate in `/improve` (Step 2c): each candidate classified before generation — SKILL routes to `generate_skill`, MCP_CANDIDATE routes to `add_proposal(CODE_EDIT)` only; prevents skill generation for capabilities that need a new persistent tool
+- 4 new skills from Track A stack scan: `/self-heal`, `/install-experience`, `/namespace-safety`, `/dependency-audit` (roster 22 → 26)
+- SKILL-REGISTRY.md updated: 4 new inventory entries, known gaps table, change log entry
+
+**Track B — Goal-anchor drift detection**
+- Goal-anchor lifecycle: `optimize_intent` with non-empty `stated_goal` writes `state/goal-anchor.json`; `task_checkpoint` marks `completed: true`; `session_end` deletes the file — per-session only, never carried across sessions
+- Drift check behavioral contract in CLAUDE.md: before each `route_to_skill` on M+ tasks, synthesize last 3 exchanges against `stated_goal + success_criteria`; emit `DRIFT DETECTED` and write `DriftDetected:` audit line if direction diverges from all criteria
+- `session_end` cleanup: deletes `state/goal-anchor.json` in the recovery file deletion loop
+
+**Track C — Agile skill re-entry**
+- `reentry_edges` section in `knowledge/skill-graph.yaml`: 4 directed edges — code-review→nfr-check (HIGH), security-review→nfr-check (HIGH), challenge→nfr-check (BLOCKING), adversary-loop→challenge (BLOCKING)
+- Re-entry behavioral contract in CLAUDE.md: after any capability skill returns HIGH/BLOCKING findings, checks reentry_edges; once-per-directed-pair per session, cap 4 total; announces re-entry before routing
+- `session_end` cleanup: deletes `state/reentry-log.json`
+
+**Adversary loop hardening**
+- Meta-adversary phase in adversary-loop skill: independent subagent attacks the adversary's own blind spots after primary loop exhausts
+- Domain injection: adversary loop reads `knowledge/domain/` files to ground attacks in known failure patterns rather than generic objections
+- Outcome feedback: `session_end(decision_retrospectives=...)` feeds prior decisions back to adversary loop as calibration signal
+
+**Knowledge system**
+- `knowledge/domain/reasoning-integrity.md`: new entries — Breadth Verified ≠ Concurrency-of-Trigger Verified; Registry Iteration Fixed ≠ Registry Membership Verified; Timestamp Drift ≠ Content Drift
+- `skills/stress-test/references/attack-vectors.md`: First-Match-Wins on Multi-Trigger Input (Agent B); Registry Completeness / Unvalidated Membership Assumption (Agent C)
+- `nfr-check/SKILL.md`: Q7 added (conditional) — measurement integrity for benchmark/eval/scoring tasks
+- `improve/SKILL.md`: Track A classification gate (Step 2b–2d); proactive stack scan; MCP_CANDIDATE path
+
+**Doc coherence**
+- `check_doc_graph` concept graph: 12/12 concepts clean after full audit
+- `doc-map.yaml`: task_contract / approve_task_contract / check_task_contract_gate added; org_score_definition authority/derived corrected (health.py is authority, not well-architected.md); intent_gated_brief token range corrected (100-200)
+- `docs/well-architected.md`: org_score formula row added; 2 missing hard rules (no-destructive-without-confirm, lint-before-commit) added to Security table
+- `docs/getting-started.md`: manual MCP registration commands updated with `/shared` volume mount
+- `PHILOSOPHY.md`: 5 current hard rules enumerated inline in section 4
+- `done/SKILL.md`: org_score weight claim corrected — skill invocation (2.0) is primary; close_cluster (0.5) is completion bonus
+- `dev-loop/SKILL.md`: scope-collapse gate added as step 0 of UNDERSTAND — if `route_task` returned `blocked: true`, surface `collapsing_question` and refuse to proceed until scope is collapsed
 
 ### Fixed
-- `session-goal-coverage.json` now resets when `write_session_goal` is called — stale coverage from prior goal or project no longer causes premature `goal_met=True`
-- Audit format regression: old entries without `DeveloperCaught` / `FramingCorrect` parse cleanly, default to None
+- `check_challenge_gate`: slug mismatch when `state/session-open.json` absent — now reads slug from fallback path before returning blocked
+- `install.sh`: use PIPESTATUS to detect `make build` failure, not grep exit code
+- `recompute_org_score()` wired into `/done` close sequence so org_score updates on every session close, not only on self_heal runs
+
+### Changed
+- Adaptive nfr_check ceremony: `nfr_autonomy_mode: validate` fires when per-skill autonomy rate ≥ 0.4 — youk scans for gaps instead of asking questions already answered
+- `developer_autonomy_rate` field in SessionState and session_start return
+- `DeveloperCaught` audit field from `session_end(developer_caught=[...])`
+- `depth_multiplier` in org_score — discounts early sessions (0.7× at ≤5, 1.0× at 21+)
+- `compounding_verdict: EARLY | GROWING | ELITE` in self_heal return
+- Goal-satisfaction loop: `task_checkpoint` returns `goal_check` — session continues until `goal_met=True`
+- `framing_accuracy_rate` in org_score (0.5 weight) + `FramingCorrect: yes/no` audit field
+- Intent-collapse gate in `route_task`: blocks on `translation_risk: high` (quality words without observable referent)
+- `/learn` Phase 4.6 — framing retrospective → `knowledge/interpretation/user-intent.md`
+- Multi-level traversal framework in `optimize_intent` and `challenge`: seven fixed angles, bottom-up first
+- Convergence state tracking: pressure source tracked, convergence credited on external pressure only
+- Outcome prediction logging + frame revalidation mechanism
+- SECURITY.md: threat model, credential handling contract, rotation procedure
+- Dockerfile base images pinned to digest
+- Routing breadcrumb gate: `route_task` writes `state/routing-breadcrumb.json`; absent on M+ → `routing_missed: true`
+- `force_learn` gate: session without /done → `state/pending-action.json` → `⚠ [BLOCKED]` at session_plan[0]
+- Pending-action TTL: 24h — prevents stale blocks on multi-day breaks
+- Skill rate threshold warning prepended to session_plan[0] when rate < 50%
+- `docs/scheduling.md` + `CONTRIBUTING.md`: clarified install.sh wires auth into containers — no API key needed at install or runtime
+
+### Fixed (continued)
+- `session-goal-coverage.json` resets on `write_session_goal` — no premature `goal_met=True`
+- Audit format regression: old entries without `DeveloperCaught` / `FramingCorrect` parse cleanly
 
 ---
 
@@ -66,7 +105,7 @@ Initial release.
 
 ## Upgrade notes
 
-### 0.1.0 → unreleased
+### 0.1.0 → 0.3.0-alpha
 
 **No breaking changes to audit format.** Old audit entries parse cleanly — new fields (`DeveloperCaught`, `FramingCorrect`) default to None when absent.
 
