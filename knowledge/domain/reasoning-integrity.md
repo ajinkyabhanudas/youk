@@ -260,3 +260,37 @@ verified the list is complete" are two different claims; shipping the first
 does not imply the second.
 
 ---
+
+## Timestamp Drift ≠ Content Drift
+*Added: 2026-07-21*
+*Source: youk — check_doc_graph session, api_key_required class*
+
+**What it is:** A doc-staleness system that compares git commit timestamps between
+authority files and derived files will flag a derived file as stale when the
+authority was re-committed (even for an unrelated edit) after the derived file's
+last commit — even if the derived content is already correct relative to the current
+authority. This is "timestamp drift": the derived file's content is accurate, but
+its commit timestamp predates the authority's latest commit.
+
+**Why it matters:** A timestamp-drift flag requires human judgment to resolve:
+either (a) verify the derived content is already accurate and add a substantive
+clarification to update the timestamp, or (b) find the real content gap the
+timestamp obscured. Blindly marking "content verified, no change needed" and not
+committing leaves the flag indefinitely — because the timestamp never updates.
+
+**The fix pattern:** When content is already correct, add one concrete clarification
+that names the mechanism (not just the fact) and commit it. This timestamps the
+derived file, clears the flag, and marginally improves the docs. "Install.sh wires
+auth into the containers" is more useful than "No API key required."
+
+**Project example:** `docs/scheduling.md` and `CONTRIBUTING.md` both said "No API
+key required" — correct. But `scripts/install.sh` (the authority) had a newer
+commit timestamp, flagging both as stale. Fixed by adding "install.sh wires Claude
+Code's existing auth into the containers" — a true clarification, not a no-op touch.
+
+**When to reach for this:** When `check_doc_graph` flags a file and the current
+content looks correct — before concluding it's purely timestamp drift, read the
+authority file directly and compare. Timestamp drift is the cause only after
+content comparison confirms accuracy.
+
+---
