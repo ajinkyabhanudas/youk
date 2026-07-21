@@ -16,7 +16,7 @@ Skills (`skills/*/SKILL.md`) and knowledge files are plain markdown — no build
 - Claude Code (Anthropic CLI)
 - Python 3.11+
 
-No API key is required to install or run youk — Claude Code handles authentication.
+No API key is required to install or run youk — `install.sh` wires Claude Code's existing auth into the containers, and youk reads it at runtime.
 
 ## Setup
 
