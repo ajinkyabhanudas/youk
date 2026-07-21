@@ -1,5 +1,8 @@
 [tool.pytest.ini_options]
-addopts = "--cov=servers --cov-report=term-missing --cov-fail-under=45"
+addopts = "--cov=servers --cov-report=term-missing --cov-fail-under=45 -m 'not integration'"
+markers = [
+    "integration: integration tests requiring Docker (excluded from make test)",
+]
 
 [tool.coverage.run]
 omit = ["tests/*", "scripts/*"]

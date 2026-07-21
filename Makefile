@@ -117,15 +117,45 @@ prune-idle: ## Stop youk containers running >8h (orphaned from closed sessions).
 # ── Verification ───────────────────────────────────────────────────────────────
 
 .PHONY: doctor
-doctor: ## Health check — every failure includes a Fix: line
-	@bash scripts/doctor.sh
+doctor: checkup-fast ## Alias for checkup-fast (backwards compat — use checkup-fast going forward)
+
+.PHONY: checkup
+checkup: ## Full body checkup L0–L6 — hierarchical integration tests (requires Docker images)
+	@echo "==> youk full body checkup"
+	@python3 -m pytest tests/integration/test_l0_environment.py -q --tb=short -m integration --no-cov || \
+	  { echo "L0 FAIL — fix environment first"; exit 1; }
+	@python3 -m pytest tests/integration/test_l1_infrastructure.py -q --tb=short -m integration --no-cov || \
+	  { echo "L1 FAIL — fix infrastructure (make build)"; exit 1; }
+	@python3 -m pytest tests/integration/test_l2_routing.py -q --tb=short -m integration --no-cov || \
+	  { echo "L2 FAIL — fix routing before skill tests"; exit 1; }
+	@python3 -m pytest tests/integration/test_l3_skills.py -q --tb=short -m integration --no-cov || \
+	  { echo "L3 FAIL — fix skill registry (check SKILL-REGISTRY.md vs skills/)"; exit 1; }
+	@python3 -m pytest tests/integration/test_l4_integrity.py -q --tb=short -m integration --no-cov || \
+	  { echo "L4 FAIL — fix YAML/doc integrity before gate tests"; exit 1; }
+	@python3 -m pytest tests/integration/test_l5_gates.py -q --tb=short -m integration --no-cov || \
+	  { echo "L5 FAIL — fix gate/guardrail logic before end-to-end test"; exit 1; }
+	@python3 -m pytest tests/integration/test_l6_e2e.py -q --tb=short -m integration --no-cov || \
+	  { echo "L6 FAIL — end-to-end session trace failed"; exit 1; }
+	@echo "youk health: HEALTHY"
+
+.PHONY: checkup-fast
+checkup-fast: ## L0 + L1 only — environment + Docker check (< 20s). Replaces make doctor.
+	@python3 -m pytest tests/integration/test_l0_environment.py \
+	  tests/integration/test_l1_infrastructure.py -v --tb=short -m integration --no-cov
+
+.PHONY: checkup-static
+checkup-static: ## L0 + L3 filesystem + L4a static — no Docker required
+	@python3 -m pytest tests/integration/test_l0_environment.py \
+	  tests/integration/test_l3_skills.py -k "not mcp and not sandbox" \
+	  tests/integration/test_l4_integrity.py -k "Static" \
+	  -v --tb=short -m integration --no-cov
 
 .PHONY: test
 test: test-unit test-core test-code ## Run all tests: unit + MCP handshakes
 
 .PHONY: test-unit
 test-unit: ## Run unit tests (no Docker required)
-	pytest tests/ -v
+	pytest tests/ -v -m "not integration"
 
 MCP_INIT = {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}
 MCP_DONE = {"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
