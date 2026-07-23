@@ -196,9 +196,9 @@ Proposed skills that don't yet exist. Evaluated against the hiring bar before cr
 
 | Proposed Skill | Gap It Addresses | Priority | Status |
 |---|---|---|---|
-| `/incident-review` | Post-production incident structured retrospective | LOW | Deferred — promote when first project reaches production |
-| `/dependency-audit` | Review all dependencies for CVEs, updates, deprecation | LOW | PROMOTED — skill generated 2026-07-20 via stack scan |
-| `/cross-project` | Surface patterns from one project applicable to a new project | MEDIUM | LOW-ACTIVE — invoke at project completion or when starting a second project in the same domain |
+| `incident-review` | Post-production incident structured retrospective | LOW | Deferred — promote when first project reaches production |
+| `dependency-audit` | Review all dependencies for CVEs, updates, deprecation | LOW | PROMOTED — skill generated 2026-07-20 via stack scan |
+| `cross-project` | Surface patterns from one project applicable to a new project | MEDIUM | LOW-ACTIVE — invoke at project completion or when starting a second project in the same domain |
 
 ---
 

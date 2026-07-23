@@ -65,12 +65,30 @@ def test_image_freshness_vs_shared():
     if inspect.returncode != 0:
         pytest.skip("Could not inspect youk-core image timestamp")
 
-    # Image timestamp is RFC3339; just warn via pytest.warns equivalent (xfail soft)
-    # We surface this as a warning, not a hard failure.
     import datetime
-    raw = inspect.stdout.strip().rstrip("Z").split(".")[0]
+    raw = inspect.stdout.strip()
+    # Docker LastTagTime format: "2026-07-19 10:38:35.695258219 +0000 UTC"
+    # or zero time "0001-01-01 00:00:00 +0000 UTC" when unset.
+    if not raw or raw.startswith("0001-"):
+        pytest.skip("Docker image has no tag time metadata (built without explicit tag)")
     try:
-        image_dt = datetime.datetime.fromisoformat(raw)
+        # Parse Go time format: "YYYY-MM-DD HH:MM:SS.nnnnnnnnn +0000 UTC"
+        # Strip nanoseconds to microseconds and drop trailing "UTC" label
+        parts = raw.split()
+        if len(parts) >= 3:
+            date_part = parts[0]  # YYYY-MM-DD
+            time_part = parts[1]  # HH:MM:SS.nnnnnnnnn
+            tz_part = parts[2]    # +0000
+            # Truncate sub-second precision to 6 digits
+            if "." in time_part:
+                sec, frac = time_part.split(".", 1)
+                time_part = f"{sec}.{frac[:6]}"
+            normalised = f"{date_part}T{time_part}{tz_part}"
+            image_dt = datetime.datetime.fromisoformat(normalised)
+        else:
+            # Fallback: try direct ISO parse after basic cleanup
+            normalised = raw.rstrip("Z").split(".")[0].replace(" ", "T")
+            image_dt = datetime.datetime.fromisoformat(normalised)
         image_ts = int(image_dt.timestamp())
         if shared_ts > image_ts:
             pytest.xfail(
