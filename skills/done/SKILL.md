@@ -35,17 +35,21 @@ If the file does not exist, or `goal_met` is `true`, proceed to Step 1.
 
 **Goal close:** If you determine the goal is now met (all criteria satisfied by work done this session), call `youk-core.task_checkpoint(project_dir, "goal achieved: {stated_goal}", size="M")` — this persists `goal_met=True` and returns `goal_check.goal_met=True`. Then proceed to Step 1.
 
-**Step 1 — Code review**
+**Step 1 — Code review** *(skip if no code changed this session)*
 
-Call `youk-code.route_to_skill("code-review", "end-of-session review")`.
+If `commits_made=False` AND no files were edited/created this session (planning, Q&A, or
+pure conversation sessions): skip Steps 1–3 entirely and proceed to Step 4 (Learn).
+Code-review and verify have no signal when there is no code to review.
+
+Otherwise: call `youk-code.route_to_skill("code-review", "end-of-session review")`.
 Follow the returned skill_content. Complete the review before proceeding.
 
-**Step 2 — Verify**
+**Step 2 — Verify** *(skip if Step 1 was skipped)*
 
 Call `youk-code.route_to_skill("verify", "verify session work")`.
 Follow the returned skill_content.
 
-**Step 3 — Humanize**
+**Step 3 — Humanize** *(skip if Step 1 was skipped)*
 
 Call `youk-code.route_to_skill("humanize", "session close")`.
 Follow the returned skill_content.
