@@ -42,6 +42,15 @@ from youk_hook_utils import (
     build_build_nudge,
     build_session_end_nudge,
     build_health_nudge,
+    # Generation frame + correction capture
+    _is_correction,
+    capture_correction,
+    build_generation_frame,
+    should_inject_frame,
+    # Session-10 experiment
+    init_experiment_if_needed,
+    experiment_trigger_due,
+    build_experiment_trigger_nudge,
     ok,
     ok_no_output,
     _ROUTE_WARNING_SUPPRESS_AFTER,
@@ -86,6 +95,28 @@ def _estimate_turn_count(transcript_path: str) -> int:
         return 0
 
 
+def _load_session_counter(root: "Path") -> int:
+    """Read current session counter from state/session.json."""
+    try:
+        f = root / "state" / "session.json"
+        if f.exists():
+            return json.loads(f.read_text()).get("session_counter", 0)
+    except Exception:
+        pass
+    return 0
+
+
+def _load_session_id(root: "Path") -> str:
+    """Read current session slug/id from state/session-open.json."""
+    try:
+        f = root / "state" / "session-open.json"
+        if f.exists():
+            return json.loads(f.read_text()).get("slug", "unknown")
+    except Exception:
+        pass
+    return "unknown"
+
+
 def main() -> None:
     data = read_stdin()
     cwd = data.get("cwd", "")
@@ -99,6 +130,13 @@ def main() -> None:
 
     slug = slug_from_cwd(cwd)
 
+    # ── Correction capture (runs before anything else — highest value signal) ─
+    # Detect if this prompt is a correction of the model's prior response.
+    # Write to corrections.jsonl regardless of other logic.
+    if len(user_prompt) >= MIN_PROMPT_LEN and _is_correction(user_prompt):
+        session_id = _load_session_id(root)
+        capture_correction(root, user_prompt, transcript_path, session_id)
+
     # Extract intent from the incoming prompt
     keywords = (
         extract_intent_keywords(user_prompt)
@@ -109,8 +147,19 @@ def main() -> None:
     # Build the intent-gated brief
     brief = build_intent_gated_brief(root, slug, keywords)
 
+    # ── Generation frame (prepended before brief) ─────────────────────────────
+    # Shifts model attractor toward completeness before first token of response.
+    # Skipped on slash commands, very short prompts, and one-word replies.
+    frame_block = ""
+    if should_inject_frame(user_prompt):
+        frame_block = build_generation_frame(root)
+
     # Estimate context pressure from transcript
     estimated_tokens = estimate_context_tokens(transcript_path) if transcript_path else 0
+
+    # ── Experiment marker init (session 55 = first session with frame) ────────
+    current_session = _load_session_counter(root)
+    init_experiment_if_needed(root, current_session)
 
     # ── Ambient intelligence injections ──────────────────────────────────────
     nudges: list[str] = []
@@ -118,14 +167,15 @@ def main() -> None:
     routes_signals = load_routes_yaml_signals(root)
 
     if len(user_prompt) >= MIN_PROMPT_LEN:
-        # 1. Session-end detection — highest priority signal
-        if detect_session_end(user_prompt):
+        # 0. Session-10 experiment trigger — highest priority, fires once at session 65
+        if experiment_trigger_due(root, current_session):
+            nudges.append(build_experiment_trigger_nudge(root, current_session))
+
+        # 1. Session-end detection
+        elif detect_session_end(user_prompt):
             nudges.append(build_session_end_nudge())
 
-        # 2. M+ task detection — two-layer gate:
-        #    a. If route_task hasn't run this session: prepend route-missing warning
-        #       (suppressed after _ROUTE_WARNING_SUPPRESS_AFTER warnings to avoid noise)
-        #    b. If route_task ran but NFR hasn't: inject build nudge (existing behavior)
+        # 2. M+ task detection
         elif detect_task_size(user_prompt, routes_signals) == "M":
             if not route_task_ran_this_session(root, slug):
                 warn_count = count_route_warnings_this_session(root, slug)
@@ -144,6 +194,7 @@ def main() -> None:
             nudges.append(health_nudge)
 
     # ── Assemble final context ────────────────────────────────────────────────
+    # Order: nudges → generation frame → brief
     nudge_block = "\n".join(nudges)
 
     if estimated_tokens >= THRESHOLD_CRITICAL:
@@ -152,6 +203,10 @@ def main() -> None:
         context = build_elevated_signal(estimated_tokens, brief)
     else:
         context = brief
+
+    # Generation frame prepended to brief (inside compact/elevated signals too)
+    if frame_block:
+        context = frame_block + "\n\n" + context
 
     if nudge_block:
         context = nudge_block + "\n\n" + context

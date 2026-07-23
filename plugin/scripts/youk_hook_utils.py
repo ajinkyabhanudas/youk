@@ -524,6 +524,281 @@ def build_health_nudge(health: dict) -> str | None:
     return None
 
 
+# ── Correction capture ───────────────────────────────────────────────────────
+#
+# Correction phrases: natural language the developer uses when the model stopped
+# short of the real answer. Every instance is a labeled training signal — the
+# model produced a response the developer found incomplete or wrong, and pushed.
+# Captured in knowledge/corrections.jsonl (gitignored, personal data).
+
+_CORRECTION_PHRASES = [
+    "you missed", "that's wrong", "not quite", "are you sure", "sure?",
+    "what about", "you didn't", "incorrect", "that's not", "wrong approach",
+    "is this all", "fight the urge", "fight your", "directionally biased",
+    "you're missing", "still missing", "not complete", "incomplete",
+    "you forgot", "what else", "anything else", "keep going", "go deeper",
+    "that's not all", "is that all", "is this it", "only this",
+]
+
+_CORRECTIONS_FILE = "knowledge/corrections.jsonl"
+_CORRECTIONS_CAP = 200
+
+
+def _is_correction(prompt: str) -> bool:
+    """Return True if the prompt is a correction of the model's prior response."""
+    lower = prompt.lower().strip()
+    # Short correction phrases — check directly
+    if len(lower) <= 80:
+        return any(phrase in lower for phrase in _CORRECTION_PHRASES)
+    # Longer prompts — only fire if correction phrase appears in first 60 chars
+    # (avoids false positives where "are you sure" appears in a code snippet)
+    return any(phrase in lower[:60] for phrase in _CORRECTION_PHRASES)
+
+
+def _extract_prior_assistant_turn(transcript_path: str) -> str:
+    """
+    Extract the last 200 chars of the most recent assistant message from transcript.
+    Returns empty string if transcript is unreadable or no assistant turn exists.
+    """
+    if not transcript_path:
+        return ""
+    try:
+        lines = Path(transcript_path).read_text(
+            encoding="utf-8", errors="ignore"
+        ).splitlines()
+        for line in reversed(lines):
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+                msg = entry.get("message", {})
+                if msg.get("role") != "assistant":
+                    continue
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    # Extract text blocks only
+                    text = " ".join(
+                        b.get("text", "") for b in content
+                        if isinstance(b, dict) and b.get("type") == "text"
+                    )
+                elif isinstance(content, str):
+                    text = content
+                else:
+                    continue
+                if text.strip():
+                    return text.strip()[-200:]
+            except (json.JSONDecodeError, KeyError):
+                continue
+    except Exception:
+        pass
+    return ""
+
+
+def capture_correction(
+    root: Path,
+    prompt: str,
+    transcript_path: str,
+    session_id: str,
+) -> None:
+    """
+    Write a correction event to knowledge/corrections.jsonl.
+    Called when the incoming user prompt is detected as a correction.
+    Rolling cap: oldest entries dropped when file exceeds _CORRECTIONS_CAP lines.
+    """
+    import time
+    corrections_file = root / _CORRECTIONS_FILE
+    try:
+        corrections_file.parent.mkdir(parents=True, exist_ok=True)
+        prior_excerpt = _extract_prior_assistant_turn(transcript_path)
+        entry = json.dumps({
+            "ts": time.time(),
+            "session_id": session_id,
+            "correction_text": prompt[:300],
+            "prior_assistant_excerpt": prior_excerpt,
+            "phrase_matched": next(
+                (p for p in _CORRECTION_PHRASES if p in prompt.lower()[:80]),
+                "",
+            ),
+        })
+        # Rolling cap: read existing, drop oldest if at cap
+        existing: list[str] = []
+        if corrections_file.exists():
+            existing = [
+                ln for ln in corrections_file.read_text().splitlines() if ln.strip()
+            ]
+        if len(existing) >= _CORRECTIONS_CAP:
+            existing = existing[-(  _CORRECTIONS_CAP - 1):]
+        existing.append(entry)
+        corrections_file.write_text("\n".join(existing) + "\n")
+    except Exception:
+        pass  # never surface hook errors to the user
+
+
+def load_correction_patterns(root: Path, top_n: int = 3) -> list[dict]:
+    """
+    Read corrections.jsonl and return top N phrase patterns by frequency.
+    Used to personalize the generation frame when enough corrections exist.
+    Returns [] when file absent or fewer than 5 entries (cold start).
+    """
+    corrections_file = root / _CORRECTIONS_FILE
+    if not corrections_file.exists():
+        return []
+    try:
+        lines = [
+            json.loads(ln)
+            for ln in corrections_file.read_text().splitlines()
+            if ln.strip()
+        ]
+    except Exception:
+        return []
+    if len(lines) < 5:
+        return []
+    counts: dict[str, int] = {}
+    for entry in lines:
+        phrase = entry.get("phrase_matched", "")
+        if phrase:
+            counts[phrase] = counts.get(phrase, 0) + 1
+    sorted_phrases = sorted(counts.items(), key=lambda x: -x[1])
+    return [{"pattern": p, "count": c} for p, c in sorted_phrases[:top_n]]
+
+
+# ── Generation frame ──────────────────────────────────────────────────────────
+#
+# Injected BEFORE [YOUK BRIEF] on every substantive prompt.
+# Purpose: shift the model's generation attractor from "approval-seeking"
+# toward "completeness" BEFORE the first token of the response is generated.
+# Generic frame used until corrections.jsonl has ≥5 entries.
+# Personalized frame built from top correction patterns after that.
+
+_GENERIC_GENERATION_FRAME = (
+    "[GENERATION FRAME]\n"
+    "This developer pushes until the real answer surfaces. "
+    "The first response will be challenged. "
+    "Say the uncomfortable thing now rather than after being asked three times. "
+    "If the honest answer contradicts the current direction, say so immediately. "
+    "Stopping at 'defensible' will be caught.\n"
+    "[/GENERATION FRAME]"
+)
+
+# Prompts where the generation frame must NOT fire:
+# slash commands, very short responses, file reads, one-word replies
+_FRAME_SKIP_PREFIXES = ("/", "yes", "no", "ok", "okay", "sure", "done")
+_FRAME_MIN_LEN = 20
+
+
+def build_generation_frame(root: Path) -> str:
+    """
+    Return the generation frame string to inject before [YOUK BRIEF].
+    Personalized when corrections.jsonl has ≥5 entries, generic otherwise.
+    Returns empty string when the prompt should be skipped.
+    """
+    patterns = load_correction_patterns(root)
+    if not patterns:
+        return _GENERIC_GENERATION_FRAME
+
+    # Personalized: top pattern drives the specific callout
+    top = patterns[0]["pattern"]
+    count = patterns[0]["count"]
+    frame_lines = [
+        "[GENERATION FRAME]",
+        f"This developer has corrected '{top}' {count} times. "
+        "The pattern: the model stopped short of the real answer. "
+        "Say the uncomfortable thing now. "
+        "If the honest answer contradicts the current direction, say so immediately. "
+        "Stopping at 'defensible' will be caught.",
+    ]
+    if len(patterns) > 1:
+        others = ", ".join(f"'{p['pattern']}'" for p in patterns[1:])
+        frame_lines.append(f"Also recurring: {others}.")
+    frame_lines.append("[/GENERATION FRAME]")
+    return "\n".join(frame_lines)
+
+
+def should_inject_frame(prompt: str) -> bool:
+    """Return True if this prompt warrants a generation frame injection."""
+    stripped = prompt.strip().lower()
+    if len(stripped) < _FRAME_MIN_LEN:
+        return False
+    if any(stripped.startswith(p) for p in _FRAME_SKIP_PREFIXES):
+        return False
+    return True
+
+
+# ── Session-10 experiment marker ──────────────────────────────────────────────
+#
+# Written at session start when the generation frame experiment begins.
+# At session 65 (current=55, +10), youk auto-runs the measurement:
+#   - compute correction rate from transcripts
+#   - compare to baseline
+#   - surface findings + Phase 3 decision gate
+#
+# Marker file: state/generation-frame-experiment.json
+# {started_at_session: N, trigger_at_session: N+10, baseline_corrections_per_session: float}
+
+_EXPERIMENT_FILE = "state/generation-frame-experiment.json"
+_EXPERIMENT_TRIGGER_SESSIONS = 10
+
+
+def load_experiment_state(root: Path) -> dict:
+    """Load the generation frame experiment state. Returns {} if not started."""
+    f = root / _EXPERIMENT_FILE
+    if not f.exists():
+        return {}
+    try:
+        return json.loads(f.read_text())
+    except Exception:
+        return {}
+
+
+def init_experiment_if_needed(root: Path, current_session: int) -> None:
+    """
+    Write experiment marker on the first session after generation frame is added.
+    Idempotent — does nothing if already initialized.
+    """
+    f = root / _EXPERIMENT_FILE
+    if f.exists():
+        return
+    try:
+        data = {
+            "started_at_session": current_session,
+            "trigger_at_session": current_session + _EXPERIMENT_TRIGGER_SESSIONS,
+            "baseline_corrections_per_session": None,  # computed on first run
+            "started_at": __import__("datetime").datetime.utcnow().isoformat(),
+        }
+        f.write_text(json.dumps(data, indent=2))
+    except Exception:
+        pass
+
+
+def experiment_trigger_due(root: Path, current_session: int) -> bool:
+    """Return True when the current session has reached the measurement trigger."""
+    state = load_experiment_state(root)
+    if not state:
+        return False
+    trigger = state.get("trigger_at_session")
+    if trigger is None:
+        return False
+    return current_session >= trigger
+
+
+def build_experiment_trigger_nudge(root: Path, current_session: int) -> str:
+    """
+    Directive injected when the session-10 measurement is due.
+    Tells Claude to run the measurement analysis autonomously.
+    """
+    state = load_experiment_state(root)
+    started = state.get("started_at_session", "?")
+    return (
+        f"[YOUK EXPERIMENT] Generation frame experiment: session {current_session} "
+        f"(started session {started}, trigger session {state.get('trigger_at_session', '?')}). "
+        "Run correction rate measurement NOW: "
+        "read knowledge/corrections.jsonl, compute corrections per session, "
+        "compare against baseline in state/generation-frame-experiment.json, "
+        "surface findings + Phase 3 decision (Outcome A/B/C). "
+        "Do not wait for user to ask — this fires automatically."
+    )
+
+
 # ── Output helpers ────────────────────────────────────────────────────────────
 
 def ok(system_message: str = "", additional_context: str = "") -> None:

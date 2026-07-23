@@ -2489,6 +2489,55 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     if convergence_check:
         base["convergence_check"] = convergence_check
 
+    # Correction capture signal — read from knowledge/corrections.jsonl.
+    # This is the primary output-quality signal: how often does the developer
+    # have to push to get the real answer? Declining rate = generation frame working.
+    corrections_file = YOUK_ROOT / "knowledge" / "corrections.jsonl"
+    if corrections_file.exists():
+        try:
+            correction_lines = [
+                json.loads(ln)
+                for ln in corrections_file.read_text().splitlines()
+                if ln.strip()
+            ]
+            if correction_lines:
+                # Group by session to get per-session rate
+                session_counts: dict[str, int] = {}
+                for entry in correction_lines:
+                    sid = entry.get("session_id", "unknown")
+                    session_counts[sid] = session_counts.get(sid, 0) + 1
+                sessions_with_corrections = len(session_counts)
+                total_corrections = len(correction_lines)
+                rate = round(total_corrections / max(sessions_with_corrections, 1), 1)
+                # Top phrase
+                phrase_counts: dict[str, int] = {}
+                for entry in correction_lines:
+                    p = entry.get("phrase_matched", "")
+                    if p:
+                        phrase_counts[p] = phrase_counts.get(p, 0) + 1
+                top_phrase = max(phrase_counts, key=lambda k: phrase_counts[k]) if phrase_counts else ""
+                base["correction_signal"] = {
+                    "total_corrections": total_corrections,
+                    "sessions_with_corrections": sessions_with_corrections,
+                    "corrections_per_session": rate,
+                    "top_phrase": top_phrase,
+                    "note": (
+                        "Declining rate across sessions = generation frame working. "
+                        "Flat or rising = output quality not improving."
+                    ),
+                }
+        except Exception:
+            pass
+
+    # Experiment state — surface trigger status in /health output
+    experiment_file = YOUK_ROOT / "state" / "generation-frame-experiment.json"
+    if experiment_file.exists():
+        try:
+            exp = json.loads(experiment_file.read_text())
+            base["generation_frame_experiment"] = exp
+        except Exception:
+            pass
+
     return base
 
 
