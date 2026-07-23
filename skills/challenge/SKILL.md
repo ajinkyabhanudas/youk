@@ -1,5 +1,6 @@
 ---
 name: challenge
+rationale_why: "The most expensive mistake is solving the wrong problem well. This gate attacks the direction before any work is sunk into it — cheap to reverse now, costly later."
 description: >
   Direction gate skill. Fires before work starts on any M+ task to challenge the
   interpretation, not the plan. Asks: is this the right problem? Is there a simpler

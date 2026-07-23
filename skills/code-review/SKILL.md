@@ -1,5 +1,6 @@
 ---
 name: code-review
+rationale_why: "The author cannot see their own blind spots. A structured review catches what familiarity hides — correctness gaps, missing edge cases, and assumptions that will break under load."
 description: >
   Structured code review against correctness, safety, and quality bars.
   Produces a line-level verdict with severity-tagged findings and a single

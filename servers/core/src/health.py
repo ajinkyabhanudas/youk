@@ -218,6 +218,22 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         result_match = re.search(r"^OutcomeResult:\s*(\w+)$", block, re.MULTILINE)
         s["outcome_result"] = result_match.group(1).upper() if result_match else "UNKNOWN"
 
+        # SkillTokens: skill=N,skill=N — per-skill token cost for this session.
+        # Written by session_end from track_tokens checkpoints where note = skill name.
+        skill_tokens_match = re.search(r"^SkillTokens:\s*(.+)$", block, re.MULTILINE)
+        if skill_tokens_match:
+            st: dict[str, int] = {}
+            for part in skill_tokens_match.group(1).split(","):
+                if "=" in part:
+                    sk, cost = part.strip().split("=", 1)
+                    try:
+                        st[sk.strip()] = int(cost.strip())
+                    except ValueError:
+                        pass
+            s["skill_tokens"] = st
+        else:
+            s["skill_tokens"] = {}
+
         # Commits: yes/no — written by session_end when commits_made=True.
         commits_match = re.search(r"^Commits:\s*(\w+)$", block, re.MULTILINE | re.IGNORECASE)
         s["commits"] = bool(commits_match and commits_match.group(1).lower() == "yes")
@@ -651,6 +667,65 @@ def _compute_depth_multiplier(sessions: list[dict]) -> float:
     if n <= 20:
         return 0.9
     return 1.0
+
+
+def _compute_skill_token_trend(sessions: list[dict]) -> dict[str, dict]:
+    """
+    Per-skill token trend across sessions: is the developer's input getting tighter?
+
+    For each capability skill that has appeared in ≥3 sessions with token data,
+    computes the slope of token cost over time.
+
+    Interpretation:
+      negative slope (tokens declining) = developer internalising the skill —
+        questions getting shorter, less scaffolding needed, compounding visible
+      positive slope = skill invocations getting costlier — may indicate drift or
+        growing complexity (not necessarily bad, but worth flagging)
+      flat / insufficient data = no trend yet
+
+    Returns: {skill_name: {mean_tokens, trend, velocity, sessions_with_data}}
+    """
+    skill_series: dict[str, list[int]] = {}
+    for s in sessions:
+        for skill, cost in s.get("skill_tokens", {}).items():
+            if cost > 0:
+                skill_series.setdefault(skill, []).append(cost)
+
+    result: dict[str, dict] = {}
+    for skill, series in skill_series.items():
+        if len(series) < 3:
+            result[skill] = {
+                "mean_tokens": int(sum(series) / len(series)),
+                "trend": "insufficient_data",
+                "velocity": 0,
+                "sessions_with_data": len(series),
+            }
+            continue
+        recent = series[-10:]
+        mean_tokens = int(sum(recent) / len(recent))
+        mid = len(recent) // 2
+        first_half = recent[:mid] if mid > 0 else recent[:1]
+        second_half = recent[mid:] if mid > 0 else recent[1:]
+        first_mean = sum(first_half) / len(first_half)
+        second_mean = sum(second_half) / len(second_half)
+        velocity = round(second_mean - first_mean)
+        pct_change = round(velocity / first_mean * 100, 1) if first_mean else 0
+
+        if pct_change < -10:
+            trend = "converging"   # tokens dropping: developer internalising
+        elif pct_change > 10:
+            trend = "expanding"    # tokens rising: skill getting more complex
+        else:
+            trend = "stable"
+
+        result[skill] = {
+            "mean_tokens": mean_tokens,
+            "trend": trend,
+            "velocity": velocity,
+            "pct_change": pct_change,
+            "sessions_with_data": len(series),
+        }
+    return result
 
 
 def _score_org(audit_texts: list[str]) -> float:
@@ -2094,6 +2169,7 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     depth_multiplier = _compute_depth_multiplier(sessions_parsed)
     conv_velocity = _compute_convergence_velocity(sessions_parsed)
     human_precision_rate = _compute_human_precision_rate(sessions_parsed)
+    skill_token_trend = _compute_skill_token_trend(sessions_parsed)
 
     # Developer growth report — five longitudinal signals that answer "is the developer improving?"
     # Each signal tracks a different dimension of growth. Trend direction is the key reading.
@@ -2123,12 +2199,35 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     else:
         growth_signals.append("Framing accuracy:     — (no data yet)")
 
+    # Token convergence signal: are skill invocations getting cheaper over time?
+    # converging skills = developer internalising them (fewer tokens per invocation).
+    converging_skills = [
+        sk for sk, d in skill_token_trend.items() if d["trend"] == "converging"
+    ]
+    expanding_skills = [
+        sk for sk, d in skill_token_trend.items() if d["trend"] == "expanding"
+    ]
+    if skill_token_trend:
+        skill_lines = []
+        for sk, d in sorted(skill_token_trend.items()):
+            if d["trend"] == "insufficient_data":
+                continue
+            arrow = "↓" if d["trend"] == "converging" else "↑" if d["trend"] == "expanding" else "→"
+            skill_lines.append(f"{sk}: {d['mean_tokens']:,}t avg {arrow} ({d['pct_change']:+.0f}%)")
+        if skill_lines:
+            growth_signals.append("Token convergence:    " + "  |  ".join(skill_lines))
+        else:
+            growth_signals.append("Token convergence:    — (need 3+ sessions per skill)")
+    else:
+        growth_signals.append("Token convergence:    — (no skill token data yet — call track_tokens after route_to_skill)")
+
     positive_signals = sum([
         decision_durability_rate is not None and decision_durability_rate > 0.6,
         autonomy_depth_score > 0.4,
         contract_compliance_rate > 0.85,
         conv_velocity["trend"] == "improving",
         framing_accuracy is not None and framing_accuracy > 0.8,
+        len(converging_skills) > len(expanding_skills),  # net token convergence = compounding visible
     ])
     if positive_signals >= 4:
         growth_trend = "IMPROVING"
@@ -2139,7 +2238,7 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     developer_growth_report = (
         "[DEVELOPER GROWTH]\n"
         + "\n".join(f"  {s}" for s in growth_signals)
-        + f"\n  Trend: {growth_trend} — {positive_signals} of 5 growth signals positive"
+        + f"\n  Trend: {growth_trend} — {positive_signals} of 6 growth signals positive"
     )
     if compliance_pct < 85:
         developer_growth_report += f"\n  ⚠ Contract compliance below threshold ({compliance_pct}%) — review ContractViolation entries"
@@ -2195,6 +2294,7 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         "developer_growth_report": developer_growth_report,
         "depth_multiplier": depth_multiplier,
         "convergence_velocity": conv_velocity,
+        "skill_token_trend": skill_token_trend,
         "human_precision_rate": round(human_precision_rate, 2),
         "last_external_review": last_external_review,
         "compaction_frequency": compaction_frequency,

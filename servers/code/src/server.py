@@ -7,7 +7,12 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from nfr import run_nfr_check
-from skills import route_to_skill as _route_to_skill, write_skill_handoff as _write_skill_handoff, get_skill_list, get_skill_content, get_skill_fast_path
+from skills import (
+    route_to_skill as _route_to_skill,
+    write_skill_handoff as _write_skill_handoff,
+    get_skill_list, get_skill_content, get_skill_fast_path,
+    mark_rationale_preempted as _mark_rationale_preempted,
+)
 from review import check_commit_quality as _check_commit_quality
 from skill_loader import list_skills as _list_skills
 from skill_gen import generate_skill as _generate_skill, assess_skill as _assess_skill, detect_skill_gaps as _detect_skill_gaps, generate_stack_overlay as _generate_stack_overlay, analyze_stack_for_skills as _analyze_stack_for_skills
@@ -61,6 +66,23 @@ def route_to_skill(skill: str, task: str, context: dict | None = None) -> dict:
     Returns: {mode: "in_session", skill_name, skill_content, task, context, instruction}
     """
     return _route_to_skill(skill, task, context)
+
+
+@mcp.tool()
+def mark_rationale_preempted(skill: str) -> dict:
+    """
+    Record that the developer demonstrated internalisation of a skill's rationale
+    without being prompted — e.g. they answered all nfr_check questions before the
+    gate ran, or challenged the direction before /challenge was invoked.
+
+    After N=3 pre-emptions, the teaching rationale is suppressed from future
+    route_to_skill responses for that skill. The skill still runs — only the
+    plain-language teaching layer drops away.
+
+    skill: Name of the skill whose rationale was pre-empted (e.g. "nfr-check").
+    Returns: {skill, preemption_count, rationale_suppressed, message}
+    """
+    return _mark_rationale_preempted(skill)
 
 
 @mcp.tool()

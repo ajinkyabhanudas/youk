@@ -1,5 +1,6 @@
 ---
 name: write-spec
+rationale_why: "Ambiguity discovered during implementation costs 10x more than ambiguity resolved before it. A spec makes every open question explicit while they're still cheap to answer."
 description: >
   Produces a PRD or feature spec that a senior director would sign off on. Precise
   problem definition, user outcomes, scoped requirements, success metrics, acceptance

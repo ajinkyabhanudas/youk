@@ -5,10 +5,15 @@ from pathlib import Path
 sys.path.insert(0, "/shared")
 
 import yaml
-from skill_loader import load_skill, load_skill_with_context, list_skills, load_skill_fast_path
+from skill_loader import (
+    load_skill, load_skill_with_context, list_skills, load_skill_fast_path,
+    extract_frontmatter_field,
+)
 
 _SESSION_STATE = Path("/youk/state/session.json")
 _SKILL_GRAPH = Path("/youk/knowledge/skill-graph.yaml")
+_RATIONALE_STATE = Path("/youk/state/skill-rationale-state.json")
+_RATIONALE_SUPPRESS_AFTER = 3  # suppress teaching after developer pre-empts N times
 
 # Sections that are reference-only (not needed for in-session execution).
 # Quality Bars and all phases above them are preserved — these sections are below.
@@ -117,6 +122,58 @@ _SESSION_OPEN = Path("/youk/state/session-open.json")
 _GATED_SKILLS = {"dev-loop"}
 
 
+def _get_rationale_state() -> dict:
+    """Load skill-rationale-state.json; return {} if absent or corrupt."""
+    try:
+        if _RATIONALE_STATE.exists():
+            return json.loads(_RATIONALE_STATE.read_text())
+    except Exception:
+        pass
+    return {}
+
+
+def _increment_rationale_shown(skill_name: str) -> int:
+    """Increment shown_count for a skill; return new count."""
+    state = _get_rationale_state()
+    entry = state.get(skill_name, {"shown_count": 0, "suppressed": False})
+    entry["shown_count"] = entry.get("shown_count", 0) + 1
+    if entry["shown_count"] >= _RATIONALE_SUPPRESS_AFTER:
+        entry["suppressed"] = True
+    state[skill_name] = entry
+    try:
+        _RATIONALE_STATE.parent.mkdir(parents=True, exist_ok=True)
+        _RATIONALE_STATE.write_text(json.dumps(state, indent=2))
+    except Exception:
+        pass
+    return entry["shown_count"]
+
+
+def _rationale_suppressed(skill_name: str) -> bool:
+    """Return True if the teaching rationale for this skill should be omitted."""
+    state = _get_rationale_state()
+    return state.get(skill_name, {}).get("suppressed", False)
+
+
+def mark_rationale_preempted(skill_name: str) -> dict:
+    """
+    Call when the developer demonstrates they've internalised a skill's rationale
+    without being prompted — e.g. they pre-empted nfr_check by answering all four
+    questions before the gate ran. Each pre-emption counts toward suppression.
+    """
+    count = _increment_rationale_shown(skill_name)
+    suppressed = count >= _RATIONALE_SUPPRESS_AFTER
+    return {
+        "skill": skill_name,
+        "preemption_count": count,
+        "rationale_suppressed": suppressed,
+        "message": (
+            f"Rationale suppressed for '{skill_name}' — developer has internalised it."
+            if suppressed else
+            f"Pre-emption {count}/{_RATIONALE_SUPPRESS_AFTER} recorded for '{skill_name}'."
+        ),
+    }
+
+
 def _routing_ran_this_session() -> bool:
     """Return True if route_task was called at any point this session for the current slug."""
     if not _ROUTE_TASK_RAN.exists():
@@ -206,15 +263,30 @@ def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> d
         except Exception:
             pass
 
+    # Teaching rationale — shown until developer internalises it (suppressed after N pre-emptions)
+    suppressed = _rationale_suppressed(resolved_name)
+    rationale_why = None
+    if not suppressed:
+        rationale_why = extract_frontmatter_field(resolved_name, "rationale_why")
+        if rationale_why:
+            _increment_rationale_shown(resolved_name)
+
     return {
         "mode": "in_session",
         "skill_name": resolved_name,
         "skill_content": skill_content,
         "task": task,
         "context": ctx,
+        "rationale": rationale_why,
+        "rationale_suppressed": suppressed,
         "instruction": (
             f"You have received the '{resolved_name}' skill. "
-            "Apply it now using your full session context, tools, and conversation history. "
+            + (
+                f"Before executing, surface this rationale to the developer in plain language: "
+                f"{rationale_why} "
+                if rationale_why and not suppressed else ""
+            )
+            + "Apply it now using your full session context, tools, and conversation history. "
             "Follow every phase and quality bar defined in skill_content."
         ),
     }

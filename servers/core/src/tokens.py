@@ -71,18 +71,32 @@ def record_checkpoint(
     }
 
 
+_SKIP_NOTES = frozenset({"route_task", "commit", "final", "improve", ""})
+
+
 def read_and_clear() -> dict:
-    """Read final totals for session_end, then clear the file."""
+    """Read final totals for session_end, then clear the file.
+
+    per_skill: dict mapping skill-name notes to their total token cost this session.
+    Only includes checkpoints where note is a skill name (excludes route_task, commit, final).
+    """
     if not TOKEN_FILE.exists():
-        return {"total_input": 0, "total_output": 0, "token_budget": 0, "checkpoints": 0}
+        return {"total_input": 0, "total_output": 0, "token_budget": 0, "checkpoints": 0, "per_skill": {}}
     try:
         data = json.loads(TOKEN_FILE.read_text())
         TOKEN_FILE.unlink()
+        per_skill: dict[str, int] = {}
+        for cp in data.get("checkpoints", []):
+            note = (cp.get("note") or "").strip()
+            if note and note not in _SKIP_NOTES:
+                cost = cp.get("input", 0) + cp.get("output", 0)
+                per_skill[note] = per_skill.get(note, 0) + cost
         return {
             "total_input": data.get("total_input", 0),
             "total_output": data.get("total_output", 0),
             "token_budget": data.get("token_budget", 0),
             "checkpoints": len(data.get("checkpoints", [])),
+            "per_skill": per_skill,
         }
     except Exception:
-        return {"total_input": 0, "total_output": 0, "token_budget": 0, "checkpoints": 0}
+        return {"total_input": 0, "total_output": 0, "token_budget": 0, "checkpoints": 0, "per_skill": {}}

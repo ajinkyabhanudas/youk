@@ -1,5 +1,6 @@
 ---
 name: dev-loop
+rationale_why: "Implementation without a shared plan produces code that solves the wrong problem correctly. This anchors direction before the first line is written."
 description: >
   Advanced developer coding assistant that understands language, stack, task, and
   end-goal to then write, audit, test, refactor, and iteratively improve code with

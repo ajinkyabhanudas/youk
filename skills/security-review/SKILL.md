@@ -1,5 +1,6 @@
 ---
 name: security-review
+rationale_why: "Security flaws in auth and data paths are invisible until exploited. Building a threat model before checking means you look for what can go wrong, not just what you remember to check."
 description: >
   Focused security review for changes touching auth, credentials, external
   APIs, destructive operations, data persistence, or access control. Goes

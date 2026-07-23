@@ -2563,6 +2563,14 @@ def end_session(
         tokens_line = f"Tokens: {total_tokens} (no budget set)\n"
     else:
         tokens_line = ""
+    # Per-skill token cost: written when at least one skill checkpoint was recorded.
+    # Format: SkillTokens: nfr-check=12000,challenge=8500
+    # Omit skills with zero cost (shouldn't happen, but guard anyway).
+    per_skill = {k: v for k, v in token_data.get("per_skill", {}).items() if v > 0}
+    skill_tokens_line = (
+        "SkillTokens: " + ",".join(f"{k}={v}" for k, v in sorted(per_skill.items())) + "\n"
+        if per_skill else ""
+    )
 
     # Compaction frequency — how many times Claude auto-compacted this session.
     # Counter written by pre_compact.py hook; cleared here so it resets each session.
@@ -2584,6 +2592,7 @@ def end_session(
         f"CloseCluster: {close_line}\n"
         f"Commits: {'yes' if commits_made else 'no'}\n"
         f"{tokens_line}"
+        f"{skill_tokens_line}"
         f"{compact_count_line}"
         f"{adaptations_line}"
         f"{gap_lines}"

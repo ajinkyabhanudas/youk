@@ -1,5 +1,6 @@
 ---
 name: learn
+rationale_why: "Experience without reflection is just elapsed time. This converts what happened in the session into durable mental models — so the next session starts smarter, not just informed."
 description: >
   Knowledge coach and learning layer. After any session where a non-trivial pattern,
   decision, or concept was used, maps it to the developer's existing domain knowledge,

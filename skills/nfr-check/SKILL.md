@@ -1,5 +1,6 @@
 ---
 name: nfr-check
+rationale_why: "NFR decisions made after code exists get embedded in the code and cost 10x to change. This gate makes them cheap — four questions now versus a production incident later."
 description: >
   Pre-build non-functional requirements gate. Fires before any dev-loop invocation on
   non-trivial features. Forces explicit decisions on caching, retry, observability, auth,

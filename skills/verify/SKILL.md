@@ -1,5 +1,6 @@
 ---
 skill: verify
+rationale_why: "Code that passes review can still be wrong. Verify tests the actual behaviour, not the intention — golden path, edge cases, and failure states before they reach users."
 version: "1.0"
 description: Test that what was built actually works — golden path, edge cases, error states, dark mode.
 phases: [UNDERSTAND, PLAN, EXECUTE, REPORT]

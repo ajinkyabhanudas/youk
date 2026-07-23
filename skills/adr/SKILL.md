@@ -1,5 +1,6 @@
 ---
 name: adr
+rationale_why: "Undocumented decisions get re-debated, reversed silently, or forgotten. Writing the 'why not' alongside the 'why' ends the debate permanently and makes the cost of reversal visible."
 description: >
   Architecture Decision Record generator. Fires whenever a significant technical decision
   is made — new module, library selection, pattern adoption, technology choice, or reversal

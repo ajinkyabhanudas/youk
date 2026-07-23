@@ -81,6 +81,31 @@ def load_skill_with_context(
     return "\n".join(parts)
 
 
+def _parse_frontmatter(content: str) -> dict:
+    """Parse YAML frontmatter between leading --- delimiters. Returns {} if absent or invalid."""
+    if not content.startswith("---"):
+        return {}
+    end = content.find("---", 3)
+    if end == -1:
+        return {}
+    try:
+        import yaml
+        data = yaml.safe_load(content[3:end])
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def extract_frontmatter_field(skill_name: str, field: str) -> Optional[str]:
+    """Return a single string field from a skill's YAML frontmatter, or None."""
+    try:
+        content = load_skill(skill_name)
+    except FileNotFoundError:
+        return None
+    value = _parse_frontmatter(content).get(field)
+    return str(value).strip() if value is not None else None
+
+
 def load_skill_fast_path(skill_name: str) -> Optional[str]:
     """Extract the fast-path frontmatter from a SKILL.md if present."""
     try:
