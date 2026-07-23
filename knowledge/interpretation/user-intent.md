@@ -69,6 +69,28 @@
 
 ---
 
+## Pattern: "there is a [reference document] and the app should be as precise as that or even more"
+
+**Surface forms:** "be as precise as that or even more", "that is not the target, that is the minimum base", a human-authored reference artifact (deck, doc, playbook) being pointed to as a comparison point
+
+**Initial interpretation (wrong):** Treat the reference document as the target/goal — build the app to reproduce it.
+
+**Actual intent:** The reference document is the MINIMUM acceptable floor, not the target. The app must clear it comfortably and then exceed it on every axis the reference couldn't scale: breadth (any region, not just the one covered), freshness (auto-catch dated events the human reference caught by manually reading), and rigor (auto-flag assumptions the human writer flagged by hand). Also applies to data scope: when a company "provides X" as ground truth, confirm exactly what they provide (proprietary/private data only) vs. what the system must derive itself (market sizing, sourced from public research) — do not assume the company-provided baseline covers everything referenced in an adjacent document.
+
+**Key signals that reveal actual intent:**
+- "as precise as that or even more" — the "or even more" is not filler, it's the actual bar
+- A correction after the fact ("that is not the target, that is the minimum base") when a reference artifact was initially framed as a goal to hit
+- Distinguishing what a company "provides" (private/proprietary) from what an app must "derive" (public/researched) — these get conflated on first pass if not explicitly separated
+
+**Confidence:** MEDIUM
+**Observations:** 1 (2026-07-23 — Genie Fertility RAG remediation planning, UK GTM Playbook reference)
+
+**Routing implication:** When a human-authored reference artifact is introduced mid-planning, do not fold it in as the target spec. Explicitly ask or state: "is this the floor to exceed, or the target to hit?" before encoding it into golden-set/acceptance-criteria language.
+
+**Added:** 2026-07-23 | Source: Genie Fertility Web App — retrieval-state-ui / master plan session
+
+---
+
 ## Template for New Entries
 
 ```markdown
