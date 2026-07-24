@@ -118,6 +118,46 @@ Rules:
 - Always recommend a concrete architecture pattern — never say "it depends" without a default recommendation.
 """
 
+_SOLUTION_LANGUAGE_SIGNALS = [
+    "i want to build", "i want to add", "i want to create", "i want to implement",
+    "let's build", "let's add", "let's create", "let's implement",
+    "build a", "add a", "create a", "implement a",
+    "wire ", "wire in", "integrate", "set up", "set up a",
+    "make it so", "make youk", "make the",
+]
+
+_SOLUTION_LANGUAGE_EXCLUSIONS = [
+    # These indicate the problem is already concrete — don't trigger intake
+    "error", "bug", "broken", "failing", "crash", "exception", "traceback",
+    "fix", "debug", "reproduce", "why is", "what's wrong",
+]
+
+
+def _detect_solution_language(raw_input: str) -> bool:
+    """Return True if input is stated as a solution rather than a problem."""
+    lower = raw_input.lower()
+    if any(excl in lower for excl in _SOLUTION_LANGUAGE_EXCLUSIONS):
+        return False
+    return any(signal in lower for signal in _SOLUTION_LANGUAGE_SIGNALS)
+
+
+def _intake_has_run() -> bool:
+    """Check if intake has already fired this session."""
+    flag_file = YOUK_ROOT / "state" / "intake-ran.json"
+    if not flag_file.exists():
+        return False
+    try:
+        import json as _json
+        data = _json.loads(flag_file.read_text())
+        open_file = YOUK_ROOT / "state" / "session-open.json"
+        if not open_file.exists():
+            return False
+        current_slug = _json.loads(open_file.read_text()).get("slug", "")
+        return data.get("slug", "") == current_slug
+    except Exception:
+        return False
+
+
 _FAST_PATTERNS = {
     "make it a repo": {
         "problem": "Create a properly structured, reproducible project repository with versioning, documentation, and developer tooling — not just a git init.",
@@ -251,6 +291,12 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
     # Fast path: check known patterns first
     fast_result = _check_fast_patterns(raw_input)
     if fast_result and not clarified_context:
+        _size = fast_result.get("estimated_size", "S")
+        _intake_required = (
+            _size in {"M", "L", "XL"}
+            and _detect_solution_language(raw_input)
+            and not _intake_has_run()
+        )
         return {
             **fast_result,
             "raw_input": raw_input,
@@ -264,6 +310,7 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
                 "translation_risk": "none",
                 "translation_question": None,
             },
+            "intake_required": _intake_required,
         }
 
     # Check interpretation patterns from knowledge base
@@ -279,6 +326,10 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
         is_opaque = any(w in raw_input.lower().split() for w in _OPAQUE_WORDS)
         # Multi-level convergence: structural angle always checked first for quality words.
         # If opaque, translation_risk=high regardless of other angles — structural fails first.
+        _intake_required_fallback = (
+            _detect_solution_language(raw_input)
+            and not _intake_has_run()
+        )
         return {
             "problem": raw_input,
             "success_criteria": "Task completed as described.",
@@ -302,6 +353,7 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
             "token_efficiency_gain": "n/a",
             "raw_input": raw_input,
             "mode": "fallback_no_api",
+            "intake_required": _intake_required_fallback,
         }
 
     user_content = f"Raw input: {raw_input}"
@@ -323,6 +375,12 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
             result = json.loads(json_match.group())
             result["raw_input"] = raw_input
             result["mode"] = "api_optimized"
+            _size_api = result.get("estimated_size", "M")
+            result["intake_required"] = (
+                _size_api in {"M", "L", "XL"}
+                and _detect_solution_language(raw_input)
+                and not _intake_has_run()
+            )
             return result
         else:
             raise ValueError("No JSON in response")
@@ -357,4 +415,8 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
             "raw_input": raw_input,
             "mode": "api_error",
             "error": error_msg,
+            "intake_required": (
+                _detect_solution_language(raw_input)
+                and not _intake_has_run()
+            ),
         }
