@@ -2693,6 +2693,8 @@ def end_session(
         YOUK_ROOT / "state" / "goal-anchor.json",
         # Track C: re-entry log cleared at session end — per-session dedup state only.
         YOUK_ROOT / "state" / "reentry-log.json",
+        # Intake: per-session flag — cleared so first task of next session can trigger intake.
+        YOUK_ROOT / "state" / "intake-ran.json",
     ]:
         if _recovery_file.exists():
             try:

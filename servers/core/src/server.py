@@ -678,6 +678,33 @@ def check_challenge_gate(task: str, size: str) -> dict:
 
 
 @mcp.tool()
+def mark_intake_ran(task: str) -> dict:
+    """
+    Record that the intake skill has run for the current session.
+    Call this after the intake gap synthesis phase completes (Phase 4).
+
+    task: The task for which intake was run (for audit context).
+
+    Returns: {"recorded": bool, "slug": str}
+    Once recorded, optimize_intent will return intake_required=False for this session
+    so intake does not fire again on subsequent tasks.
+    """
+    try:
+        import json as _json
+        from datetime import datetime as _dt
+        slug = _get_session_slug()
+        flag_file = YOUK_ROOT / "state" / "intake-ran.json"
+        flag_file.write_text(_json.dumps({
+            "slug": slug,
+            "task": task[:120],
+            "ts": _dt.utcnow().isoformat(),
+        }))
+        return {"recorded": True, "slug": slug}
+    except Exception:
+        return {"recorded": False, "slug": "unknown"}
+
+
+@mcp.tool()
 def check_loop_dry(task: str = "") -> dict:
     """
     Structural sensor for whether the last challenge loop was dry.
