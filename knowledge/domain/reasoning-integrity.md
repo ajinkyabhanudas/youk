@@ -261,6 +261,27 @@ does not imply the second.
 
 ---
 
+## Approval-Seeking as Attractor State — Three Structural Locks
+*Added: 2026-07-24*
+*Source: youk — session 56, anti-approval-seeking hardening*
+
+**What it is:** RLHF training makes "defensible" answers a local optimum. Without structural forcing functions, every generation re-enters the same attractor basin and stops before reaching complete. Three structural locks break this:
+1. **Generation frame** — adversarial framing in the system prompt that makes completeness the approval target, not defensibility
+2. **Intake interrogation** — pessimistic hypothesis generation before routing forces accountability before any direction is committed
+3. **Pre-surface-check minimum-version rule** — cuts oversized proposals to the minimum that proves the direction is right before the response reaches the user
+
+**Analogy:** SQS visibility timeout without a dead-letter queue — failed messages keep returning to the front of the queue indefinitely because there's no routing mechanism out. The three locks are dead-letter routing: they force outputs out of the local-optimum basin before reaching the user.
+
+**Where the analogy breaks:** An SQS DLQ is automatic and reliable — once configured, every failed message routes to the DLQ with no exceptions. Pre-surface-check relies on the model running it honestly. The model can apply it perfunctorily (ask the question, return COMPLETE immediately). The structural fix is necessary but not sufficient — a DLQ cannot be bypassed superficially; a check can be.
+
+**The hierarchy matters:** Locks applied at generation (frame) beat locks applied at post-generation (pre-surface-check). The earlier in the pipeline you apply structural pressure, the less cleanup is needed downstream.
+
+**Project example:** `skills/pre-surface-check/SKILL.md` (minimum-version rule), `skills/intake/SKILL.md` (pessimistic hypothesis generation), `plugin/scripts/youk_hook_utils.py` (generation frame).
+
+**When to reach for this:** When you observe approval-seeking in outputs — not to correct individual outputs but to identify which structural lock is missing or firing too late.
+
+---
+
 ## Timestamp Drift ≠ Content Drift
 *Added: 2026-07-21*
 *Source: youk — check_doc_graph session, api_key_required class*
