@@ -1486,6 +1486,25 @@ def _merge_stale_checkpoint() -> None:
                     )
                     with open(audit_file, "a") as f:
                         f.write(entry)
+                    # Upgrade the per-project stub (INCOMPLETE) to a retroactive close entry.
+                    # The stub date comes from the checkpoint timestamp.
+                    if cp_slug and cp_slug != "unknown":
+                        stub_date = cp_timestamp[:10]  # YYYY-MM-DD
+                        cp_counter = cp.get("session_counter", 0)
+                        stub_dir = YOUK_ROOT / "knowledge" / "projects" / cp_slug / "audit"
+                        stub_file = stub_dir / f"{stub_date}-session-stub.txt"
+                        if stub_file.exists():
+                            try:
+                                stub_file.write_text(
+                                    f"Session #{cp_counter} — {stub_date}\n"
+                                    f"Status: CLOSED (retroactive — tab-close, /done not called)\n"
+                                    f"Contracts: see contracts.md\n"
+                                    f"Org score: N/A\n"
+                                    f"close_cluster: no\n"
+                                    f"Recovered by: session_start stub upgrade\n"
+                                )
+                            except Exception:
+                                pass
                     # If the checkpoint recorded a resume candidate (written by compact_context),
                     # persist it so next session has a meaningful resume point even on tab-close.
                     if cp_resume and cp_slug and cp_slug != "unknown":
@@ -1893,6 +1912,7 @@ def start_session(project_dir: str) -> SessionState:
         open_file.write_text(json.dumps({
             "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "slug": slug,
+            "session_counter": state["session_counter"],
             "plan_items": session_plan[:3],
         }, indent=2))
     except Exception:
