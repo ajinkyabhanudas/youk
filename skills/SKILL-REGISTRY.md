@@ -53,6 +53,7 @@ for all generated `references/stacks/{framework}.md` overlays (6 sections, WAF-g
 | `/install-experience` | Onboarding Auditor | install.sh changes, pre-release gate, "does install work?" — SCAN → SCRIPT-AUDIT → DOCKER → HANDSHAKE | ACTIVE |
 | `/namespace-safety` | Collision Gate | Before any generate_skill or new MCP tool — checks skill names, MCP tool names, config keys for collisions | ACTIVE |
 | `/dependency-audit` | Dependency Auditor | New dependency added, "are deps safe?", pre-release — INVENTORY → PINNING → VULNERABILITIES → REMEDIATE | ACTIVE |
+| `/intake` | Adversarial Intake | Before routing any new M+ problem — interrogates the problem statement, generates pessimistic hypotheses, surfaces unconsidered constraints before challenge runs | ACTIVE |
 
 ---
 
