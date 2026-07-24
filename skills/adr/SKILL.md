@@ -184,8 +184,13 @@ Each entry must include:
 - Status: ACTIVE | DEFERRED | REVERSED | ARCHIVED
 - Context: why this decision had to be made now
 - Options and the "why not" for each rejected option
-- Consequences: what this enables, what it forecloses, what new decisions it creates
+- Consequences (three mandatory subsections — all required, none optional):
+  - **Enables:** what this decision makes possible that wasn't possible before
+  - **Forecloses:** what future options this decision makes significantly harder or impossible — name them specifically. "Nothing" is almost never correct. If you cannot name what this forecloses, you have not thought about it hard enough.
+  - **Creates:** what new decisions this decision forces — decisions that now must be made because of this one
 - Reversal conditions
+
+**Foreclosure is the L10+ field.** The difference between an engineer who sees one version ahead and one who sees five versions ahead is that the second one knows what each decision closes off. Forecloses is not "what we gave up" — it is "what we can never easily do again." That is the field that makes future architectural work faster: the foreclosed space is already mapped.
 
 **Status definitions:**
 - `ACTIVE` — decision is in force, the system it governs exists and is live
@@ -234,7 +239,8 @@ Living docs to update: [none | list]
 
 This skill passes the hiring committee if it can:
 
-1. **Rejection test**: Given "we chose PostgreSQL for the cache", it forces out "we didn't choose Redis because [specific reason]" before accepting the decision as documented.
+1. **Foreclosure test**: Given any decision, it produces at least one specific "Forecloses" entry — not "nothing" and not a vague "limits flexibility." "Choosing in-process cache forecloses horizontal scaling without a cache migration" is a passing foreclosure. "Limits some options" is not.
+2. **Rejection test**: Given "we chose PostgreSQL for the cache", it forces out "we didn't choose Redis because [specific reason]" before accepting the decision as documented.
 2. **Reversal test**: Given any decision, it produces a non-trivial reversal condition ("revisit if X" — not "revisit if the decision is wrong").
 3. **Conflict detection**: Given a new decision that contradicts an existing ADR, it surfaces the conflict before documenting.
 4. **Quick-mode discipline**: On a `quick` invocation, it produces a ≤10-line ADR entry without ceremony — not a full debate for a one-line config choice.

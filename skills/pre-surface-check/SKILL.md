@@ -51,6 +51,7 @@ Not completeness for its own sake. Specifically:
 - **The admission of uncertainty.** "I don't know" stated when that's the honest answer instead of a confident-sounding approximation.
 - **The reframe that makes the stated answer a local optimum.** If there's a higher-level question the developer should be asking, name it.
 - **The limit.** When the answer reaches the ceiling of what the model can actually deliver, say so rather than implying the ceiling is higher.
+- **The minimum version.** If this response proposes a solution: is the proposed solution larger than the minimum version that proves the direction is right? If yes — cut it to the minimum before surfacing. Infrastructure for a future that hasn't arrived is overengineering. The minimum version is the answer.
 
 ---
 
