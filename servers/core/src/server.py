@@ -29,6 +29,12 @@ from graph import (
     next_task as _next_task,
     mark_done as _mark_done,
 )
+from file_index import (
+    index_project as _index_project,
+    find_relevant as _find_relevant,
+    find_affected as _find_affected,
+    get_index_stats as _get_index_stats,
+)
 
 YOUK_ROOT = Path("/youk")
 CLAUDE_ROOT = Path("/claude")
@@ -1298,6 +1304,63 @@ def promote_to_global_contracts(contracts: list[str]) -> dict:
             promoted += 1
 
     return {"promoted": promoted, "skipped": skipped, "conflicts": conflicts}
+
+
+@mcp.tool()
+def index_project(project_dir: str, project_slug: str, force: bool = False) -> dict:
+    """Index a project's files into the shared SQLite file index for BM25 retrieval.
+
+    Incremental: unchanged files (same hash) are skipped automatically.
+    Call at session_start or after significant changes. Safe to call repeatedly.
+
+    project_dir: absolute path to the project root on the host
+    project_slug: short name for this project (e.g. "canopy", "youk")
+    force: if True, re-index all files regardless of hash
+
+    Returns: {indexed, skipped, total_files, project_slug}
+    """
+    return _index_project(project_dir, project_slug, force=force)
+
+
+@mcp.tool()
+def find_relevant(query: str, project_slug: str | None = None, limit: int = 10) -> dict:
+    """BM25 search over indexed files across all projects.
+
+    Returns ranked files with summary and attribution. Current project results
+    surface first when project_slug is provided.
+
+    query: natural language or symbol name (e.g. "session start contracts", "route_task")
+    project_slug: if set, boosts results from this project and fills remainder from others
+    limit: max results (default 10)
+
+    Returns: {results: [{project_slug, file_path, summary, score}], query, total}
+    """
+    return _find_relevant(query, project_slug=project_slug, limit=limit)
+
+
+@mcp.tool()
+def find_affected(file_path: str, project_slug: str) -> dict:
+    """Return files that import or reference the given file — impact analysis.
+
+    Searches indexed imports for the file's module stem. Use before changing a
+    shared module to understand blast radius.
+
+    file_path: relative path within the project (e.g. "servers/core/src/session.py")
+    project_slug: the project this file belongs to
+
+    Returns: {source_file, module_stem, affected: [{project_slug, file_path, summary}], affected_count}
+    """
+    return _find_affected(file_path, project_slug)
+
+
+@mcp.tool()
+def get_file_index_stats(project_slug: str | None = None) -> dict:
+    """Return file index health: file counts per project and last indexed timestamps.
+
+    project_slug: if set, returns stats for that project only; None returns all projects.
+    Returns: {status, projects: [{project_slug, file_count, last_indexed}], total_files}
+    """
+    return _get_index_stats(project_slug=project_slug)
 
 
 @mcp.tool()

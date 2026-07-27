@@ -1932,6 +1932,22 @@ def start_session(project_dir: str) -> SessionState:
     for gw in graph_warnings:
         session_plan.append(gw)
 
+    # Lazy file index: re-index changed files from the current project at session start.
+    # Only fires when a resolvable project path exists and the index DB is writable.
+    # Silent-fail: never blocks session_start.
+    try:
+        from file_index import index_project as _index_project_lazy
+        _resolved = _resolve_project_path(project_dir)
+        if _resolved.exists():
+            _idx = _index_project_lazy(str(_resolved), slug, force=False)
+            if _idx.get("indexed", 0) > 0:
+                session_plan.append(
+                    f"File index: {_idx['indexed']} file(s) re-indexed for '{slug}' "
+                    f"({_idx['skipped']} unchanged, {_idx['total_files']} total)"
+                )
+    except Exception:
+        pass  # index failure is never blocking
+
     # Persist session plan so compact_context can include it in briefs
     plan_file = YOUK_ROOT / "state" / "session-plan.json"
     try:
