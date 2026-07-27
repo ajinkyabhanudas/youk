@@ -595,21 +595,30 @@ def _load_contracts(slug: str) -> list[str]:
 
 
 def _load_global_contracts(cap: int = 50) -> list[str]:
-    """Load user's cross-project global behavioral contracts (knowledge/global/contracts.md).
-    These apply to every project — loaded before project-specific contracts at session start.
-    Capped at `cap` most recently confirmed entries to bound session context cost."""
+    """Load cross-project behavioral contracts from two sources, merged in order:
+    1. knowledge/default-contracts.md — committed to repo, inherited by all installs.
+    2. knowledge/global/contracts.md  — personal, gitignored, machine-local only.
+    Default contracts are always prepended so they survive even on fresh installs with
+    no personal history. Combined list is capped at `cap` entries."""
+    default_file = YOUK_ROOT / "knowledge" / "default-contracts.md"
     global_file = YOUK_ROOT / "knowledge" / "global" / "contracts.md"
-    if not global_file.exists():
-        return []
-    try:
-        lines = [
-            line.strip()
-            for line in global_file.read_text().splitlines()
-            if line.strip() and not line.startswith("#")
-        ]
-        return lines[-cap:]  # most recently added = most recently confirmed
-    except Exception:
-        return []
+
+    def _read(path: Path) -> list[str]:
+        if not path.exists():
+            return []
+        try:
+            return [
+                line.strip()
+                for line in path.read_text().splitlines()
+                if line.strip() and not line.startswith("#")
+            ]
+        except Exception:
+            return []
+
+    defaults = _read(default_file)
+    personal = _read(global_file)
+    combined = defaults + personal
+    return combined[-cap:]  # most recently added personal contracts take priority at cap
 
 
 def _load_l2_context(project_dir: str) -> tuple[str, str]:

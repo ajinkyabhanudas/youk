@@ -27,6 +27,9 @@ reports/
 # Per-project session context (personal, local only — not shared across installs)
 knowledge/projects/
 
+# SQLite indexes — generated at runtime, never committed
+knowledge/*.db
+
 # Instance-local knowledge — personal intelligence, never universally applicable
 # Capabilities (skills, server code) belong in the repo; accumulated knowledge does not
 knowledge/proposals/
