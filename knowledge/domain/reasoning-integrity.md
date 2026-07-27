@@ -282,6 +282,24 @@ does not imply the second.
 
 ---
 
+## Machine-Checkable Gate vs. Prose Suggestion
+*Added: 2026-07-27*
+*Source: youk — session 57, intake auto-wiring*
+
+**What it is:** A behavioral change enforced by a machine-checkable field in a return value cannot be bypassed by approval-seeking pressure; a prose suggestion can. When you need a model to take a specific path, the difference between `intake_required: bool` (returned by `optimize_intent`) and "consider running intake" (prose in the system prompt) is total: the field is either true or false; the prose is either heeded or rationalized away.
+
+**Analogy:** SQS DLQ as a prospective gate — if `intake_required=True`, the routing sequence cannot proceed, structurally, the same way a message cannot advance past a DLQ boundary without explicit reprocessing. The field is the DLQ routing condition.
+
+**Where the analogy breaks:** SQS DLQ is post-failure catchment — the message already failed before DLQ catches it. `intake_required=True` fires *before* the wrong path is taken. The analogy captures the structural visibility mechanism correctly but inverts the timing: DLQ = retrospective; intake gate = prospective. The field blocks before failure, not after.
+
+**Design rule:** When a model behavior must reliably change in response to an input condition, encode the condition as a machine-checkable field in a return value read by the routing loop — not as prose guidance in a prompt. Prose survives eager conditions poorly; a field's value is binary and cannot be talked around.
+
+**Project example:** `servers/core/src/intent.py` — `optimize_intent()` now returns `intake_required: bool`. CLAUDE.md routing step 1 is: "if result returns `intake_required: true`: run intake in-session NOW... **Never route while `intake_required: true` and intake hasn't run.**" This closes the escape hatch that existed when intake was a prose suggestion in the proactive patterns section.
+
+**When to reach for this:** Any time you observe a model behavior that should change in response to some condition but the enforcement is only in prose (system prompt, CLAUDE.md guidance). Ask: is there a return value from a tool call or routing step that this behavior condition could be encoded in? If yes, encode it there — the routing loop enforces it structurally.
+
+---
+
 ## Timestamp Drift ≠ Content Drift
 *Added: 2026-07-21*
 *Source: youk — check_doc_graph session, api_key_required class*

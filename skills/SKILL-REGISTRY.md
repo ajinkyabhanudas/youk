@@ -1,7 +1,7 @@
 # Skill Registry — y2k-1
 
-**Company:** y2k-1 | **Activation:** say "activate y2k-1" | **Roster size:** 26
-*Living document. Updated by /skill-health after each review. Last updated: 2026-07-20.*
+**Company:** y2k-1 | **Activation:** say "activate y2k-1" | **Roster size:** 27
+*Living document. Updated by /skill-health after each review. Last updated: 2026-07-27.*
 *Owner: Ajinkya Dessai. All skills are scoped to the ~/.claude/skills/ directory.*
 
 ---
@@ -42,6 +42,7 @@ for all generated `references/stacks/{framework}.md` overlays (6 sections, WAF-g
 | `/learn` | L&D Coach | Session end (always), explicit concept deep-dives | ACTIVE |
 | `/skill-health` | Engineering Manager | Periodic review, post-observed gap; reads audit logs | ACTIVE |
 | `/simplify` | Code Quality | After implementation, reduce complexity | ACTIVE |
+| `/overengineering-auditor` | Planning Gate | After any M+ plan is produced — context-free subagent audits for overengineering, surfaces simpler alternative with constraints, triggers stress-test after approval | ACTIVE |
 | `/run` | DevOps | Run/start the project for manual verification | ACTIVE |
 | `/review` | GitHub PR Review | GitHub PR review | ACTIVE |
 | `/skill-forge` | Skill Architect (proactive) | New stack, or "what skills would an elite need here" — derives + sharpens skills at a rising standard | ACTIVE |
@@ -220,6 +221,7 @@ Proposed skills that don't yet exist. Evaluated against the hiring bar before cr
 | 2026-07-14 | Added /skill-forge (proactive stack→skill convergence loop) + analyze_stack_for_skills() tool + signal/noise framework (humanize). | Closes youk's improvement loop forward: forge anticipates skills from stack analysis at a rising standard until convergence; self_heal stays reactive. Signal/noise framework (SUBTRACT+REVEAL) generalizes REVEAL from learn/challenge/stress-test into one reusable source. |
 | 2026-07-17 | Added /challenge, /adversary-loop, /done to inventory. Updated known gaps table. Org score: 7.2/10 (+1.4 vs. prior review). Top gap: dev_loop not registering in audit for M+ sessions. | skill-health review Jul 2026 |
 | 2026-07-20 | Added 4 skills from stack scan: /self-heal (closes audit registration gap for health work), /install-experience (first-run install audit), /namespace-safety (collision gate before write), /dependency-audit (Python dep pinning + CVE). Roster: 22 → 26. | Track A stack scan via /improve |
+| 2026-07-27 | Added /overengineering-auditor (planning gate — context-free subagent audits M+ plans for overengineering, surfaces simpler alternative with constraints + circumstantial reasoning, triggers stress-test after approval). Roster: 26 → 27. | User-directed; closes confirmation-bias gap in in-session plan review; isolation via hardcoded subagent prompt template |
 
 ---
 
