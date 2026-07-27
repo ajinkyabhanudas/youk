@@ -340,3 +340,113 @@ class TestProposalLifecycle:
         written = skill_dir / "SKILL.md"
         assert written.exists(), "FILE_CREATE must write the file to disk"
         assert "Write Test" in written.read_text()
+
+
+# ---------------------------------------------------------------------------
+# Dual Gate State — task-graph.db live + legacy JSON gate files present
+# ---------------------------------------------------------------------------
+
+_GATE_FILES = [
+    "challenge-gate-passed.json",
+    "nfr-check-ran.json",
+    "route-task-ran.json",
+    "challenge-ran.json",
+    "pending-action.json",
+    "routing-breadcrumb.json",
+    "active_task.json",
+    "session-checkpoint.json",
+]
+
+
+class TestDualGateState:
+    """Verify that check_graph_dual_state detects migration-incomplete state.
+
+    These tests call graph.check_graph_health and session._check_graph_dual_state
+    directly (no Docker). They cover the two enforcement points:
+    1. graph.check_graph_health: DB absent / healthy / corrupt
+    2. session._check_graph_dual_state: dual-state detection
+    """
+
+    def test_graph_absent_returns_absent(self, tmp_path):
+        import graph
+        health = graph.check_graph_health(tmp_path / "nonexistent.db")
+        assert health["status"] == "absent"
+        assert health["task_count"] == 0
+
+    def test_graph_healthy_after_create(self, tmp_path):
+        import graph
+        db = tmp_path / "task-graph.db"
+        graph.create_task_graph(
+            [{"id": "t1", "label": "task one"}], db_path=db
+        )
+        health = graph.check_graph_health(db)
+        assert health["status"] == "healthy"
+        assert health["task_count"] == 1
+
+    def test_graph_corrupt_returns_corrupt(self, tmp_path):
+        import graph
+        db = tmp_path / "task-graph.db"
+        db.write_bytes(b"not a sqlite file at all")
+        health = graph.check_graph_health(db)
+        assert health["status"] == "corrupt"
+
+    def test_dual_state_no_warning_when_graph_absent(self, tmp_path, monkeypatch):
+        """No dual-state warning when graph hasn't been built yet."""
+        import session as session_mod
+        monkeypatch.setattr(session_mod, "YOUK_ROOT", tmp_path)
+        state_dir = tmp_path / "state"
+        state_dir.mkdir(parents=True)
+        # Write a gate file — but no DB
+        (state_dir / "challenge-ran.json").write_text('{"slug":"x"}')
+        warnings = session_mod._check_graph_dual_state()
+        assert warnings == [], f"Expected no warnings when DB absent, got: {warnings}"
+
+    def test_dual_state_warns_when_graph_live_and_gate_files_present(self, tmp_path, monkeypatch):
+        """Dual-state warning fires when DB is live and legacy gate files exist."""
+        import graph
+        import session as session_mod
+        monkeypatch.setattr(session_mod, "YOUK_ROOT", tmp_path)
+        state_dir = tmp_path / "state"
+        state_dir.mkdir(parents=True)
+
+        # Create a healthy graph
+        db = state_dir / "task-graph.db"
+        graph.create_task_graph([{"id": "t1", "label": "task"}], db_path=db)
+
+        # Write two legacy gate files
+        (state_dir / "challenge-ran.json").write_text('{"slug":"x"}')
+        (state_dir / "nfr-check-ran.json").write_text('{"slug":"x"}')
+
+        warnings = session_mod._check_graph_dual_state()
+        assert len(warnings) == 1, f"Expected 1 warning, got: {warnings}"
+        assert "DUAL GATE STATE" in warnings[0]
+        assert "challenge-ran.json" in warnings[0] or "nfr-check-ran.json" in warnings[0]
+
+    def test_dual_state_no_warning_when_gate_files_absent(self, tmp_path, monkeypatch):
+        """No warning when graph is live and all gate files are gone (migration done)."""
+        import graph
+        import session as session_mod
+        monkeypatch.setattr(session_mod, "YOUK_ROOT", tmp_path)
+        state_dir = tmp_path / "state"
+        state_dir.mkdir(parents=True)
+
+        db = state_dir / "task-graph.db"
+        graph.create_task_graph([{"id": "t1", "label": "task"}], db_path=db)
+        # No gate files written
+
+        warnings = session_mod._check_graph_dual_state()
+        assert warnings == [], f"Expected no warnings after migration, got: {warnings}"
+
+    def test_dual_state_warns_on_corrupt_graph(self, tmp_path, monkeypatch):
+        """Corrupt DB warning fires instead of dual-state warning."""
+        import session as session_mod
+        monkeypatch.setattr(session_mod, "YOUK_ROOT", tmp_path)
+        state_dir = tmp_path / "state"
+        state_dir.mkdir(parents=True)
+
+        db = state_dir / "task-graph.db"
+        db.write_bytes(b"corrupt data")
+
+        warnings = session_mod._check_graph_dual_state()
+        assert len(warnings) == 1
+        assert "GRAPH UNHEALTHY" in warnings[0]

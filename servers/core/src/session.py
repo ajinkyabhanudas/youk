@@ -1518,6 +1518,56 @@ def _merge_stale_checkpoint() -> None:
                 pass
 
 
+def _check_graph_dual_state() -> list[str]:
+    """Check for dual gate state (SQLite graph + legacy JSON gate files both present).
+
+    Returns a list of warning strings — empty when state is clean.
+    Called at session_start so the warning fires on every re-open until migration
+    is complete, not only when someone remembers to run make checkup.
+    """
+    warnings: list[str] = []
+    _GATE_FILES = [
+        "challenge-gate-passed.json",
+        "nfr-check-ran.json",
+        "route-task-ran.json",
+        "challenge-ran.json",
+        "pending-action.json",
+        "routing-breadcrumb.json",
+        "active_task.json",
+        "session-checkpoint.json",
+    ]
+    db_path = YOUK_ROOT / "state" / "task-graph.db"
+    if not db_path.exists():
+        return []  # graph not yet live — dual state impossible
+
+    # Graph health check: corrupt DB is worse than absent DB — surface explicitly
+    try:
+        from graph import check_graph_health
+        health = check_graph_health(db_path)
+        if health["status"] == "corrupt":
+            warnings.append(
+                f"[GRAPH UNHEALTHY] task-graph.db is corrupt ({health['message']}) "
+                "— falling back to JSON gate files. Run `make cleanup-gate-files` "
+                "after restoring the graph."
+            )
+            return warnings  # can't detect dual state if DB is unreadable
+    except Exception:
+        warnings.append(
+            "[GRAPH UNHEALTHY] task-graph.db import failed — falling back to JSON gate files."
+        )
+        return warnings
+
+    # Dual-state detection: graph live + legacy gate files still present
+    present = [f for f in _GATE_FILES if (YOUK_ROOT / "state" / f).exists()]
+    if present:
+        warnings.append(
+            f"[DUAL GATE STATE] task-graph.db is live but {len(present)} legacy gate "
+            f"file(s) still present: {', '.join(present)}. "
+            "Run `make cleanup-gate-files` to complete migration."
+        )
+    return warnings
+
+
 def start_session(project_dir: str) -> SessionState:
     # Recover stale checkpoint from a previous session that ended without /done.
     # This runs before any other work so the audit entry is written even if
@@ -1874,6 +1924,13 @@ def start_session(project_dir: str) -> SessionState:
                 f"Stale decision ({age_days}d old): '{decision_heading[:60]}' — "
                 "review in decisions.md and confirm it still holds, or supersede it."
             )
+
+    # Graph dual-state check: fires on every session open when task-graph.db is live
+    # but legacy JSON gate files are still present. Two enforcement points (session_start
+    # + L5 checkup) ensure the migration prompt is never invisible.
+    graph_warnings = _check_graph_dual_state()
+    for gw in graph_warnings:
+        session_plan.append(gw)
 
     # Persist session plan so compact_context can include it in briefs
     plan_file = YOUK_ROOT / "state" / "session-plan.json"

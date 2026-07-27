@@ -22,6 +22,13 @@ from intent import optimize_intent as _optimize_intent
 from compaction import build_brief, write_contracts
 from tokens import init_token_tracker, record_checkpoint
 from session_slug import get_session_slug as _get_session_slug_impl
+from graph import (
+    create_task_graph as _create_task_graph,
+    set_gate as _set_gate,
+    is_unblocked as _is_unblocked,
+    next_task as _next_task,
+    mark_done as _mark_done,
+)
 
 YOUK_ROOT = Path("/youk")
 CLAUDE_ROOT = Path("/claude")
@@ -675,6 +682,73 @@ def check_challenge_gate(task: str, size: str) -> dict:
         except Exception:
             pass
     return result
+
+
+@mcp.tool()
+def create_task_graph(tasks: list[dict], edges: list[list] | None = None) -> dict:
+    """
+    Create or extend the task graph in SQLite.
+
+    tasks: list of {"id": str, "label": str}
+    edges: list of [parent_id, child_id] pairs — parent must complete before child
+
+    Idempotent — existing tasks and edges are silently skipped.
+    Returns {"created": int, "edges_added": int, "total_tasks": int}
+    """
+    edge_tuples = [tuple(e) for e in (edges or [])]
+    return _create_task_graph(tasks, edge_tuples)
+
+
+@mcp.tool()
+def set_gate(task_id: str, gate_name: str, value: bool) -> dict:
+    """
+    Set a gate boolean on a task node in the task graph. Idempotent.
+
+    task_id:   Task node ID (created by create_task_graph, or auto-created as stub).
+    gate_name: One of: challenge_cleared, nfr_cleared, unblocked, in_flight
+    value:     True to set, False to clear.
+
+    Called by CLAUDE.md routing after each gate passes — replaces writing individual
+    JSON gate files. Existing check_nfr_gate and check_challenge_gate tools are
+    unchanged; this tool persists the gate outcome to the graph for cross-session recovery.
+
+    Returns {"ok": bool, "task_id": str, "gate": str, "value": bool}
+    """
+    import logging
+    logging.debug("set_gate: task=%s gate=%s value=%s", task_id, gate_name, value)
+    return _set_gate(task_id, gate_name, value)
+
+
+@mcp.tool()
+def is_unblocked(task_id: str) -> dict:
+    """
+    Return gate state for a task node.
+
+    Returns {"found": bool, "task_id": str, "gates": dict, "unblocked": bool}
+    gates dict includes: challenge_cleared, nfr_cleared, unblocked, in_flight, stale
+    """
+    return _is_unblocked(task_id)
+
+
+@mcp.tool()
+def next_task() -> dict:
+    """
+    Return the next actionable task: unblocked=True, in_flight=False, all parents done.
+
+    Uses recursive CTE to walk the task DAG. Returns the first ready leaf node.
+    Returns {"found": bool, "task": dict | None}
+    """
+    return _next_task()
+
+
+@mcp.tool()
+def mark_task_done(task_id: str) -> dict:
+    """
+    Mark a task node as done — clears in_flight, sets unblocked=1.
+
+    Returns {"ok": bool, "task_id": str}
+    """
+    return _mark_done(task_id)
 
 
 @mcp.tool()

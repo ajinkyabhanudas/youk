@@ -1,0 +1,247 @@
+"""Unit tests for graph.py — SQLite task graph with gate booleans.
+
+All tests use tmp_path-scoped DB files so they never touch state/task-graph.db.
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pytest
+
+_REPO = Path(__file__).parent.parent
+for _p in [str(_REPO / "servers" / "shared"), str(_REPO / "servers" / "core" / "src")]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import graph as G
+
+
+# ---------------------------------------------------------------------------
+# create_task_graph
+# ---------------------------------------------------------------------------
+
+class TestCreateTaskGraph:
+
+    def test_creates_tasks(self, tmp_path):
+        db = tmp_path / "graph.db"
+        r = G.create_task_graph([{"id": "t1", "label": "Task 1"}], db_path=db)
+        assert r["created"] == 1
+        assert r["total_tasks"] == 1
+
+    def test_idempotent_on_repeat(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "Task 1"}], db_path=db)
+        r2 = G.create_task_graph([{"id": "t1", "label": "Task 1"}], db_path=db)
+        assert r2["created"] == 0  # INSERT OR IGNORE
+        assert r2["total_tasks"] == 1
+
+    def test_creates_edges(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph(
+            [{"id": "t1", "label": "A"}, {"id": "t2", "label": "B"}],
+            edges=[("t1", "t2")],
+            db_path=db,
+        )
+        r = G.create_task_graph([], db_path=db)
+        assert r["total_tasks"] == 2
+
+    def test_edges_idempotent(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph(
+            [{"id": "t1", "label": "A"}, {"id": "t2", "label": "B"}],
+            edges=[("t1", "t2")],
+            db_path=db,
+        )
+        r2 = G.create_task_graph([], edges=[("t1", "t2")], db_path=db)
+        assert r2["edges_added"] == 0
+
+
+# ---------------------------------------------------------------------------
+# set_gate / is_unblocked
+# ---------------------------------------------------------------------------
+
+class TestSetGate:
+
+    def test_set_valid_gate(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "Task"}], db_path=db)
+        r = G.set_gate("t1", "challenge_cleared", True, db_path=db)
+        assert r["ok"] is True
+        assert r["gate"] == "challenge_cleared"
+        assert r["value"] is True
+
+    def test_set_gate_reflects_in_is_unblocked(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "Task"}], db_path=db)
+        G.set_gate("t1", "challenge_cleared", True, db_path=db)
+        G.set_gate("t1", "nfr_cleared", True, db_path=db)
+        G.set_gate("t1", "unblocked", True, db_path=db)
+        state = G.is_unblocked("t1", db_path=db)
+        assert state["found"] is True
+        assert state["gates"]["challenge_cleared"] is True
+        assert state["gates"]["nfr_cleared"] is True
+        assert state["unblocked"] is True
+
+    def test_set_gate_idempotent(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "Task"}], db_path=db)
+        G.set_gate("t1", "unblocked", True, db_path=db)
+        r2 = G.set_gate("t1", "unblocked", True, db_path=db)
+        assert r2["ok"] is True
+
+    def test_set_gate_false_clears(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "Task"}], db_path=db)
+        G.set_gate("t1", "in_flight", True, db_path=db)
+        G.set_gate("t1", "in_flight", False, db_path=db)
+        state = G.is_unblocked("t1", db_path=db)
+        assert state["gates"]["in_flight"] is False
+
+    def test_invalid_gate_name_returns_error(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "Task"}], db_path=db)
+        r = G.set_gate("t1", "nonexistent_gate", True, db_path=db)
+        assert r["ok"] is False
+        assert "unknown gate" in r["error"]
+
+    def test_set_gate_auto_creates_stub_task(self, tmp_path):
+        """set_gate on unknown task_id creates a stub entry."""
+        db = tmp_path / "graph.db"
+        r = G.set_gate("unknown-task", "unblocked", True, db_path=db)
+        assert r["ok"] is True
+        state = G.is_unblocked("unknown-task", db_path=db)
+        assert state["found"] is True
+
+    def test_is_unblocked_missing_task(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([], db_path=db)
+        state = G.is_unblocked("missing-id", db_path=db)
+        assert state["found"] is False
+        assert state["unblocked"] is False
+
+
+# ---------------------------------------------------------------------------
+# next_task
+# ---------------------------------------------------------------------------
+
+class TestNextTask:
+
+    def test_no_tasks_returns_not_found(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([], db_path=db)
+        r = G.next_task(db_path=db)
+        assert r["found"] is False
+        assert r["task"] is None
+
+    def test_unblocked_task_is_returned(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "Ready"}], db_path=db)
+        G.set_gate("t1", "unblocked", True, db_path=db)
+        r = G.next_task(db_path=db)
+        assert r["found"] is True
+        assert r["task"]["id"] == "t1"
+
+    def test_in_flight_task_skipped(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "In flight"}], db_path=db)
+        G.set_gate("t1", "unblocked", True, db_path=db)
+        G.set_gate("t1", "in_flight", True, db_path=db)
+        r = G.next_task(db_path=db)
+        assert r["found"] is False
+
+    def test_child_blocked_until_parent_unblocked(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph(
+            [{"id": "p", "label": "Parent"}, {"id": "c", "label": "Child"}],
+            edges=[("p", "c")],
+            db_path=db,
+        )
+        # Child is unblocked but parent is not
+        G.set_gate("c", "unblocked", True, db_path=db)
+        r = G.next_task(db_path=db)
+        assert r["found"] is False  # child blocked by unfinished parent
+
+    def test_child_ready_after_parent_unblocked(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph(
+            [{"id": "p", "label": "Parent"}, {"id": "c", "label": "Child"}],
+            edges=[("p", "c")],
+            db_path=db,
+        )
+        G.set_gate("p", "unblocked", True, db_path=db)
+        G.set_gate("c", "unblocked", True, db_path=db)
+        r = G.next_task(db_path=db)
+        assert r["found"] is True
+        # Parent is returned first (it has no blocking parent itself)
+        assert r["task"]["id"] in ("p", "c")
+
+
+# ---------------------------------------------------------------------------
+# mark_done
+# ---------------------------------------------------------------------------
+
+class TestMarkDone:
+
+    def test_mark_done_clears_in_flight(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "Task"}], db_path=db)
+        G.set_gate("t1", "in_flight", True, db_path=db)
+        G.mark_done("t1", db_path=db)
+        state = G.is_unblocked("t1", db_path=db)
+        assert state["gates"]["in_flight"] is False
+        assert state["gates"]["unblocked"] is True
+
+    def test_mark_done_is_idempotent(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "Task"}], db_path=db)
+        G.mark_done("t1", db_path=db)
+        r2 = G.mark_done("t1", db_path=db)
+        assert r2["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# check_graph_health
+# ---------------------------------------------------------------------------
+
+class TestCheckGraphHealth:
+
+    def test_absent_db(self, tmp_path):
+        h = G.check_graph_health(tmp_path / "nonexistent.db")
+        assert h["status"] == "absent"
+        assert h["task_count"] == 0
+
+    def test_healthy_db(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "T"}], db_path=db)
+        h = G.check_graph_health(db)
+        assert h["status"] == "healthy"
+        assert h["task_count"] == 1
+
+    def test_corrupt_db(self, tmp_path):
+        db = tmp_path / "graph.db"
+        db.write_bytes(b"this is not sqlite")
+        h = G.check_graph_health(db)
+        assert h["status"] == "corrupt"
+        assert "task_count" in h
+
+
+# ---------------------------------------------------------------------------
+# stale column — present but not mutated (reserved for dirty-bit propagation)
+# ---------------------------------------------------------------------------
+
+class TestStaleColumn:
+
+    def test_stale_defaults_to_false(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "Task"}], db_path=db)
+        state = G.is_unblocked("t1", db_path=db)
+        assert state["gates"]["stale"] is False
+
+    def test_get_all_tasks_includes_stale(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "T"}], db_path=db)
+        tasks = G.get_all_tasks(db_path=db)
+        assert len(tasks) == 1
+        assert "stale" in tasks[0]
+        assert tasks[0]["stale"] == 0

@@ -243,6 +243,17 @@ simulate: ## Run simulate-experience skill — developer experience audit, feeds
 lint: ## Run ruff on servers/
 	ruff check servers/
 
+.PHONY: cleanup-gate-files
+cleanup-gate-files: ## Remove legacy JSON gate files after task-graph.db migration is confirmed healthy
+	@echo "==> Checking task-graph.db health before removing legacy gate files..."
+	@python3 -c "import sys; sys.path.insert(0,'$(YOUK_DIR)/servers/core/src'); sys.path.insert(0,'$(YOUK_DIR)/servers/shared'); from graph import check_graph_health; from pathlib import Path; h=check_graph_health(Path('$(YOUK_DIR)/state/task-graph.db')); print(f'Graph: {h[\"status\"]} ({h[\"task_count\"]} tasks)'); sys.exit(0 if h['status']=='healthy' else 1)" || { echo "ERROR: task-graph.db not healthy — aborting. Fix the graph before removing gate files."; exit 1; }
+	@echo "==> Graph healthy. Removing legacy gate files from state/..."
+	@for f in challenge-gate-passed.json nfr-check-ran.json route-task-ran.json challenge-ran.json routing-breadcrumb.json; do \
+	  target="$(YOUK_DIR)/state/$$f"; \
+	  if [ -f "$$target" ]; then rm "$$target" && echo "  removed: $$f"; else echo "  absent:  $$f"; fi; \
+	done
+	@echo "==> cleanup-gate-files complete. Run 'make checkup' to verify L5 passes."
+
 .PHONY: relay-check
 relay-check: ## Verify RELAY/ against Gate Packaging Manifest; prints echo block for gate message
 	@bash scripts/relay_check.sh

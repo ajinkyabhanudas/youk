@@ -1,0 +1,263 @@
+"""Task graph — SQLite-backed DAG with gate state per node.
+
+Schema
+------
+tasks  : id, label, challenge_cleared, nfr_cleared, unblocked, in_flight, stale
+edges  : parent_id → child_id (directed: parent must complete before child)
+
+Gate booleans (written by set_gate, read by is_unblocked):
+  challenge_cleared  — challenge skill ran and passed
+  nfr_cleared        — nfr_check ran and gate unblocked
+  unblocked          — both challenge + nfr cleared (derived, stored for fast reads)
+  in_flight          — currently being worked on this session
+
+stale column is reserved for dirty-bit propagation (impact() tool — future build).
+It is written to 0 on insert and never mutated here.
+
+All writes are idempotent (INSERT OR IGNORE, UPDATE is always safe to repeat).
+"""
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+from typing import Any
+
+YOUK_ROOT = Path("/youk")
+_DB_PATH = YOUK_ROOT / "state" / "task-graph.db"
+
+# Gate names accepted by set_gate / get_gate
+GATE_NAMES = frozenset({"challenge_cleared", "nfr_cleared", "unblocked", "in_flight"})
+
+_DDL = """
+CREATE TABLE IF NOT EXISTS tasks (
+    id                  TEXT PRIMARY KEY,
+    label               TEXT NOT NULL,
+    challenge_cleared   INTEGER NOT NULL DEFAULT 0,
+    nfr_cleared         INTEGER NOT NULL DEFAULT 0,
+    unblocked           INTEGER NOT NULL DEFAULT 0,
+    in_flight           INTEGER NOT NULL DEFAULT 0,
+    stale               INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS edges (
+    parent_id   TEXT NOT NULL REFERENCES tasks(id),
+    child_id    TEXT NOT NULL REFERENCES tasks(id),
+    PRIMARY KEY (parent_id, child_id)
+);
+"""
+
+
+class _DB:
+    """Context manager that opens, initialises, and closes a SQLite connection."""
+
+    def __init__(self, db_path: Path) -> None:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._path = db_path
+        self._conn: sqlite3.Connection | None = None
+
+    def __enter__(self) -> sqlite3.Connection:
+        self._conn = sqlite3.connect(str(self._path))
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA foreign_keys=ON")
+        self._conn.executescript(_DDL)
+        self._conn.commit()
+        return self._conn
+
+    def __exit__(self, *args: object) -> None:
+        if self._conn is not None:
+            try:
+                self._conn.commit()
+            except Exception:
+                pass
+            self._conn.close()
+            self._conn = None
+
+
+def _connect(db_path: Path = _DB_PATH) -> _DB:
+    return _DB(db_path)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def create_task_graph(tasks: list[dict], edges: list[tuple[str, str]] | None = None,
+                      db_path: Path = _DB_PATH) -> dict:
+    """Create or extend the task graph.
+
+    tasks: list of {"id": str, "label": str}
+    edges: list of (parent_id, child_id) — parent must complete before child
+
+    Idempotent: existing tasks and edges are silently skipped (INSERT OR IGNORE).
+    Returns {"created": int, "edges_added": int, "total_tasks": int}
+    """
+    edges = edges or []
+    created = 0
+    edges_added = 0
+
+    with _connect(db_path) as conn:
+        for t in tasks:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO tasks (id, label) VALUES (?, ?)",
+                (t["id"], t["label"]),
+            )
+            created += cur.rowcount
+
+        for parent, child in edges:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO edges (parent_id, child_id) VALUES (?, ?)",
+                (parent, child),
+            )
+            edges_added += cur.rowcount
+
+        total = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+        conn.commit()
+
+    return {"created": created, "edges_added": edges_added, "total_tasks": total}
+
+
+def set_gate(task_id: str, gate_name: str, value: bool,
+             db_path: Path = _DB_PATH) -> dict:
+    """Set a gate boolean on a task node. Idempotent.
+
+    gate_name: one of challenge_cleared, nfr_cleared, unblocked, in_flight
+    Returns {"ok": bool, "task_id": str, "gate": str, "value": bool}
+    """
+    if gate_name not in GATE_NAMES:
+        return {"ok": False, "error": f"unknown gate '{gate_name}'; valid: {sorted(GATE_NAMES)}"}
+
+    int_val = 1 if value else 0
+
+    with _connect(db_path) as conn:
+        # Ensure task exists (creates a stub if called before create_task_graph)
+        conn.execute(
+            "INSERT OR IGNORE INTO tasks (id, label) VALUES (?, ?)",
+            (task_id, task_id),
+        )
+        conn.execute(
+            f"UPDATE tasks SET {gate_name} = ? WHERE id = ?",
+            (int_val, task_id),
+        )
+        conn.commit()
+
+    return {"ok": True, "task_id": task_id, "gate": gate_name, "value": value}
+
+
+def is_unblocked(task_id: str, db_path: Path = _DB_PATH) -> dict:
+    """Return gate state for a task.
+
+    Returns {"found": bool, "task_id": str, "gates": dict, "unblocked": bool}
+    """
+    with _connect(db_path) as conn:
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+
+    if row is None:
+        return {"found": False, "task_id": task_id, "gates": {}, "unblocked": False}
+
+    gates = {
+        "challenge_cleared": bool(row["challenge_cleared"]),
+        "nfr_cleared": bool(row["nfr_cleared"]),
+        "unblocked": bool(row["unblocked"]),
+        "in_flight": bool(row["in_flight"]),
+        "stale": bool(row["stale"]),
+    }
+    return {
+        "found": True,
+        "task_id": task_id,
+        "gates": gates,
+        "unblocked": gates["unblocked"],
+    }
+
+
+def next_task(db_path: Path = _DB_PATH) -> dict:
+    """Return the next actionable task: unblocked=True, in_flight=False, all parents done.
+
+    Uses a recursive CTE to walk the DAG and find leaf-ready nodes.
+    Returns {"found": bool, "task": dict | None}
+    """
+    with _connect(db_path) as conn:
+        # A task is ready when:
+        # 1. unblocked = 1, in_flight = 0
+        # 2. All parents have unblocked = 1 (or has no parents)
+        rows = conn.execute("""
+            SELECT t.id, t.label, t.challenge_cleared, t.nfr_cleared,
+                   t.unblocked, t.in_flight, t.stale
+            FROM tasks t
+            WHERE t.unblocked = 1
+              AND t.in_flight = 0
+              AND NOT EXISTS (
+                  SELECT 1 FROM edges e
+                  JOIN tasks p ON p.id = e.parent_id
+                  WHERE e.child_id = t.id
+                    AND p.unblocked = 0
+              )
+            LIMIT 1
+        """).fetchall()
+
+    if not rows:
+        return {"found": False, "task": None}
+
+    row = rows[0]
+    return {
+        "found": True,
+        "task": {
+            "id": row["id"],
+            "label": row["label"],
+            "challenge_cleared": bool(row["challenge_cleared"]),
+            "nfr_cleared": bool(row["nfr_cleared"]),
+            "unblocked": bool(row["unblocked"]),
+            "in_flight": bool(row["in_flight"]),
+            "stale": bool(row["stale"]),
+        },
+    }
+
+
+def mark_done(task_id: str, db_path: Path = _DB_PATH) -> dict:
+    """Mark a task as done by clearing in_flight and ensuring unblocked=1.
+
+    Returns {"ok": bool, "task_id": str}
+    """
+    with _connect(db_path) as conn:
+        conn.execute(
+            "UPDATE tasks SET in_flight = 0, unblocked = 1 WHERE id = ?",
+            (task_id,),
+        )
+        conn.commit()
+    return {"ok": True, "task_id": task_id}
+
+
+def get_all_tasks(db_path: Path = _DB_PATH) -> list[dict[str, Any]]:
+    """Return all tasks with their gate state. Used by health checks."""
+    with _connect(db_path) as conn:
+        rows = conn.execute("SELECT * FROM tasks ORDER BY id").fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
+
+def check_graph_health(db_path: Path = _DB_PATH) -> dict:
+    """Verify graph DB is present and readable.
+
+    Returns {
+        "status": "healthy" | "absent" | "corrupt",
+        "task_count": int,
+        "message": str,
+    }
+    Used by session_start to detect corrupt DB before falling back to JSON gate files.
+    """
+    if not db_path.exists():
+        return {"status": "absent", "task_count": 0, "message": "task-graph.db not found"}
+
+    try:
+        with _connect(db_path) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            return {"status": "healthy", "task_count": count, "message": ""}
+    except Exception as exc:
+        return {
+            "status": "corrupt",
+            "task_count": 0,
+            "message": f"task-graph.db unreadable: {exc}",
+        }
