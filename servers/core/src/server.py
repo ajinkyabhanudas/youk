@@ -434,6 +434,15 @@ def route_task(
         existing = [e for e in existing if e.get("slug") == slug]
         existing.append(new_entry)
         flag_file.write_text(_json.dumps(existing))
+        # Seed task graph node for M+ tasks so gate tools can write to it immediately.
+        # Fails silently — graph is the durable record, not the gate enforcer.
+        if result.get("size") in {"M", "L", "XL"}:
+            try:
+                import hashlib as _hashlib2
+                task_id = _hashlib2.sha1(task.encode()).hexdigest()[:12]
+                _create_task_graph([{"id": task_id, "label": task[:120]}])
+            except Exception:
+                pass
     result["calls_since_compact"] = _increment_tool_call_count()
     return result
 
@@ -585,6 +594,18 @@ def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) 
             }))
         except Exception:
             pass
+        # Mirror gate passage to task graph for cross-session recovery.
+        # Fails silently — JSON flag file is the authoritative gate; graph is the durable record.
+        try:
+            breadcrumb_file = YOUK_ROOT / "state" / "routing-breadcrumb.json"
+            if breadcrumb_file.exists():
+                import json as _json2
+                task_id = _json2.loads(breadcrumb_file.read_text()).get("task_id", task[:40])
+            else:
+                task_id = task[:40]
+            _set_gate(task_id, "nfr_cleared", True)
+        except Exception:
+            pass
     return result
 
 
@@ -679,6 +700,23 @@ def check_challenge_gate(task: str, size: str) -> dict:
                 "slug": slug,
                 "ts": _dt.utcnow().isoformat(),
             }))
+        except Exception:
+            pass
+        # Mirror gate passage to task graph for cross-session recovery.
+        # Also set unblocked=True when challenge clears — challenge is the final gate before dev-loop.
+        try:
+            import json as _json2
+            breadcrumb_file = YOUK_ROOT / "state" / "routing-breadcrumb.json"
+            if breadcrumb_file.exists():
+                task_id = _json2.loads(breadcrumb_file.read_text()).get("task_id", task[:40])
+            else:
+                task_id = task[:40]
+            _set_gate(task_id, "challenge_cleared", True)
+            # Mark unblocked only if nfr also cleared — check graph state first
+            from graph import is_unblocked as _graph_is_unblocked
+            state = _graph_is_unblocked(task_id)
+            if state.get("gates", {}).get("nfr_cleared"):
+                _set_gate(task_id, "unblocked", True)
         except Exception:
             pass
     return result

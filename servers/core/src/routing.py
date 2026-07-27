@@ -15,10 +15,13 @@ _BREADCRUMB_FILE = YOUK_ROOT / "state" / "routing-breadcrumb.json"
 
 def _write_routing_breadcrumb(task: str, size: str) -> None:
     """Record that route_task fired for this task. Cleared by task_checkpoint after read."""
+    import hashlib as _hashlib
+    task_id = _hashlib.sha1(task.encode()).hexdigest()[:12]
     try:
         _BREADCRUMB_FILE.parent.mkdir(parents=True, exist_ok=True)
         _BREADCRUMB_FILE.write_text(json.dumps({
             "task": task[:200],
+            "task_id": task_id,
             "size": size,
             "routed_at": datetime.utcnow().isoformat(),
         }))
