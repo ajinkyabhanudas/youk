@@ -59,6 +59,12 @@ Follow the returned skill_content.
 Call `youk-code.route_to_skill("learn", "session close — encode patterns")`.
 Follow the returned skill_content.
 
+**Step 4b — Cognitive assessment** *(skip if Step 1 was skipped — no code work this session)*
+
+Call `youk-code.route_to_skill("cog-psych", "session close — assess developer growth")`.
+Follow the returned skill_content. Pass the returned `cognitive_assessment` block to
+`session_end(cognitive_assessment=<block>)` in Step 6. If session_counter < 3: skip silently.
+
 **Step 5 — Contract sweep**
 
 Scan the conversation for any contract trigger phrases that were spoken but where
