@@ -1538,3 +1538,88 @@ class TestReentryLogCleanup:
         assert not log.exists()
         result = session.end_session(summary="done", commits_made=False)
         assert "error" not in result
+
+
+# ── Cognitive assessment audit integration ────────────────────────────────────
+
+class TestCognitiveAssessmentAuditLine:
+    """end_session writes CognitiveAssessment line to audit when param is non-empty."""
+
+    def test_cognitive_assessment_written_to_audit(self, youk_root, tmp_path, monkeypatch):
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        block = "[COGNITIVE ASSESSMENT]\nSession: #5\nDreyfus stage: Competent\nZPD zone: Productive ZPD"
+        session.end_session(
+            summary="test",
+            commits_made=False,
+            cognitive_assessment=block,
+        )
+        from datetime import datetime as _dt
+        month = _dt.utcnow().strftime("%Y-%m")
+        audit_file = tmp_path / "claude" / "audit" / f"{month}.md"
+        assert audit_file.exists()
+        content = audit_file.read_text()
+        assert "CognitiveAssessment:" in content
+        assert "Dreyfus stage: Competent" in content
+
+    def test_cognitive_assessment_collapsed_to_single_line(self, youk_root, tmp_path, monkeypatch):
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        block = "Line A\nLine B\nLine C"
+        session.end_session(
+            summary="test",
+            commits_made=False,
+            cognitive_assessment=block,
+        )
+        from datetime import datetime as _dt
+        month = _dt.utcnow().strftime("%Y-%m")
+        content = (tmp_path / "claude" / "audit" / f"{month}.md").read_text()
+        cog_lines = [l for l in content.splitlines() if l.startswith("CognitiveAssessment:")]
+        assert len(cog_lines) == 1  # multiline block collapsed to one line
+
+    def test_no_cognitive_assessment_line_when_empty(self, youk_root, tmp_path, monkeypatch):
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        session.end_session(
+            summary="test",
+            commits_made=False,
+            cognitive_assessment="",
+        )
+        from datetime import datetime as _dt
+        month = _dt.utcnow().strftime("%Y-%m")
+        content = (tmp_path / "claude" / "audit" / f"{month}.md").read_text()
+        assert "CognitiveAssessment:" not in content
+
+    def test_cognitive_assessment_not_written_when_whitespace_only(self, youk_root, tmp_path, monkeypatch):
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        session.end_session(
+            summary="test",
+            commits_made=False,
+            cognitive_assessment="   \n   ",
+        )
+        from datetime import datetime as _dt
+        month = _dt.utcnow().strftime("%Y-%m")
+        content = (tmp_path / "claude" / "audit" / f"{month}.md").read_text()
+        assert "CognitiveAssessment:" not in content
+
+    def test_long_assessment_truncated_to_400_chars(self, youk_root, tmp_path, monkeypatch):
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        block = "x" * 500
+        session.end_session(
+            summary="test",
+            commits_made=False,
+            cognitive_assessment=block,
+        )
+        from datetime import datetime as _dt
+        month = _dt.utcnow().strftime("%Y-%m")
+        content = (tmp_path / "claude" / "audit" / f"{month}.md").read_text()
+        cog_line = next(l for l in content.splitlines() if l.startswith("CognitiveAssessment:"))
+        # "CognitiveAssessment: " prefix + up to 400 chars
+        assert len(cog_line) <= len("CognitiveAssessment: ") + 400
