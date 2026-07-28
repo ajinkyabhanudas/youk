@@ -6,7 +6,7 @@ sys.path.insert(0, "/shared")
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
-from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state, _record_outcome_followup
+from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state, _record_outcome_followup, enrich_route_result as _enrich_route_result_impl
 from routing import route_task as _route_task
 from health import (
     run_health_check_with_skill_signals,
@@ -402,8 +402,10 @@ def route_task(
     skills_already_invoked: Skills already run this session (avoids double-triggering warnings).
     intent_brief: Optional — the full dict returned by optimize_intent.
 
-    Returns: size, ceremony, skills, nfr_mode, warnings, plan_hook, blocked, collapsing_question.
+    Returns: size, ceremony, skills, nfr_mode, warnings, plan_hook, blocked, collapsing_question,
+             file_context, graph_state.
     When blocked=true: stop. Surface collapsing_question. Do not invoke any skill.
+    If file_context is non-empty, pass it as leading context to the first route_to_skill call.
     """
     decision = _route_task(task, skills_already_invoked or [], intent_brief)
     result = decision.to_dict()
@@ -449,8 +451,14 @@ def route_task(
                 _create_task_graph([{"id": task_id, "label": task[:120]}])
             except Exception:
                 pass
+    _enrich_route_result(result, task)
     result["calls_since_compact"] = _increment_tool_call_count()
     return result
+
+
+def _enrich_route_result(result: dict, task: str) -> None:
+    """Delegate to session.enrich_route_result — lives in session.py for testability."""
+    _enrich_route_result_impl(result, task)
 
 
 @mcp.tool()

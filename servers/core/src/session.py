@@ -3011,3 +3011,49 @@ def _record_outcome_followup(session_slug: str, outcome_result: str) -> dict:
         "amended": False,
         "error": f"No audit entry found for slug '{session_slug}' in recent months",
     }
+
+
+def enrich_route_result(result: dict, task: str) -> None:
+    """Mutate result in-place with file_context and graph_state enrichments.
+
+    Called by route_task in server.py after the routing decision is made.
+    Both enrichments are silent-fail: errors set safe defaults, never propagate.
+    Uses lazy imports so session.py stays importable without mcp installed.
+    """
+    # BM25 file context: top-3 hits for the task query above score threshold.
+    # FTS5 BM25 scores are negative; more negative = better match.
+    _FILE_CONTEXT_THRESHOLD = -0.5
+    try:
+        from file_index import find_relevant as _find_relevant
+        import json as _jmod
+        _sopen = YOUK_ROOT / "state" / "session-open.json"
+        _fslug = _jmod.loads(_sopen.read_text()).get("slug", "unknown") if _sopen.exists() else "unknown"
+        # FTS5 AND-semantics: all terms must appear in the same row. Long prose task strings
+        # hit words absent from symbols/imports/headings and yield 0 results.
+        # Try full task first; fall back to longest word (most likely a symbol name).
+        _fc = _find_relevant(task, project_slug=_fslug, limit=3)
+        if not _fc.get("results"):
+            _fc = _find_relevant(max(task.split(), key=len), project_slug=_fslug, limit=3)
+        result["file_context"] = [
+            {"file": r["file_path"], "project": r["project_slug"], "score": r["score"]}
+            for r in _fc.get("results", [])
+            if r.get("score", 0) < _FILE_CONTEXT_THRESHOLD
+        ]
+    except Exception:
+        result["file_context"] = []
+
+    # Task graph state: next unblocked task + blocked count.
+    # Only fires when graph has >1 node — single-task sessions incur zero overhead.
+    try:
+        from graph import get_all_tasks as _get_all_tasks, next_task as _next_task
+        _tasks = _get_all_tasks()
+        if len(_tasks) > 1:
+            _next = _next_task()
+            _blocked_count = sum(1 for t in _tasks if not t.get("unblocked"))
+            result["graph_state"] = {
+                "total_tasks": len(_tasks),
+                "blocked_count": _blocked_count,
+                "next_task": _next.get("task"),
+            }
+    except Exception:
+        pass  # graph_state omitted on failure — not a required field
