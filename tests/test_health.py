@@ -2555,3 +2555,172 @@ class TestReviewRequiredGate:
         )
         md = p.to_markdown()
         assert "ReviewRequired" not in md
+
+
+# ── _compute_skill_token_trend — converging / expanding / stable / insufficient ─
+
+class TestComputeSkillTokenTrend:
+    def _sessions(self, skill: str, token_series: list[int]) -> list[dict]:
+        return [{"skill_tokens": {skill: t}} for t in token_series]
+
+    def test_insufficient_data_fewer_than_3_sessions(self):
+        from health import _compute_skill_token_trend
+        sessions = self._sessions("dev-loop", [1000, 900])
+        result = _compute_skill_token_trend(sessions)
+        assert result["dev-loop"]["trend"] == "insufficient_data"
+        assert result["dev-loop"]["sessions_with_data"] == 2
+        assert result["dev-loop"]["velocity"] == 0
+
+    def test_converging_trend_when_tokens_drop_over_10pct(self):
+        from health import _compute_skill_token_trend
+        # second half mean (~400) is >10% less than first half mean (~900) → converging
+        sessions = self._sessions("dev-loop", [1000, 900, 800, 400, 350, 420])
+        result = _compute_skill_token_trend(sessions)
+        assert result["dev-loop"]["trend"] == "converging"
+        assert result["dev-loop"]["velocity"] < 0
+
+    def test_expanding_trend_when_tokens_rise_over_10pct(self):
+        from health import _compute_skill_token_trend
+        # second half mean (~1300) is >10% more than first half mean (~500)
+        sessions = self._sessions("nfr-check", [400, 500, 600, 1200, 1300, 1400])
+        result = _compute_skill_token_trend(sessions)
+        assert result["nfr-check"]["trend"] == "expanding"
+        assert result["nfr-check"]["velocity"] > 0
+
+    def test_stable_trend_when_change_within_10pct(self):
+        from health import _compute_skill_token_trend
+        sessions = self._sessions("challenge", [1000, 1000, 1000, 1050, 980, 1020])
+        result = _compute_skill_token_trend(sessions)
+        assert result["challenge"]["trend"] == "stable"
+
+    def test_zero_cost_sessions_excluded(self):
+        from health import _compute_skill_token_trend
+        sessions = [
+            {"skill_tokens": {"dev-loop": 0}},
+            {"skill_tokens": {"dev-loop": 500}},
+            {"skill_tokens": {"dev-loop": 600}},
+            {"skill_tokens": {"dev-loop": 400}},
+        ]
+        result = _compute_skill_token_trend(sessions)
+        # 0-cost sessions excluded; only 3 non-zero entries counted
+        assert result["dev-loop"]["sessions_with_data"] == 3
+
+    def test_multiple_skills_tracked_independently(self):
+        from health import _compute_skill_token_trend
+        sessions = [
+            {"skill_tokens": {"dev-loop": 1000, "challenge": 500}},
+            {"skill_tokens": {"dev-loop": 900,  "challenge": 480}},
+            {"skill_tokens": {"dev-loop": 800,  "challenge": 510}},
+            {"skill_tokens": {"dev-loop": 400,  "challenge": 500}},
+        ]
+        result = _compute_skill_token_trend(sessions)
+        assert "dev-loop" in result
+        assert "challenge" in result
+
+    def test_empty_sessions_returns_empty_dict(self):
+        from health import _compute_skill_token_trend
+        assert _compute_skill_token_trend([]) == {}
+
+    def test_result_has_pct_change_when_3_plus_sessions(self):
+        from health import _compute_skill_token_trend
+        sessions = self._sessions("code-review", [1000, 900, 800, 500, 480, 520])
+        result = _compute_skill_token_trend(sessions)
+        assert "pct_change" in result["code-review"]
+        assert "mean_tokens" in result["code-review"]
+
+
+# ── _write_patterns_summary — theme grouping + write gate ───────────────────────
+
+class TestWritePatternsSummary:
+    def _candidate(self, contract: str, theme: str, projects: list[str]) -> dict:
+        return {"contract": contract, "theme": theme, "projects": projects}
+
+    def test_writes_file_when_theme_has_3_plus_candidates(self, youk_root):
+        (youk_root / "knowledge" / "global").mkdir(parents=True, exist_ok=True)
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            from health import _write_patterns_summary
+            candidates = [
+                self._candidate("always run ruff before commit", "lint", ["youk", "canopy"]),
+                self._candidate("never commit secrets", "lint", ["youk", "genie"]),
+                self._candidate("run tests before push", "lint", ["canopy", "genie"]),
+            ]
+            _write_patterns_summary(candidates)
+            out = (youk_root / "knowledge" / "global" / "patterns.md").read_text()
+            assert "## lint" in out
+            assert "always run ruff before commit" in out
+        finally:
+            health.YOUK_ROOT = orig
+
+    def test_no_write_when_all_themes_have_fewer_than_3(self, youk_root):
+        (youk_root / "knowledge" / "global").mkdir(parents=True, exist_ok=True)
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            from health import _write_patterns_summary
+            candidates = [
+                self._candidate("rule A", "lint", ["youk", "canopy"]),
+                self._candidate("rule B", "security", ["youk"]),
+            ]
+            _write_patterns_summary(candidates)
+            assert not (youk_root / "knowledge" / "global" / "patterns.md").exists()
+        finally:
+            health.YOUK_ROOT = orig
+
+    def test_no_write_when_global_dir_missing(self, youk_root):
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            from health import _write_patterns_summary
+            candidates = [
+                self._candidate("rule A", "lint", ["a", "b"]),
+                self._candidate("rule B", "lint", ["c", "d"]),
+                self._candidate("rule C", "lint", ["e", "f"]),
+            ]
+            _write_patterns_summary(candidates)  # global/ dir not created → silent return
+        finally:
+            health.YOUK_ROOT = orig
+
+    def test_skips_write_when_content_unchanged(self, youk_root):
+        gdir = youk_root / "knowledge" / "global"
+        gdir.mkdir(parents=True, exist_ok=True)
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            from health import _write_patterns_summary
+            candidates = [
+                self._candidate("rule A", "ops", ["youk", "canopy"]),
+                self._candidate("rule B", "ops", ["youk", "genie"]),
+                self._candidate("rule C", "ops", ["canopy", "genie"]),
+            ]
+            _write_patterns_summary(candidates)
+            mtime1 = (gdir / "patterns.md").stat().st_mtime
+            _write_patterns_summary(candidates)
+            mtime2 = (gdir / "patterns.md").stat().st_mtime
+            assert mtime1 == mtime2  # no rewrite when content unchanged
+        finally:
+            health.YOUK_ROOT = orig
+
+    def test_multiple_themes_all_written(self, youk_root):
+        gdir = youk_root / "knowledge" / "global"
+        gdir.mkdir(parents=True, exist_ok=True)
+        import health
+        orig = health.YOUK_ROOT
+        health.YOUK_ROOT = youk_root
+        try:
+            from health import _write_patterns_summary
+            candidates = (
+                [self._candidate(f"lint-{i}", "lint", ["a", "b"]) for i in range(3)]
+                + [self._candidate(f"sec-{i}", "security", ["a", "c"]) for i in range(3)]
+            )
+            _write_patterns_summary(candidates)
+            out = (gdir / "patterns.md").read_text()
+            assert "## lint" in out
+            assert "## security" in out
+        finally:
+            health.YOUK_ROOT = orig
