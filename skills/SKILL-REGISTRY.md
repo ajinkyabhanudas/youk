@@ -40,6 +40,7 @@ for all generated `references/stacks/{framework}.md` overlays (6 sections, WAF-g
 | `/context-sync` | Context Manager | Session start, session end, when context feels stale | ACTIVE |
 | `/humanize` | Technical Writer | Commit messages, docs, decision rationale | ACTIVE |
 | `/learn` | L&D Coach | Session end (always), explicit concept deep-dives | ACTIVE |
+| `/cog-psych` | Cognitive Psychologist | Session end (after /learn) — Dreyfus stage + ZPD + metacognitive assessment | ACTIVE |
 | `/skill-health` | Engineering Manager | Periodic review, post-observed gap; reads audit logs | ACTIVE |
 | `/simplify` | Code Quality | After implementation, reduce complexity | ACTIVE |
 | `/overengineering-auditor` | Planning Gate | After any M+ plan is produced — context-free subagent audits for overengineering, surfaces simpler alternative with constraints, triggers stress-test after approval | ACTIVE |

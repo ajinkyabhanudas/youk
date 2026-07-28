@@ -2486,6 +2486,7 @@ def end_session(
     contract_violations: list[str] | None = None,
     outcome: str = "NONE",
     outcome_result: str = "UNKNOWN",
+    cognitive_assessment: str = "",
 ) -> dict:
     """
     Write structured audit log entry, detect and save contract phrases.
@@ -2660,6 +2661,16 @@ def end_session(
     outcome_line = f"Outcome: {outcome}\n" if outcome != "NONE" else ""
     outcome_result_line = f"OutcomeResult: {outcome_result}\n" if outcome != "NONE" else ""
 
+    # Cognitive assessment — structured growth signal from cog-psych skill.
+    # Written as a single-line field so audit parsers can extract it.
+    cog_line = ""
+    if cognitive_assessment and cognitive_assessment.strip():
+        # Collapse multiline block to one line for audit log compactness
+        cog_summary = " | ".join(
+            line.strip() for line in cognitive_assessment.splitlines() if line.strip()
+        )[:400]
+        cog_line = f"CognitiveAssessment: {cog_summary}\n"
+
     token_data = _read_and_clear_tokens()
     total_tokens = token_data["total_input"] + token_data["total_output"]
     budget = token_data.get("token_budget", 0)
@@ -2718,6 +2729,7 @@ def end_session(
         f"{contract_violation_lines}"
         f"{outcome_line}"
         f"{outcome_result_line}"
+        f"{cog_line}"
     )
 
     with open(audit_file, "a") as f:
