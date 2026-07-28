@@ -2886,6 +2886,43 @@ def end_session(
             "skill_gaps={'skill': ['reason']} to document the miss."
         )
 
+    # 3C — Concept graph population: extract concepts from this session's domain output.
+    # Only fires when /learn ran (domain files exist) — silent-fail, never blocks close.
+    concepts_written = 0
+    if "learn" in (skills_used or []):
+        try:
+            from concept_graph import extract_concepts as _extract_concepts, write_concepts as _write_concepts
+            _domain_dir = YOUK_ROOT / "knowledge" / "domain"
+            _raw_patterns: list[str] = []
+            _raw_domain: list[str] = []
+            if _domain_dir.exists():
+                for _f in _domain_dir.glob("*.md"):
+                    if _f.name == "gaps.md":
+                        continue
+                    try:
+                        _text = _f.read_text()
+                        for _line in _text.splitlines():
+                            _stripped = _line.strip().lstrip("- ").strip()
+                            if _stripped and not _stripped.startswith("#"):
+                                if "pattern" in _f.name.lower():
+                                    _raw_patterns.append(_stripped)
+                                else:
+                                    _raw_domain.append(_stripped)
+                    except Exception:
+                        pass
+            _concepts = _extract_concepts(
+                patterns=_raw_patterns[:30],
+                domain_knowledge=_raw_domain[:30],
+                project_slug=slug or "unknown",
+                session_n=current_state.get("session_counter", 0),
+            )
+            if _concepts:
+                _result = _write_concepts(_concepts, slug or "unknown",
+                                          current_state.get("session_counter", 0))
+                concepts_written = _result.get("written", 0)
+        except Exception:
+            pass
+
     # /learn enforcement — /learn is non-optional at /done.
     # Separate key so the capability-skill gate and the /learn gate are independently checkable.
     learn_ran = "learn" in (skills_used or [])
@@ -2918,6 +2955,7 @@ def end_session(
 
     return {
         "knowledge_extracted": summary.count("##"),
+        "concepts_written": concepts_written,
         "global_contracts_promoted": global_contracts_promoted,
         "audit_written": True,
         "session_close_cluster_detected": session_close_detected,

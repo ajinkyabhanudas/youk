@@ -35,6 +35,10 @@ from file_index import (
     find_affected as _find_affected,
     get_index_stats as _get_index_stats,
 )
+from concept_graph import (
+    query_concept_graph as _query_concept_graph,
+    get_concept_stats as _get_concept_stats,
+)
 
 YOUK_ROOT = Path("/youk")
 CLAUDE_ROOT = Path("/claude")
@@ -1384,6 +1388,34 @@ def get_file_index_stats(project_slug: str | None = None) -> dict:
     Returns: {status, projects: [{project_slug, file_count, last_indexed}], total_files}
     """
     return _get_index_stats(project_slug=project_slug)
+
+
+@mcp.tool()
+def query_concept_graph(query: str, project_slug: str | None = None, limit: int = 5) -> dict:
+    """Search the cross-session concept graph for concepts matching the query label.
+
+    Returns seed matches (label substring) extended with one-hop neighbors via
+    concept_edges. Use to surface related patterns, decisions, and domain knowledge
+    from past sessions across all projects.
+
+    query: search term (substring match on concept label)
+    project_slug: filter to a specific project (youk, canopy, genie-fertility); None = all
+    limit: max seed results (neighbors are additive, capped at 2x limit)
+
+    Returns: {concepts: [{label, type, project_slug, session_n, summary, match}], total}
+    match field: "direct" | "neighbor:{edge_type}"
+    """
+    return _query_concept_graph(query, project_slug=project_slug, limit=limit)
+
+
+@mcp.tool()
+def get_concept_graph_stats(project_slug: str | None = None) -> dict:
+    """Return concept graph health: concept and edge counts per project.
+
+    project_slug: filter to one project; None returns all.
+    Returns: {status, projects: [{project_slug, concept_count}], total_concepts, total_edges}
+    """
+    return _get_concept_stats(project_slug=project_slug)
 
 
 @mcp.tool()
