@@ -6,7 +6,7 @@ sys.path.insert(0, "/shared")
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
-from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state, _record_outcome_followup, enrich_route_result as _enrich_route_result_impl
+from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state, _record_outcome_followup, enrich_route_result as _enrich_route_result_impl, write_routing_context as _write_routing_context_impl, append_gate_to_active_task as _append_gate_impl
 from routing import route_task as _route_task
 from health import (
     run_health_check_with_skill_signals,
@@ -63,6 +63,16 @@ def _increment_tool_call_count() -> int:
 def _reset_tool_call_count() -> None:
     """Reset counter when compact_context fires."""
     _TOOL_CALL_COUNT_FILE.write_text('{"count": 0}')
+
+
+def _write_routing_context(task: str, result: dict) -> None:
+    """Delegate to session.write_routing_context — lives in session.py for testability."""
+    _write_routing_context_impl(task, result, youk_root=YOUK_ROOT)
+
+
+def _append_gate_to_active_task(gate_name: str) -> None:
+    """Delegate to session.append_gate_to_active_task — lives in session.py for testability."""
+    _append_gate_impl(gate_name, youk_root=YOUK_ROOT)
 
 
 mcp = FastMCP(
@@ -442,6 +452,8 @@ def route_task(
         existing = [e for e in existing if e.get("slug") == slug]
         existing.append(new_entry)
         flag_file.write_text(_json.dumps(existing))
+        # Write semantic routing context into active_task.json so context-clear loses nothing.
+        _write_routing_context(task, result)
         # Seed task graph node for M+ tasks so gate tools can write to it immediately.
         # Fails silently — graph is the durable record, not the gate enforcer.
         if result.get("size") in {"M", "L", "XL"}:
@@ -608,6 +620,7 @@ def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) 
             }))
         except Exception:
             pass
+        _append_gate_to_active_task("nfr")
         # Mirror gate passage to task graph for cross-session recovery.
         # Fails silently — JSON flag file is the authoritative gate; graph is the durable record.
         try:
@@ -673,6 +686,7 @@ def mark_challenge_ran(task: str, angles_checked: list[str], mode: str = "full")
             "angles_validated": True,
             "mode": mode,
         }))
+        _append_gate_to_active_task("challenge")
         return {"recorded": True, "challenge_rounds": new_rounds, "angles_validated": True}
     except Exception:
         return {"recorded": False, "challenge_rounds": 0, "angles_validated": False}
@@ -716,6 +730,7 @@ def check_challenge_gate(task: str, size: str) -> dict:
             }))
         except Exception:
             pass
+        _append_gate_to_active_task("challenge_gate")
         # Mirror gate passage to task graph for cross-session recovery.
         # Also set unblocked=True when challenge clears — challenge is the final gate before dev-loop.
         try:
