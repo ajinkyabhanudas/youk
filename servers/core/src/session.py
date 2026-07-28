@@ -1818,6 +1818,11 @@ def start_session(project_dir: str) -> SessionState:
                     "Running /build now to catch any missed direction gates and NFR checks."
                 )
 
+    # Gate sequence resume: surface incomplete routing context so context-clear loses nothing.
+    _gate_resume = get_gate_sequence_resume_item()
+    if _gate_resume:
+        session_plan.insert(0, _gate_resume)
+
     # Outcome follow-up: if last session shipped or staged with PENDING/UNKNOWN result,
     # surface a one-line prompt so the developer can confirm what happened.
     # Only fires on returning sessions (days_since_last != 0) and only appended (never inserted)
@@ -3057,3 +3062,100 @@ def enrich_route_result(result: dict, task: str) -> None:
             }
     except Exception:
         pass  # graph_state omitted on failure — not a required field
+
+
+_GATES_FOR_CEREMONY: dict[str, list[str]] = {
+    "standard": ["challenge", "nfr", "challenge_gate", "dev-loop"],
+    "minimal":  ["nfr", "dev-loop"],
+    "none":     [],
+}
+
+
+def write_routing_context(task: str, result: dict, youk_root: Path | None = None) -> None:
+    """Write semantic routing context into active_task.json immediately after route_task fires.
+
+    Extends (not replaces) active_task.json — preserves files_touched and other
+    hook-written fields while adding routing_context so a context-clear loses nothing.
+    Lives in session.py (no mcp dependency) for testability.
+    """
+    root = youk_root or YOUK_ROOT
+    active_task_file = root / "state" / "active_task.json"
+    ceremony = result.get("ceremony", "standard")
+    gates_expected = _GATES_FOR_CEREMONY.get(ceremony, _GATES_FOR_CEREMONY["standard"])
+
+    routing_ctx = {
+        "task": task[:200],
+        "size": result.get("size", "?"),
+        "plan_hook": result.get("plan_hook", ""),
+        "gates_expected": gates_expected,
+        "gates_sequence": [],
+        "routed_at": datetime.utcnow().isoformat(),
+    }
+    existing: dict = {}
+    if active_task_file.exists():
+        try:
+            existing = json.loads(active_task_file.read_text())
+        except Exception:
+            existing = {}
+    existing["routing_context"] = routing_ctx
+    if not existing.get("task") or existing.get("task", "").startswith(("editing ", "running:")):
+        existing["task"] = task[:200]
+    try:
+        active_task_file.write_text(json.dumps(existing, indent=2))
+    except Exception:
+        pass
+
+
+def append_gate_to_active_task(gate_name: str, youk_root: Path | None = None) -> None:
+    """Append a gate passage record to active_task.json['routing_context']['gates_sequence'].
+
+    Idempotent — gate_name only appended once. Silent-fail.
+    Lives in session.py (no mcp dependency) for testability.
+    """
+    root = youk_root or YOUK_ROOT
+    active_task_file = root / "state" / "active_task.json"
+    if not active_task_file.exists():
+        return
+    try:
+        existing = json.loads(active_task_file.read_text())
+        ctx = existing.get("routing_context")
+        if not isinstance(ctx, dict):
+            return
+        seq: list = ctx.get("gates_sequence", [])
+        if any(g.get("gate") == gate_name for g in seq):
+            return
+        seq.append({"gate": gate_name, "fired_at": datetime.utcnow().isoformat()})
+        ctx["gates_sequence"] = seq
+        existing["routing_context"] = ctx
+        active_task_file.write_text(json.dumps(existing, indent=2))
+    except Exception:
+        pass
+
+
+def get_gate_sequence_resume_item(youk_root: Path | None = None) -> str | None:
+    """Return a plan item string if active_task.json has incomplete gate sequence, else None.
+
+    Used by session_start plan builder and testable in isolation.
+    """
+    root = youk_root or YOUK_ROOT
+    active_task_file = root / "state" / "active_task.json"
+    if not active_task_file.exists():
+        return None
+    try:
+        data = json.loads(active_task_file.read_text())
+        ctx = data.get("routing_context", {})
+        task_label = ctx.get("task", "")
+        expected = ctx.get("gates_expected", [])
+        fired = [g["gate"] for g in ctx.get("gates_sequence", [])]
+        remaining = [g for g in expected if g not in fired]
+        if task_label and expected and remaining and len(fired) > 0:
+            next_gate = remaining[0]
+            return (
+                f"⚠ Routing in progress for '{task_label[:80]}': "
+                f"{len(fired)}/{len(expected)} gates done "
+                f"(fired: {', '.join(fired)}). "
+                f"Next gate: {next_gate}. Resume with /build."
+            )
+    except Exception:
+        pass
+    return None
