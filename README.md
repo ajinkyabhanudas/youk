@@ -52,6 +52,8 @@ When a skill fails or gets skipped in a session, it gets patched before that ses
 
 Self-heal reads the last 30 days of sessions and surfaces structural improvements — recurring gaps, skipped skills, patterns that keep coming back. You review and approve them. Structural code and config changes never apply without your review. Skill text (SKILL.md) is the one exception — it is patched in-session, with the diff written to the audit trail (see PHILOSOPHY.md §3 for why).
 
+**Signal-level self-improvement (Karpathy loop):** After each `/done`, `session_end` runs a deterministic signal detector that reads `[EXAMINATION SURFACE]` blocks from skill output and compares what was examined against what was mandatory for the task type. Signals accumulate in `state/skill-signals.jsonl`. After 3 sessions with the same gap on the same skill-dimension, a 5-part evaluable proposal is generated (what/evidence/proposed-change/assumption/falsifier). A LinUCB bandit selects between skill versions to measure which performs better. A falsifier monitor watches applied proposals for 3 sessions and surfaces an alert if the signal didn't improve. No action needed — it runs automatically after every session end.
+
 `/learn` isn't logging. It maps what you encountered today to what you already know, explicitly calls out where the analogy breaks down, and writes that to your knowledge base. Cross-project patterns are surfaced by self-heal for your review; you approve them via apply_proposal. You don't extract the lesson manually — it does that.
 
 The result: the longer you use it, the fewer corrections you have to make. That's the compounding part.
@@ -453,20 +455,32 @@ knowledge/
 ## Development commands
 
 ```bash
-# Run all tests: unit tests + MCP handshakes
-make test
-
-# Health check with actionable Fix: lines
+# Health check with actionable Fix: lines (no make needed)
 bash scripts/doctor.sh
+
+# Unit tests (no Docker)
+python3 -m pytest tests/ -v -m "not integration"
+
+# Run all tests: unit + MCP handshakes
+make test
+# or without make:
+python3 -m pytest tests/integration/ -v -m integration --no-cov
 
 # Build both images (needed when requirements.txt or servers/shared/ change)
 make build
+# or without make:
+docker build -t youk-core:latest -f servers/core/Dockerfile .
+docker build -t youk-code:latest -f servers/code/Dockerfile .
 
 # Full rebuild from scratch
 make rebuild
+# or without make:
+docker rmi youk-core:latest youk-code:latest 2>/dev/null || true
+docker build -t youk-core:latest -f servers/core/Dockerfile .
+docker build -t youk-code:latest -f servers/code/Dockerfile .
 ```
 
-**Live source:** `servers/core/src/` and `servers/code/src/` are mounted as Docker volumes — code changes there take effect on next Claude Code restart without `make build`. Only rebuild when `requirements.txt` or `servers/shared/` changes, then restart Claude Code.
+**Live source:** `servers/core/src/` and `servers/code/src/` are mounted as Docker volumes — code changes there take effect on next Claude Code restart without rebuilding. Only rebuild when `requirements.txt` or `servers/shared/` changes, then restart Claude Code.
 
 ---
 
@@ -533,17 +547,26 @@ No contracts have been saved yet for this project. Call `session_end` with `expl
 
 **MCP containers not responding**
 
-Run `make verify-mcp` to test both container handshakes:
+Test both container handshakes:
 
 ```bash
 make verify-mcp
+# or without make:
+bash scripts/doctor.sh
 ```
 
-If either shows FAIL, check that Docker is running and images are built (`make build`).
+If either shows FAIL, check that Docker is running and images are built:
+
+```bash
+make build
+# or:
+docker build -t youk-core:latest -f servers/core/Dockerfile .
+docker build -t youk-code:latest -f servers/code/Dockerfile .
+```
 
 **Build fails with `COPY servers/shared/ /shared/` error**
 
-Build must run from the repo root. The Makefile handles this — use `make build`, not `docker build` directly.
+Build must run from the repo root — not from inside `servers/`. Both `make build` and the direct `docker build` commands above handle this correctly.
 
 ---
 
