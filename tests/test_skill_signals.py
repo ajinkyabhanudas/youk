@@ -913,10 +913,24 @@ class TestBanditAutoFeed:
 class TestFalsifierAlertContract:
     """Verify the CLAUDE.md instruction exists and is correctly formed."""
 
-    def test_falsifier_alerts_handler_in_claude_md(self):
-        import os
-        claude_md = Path(os.path.expanduser("~/.claude/CLAUDE.md"))
-        assert claude_md.exists(), "CLAUDE.md must exist"
-        content = claude_md.read_text()
-        assert "falsifier_alerts" in content, "CLAUDE.md must handle falsifier_alerts"
-        assert "FALSIFIED" in content, "CLAUDE.md handler must mention FALSIFIED verdict"
+    def test_falsifier_alerts_handler_in_server_code(self):
+        # The behavioral handler for falsifier_alerts is in the server codebase,
+        # not in ~/.claude/CLAUDE.md (which is a local runtime file never in the repo).
+        # Verify the FALSIFIED verdict is produced in skill_signals.py and that
+        # falsifier_alerts is wired into SessionState via session.py.
+        skill_signals_src = (
+            Path(__file__).parent.parent / "servers" / "core" / "src" / "skill_signals.py"
+        )
+        session_src = (
+            Path(__file__).parent.parent / "servers" / "core" / "src" / "session.py"
+        )
+        assert skill_signals_src.exists(), "skill_signals.py must exist"
+        assert session_src.exists(), "session.py must exist"
+
+        signals_content = skill_signals_src.read_text()
+        assert "FALSIFIED" in signals_content, "skill_signals.py must produce FALSIFIED verdict"
+        assert "check_falsifier_conditions" in signals_content, "skill_signals.py must define check_falsifier_conditions"
+
+        session_content = session_src.read_text()
+        assert "falsifier_alerts" in session_content, "session.py must wire falsifier_alerts into SessionState"
+        assert "check_falsifier_conditions" in session_content, "session.py must call check_falsifier_conditions"
