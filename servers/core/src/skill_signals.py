@@ -186,12 +186,17 @@ def compute_signals_for_session(audit_block: str, session_n: int) -> list[dict]:
         if raw.lower() != "none":
             skills_used = [s.strip().lower().replace("_", "-") for s in raw.split(",") if s.strip()]
 
-    # Extract task type from active_task or TaskCheckpoints
+    # Extract task type — prefer explicit TaskType: line written by session_end,
+    # fall back to size-based heuristic for old audit entries.
     task_type = "other"
-    checkpoint_match = re.search(r"TaskCheckpoints:.*?\(([A-Z]+)\)", audit_block)
-    if checkpoint_match:
-        size = checkpoint_match.group(1)
-        task_type = "new_endpoint" if size in ("L", "XL") else "other"
+    task_type_match = re.search(r"^TaskType:\s*(\w+)$", audit_block, re.MULTILINE)
+    if task_type_match:
+        task_type = task_type_match.group(1).strip()
+    else:
+        checkpoint_match = re.search(r"TaskCheckpoints:.*?\(([A-Z]+)\)", audit_block)
+        if checkpoint_match:
+            size = checkpoint_match.group(1)
+            task_type = "new_endpoint" if size in ("L", "XL") else "other"
 
     matrix = _load_scope_matrix()
 
@@ -486,7 +491,44 @@ def record_session_signals(audit_block: str, session_n: int) -> dict:
             fork_file = _STATE_DIR / "skill-fork-candidates.json"
             fork_file.write_text(json.dumps({"candidates": fork_candidates, "updated_at": datetime.now(UTC).isoformat()}, indent=2))
 
-        # Phase 3: auto-fork any skill that crossed the threshold this session
+        # Phase 3a: auto-feed bandit reward for any active candidate competition.
+        # Reward = sum of signal weights for each skill this session.
+        # task_type extracted from audit block for context vector.
+        _task_type_match = re.search(r"^TaskType:\s*(\w+)$", audit_block, re.MULTILINE)
+        _session_task_type = _task_type_match.group(1).strip() if _task_type_match else "other"
+
+        # Extract Dreyfus stage from CognitiveAssessment line for bandit context vector.
+        _dev_stage = "COMPETENT"
+        _cog_match = re.search(r"CognitiveAssessment:.*?Dreyfus[^|]*?:\s*(\w+)", audit_block, re.IGNORECASE)
+        if _cog_match:
+            _raw_stage = _cog_match.group(1).strip().upper()
+            _valid = {"NOVICE", "ADVANCED_BEGINNER", "COMPETENT", "PROFICIENT", "EXPERT"}
+            if _raw_stage in _valid:
+                _dev_stage = _raw_stage
+
+        _candidates = _load_candidates()
+        for skill, entry in _candidates.items():
+            if entry.get("status") != "competing":
+                continue
+            skill_signals_this_session = [s for s in signals if s["skill"] == skill]
+            if not skill_signals_this_session:
+                continue
+            net_reward = sum(s["weight"] for s in skill_signals_this_session)
+            # Determine which arm was selected this session (default: current arm 0)
+            _arm_index = 0
+            selections = entry.get("arm_selections", [])
+            if selections and selections[-1].get("session_n") == session_n:
+                _arm_index = selections[-1].get("arm", 0)
+            record_arm_reward(
+                skill_name=skill,
+                arm_index=_arm_index,
+                reward=net_reward,
+                task_type=_session_task_type,
+                developer_stage=_dev_stage,
+                session_n=session_n,
+            )
+
+        # Phase 3b: auto-fork any skill that crossed the threshold this session
         fork_results = check_fork_threshold_and_maybe_fork(session_n)
 
         return {

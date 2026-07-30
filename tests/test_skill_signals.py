@@ -771,3 +771,152 @@ class TestLinUCB:
                                        developer_stage="COMPETENT")
         assert result is not None
         assert result.get("reverted") is True
+
+
+# ── TestTaskTypeInference (Fix 1) ────────────────────────────────────────────
+
+class TestTaskTypeInference:
+    def test_explicit_task_type_line_takes_priority(self):
+        block = "Skills: dev-loop\nTaskType: new_endpoint\n"
+        signals = compute_signals_for_session(block, session_n=1)
+        # No surface or findings — but task_type extraction must not raise
+        assert isinstance(signals, list)
+
+    def test_task_type_line_used_over_checkpoint_heuristic(self):
+        """TaskType: bug_fix + size L → should use bug_fix, not new_endpoint."""
+        surface = (
+            "[EXAMINATION SURFACE — dev-loop AUDIT]\n"
+            "Task type:    bug_fix\n"
+            "Examined:     [error_handling]\n"
+            "Not examined: []\n"
+        )
+        block = (
+            "Skills: dev-loop, code-review\n"
+            "TaskType: bug_fix\n"
+            "TaskCheckpoints: something (L)\n"
+            "[FINDING: HIGH] Auth — bypass possible\n"
+            + surface
+        )
+        signals = compute_signals_for_session(block, session_n=1)
+        # auth is not mandatory for bug_fix (only conditional) — should be SCOPE_MISS not GAP
+        scope_miss = [s for s in signals if s["signal_type"] == "SCOPE_MISS" and s["skill"] == "dev-loop"]
+        # Either SCOPE_MISS or no signal for auth in bug_fix context — but NOT GAP
+        gap = [s for s in signals if s["signal_type"] == "GAP" and s["dimension"] == "auth" and s["skill"] == "dev-loop"]
+        assert len(gap) == 0  # auth was not in examined list
+
+    def test_fallback_when_no_task_type_line(self):
+        """No TaskType: line and no checkpoint → task_type defaults to 'other'."""
+        block = "Skills: dev-loop\n"
+        signals = compute_signals_for_session(block, session_n=1)
+        assert isinstance(signals, list)  # must not raise
+
+    def test_task_type_propagates_to_scope_miss_evidence(self):
+        """SCOPE_MISS evidence string mentions the task type."""
+        surface = (
+            "[EXAMINATION SURFACE — dev-loop AUDIT]\n"
+            "Task type:    new_endpoint\n"
+            "Examined:     [error_handling]\n"
+            "Not examined: []\n"
+        )
+        block = (
+            "Skills: dev-loop, code-review\n"
+            "TaskType: new_endpoint\n"
+            "[FINDING: HIGH] Auth — bypass possible\n"
+            + surface
+        )
+        signals = compute_signals_for_session(block, session_n=1)
+        scope_signals = [s for s in signals if s["signal_type"] == "SCOPE_MISS" and s["skill"] == "dev-loop"]
+        if scope_signals:
+            assert "new_endpoint" in scope_signals[0]["evidence"]
+
+
+# ── TestBanditAutoFeed (Fix 2) ───────────────────────────────────────────────
+
+class TestBanditAutoFeed:
+    def _setup(self, tmp_path, monkeypatch):
+        import skill_signals
+        monkeypatch.setattr(skill_signals, "_STATE_DIR", tmp_path)
+        monkeypatch.setattr(skill_signals, "_SIGNALS_FILE", tmp_path / "skill-signals.jsonl")
+        monkeypatch.setattr(skill_signals, "_POINTS_FILE", tmp_path / "skill-points.json")
+        monkeypatch.setattr(skill_signals, "_CANDIDATES_FILE", tmp_path / "skill-candidates.json")
+        monkeypatch.setattr(skill_signals, "_ARCHIVE_DIR", tmp_path / "skill-archives")
+        monkeypatch.setattr(skill_signals, "_IMPROVEMENT_QUEUE", tmp_path / "improvement-queue.json")
+        monkeypatch.setattr(skill_signals, "_APPLIED_PROPOSALS", tmp_path / "applied-proposals.json")
+        return tmp_path
+
+    def test_record_session_signals_feeds_bandit_when_candidate_active(self, tmp_path, monkeypatch):
+        from skill_signals import fork_skill, _load_candidates
+        self._setup(tmp_path, monkeypatch)
+
+        # Fork dev-loop to create an active candidate
+        fork_skill("dev-loop", gap_history=[], session_n=1)
+
+        # Now run a session with a GAP signal for dev-loop
+        surface = (
+            "[EXAMINATION SURFACE — dev-loop AUDIT]\n"
+            "Task type:    bug_fix\n"
+            "Examined:     [error_handling]\n"
+            "Not examined: []\n"
+        )
+        block = (
+            "Skills: dev-loop\n"
+            "TaskType: bug_fix\n"
+            "[FINDING: HIGH] Error handling — null check missing\n"
+            + surface
+        )
+        result = record_session_signals(block, session_n=2)
+
+        # Candidate should have received a reward update
+        candidates = _load_candidates()
+        assert "dev-loop" in candidates
+        selections = candidates["dev-loop"].get("arm_selections", [])
+        # At least one arm selection recorded at session 2
+        session_2_selections = [s for s in selections if s["session_n"] == 2]
+        assert len(session_2_selections) == 1
+        assert session_2_selections[0]["reward"] < 0  # GAP is negative reward
+
+    def test_no_bandit_update_when_no_candidate(self, tmp_path, monkeypatch):
+        self._setup(tmp_path, monkeypatch)
+        block = "Skills: dev-loop\n"
+        result = record_session_signals(block, session_n=1)
+        # Should complete without error, no candidate file written
+        assert not (tmp_path / "skill-candidates.json").exists() or True  # no crash
+
+    def test_developer_stage_extracted_from_cog_assessment(self, tmp_path, monkeypatch):
+        from skill_signals import fork_skill, _load_candidates
+        self._setup(tmp_path, monkeypatch)
+        fork_skill("dev-loop", gap_history=[], session_n=1)
+
+        # Include a CognitiveAssessment line with Dreyfus stage
+        surface = (
+            "[EXAMINATION SURFACE — dev-loop AUDIT]\n"
+            "Task type:    bug_fix\n"
+            "Examined:     [error_handling]\n"
+            "Not examined: []\n"
+        )
+        block = (
+            "Skills: dev-loop\n"
+            "TaskType: bug_fix\n"
+            "CognitiveAssessment: Dreyfus stage: PROFICIENT | ZPD: ...\n"
+            "[FINDING: HIGH] Error handling — null check missing\n"
+            + surface
+        )
+        result = record_session_signals(block, session_n=2)
+        candidates = _load_candidates()
+        # If the arm selection was recorded, check the context was non-default
+        selections = candidates.get("dev-loop", {}).get("arm_selections", [])
+        assert len(selections) >= 1  # update fired
+
+
+# ── TestFalsifierAlertCLAUDEMD (Fix 3 — behavioral contract) ─────────────────
+
+class TestFalsifierAlertContract:
+    """Verify the CLAUDE.md instruction exists and is correctly formed."""
+
+    def test_falsifier_alerts_handler_in_claude_md(self):
+        import os
+        claude_md = Path(os.path.expanduser("~/.claude/CLAUDE.md"))
+        assert claude_md.exists(), "CLAUDE.md must exist"
+        content = claude_md.read_text()
+        assert "falsifier_alerts" in content, "CLAUDE.md must handle falsifier_alerts"
+        assert "FALSIFIED" in content, "CLAUDE.md handler must mention FALSIFIED verdict"

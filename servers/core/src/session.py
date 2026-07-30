@@ -2476,6 +2476,35 @@ def _compute_session_delta(
     return delta
 
 
+# Task type keyword map for audit-line inference
+_TASK_TYPE_KEYWORDS: dict[str, list[str]] = {
+    "new_endpoint":    ["endpoint", "api", "route", "handler", "controller", "webhook"],
+    "schema_change":   ["schema", "migration", "column", "table", "model change", "alter"],
+    "ui_component":    ["component", "ui", "frontend", "page", "modal", "form", "button"],
+    "bug_fix":         ["fix", "bug", "broken", "regression", "error", "crash", "failing"],
+    "refactor":        ["refactor", "rename", "restructure", "extract", "cleanup", "clean up"],
+    "llm_integration": ["llm", "claude", "openai", "prompt", "embedding", "inference", "model call"],
+    "background_job":  ["job", "worker", "queue", "cron", "scheduled", "async task"],
+}
+
+
+def _infer_task_type_from_active_task() -> str:
+    """Infer task_type from active_task.json. Falls back to 'other'."""
+    try:
+        active_task_file = YOUK_ROOT / "state" / "active_task.json"
+        if not active_task_file.exists():
+            return "other"
+        data = json.loads(active_task_file.read_text())
+        task_str = (data.get("task") or "").lower()
+        # Priority order matches scope matrix specificity
+        for task_type, keywords in _TASK_TYPE_KEYWORDS.items():
+            if any(kw in task_str for kw in keywords):
+                return task_type
+        return "other"
+    except Exception:
+        return "other"
+
+
 def end_session(
     summary: str,
     commits_made: bool,
@@ -2598,6 +2627,10 @@ def end_session(
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     skills_line = ", ".join(skills_used) if skills_used else "none"
     close_line = "yes" if close_cluster else "no"
+
+    # Infer task_type from active_task.json routing_context or task string.
+    # Written as TaskType: line so skill_signals.py can attribute SCOPE_MISS correctly.
+    _task_type = _infer_task_type_from_active_task()
     gap_lines = ""
     if skill_gaps:
         for skill_name, gaps in skill_gaps.items():
@@ -2713,11 +2746,14 @@ def end_session(
             pass
     compact_count_line = f"Compactions: {compact_count}\n" if compact_count > 0 else ""
 
+    task_type_line = f"TaskType: {_task_type}\n" if _task_type != "other" else ""
+
     entry = (
         f"\n### Session — {timestamp}\n"
         f"Project: {_slug(_load_state().get('last_project', ''))}\n"
         f"{summary}\n"
         f"Skills: {skills_line}\n"
+        f"{task_type_line}"
         f"CloseCluster: {close_line}\n"
         f"Commits: {'yes' if commits_made else 'no'}\n"
         f"{tokens_line}"
