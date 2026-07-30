@@ -22,6 +22,13 @@ coverage-badge: ## Run health.py coverage and print the badge URL with current n
 	echo "Update README.md badge line with the new percentage."
 
 # ── Core lifecycle ─────────────────────────────────────────────────────────────
+# No make? Direct equivalents:
+#   install:       bash scripts/install.sh               (Windows: .\scripts\install.ps1)
+#   update:        git pull --rebase && bash scripts/install.sh
+#   build:         docker build -t youk-core:latest -f servers/core/Dockerfile . && docker build -t youk-code:latest -f servers/code/Dockerfile .
+#   checkup-fast:  python3 -m pytest tests/integration/test_l0_environment.py tests/integration/test_l1_infrastructure.py -v --tb=short -m integration --no-cov
+#   test-unit:     python3 -m pytest tests/ -v -m "not integration"
+#   verify-mcp:    bash scripts/doctor.sh                (Windows: wsl bash scripts/doctor.sh)
 
 .PHONY: install
 install: ## First-time setup: build images, register MCP servers, patch CLAUDE.md

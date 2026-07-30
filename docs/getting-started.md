@@ -43,6 +43,19 @@ Just say a working agreement aloud — Claude writes it immediately (no "remembe
 
 ## Path B — full youk (Claude Code + Docker)
 
+### No `make`? Use these equivalents
+
+Every `make` target has a direct shell equivalent. Pick whichever works on your machine.
+
+| Task | `make` | bash / Git Bash / WSL2 | PowerShell |
+|------|--------|------------------------|------------|
+| First install | `make install` | `bash scripts/install.sh` | `.\scripts\install.ps1` |
+| Update + rebuild | `make update` | `git pull --rebase && bash scripts/install.sh` | `git pull --rebase; .\scripts\install.ps1` |
+| Fast checkup | `make checkup-fast` | `python3 -m pytest tests/integration/test_l0_environment.py tests/integration/test_l1_infrastructure.py -v --tb=short -m integration --no-cov` | same (in Git Bash or WSL2) |
+| Build images | `make build` | `docker build -t youk-core:latest -f servers/core/Dockerfile . && docker build -t youk-code:latest -f servers/code/Dockerfile .` | same |
+| Unit tests | `make test-unit` | `python3 -m pytest tests/ -v -m "not integration"` | same |
+| MCP handshake | `make verify-mcp` | `bash scripts/doctor.sh` | `wsl bash scripts/doctor.sh` |
+
 ### Step 1: Prerequisites
 
 You need three things before installing youk:
@@ -76,9 +89,11 @@ If `~/.claude/` doesn't exist, Claude Code will have created it when you first r
 
 ## Step 3: Install
 
-**macOS / Linux:**
+**macOS / Linux (bash):**
 ```bash
 cd ~/.claude/youk
+bash scripts/install.sh
+# or, if you have make:
 make install
 ```
 
@@ -97,6 +112,8 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 Run as Administrator (or with Developer Mode enabled) for symlinks. The script creates directory junctions as fallback if symlinks fail.
 
+> `make` is optional on all platforms. `bash scripts/install.sh` is the canonical install command — `make install` just calls it.
+
 ---
 
 This takes about 2 minutes on first run (downloading Python packages for the Docker images). Subsequent runs use Docker's build cache and are much faster.
@@ -110,7 +127,7 @@ What the installer does:
 6. Writes `state/path-map.env` so containers can resolve your host paths
 7. Runs `make checkup-fast` (L0+L1) to confirm environment and Docker images are healthy
 
-If install fails, run `make checkup-fast` to see specific failure lines for each check.
+If install fails, run `make checkup-fast` (or the direct equivalent from the table above) to see specific failure lines for each check.
 
 ---
 
@@ -202,6 +219,38 @@ cd ~/.claude/youk && make update
 
 This pulls the latest code and rebuilds Docker images. Restart Claude Code afterward to pick up the new images.
 
+### Picking up code changes without a full rebuild
+
+youk mounts its source code as a live Docker volume (`-v ~/.claude/youk:/youk`). Most Python changes take effect without rebuilding the image — just restart Claude Code to get a fresh container.
+
+**Two tiers:**
+
+| Change type | What to do | Example |
+|-------------|-----------|---------|
+| Code only (`.py` files inside `servers/`) | Restart Claude Code | Bug fix in `session.py`, new skill signal logic |
+| Dependency or shared model change | Rebuild + restart: `make build` then restart Claude Code | New package in `requirements.txt`, new field in `servers/shared/models.py` |
+
+**How to tell which tier:** If `requirements.txt` or `servers/shared/` changed, rebuild. Otherwise, restart only.
+
+```bash
+# Code-only change — restart Claude Code (close and reopen the terminal)
+# Then verify:
+make checkup-fast
+
+# Dependency change — rebuild first:
+make build         # or: docker build -t youk-core:latest -f servers/core/Dockerfile .
+# Then restart Claude Code, then verify:
+make checkup-fast
+```
+
+**Windows (PowerShell equivalent):**
+```powershell
+# Rebuild:
+docker build -t youk-core:latest -f servers/core/Dockerfile .
+docker build -t youk-code:latest -f servers/code/Dockerfile .
+# Then restart Claude Code.
+```
+
 ---
 
 ## What to expect in a session
@@ -218,6 +267,16 @@ If a skill fails mid-session, youk patches it immediately rather than deferring 
 **Session end:** Type `/done` when you finish — or any natural closing phrase: "done", "ship it", "commit", "ok thanks", "that's all", "looks good", "we're done", "wrap it up", "let's call it", "perfect", "good enough". This runs code-review + verify + learn, writes the resume point for next session, saves contracts, and sets `CloseCluster: yes` for org_score.
 
 If you close the tab without `/done`: the next session opens with `⚠ [BLOCKED] Last session closed without /done — Run /learn NOW` as the first item in the session plan, not a nudge. `session_start` returns `force_learn: true` and writes `state/pending-action.json` durably — the block persists across tab-closes until `/learn` fires. When `route_to_skill("learn")` runs, the pending-action file is cleared and the session proceeds normally. The only thing permanently lost on tab-close is `CloseCluster: yes` for org_score — everything else is recovered.
+
+**Skill self-improvement (automatic):** After each `/done`, `session_end` silently runs the signal detector — a deterministic scanner that reads `[EXAMINATION SURFACE]` blocks from skill output and compares what each skill examined against what was mandatory for the task type.
+
+- `state/skill-signals.jsonl` accumulates one entry per skill per session.
+- After 3 sessions with the same skill-dimension gap: a proposal is ready to generate.
+- To act on it: run `generate_skill_improvement_proposal('skill-name')` from inside a Claude Code session — it produces a 5-part evaluable proposal queued in `PENDING.md`.
+- Proposals require your approval before `apply_proposal` can modify anything.
+- After a proposal is applied, the falsifier monitor watches it for 3 sessions and surfaces an alert if the signal didn't improve.
+
+No activation needed. It runs automatically starting from the next session end.
 
 **Context management:** youk manages context automatically via three hooks installed at setup:
 - `PreCompact` — fires before Claude auto-compacts, injects a structured preservation brief so contracts and active task survive the summarizer verbatim.
