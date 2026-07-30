@@ -1,4 +1,4 @@
-"""Unit tests for file_index.py — shared SQLite file index with BM25 retrieval.
+"""Unit tests for file_index.py — shared SQLite file index with BM25 retrieval and relation graph.
 
 All tests use tmp_path-scoped DB files so they never touch knowledge/shared-index.db.
 """
@@ -338,3 +338,367 @@ class TestExtractionHelpers:
         f.write_text("x = 2\n")
         h2 = FI._file_hash(f)
         assert h1 != h2
+
+
+# ---------------------------------------------------------------------------
+# _extract_doc_links
+# ---------------------------------------------------------------------------
+
+class TestExtractDocLinks:
+
+    def test_relative_markdown_link(self):
+        text = "See [guide](docs/getting-started.md) for details."
+        edges = FI._extract_doc_links(text, "README.md")
+        paths = [e[0] for e in edges]
+        assert "docs/getting-started.md" in paths
+
+    def test_image_link_included(self):
+        text = "![logo](assets/logo.png)"
+        edges = FI._extract_doc_links(text, "README.md")
+        assert any("assets/logo.png" in e[0] for e in edges)
+
+    def test_external_url_excluded(self):
+        text = "[Claude](https://claude.ai) and [docs](http://example.com)"
+        edges = FI._extract_doc_links(text, "README.md")
+        assert edges == []
+
+    def test_fragment_only_excluded(self):
+        text = "Jump to [section](#installation)"
+        edges = FI._extract_doc_links(text, "README.md")
+        assert edges == []
+
+    def test_rel_type_is_doc_link(self):
+        text = "See [here](docs/guide.md)"
+        edges = FI._extract_doc_links(text, "README.md")
+        assert all(e[1] == "doc_link" for e in edges)
+
+    def test_link_from_subdirectory_resolved(self):
+        # File is at docs/overview.md; link is ../README.md → resolves to README.md
+        text = "Back to [home](../README.md)"
+        edges = FI._extract_doc_links(text, "docs/overview.md")
+        paths = [e[0] for e in edges]
+        assert "README.md" in paths
+
+    def test_multiple_links(self):
+        text = "[A](a.md) and [B](b.md) and [C](c.py)"
+        edges = FI._extract_doc_links(text, "README.md")
+        assert len(edges) == 3
+
+    def test_empty_text(self):
+        assert FI._extract_doc_links("", "README.md") == []
+
+
+# ---------------------------------------------------------------------------
+# _extract_config_refs
+# ---------------------------------------------------------------------------
+
+class TestExtractConfigRefs:
+
+    def test_yaml_file_path_value(self):
+        text = "source: 'servers/core/src/server.py'\n"
+        edges = FI._extract_config_refs(text, ".yaml")
+        assert any("servers/core/src/server.py" in e[0] for e in edges)
+
+    def test_non_config_suffix_ignored(self):
+        text = "source: 'servers/core/src/server.py'\n"
+        edges = FI._extract_config_refs(text, ".py")
+        assert edges == []
+
+    def test_rel_type_is_config_ref(self):
+        text = "file: 'docs/guide.md'\n"
+        edges = FI._extract_config_refs(text, ".yaml")
+        assert all(e[1] == "config_ref" for e in edges)
+
+    def test_plain_string_without_slash_ignored(self):
+        text = "name: 'mymodule'\nversion: '1.0'\n"
+        edges = FI._extract_config_refs(text, ".yaml")
+        assert edges == []
+
+    def test_toml_suffix_included(self):
+        text = 'output = "docs/output.md"\n'
+        edges = FI._extract_config_refs(text, ".toml")
+        assert any("docs/output.md" in e[0] for e in edges)
+
+
+# ---------------------------------------------------------------------------
+# _load_docmap_edges
+# ---------------------------------------------------------------------------
+
+class TestLoadDocmapEdges:
+
+    def _make_docmap(self, tmp_path: Path, content: str) -> Path:
+        d = tmp_path / "docs"
+        d.mkdir()
+        (d / "doc-map.yaml").write_text(content)
+        return tmp_path
+
+    def test_src_file_edges_bidirectional(self, tmp_path):
+        proj = self._make_docmap(tmp_path, """
+src_files:
+  - {file: servers/core/src/session.py, refs: [README.md]}
+""")
+        edges = FI._load_docmap_edges(proj)
+        froms = [e[0] for e in edges]
+        tos = [e[1] for e in edges]
+        assert "servers/core/src/session.py" in froms
+        assert "README.md" in tos
+        # Bidirectional: README.md → session.py also present
+        assert any(e[0] == "README.md" and "session.py" in e[1] for e in edges)
+
+    def test_skill_edges(self, tmp_path):
+        proj = self._make_docmap(tmp_path, """
+skills:
+  - {skill: code-review, refs: [README.md]}
+""")
+        edges = FI._load_docmap_edges(proj)
+        assert any("skills/code-review/SKILL.md" in e[0] for e in edges)
+
+    def test_mcp_tool_edges(self, tmp_path):
+        proj = self._make_docmap(tmp_path, """
+mcp_tools:
+  youk-core:
+    - {tool: session_start, refs: [README.md]}
+""")
+        edges = FI._load_docmap_edges(proj)
+        assert any("tool:session_start" in e[1] for e in edges)
+
+    def test_absent_docmap_returns_empty(self, tmp_path):
+        edges = FI._load_docmap_edges(tmp_path)
+        assert edges == []
+
+    def test_weight_is_2(self, tmp_path):
+        proj = self._make_docmap(tmp_path, """
+src_files:
+  - {file: a.py, refs: [b.md]}
+""")
+        edges = FI._load_docmap_edges(proj)
+        assert all(e[3] == 2.0 for e in edges)
+
+
+# ---------------------------------------------------------------------------
+# find_relations
+# ---------------------------------------------------------------------------
+
+class TestFindRelations:
+
+    def _make_linked_project(self, tmp_path: Path) -> Path:
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "README.md").write_text(
+            "# Project\n\nSee [guide](docs/guide.md) and [code](servers/core/src/session.py)\n"
+        )
+        docs = proj / "docs"
+        docs.mkdir()
+        (docs / "guide.md").write_text(
+            "# Guide\n\nSee [session](../servers/core/src/session.py)\n"
+        )
+        srv = proj / "servers" / "core" / "src"
+        srv.mkdir(parents=True)
+        (srv / "session.py").write_text("import os\ndef run(): pass\n")
+        return proj
+
+    def test_outbound_links_from_readme(self, tmp_path):
+        proj = self._make_linked_project(tmp_path)
+        db = tmp_path / "idx.db"
+        FI.index_project(proj, "proj", db_path=db)
+        r = FI.find_relations("README.md", "proj", direction="out", db_path=db)
+        paths = [x["file_path"] for x in r["relations"]]
+        assert any("guide.md" in p for p in paths)
+
+    def test_inbound_links_to_session(self, tmp_path):
+        proj = self._make_linked_project(tmp_path)
+        db = tmp_path / "idx.db"
+        FI.index_project(proj, "proj", db_path=db)
+        r = FI.find_relations("servers/core/src/session.py", "proj", direction="in", db_path=db)
+        paths = [x["file_path"] for x in r["relations"]]
+        # README and docs/guide.md both link to session.py
+        assert len(paths) >= 1
+
+    def test_direction_both_combines(self, tmp_path):
+        proj = self._make_linked_project(tmp_path)
+        db = tmp_path / "idx.db"
+        FI.index_project(proj, "proj", db_path=db)
+        r = FI.find_relations("README.md", "proj", direction="both", db_path=db)
+        assert r["outbound_count"] >= 1
+        assert r["total"] == r["outbound_count"] + r["inbound_count"]
+
+    def test_invalid_direction_returns_error(self, tmp_path):
+        db = tmp_path / "idx.db"
+        r = FI.find_relations("a.py", "proj", direction="sideways", db_path=db)
+        assert "error" in r
+
+    def test_absent_db_returns_empty(self, tmp_path):
+        db = tmp_path / "nope.db"
+        r = FI.find_relations("a.py", "proj", db_path=db)
+        assert r["relations"] == []
+        assert r["total"] == 0
+
+    def test_relation_has_required_fields(self, tmp_path):
+        proj = self._make_linked_project(tmp_path)
+        db = tmp_path / "idx.db"
+        FI.index_project(proj, "proj", db_path=db)
+        r = FI.find_relations("README.md", "proj", direction="out", db_path=db)
+        for rel in r["relations"]:
+            assert "file_path" in rel
+            assert "rel_type" in rel
+            assert "weight" in rel
+            assert "direction" in rel
+
+    def test_docmap_edges_appear_in_relations(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "session.py").write_text("def run(): pass\n")
+        docs = proj / "docs"
+        docs.mkdir()
+        (docs / "doc-map.yaml").write_text("""
+src_files:
+  - {file: session.py, refs: [README.md]}
+""")
+        (proj / "README.md").write_text("# readme\n")
+        db = tmp_path / "idx.db"
+        FI.index_project(proj, "proj", db_path=db)
+        r = FI.find_relations("session.py", "proj", direction="out", db_path=db)
+        rel_types = {x["rel_type"] for x in r["relations"]}
+        assert "doc_map_ref" in rel_types
+
+    def test_docmap_edges_weight_2(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("pass\n")
+        docs = proj / "docs"
+        docs.mkdir()
+        (docs / "doc-map.yaml").write_text("""
+src_files:
+  - {file: a.py, refs: [README.md]}
+""")
+        (proj / "README.md").write_text("# readme\n")
+        db = tmp_path / "idx.db"
+        FI.index_project(proj, "proj", db_path=db)
+        r = FI.find_relations("a.py", "proj", direction="out", db_path=db)
+        docmap_rels = [x for x in r["relations"] if x["rel_type"] == "doc_map_ref"]
+        assert all(x["weight"] == 2.0 for x in docmap_rels)
+
+
+# ---------------------------------------------------------------------------
+# find_related_docs
+# ---------------------------------------------------------------------------
+
+class TestFindRelatedDocs:
+
+    def _make_bridged_project(self, tmp_path: Path) -> tuple[Path, Path]:
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        # Code file with a searchable symbol
+        srv = proj / "servers" / "core" / "src"
+        srv.mkdir(parents=True)
+        (srv / "session.py").write_text(
+            "import os\ndef session_start(): pass\nclass SessionState: pass\n"
+        )
+        # Doc that links to the code file and mentions the same symbol
+        docs = proj / "docs"
+        docs.mkdir()
+        (docs / "guide.md").write_text(
+            "# Session Guide\n\n## session_start\n\nSee [session](../servers/core/src/session.py)\n"
+        )
+        db = tmp_path / "idx.db"
+        FI.index_project(proj, "proj", db_path=db)
+        return proj, db
+
+    def test_empty_query_returns_empty(self, tmp_path):
+        _, db = self._make_bridged_project(tmp_path)
+        r = FI.find_related_docs("", db_path=db)
+        assert r["related_code"] == []
+        assert r["related_docs"] == []
+
+    def test_code_query_returns_code_bucket(self, tmp_path):
+        _, db = self._make_bridged_project(tmp_path)
+        r = FI.find_related_docs("session_start", db_path=db)
+        all_paths = [x["file_path"] for x in r["related_code"]]
+        assert any("session.py" in p for p in all_paths)
+
+    def test_doc_query_returns_doc_bucket(self, tmp_path):
+        _, db = self._make_bridged_project(tmp_path)
+        r = FI.find_related_docs("Session Guide", db_path=db)
+        all_paths = [x["file_path"] for x in r["related_docs"]]
+        assert any("guide.md" in p for p in all_paths)
+
+    def test_result_has_source_field(self, tmp_path):
+        _, db = self._make_bridged_project(tmp_path)
+        r = FI.find_related_docs("session_start", db_path=db)
+        for item in r["related_code"] + r["related_docs"]:
+            assert "source" in item
+
+    def test_bm25_hits_have_bm25_source(self, tmp_path):
+        _, db = self._make_bridged_project(tmp_path)
+        r = FI.find_related_docs("session_start", db_path=db)
+        sources = {x["source"] for x in r["related_code"]}
+        assert "bm25" in sources
+
+    def test_limit_respected_per_bucket(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        for i in range(10):
+            (proj / f"mod{i}.py").write_text(f"def func{i}(): pass\n")
+            d = proj / "docs"
+            d.mkdir(exist_ok=True)
+            (d / f"doc{i}.md").write_text(f"# Doc {i}\n\n## func{i}\n")
+        db = tmp_path / "idx.db"
+        FI.index_project(proj, "proj", db_path=db)
+        r = FI.find_related_docs("func", limit=3, db_path=db)
+        assert len(r["related_code"]) <= 3
+        assert len(r["related_docs"]) <= 3
+
+    def test_total_matches_bucket_sizes(self, tmp_path):
+        _, db = self._make_bridged_project(tmp_path)
+        r = FI.find_related_docs("session", db_path=db)
+        assert r["total"] == len(r["related_code"]) + len(r["related_docs"])
+
+    def test_code_and_doc_not_mixed(self, tmp_path):
+        _, db = self._make_bridged_project(tmp_path)
+        r = FI.find_related_docs("session", db_path=db)
+        for item in r["related_code"]:
+            assert Path(item["file_path"]).suffix.lower() in {
+                ".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".rb"
+            }
+        for item in r["related_docs"]:
+            assert Path(item["file_path"]).suffix.lower() not in {
+                ".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".rb"
+            }
+
+
+# ---------------------------------------------------------------------------
+# get_index_stats — relation counts added
+# ---------------------------------------------------------------------------
+
+class TestGetIndexStatsRelations:
+
+    def test_stats_include_relation_fields(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "README.md").write_text("# Proj\n\nSee [guide](docs/guide.md)\n")
+        docs = proj / "docs"
+        docs.mkdir()
+        (docs / "guide.md").write_text("# Guide\n")
+        db = tmp_path / "idx.db"
+        FI.index_project(proj, "proj", db_path=db)
+        r = FI.get_index_stats(db_path=db)
+        assert "relations" in r
+        assert "total_relations" in r
+
+    def test_doc_link_relations_counted(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "README.md").write_text("# Proj\n\nSee [guide](docs/guide.md)\n")
+        docs = proj / "docs"
+        docs.mkdir()
+        (docs / "guide.md").write_text("# Guide\n")
+        db = tmp_path / "idx.db"
+        FI.index_project(proj, "proj", db_path=db)
+        r = FI.get_index_stats(db_path=db)
+        assert r["total_relations"] >= 1
+
+    def test_absent_db_has_no_relation_fields(self, tmp_path):
+        db = tmp_path / "nope.db"
+        r = FI.get_index_stats(db_path=db)
+        # Absent DB returns the original absent response — no crash
+        assert r["status"] == "absent"

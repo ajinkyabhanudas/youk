@@ -33,6 +33,8 @@ from file_index import (
     index_project as _index_project,
     find_relevant as _find_relevant,
     find_affected as _find_affected,
+    find_relations as _find_relations,
+    find_related_docs as _find_related_docs,
     get_index_stats as _get_index_stats,
 )
 from concept_graph import (
@@ -1387,11 +1389,61 @@ def find_affected(file_path: str, project_slug: str) -> dict:
 
 
 @mcp.tool()
+def find_relations(file_path: str, project_slug: str, direction: str = "both") -> dict:
+    """Return relation edges for a file from the relation graph.
+
+    direction: "out" = what this file links to; "in" = what links to this file;
+               "both" = union (default).
+
+    Relation types captured during indexing:
+    - doc_link: markdown [text](path) hrefs pointing to another file
+    - doc_map_ref: explicit declarations in docs/doc-map.yaml (weight 2.0 — authoritative)
+    - config_ref: file paths found as values in YAML/TOML/JSON config files
+    - import: code → imported module (stem-level, same as find_affected)
+
+    Use to answer:
+    - "What docs reference session.py?" → direction="in"
+    - "What does guardrails.md link to?" → direction="out"
+    - "Full neighbourhood of this file?" → direction="both"
+
+    Returns: {file_path, relations: [{file_path, rel_type, weight, direction}],
+              total, outbound_count, inbound_count}
+    """
+    return _find_relations(file_path, project_slug, direction=direction)
+
+
+@mcp.tool()
+def find_related_docs(query: str, project_slug: str | None = None, limit: int = 8) -> dict:
+    """BM25 search that bridges code and non-code docs via the relation graph.
+
+    Returns two ranked buckets:
+    - related_code: code files matching the query or linked from matching docs
+    - related_docs: doc/config files matching the query or linked from matching code
+
+    Each result includes: file_path, project_slug, summary, score, source
+    (source is "bm25" for direct hits, "relation:<type>" for graph-expanded hits).
+
+    Example questions this answers:
+    - "What docs explain route_task?" → surfaces README + doc-map + server.py
+    - "What code implements the NFR gate?" → surfaces session.py + nfr.py via doc hits
+    - "What is connected to guardrails?" → surfaces guardrails.yaml + guardrails.md + server.py
+
+    query: natural language or symbol name
+    project_slug: if set, boosts current-project results first
+    limit: max results per bucket (code and docs capped separately)
+
+    Returns: {related_code, related_docs, query, project_slug, total}
+    """
+    return _find_related_docs(query, project_slug=project_slug, limit=limit)
+
+
+@mcp.tool()
 def get_file_index_stats(project_slug: str | None = None) -> dict:
-    """Return file index health: file counts per project and last indexed timestamps.
+    """Return file index health: file counts, relation edge counts, last indexed timestamps.
 
     project_slug: if set, returns stats for that project only; None returns all projects.
-    Returns: {status, projects: [{project_slug, file_count, last_indexed}], total_files}
+    Returns: {status, projects: [{project_slug, file_count, last_indexed}],
+              total_files, relations: {rel_type: count}, total_relations}
     """
     return _get_index_stats(project_slug=project_slug)
 

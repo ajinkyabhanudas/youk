@@ -2,16 +2,19 @@
 
 Schema
 ------
-file_index : (project_slug, file_path) PRIMARY KEY, plus metadata + semantic units
-             for BM25 retrieval and impact analysis.
+file_index     : (project_slug, file_path) PRIMARY KEY, plus metadata + semantic units
+                 for BM25 retrieval and impact analysis.
+file_relations : directed edge table — (from_project, from_path, to_path, rel_type, weight).
+                 rel_types: doc_link (markdown href), doc_map_ref (doc-map.yaml refs:),
+                 config_ref (YAML/TOML path value), import (code → module).
 
 Key design choices:
-- Composite (project_slug, file_path) prevents collision when two projects share a name
-  (e.g. both have session.py).
+- Composite (project_slug, file_path) prevents collision when two projects share a name.
 - FTS5 virtual table over symbols + imports + headings gives BM25 without embedding cost.
-- file_hash-based skip makes index_project() safe to call at every session_start —
-  unchanged files are O(1) to skip.
-- find_affected() uses the imports column for reverse-lookup impact analysis.
+- file_hash-based skip makes index_project() safe to call at every session_start.
+- find_affected() uses the imports column for reverse-lookup (legacy; also promoted to edges).
+- file_relations edge table enables: what docs reference this file, what this file links to,
+  and unified code↔doc bridging via find_related_docs().
 - Zero infrastructure: one shared file at knowledge/shared-index.db, no always-on server.
 """
 from __future__ import annotations
@@ -69,6 +72,18 @@ CREATE TRIGGER IF NOT EXISTS file_index_au AFTER UPDATE ON file_index BEGIN
     INSERT INTO file_fts(rowid, project_slug, file_path, symbols, imports, headings)
     VALUES (new.rowid, new.project_slug, new.file_path, new.symbols, new.imports, new.headings);
 END;
+
+CREATE TABLE IF NOT EXISTS file_relations (
+    from_project    TEXT NOT NULL,
+    from_path       TEXT NOT NULL,
+    to_path         TEXT NOT NULL,
+    rel_type        TEXT NOT NULL,
+    weight          REAL NOT NULL DEFAULT 1.0,
+    PRIMARY KEY (from_project, from_path, to_path, rel_type)
+);
+
+CREATE INDEX IF NOT EXISTS file_relations_to ON file_relations (to_path);
+CREATE INDEX IF NOT EXISTS file_relations_from ON file_relations (from_project, from_path);
 """
 
 # File extensions worth indexing, by type
@@ -176,6 +191,130 @@ def _extract_headings(text: str) -> str:
     """Extract markdown headings from .md/.rst files."""
     headings = re.findall(r"^#{1,4}\s+(.+)", text, re.MULTILINE)
     return " ".join(h.strip() for h in headings[:20])
+
+
+def _extract_doc_links(text: str, file_path: str) -> list[tuple[str, str]]:
+    """Extract outbound file links from markdown: [label](path) and ![label](path).
+
+    Returns list of (to_path, rel_type) where to_path is normalised relative to
+    the project root (same form as file_index.file_path). External URLs (http/https/#)
+    and anchor-only links are dropped.
+    """
+    raw = re.findall(r"!?\[(?:[^\]]*)\]\(([^)]+)\)", text)
+    base_dir = Path(file_path).parent
+    results: list[tuple[str, str]] = []
+    for href in raw:
+        href = href.split("#")[0].strip()  # drop fragment
+        if not href or href.startswith(("http://", "https://", "mailto:")):
+            continue
+        # Resolve relative to the file's directory within the project
+        resolved = (base_dir / href).as_posix()
+        # Normalise: strip leading "./" and collapse ".." segments naively
+        parts = []
+        for part in resolved.split("/"):
+            if part == "..":
+                if parts:
+                    parts.pop()
+            elif part not in (".", ""):
+                parts.append(part)
+        to_path = "/".join(parts)
+        if to_path:
+            results.append((to_path, "doc_link"))
+    return results
+
+
+def _extract_config_refs(text: str, suffix: str) -> list[tuple[str, str]]:
+    """Extract file-path references from YAML/TOML values.
+
+    Looks for string values that end with a known file extension and contain
+    at least one path separator or start with a known prefix (servers/, docs/, etc.).
+    Returns list of (to_path, "config_ref").
+    """
+    _FILE_EXT_PATTERN = re.compile(
+        r"""['"]([^'"]+\.(?:py|ts|tsx|js|go|rs|md|rst|yaml|yml|toml|json|sh|txt))['"]\s*[,\]\}\n]"""
+    )
+    _PATH_MARKERS = ("servers/", "docs/", "scripts/", "skills/", "config/", "tests/", "knowledge/")
+    results: list[tuple[str, str]] = []
+    if suffix not in {".yaml", ".yml", ".toml", ".json"}:
+        return results
+    for m in _FILE_EXT_PATTERN.finditer(text):
+        val = m.group(1).strip()
+        if "/" in val or any(val.startswith(p) for p in _PATH_MARKERS):
+            results.append((val, "config_ref"))
+    return results
+
+
+def _load_docmap_edges(project_dir: Path) -> list[tuple[str, str, str, str]]:
+    """Read docs/doc-map.yaml and emit relation edges.
+
+    Returns list of (from_path, to_path, rel_type, weight) where:
+    - from_path is the tool/file/skill entry (normalised)
+    - to_path is each entry in its refs: list
+    - rel_type is always "doc_map_ref"
+    - weight is 2.0 (explicit declaration is higher-confidence than extracted link)
+
+    Silent-fails if doc-map.yaml absent or malformed.
+    """
+    try:
+        import yaml
+    except ImportError:
+        return []
+
+    docmap = project_dir / "docs" / "doc-map.yaml"
+    if not docmap.exists():
+        return []
+
+    try:
+        data = yaml.safe_load(docmap.read_text()) or {}
+    except Exception:
+        return []
+
+    edges: list[tuple[str, str, str, str]] = []
+
+    # mcp_tools: {server: [{tool: name, refs: [...]}]}
+    for _server, entries in (data.get("mcp_tools") or {}).items():
+        for entry in (entries or []):
+            tool = entry.get("tool", "")
+            for ref in (entry.get("refs") or []):
+                # from_path = synthetic "servers/…/server.py#tool_name" — use actual ref as anchor
+                edges.append((ref, f"tool:{tool}", "doc_map_ref", 2.0))
+
+    # src_files: [{file: path, refs: [...]}]
+    for entry in (data.get("src_files") or []):
+        src = entry.get("file", "")
+        for ref in (entry.get("refs") or []):
+            if src and ref:
+                edges.append((src, ref, "doc_map_ref", 2.0))
+                edges.append((ref, src, "doc_map_ref", 2.0))  # bidirectional for src↔doc
+
+    # skills: [{skill: name, refs: [...]}]
+    for entry in (data.get("skills") or []):
+        skill = entry.get("skill", "")
+        for ref in (entry.get("refs") or []):
+            skill_path = f"skills/{skill}/SKILL.md"
+            if ref:
+                edges.append((skill_path, ref, "doc_map_ref", 2.0))
+
+    return edges
+
+
+def _upsert_relations(
+    conn: sqlite3.Connection,
+    from_project: str,
+    from_path: str,
+    edges: list[tuple[str, str]],  # (to_path, rel_type)
+    weight: float = 1.0,
+) -> int:
+    """Insert/replace relation edges for a single source file. Returns count inserted."""
+    if not edges:
+        return 0
+    conn.executemany(
+        """INSERT OR REPLACE INTO file_relations
+           (from_project, from_path, to_path, rel_type, weight)
+           VALUES (?, ?, ?, ?, ?)""",
+        [(from_project, from_path, to_path, rel_type, weight) for to_path, rel_type in edges],
+    )
+    return len(edges)
 
 
 def _extract_semantic_units(path: Path) -> tuple[str, str, str, str]:
@@ -330,7 +469,40 @@ def index_project(
                 (project_slug, rel, summary, current_hash, now,
                  symbols, imports, headings),
             )
+
+            # Extract and upsert outbound relations for this file.
+            # Wipe stale edges from a prior index of this file first.
+            conn.execute(
+                "DELETE FROM file_relations WHERE from_project = ? AND from_path = ?",
+                (project_slug, rel),
+            )
+            edges: list[tuple[str, str]] = []
+            try:
+                text = file_path.read_text(errors="replace")
+                if file_path.suffix.lower() in _DOC_EXTS:
+                    edges.extend(_extract_doc_links(text, rel))
+                if file_path.suffix.lower() in _CONFIG_EXTS:
+                    edges.extend(_extract_config_refs(text, file_path.suffix.lower()))
+                # Promote import-based relations into the edge table (mirrors find_affected logic)
+                if imports:
+                    for imp in imports.split():
+                        edges.append((imp, "import"))  # to_path = module stem (resolved later)
+            except Exception:
+                pass
+            _upsert_relations(conn, project_slug, rel, edges)
+
             indexed += 1
+
+        # After walking all files, load explicit doc-map edges (authoritative declarations).
+        # These supplement extracted edges with higher-weight, manually maintained links.
+        docmap_raw = _load_docmap_edges(project_path)
+        if docmap_raw:
+            conn.executemany(
+                """INSERT OR REPLACE INTO file_relations
+                   (from_project, from_path, to_path, rel_type, weight)
+                   VALUES (?, ?, ?, ?, ?)""",
+                [(project_slug, fp, tp, rt, w) for fp, tp, rt, w in docmap_raw],
+            )
 
         conn.commit()
 
@@ -460,6 +632,199 @@ def find_affected(
     }
 
 
+def find_relations(
+    file_path: str,
+    project_slug: str,
+    direction: str = "both",
+    db_path: Path = _INDEX_DB,
+) -> dict[str, Any]:
+    """Return explicit relation edges for a file from the file_relations table.
+
+    direction: "out" = what this file links to; "in" = what links to this file;
+               "both" = union of both directions.
+
+    Each result includes: file_path, rel_type, weight, and direction.
+    Results are sorted by weight descending, then file_path.
+
+    Use this to answer:
+    - "What docs reference session.py?" → direction="in"
+    - "What does guardrails.md link to?" → direction="out"
+    - "Full relation neighbourhood of this file?" → direction="both" (default)
+    """
+    if direction not in ("in", "out", "both"):
+        return {"error": f"invalid direction '{direction}' — must be in/out/both", "relations": []}
+
+    if not db_path.exists():
+        return {"file_path": file_path, "relations": [], "total": 0}
+
+    with _connect(db_path) as conn:
+        outbound: list[dict] = []
+        inbound: list[dict] = []
+
+        if direction in ("out", "both"):
+            rows = conn.execute(
+                """SELECT to_path, rel_type, weight
+                   FROM file_relations
+                   WHERE from_project = ? AND from_path = ?
+                   ORDER BY weight DESC, to_path""",
+                (project_slug, file_path),
+            ).fetchall()
+            outbound = [
+                {"file_path": r["to_path"], "rel_type": r["rel_type"],
+                 "weight": r["weight"], "direction": "out"}
+                for r in rows
+            ]
+
+        if direction in ("in", "both"):
+            rows = conn.execute(
+                """SELECT from_path, rel_type, weight
+                   FROM file_relations
+                   WHERE from_project = ? AND to_path = ?
+                   ORDER BY weight DESC, from_path""",
+                (project_slug, file_path),
+            ).fetchall()
+            inbound = [
+                {"file_path": r["from_path"], "rel_type": r["rel_type"],
+                 "weight": r["weight"], "direction": "in"}
+                for r in rows
+            ]
+
+    all_relations = outbound + inbound
+    return {
+        "file_path": file_path,
+        "project_slug": project_slug,
+        "direction": direction,
+        "relations": all_relations,
+        "total": len(all_relations),
+        "outbound_count": len(outbound),
+        "inbound_count": len(inbound),
+    }
+
+
+def find_related_docs(
+    query: str,
+    project_slug: str | None = None,
+    limit: int = 8,
+    db_path: Path = _INDEX_DB,
+) -> dict[str, Any]:
+    """BM25 search that bridges code files and non-code docs via the relation graph.
+
+    Runs BM25 search, then for each result follows relation edges one hop to surface
+    related files of the opposite type (code→doc, doc→code). Returns two ranked lists:
+    - related_code: code files relevant to the query or linked from matching docs
+    - related_docs: doc/config files relevant to the query or linked from matching code
+
+    This lets you ask questions like:
+    - "What docs explain route_task?" → BM25 hits server.py + edges find README + doc-map
+    - "What code implements the NFR gate?" → BM25 hits docs + edges find session.py + nfr.py
+    - "What is connected to guardrails?" → surfaces both the YAML and the docs that reference it
+
+    query: natural language or symbol name
+    project_slug: if set, boosts current-project results first
+    limit: max results per bucket (code and docs each capped separately)
+    """
+    if not query.strip():
+        return {"related_code": [], "related_docs": [], "query": query, "total": 0}
+
+    _DOC_SUFFIXES = {".md", ".rst", ".txt"}
+    _CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".rb"}
+    _CONFIG_SUFFIXES = {".yaml", ".yml", ".toml", ".json"}
+
+    def _classify(path: str) -> str:
+        s = Path(path).suffix.lower()
+        if s in _CODE_SUFFIXES:
+            return "code"
+        if s in _DOC_SUFFIXES:
+            return "doc"
+        if s in _CONFIG_SUFFIXES:
+            return "config"
+        return "other"
+
+    # Step 1: BM25 search — broader limit to give relation expansion material
+    bm25 = find_relevant(query, project_slug=project_slug, limit=limit * 2, db_path=db_path)
+    bm25_results = bm25.get("results", [])
+
+    seen: set[str] = set()
+    code_results: list[dict] = []
+    doc_results: list[dict] = []
+
+    def _add(entry: dict, source: str) -> None:
+        key = f"{entry.get('project_slug','')}:{entry['file_path']}"
+        if key in seen:
+            return
+        seen.add(key)
+        kind = _classify(entry["file_path"])
+        item = {**entry, "source": source}
+        if kind == "code":
+            code_results.append(item)
+        else:
+            doc_results.append(item)
+
+    # Step 2: classify direct BM25 hits
+    for r in bm25_results:
+        _add(r, "bm25")
+
+    # Step 3: one-hop relation expansion — for each BM25 hit, follow edges to opposite type
+    if db_path.exists():
+        with _connect(db_path) as conn:
+            for r in bm25_results:
+                fp = r["file_path"]
+                slug = r.get("project_slug") or project_slug or ""
+                kind = _classify(fp)
+
+                # Outbound edges from this file
+                out_rows = conn.execute(
+                    """SELECT to_path, rel_type, weight
+                       FROM file_relations
+                       WHERE from_project = ? AND from_path = ?
+                       ORDER BY weight DESC LIMIT 10""",
+                    (slug, fp),
+                ).fetchall()
+
+                # Inbound edges pointing to this file
+                in_rows = conn.execute(
+                    """SELECT from_path, rel_type, weight
+                       FROM file_relations
+                       WHERE from_project = ? AND to_path = ?
+                       ORDER BY weight DESC LIMIT 10""",
+                    (slug, fp),
+                ).fetchall()
+
+                for row in list(out_rows) + list(in_rows):
+                    neighbor = row[0]  # to_path or from_path
+                    neighbor_kind = _classify(neighbor)
+                    # Only expand to opposite type — code→doc or doc→code
+                    if (kind == "code" and neighbor_kind != "code") or \
+                       (kind != "code" and neighbor_kind == "code"):
+                        # Fetch summary from file_index if available
+                        summary_row = conn.execute(
+                            "SELECT summary FROM file_index WHERE project_slug = ? AND file_path = ?",
+                            (slug, neighbor),
+                        ).fetchone()
+                        neighbor_entry = {
+                            "project_slug": slug,
+                            "file_path": neighbor,
+                            "summary": summary_row["summary"] if summary_row else "",
+                            "score": round(r.get("score", 0.0) * float(row[2]) * 0.5, 4),
+                        }
+                        _add(neighbor_entry, f"relation:{row[1]}")
+
+    # Sort each bucket: bm25 hits first (lower BM25 score = better), then relation hits
+    def _sort_key(item: dict) -> tuple:
+        return (0 if item["source"] == "bm25" else 1, item.get("score", 0.0))
+
+    code_results.sort(key=_sort_key)
+    doc_results.sort(key=_sort_key)
+
+    return {
+        "query": query,
+        "project_slug": project_slug,
+        "related_code": code_results[:limit],
+        "related_docs": doc_results[:limit],
+        "total": len(code_results[:limit]) + len(doc_results[:limit]),
+    }
+
+
 def get_index_stats(project_slug: str | None = None, db_path: Path = _INDEX_DB) -> dict[str, Any]:
     """Return index health stats: file counts per project, last indexed timestamps."""
     if not db_path.exists():
@@ -480,6 +845,11 @@ def get_index_stats(project_slug: str | None = None, db_path: Path = _INDEX_DB) 
 
         total = conn.execute("SELECT COUNT(*) FROM file_index").fetchone()[0]
 
+        relation_rows = conn.execute(
+            "SELECT rel_type, COUNT(*) as cnt FROM file_relations GROUP BY rel_type"
+        ).fetchall()
+        relation_summary = {r["rel_type"]: r["cnt"] for r in relation_rows}
+
     projects = [
         {
             "project_slug": r["project_slug"],
@@ -488,4 +858,11 @@ def get_index_stats(project_slug: str | None = None, db_path: Path = _INDEX_DB) 
         }
         for r in rows
     ]
-    return {"status": "healthy", "projects": projects, "total_files": total}
+
+    return {
+        "status": "healthy",
+        "projects": projects,
+        "total_files": total,
+        "relations": relation_summary,
+        "total_relations": sum(relation_summary.values()),
+    }

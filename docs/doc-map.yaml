@@ -29,6 +29,12 @@ mcp_tools:
     - {tool: task_contract, refs: [README.md, docs/claude-md-template.md]}
     - {tool: approve_task_contract, refs: [README.md, docs/claude-md-template.md]}
     - {tool: check_task_contract_gate, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: find_relations, refs: [README.md, docs/getting-started.md]}
+    - {tool: find_related_docs, refs: [README.md, docs/getting-started.md]}
+    - {tool: index_project, refs: [README.md]}
+    - {tool: find_relevant, refs: [README.md]}
+    - {tool: find_affected, refs: [README.md]}
+    - {tool: get_file_index_stats, refs: [README.md]}
 
   youk-code:
     - {tool: nfr_check, refs: [README.md, docs/claude-md-template.md]}
@@ -42,6 +48,7 @@ mcp_tools:
 
 src_files:
   - {file: servers/core/src/server.py, refs: [README.md]}
+  - {file: servers/core/src/file_index.py, refs: [README.md, docs/getting-started.md]}
   - {file: servers/core/src/session.py, refs: [README.md]}
   - {file: servers/core/src/routing.py, refs: [README.md]}
   - {file: servers/core/src/health.py, refs: [README.md]}
