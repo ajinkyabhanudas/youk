@@ -21,13 +21,15 @@ import pytest
 
 # ── paths ─────────────────────────────────────────────────────────────────────
 
-_CLAUDE_ROOT = Path.home() / ".claude"
-_SKILLS_ROOT = _CLAUDE_ROOT / "skills"
-_STATE_DIR = Path("/youk/state")  # Docker mount path
-_RESULTS_FILE = _STATE_DIR / "ab-bench-results.jsonl"
+# Skills live in skills/ relative to the repo root (two levels up from tests/).
+# Fallback to ~/.claude/skills for local setups where the repo IS ~/.claude/youk.
+_REPO_ROOT = Path(__file__).parent.parent
+_REPO_SKILLS = _REPO_ROOT / "skills"
+_CLAUDE_SKILLS = Path.home() / ".claude" / "skills"
+_SKILLS_ROOT = _REPO_SKILLS if _REPO_SKILLS.exists() else _CLAUDE_SKILLS
 
-# Fallback for running outside Docker
-_LOCAL_STATE_DIR = Path(__file__).parent.parent / "state"
+_STATE_DIR = Path("/youk/state")  # Docker mount path
+_LOCAL_STATE_DIR = _REPO_ROOT / "state"  # Fallback for running outside Docker
 
 # ── bench tasks ───────────────────────────────────────────────────────────────
 
