@@ -2,15 +2,13 @@
 name: dev-loop
 rationale_why: "Implementation without a shared plan produces code that solves the wrong problem correctly. This anchors direction before the first line is written."
 description: >
-  Advanced developer coding assistant that understands language, stack, task, and
-  end-goal to then write, audit, test, refactor, and iteratively improve code with
-  best practices. Activate when a developer asks to write, review, audit, test,
-  refactor, or improve code — or any combination of these. Also triggers on: "write
-  this for me", "audit this code", "review my implementation", "help me refactor",
-  "make this better", "find bugs", "write tests for this", "improve this function",
-  "clean this up", or any request involving code quality, correctness, performance,
-  or iterative improvement. Use this skill even for simple code tasks — the context
-  capture and phase discipline always improve output quality.
+  Phase-gated coding loop: write, audit, test, refactor. Triggers on combined-phase
+  requests — "write and test", "audit and fix", "refactor with tests", any full-loop
+  code task, or explicit phase flags (audit only, write only, loop: N). Also triggers
+  on: "review my implementation", "find bugs", "improve this function", "clean this up",
+  or multi-step code quality requests. Do not trigger for: single-sentence explain
+  requests, one-line rename/typo fixes, doc-only edits, or pure Q&A about code with
+  no write/audit/test intent — those route directly without ceremony.
 ---
 
 # dev-loop — Advanced Developer Coding Skill
@@ -41,25 +39,12 @@ continues forward unless told to stop.
 ---
 
 ## Context Capture (Always First)
-
-Before any phase, extract or ask for:
-
-```
-LANGUAGE:     [e.g. TypeScript, Python 3.11, Rust, Go]
-FRAMEWORK:    [e.g. Next.js 14, FastAPI, Axum, none]
-RUNTIME:      [e.g. Node 20, CPython, browser, edge, embedded]
-TASK:         [one sentence — what this code must do]
-END GOAL:     [what success looks like — perf target, correctness guarantee, etc.]
-CONSTRAINTS:  [style guide, no external deps, existing API contract, etc.]
-OUTPUT FMT:   [full file | diff | annotated | inline-comments]
-EXISTING CODE:[paste / path / none]
-```
-
-If the user's message already answers most of these, infer and state assumptions
-inline rather than asking again. Only ask if critical context is truly missing.
-
----
-
+**Parent-task anchor (fires when task is a decomposition):**
+If the current task was produced by breaking a larger goal into sub-tasks:
+1. At decomposition time: write `state/parent-task.json` with {parent_goal, success_criteria, sub_tasks: [...], completed: []}.
+2. Before routing any sub-task follow-up: read the anchor. If the conversation has moved more than 3 exchanges without touching a parent criterion — emit one line: "Parent goal: {parent_goal} — still open. Current sub-task: {sub_task}." Then continue.
+3. When a sub-task completes (task_checkpoint called): move it to completed[]. When completed == sub_tasks: surface "Parent goal satisfied — run /done to close." and delete the anchor.
+4. If the user's follow-up question is scoped only to the sub-task and does not touch the parent goal: answer it, but do not update the anchor. Sub-task drift ≠ parent drift. Only emit the reorientation when the parent criteria are at risk of being forgotten, not on every sub-task exchange.
 ## The Five Phases
 
 Each phase begins with a compact token: `[PHASE: NAME]`
@@ -146,6 +131,25 @@ After all findings:
   blocked
 
 > If zero findings: say so explicitly. Do not invent issues to seem thorough.
+
+**Emit the examination surface block at the end of every AUDIT phase:**
+
+```
+[EXAMINATION SURFACE — dev-loop AUDIT]
+Task type:    {new_endpoint | schema_change | ui_component | bug_fix | refactor | other}
+Examined:     [comma-separated list of domains actually checked]
+              Valid domains: error_handling, auth, rate_limiting, idempotency,
+              data_validation, concurrency, naming, complexity, tests, security_injection,
+              security_secrets, performance, data_volume, consistency, logging
+Not examined: [domain — reason]
+              e.g. "auth — read-only endpoint, no auth surface"
+              e.g. "concurrency — single-threaded, no shared state"
+```
+
+Rules:
+- "Not examined" with no reason = SCOPE_MISS in the signal detector. Always give a reason.
+- If a domain is in scope for the task type but was not examined: list it in Not examined with reason "time constraint" or "skipped" — do not omit it. Omission is indistinguishable from examination.
+- Task type drives expected domains (from `references/skill-scope-matrix.yaml` when it exists).
 
 ---
 
@@ -412,3 +416,34 @@ Claude: skips UNDERSTAND/WRITE → AUDIT → REFACTOR → mini-audit.
 > "Refactor this for readability. loop: 2."
 
 Claude: UNDERSTAND → REFACTOR → mini-audit → loop if needed, max 2 iterations.
+
+## Before writing new code
+**Rework-vs-patch check (fires whenever a direction is corrected mid-task):**
+When a plan or in-progress implementation is corrected — wrong shape,
+wrong tool, wrong output type, anything caught before or during
+implementation — do not simply patch the new decision onto the existing
+surrounding design and continue. Explicitly ask: does this correction mean
+an existing interface/module/pattern the new code will sit on top of also
+needs to change, or does the existing surface genuinely still fit?
+
+Concretely, before writing the next line of code after any correction:
+1. Name the existing interface/contract the corrected piece will plug into.
+2. Check whether that interface's original assumptions still hold given the
+   correction (e.g. a boolean-returning interface built for keyword checks
+   may not fit a richer categorical-plus-rationale result without losing
+   information at the boundary).
+3. If the interface no longer fits, decide explicitly — in front of the
+   user if the answer isn't obvious — whether to widen/rework the shared
+   interface now (bounded, scoped to what's needed) or to keep it
+   unchanged and add a separate, additive path for the new case (not
+   forcing a square peg through it).
+4. Do NOT silently choose "patch around it" by default just because it's
+   less code right now — that is exactly the kind of effort that "sticks"
+   as debt once more is built on top of it, per explicit founder feedback
+   on this exact failure mode.
+
+This is a distinct gate from the existing-dependency scan
+(PENDING-20260728100914) — that one prevents building new code that
+duplicates something already available; this one prevents a *correction*
+from becoming a patch bolted onto a design that no longer fits, once new
+code has already started to accumulate on top of it.

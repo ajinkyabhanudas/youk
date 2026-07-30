@@ -115,6 +115,19 @@ After all findings:
 - Count by severity
 - State ship-readiness: SAFE TO SHIP AS-IS / NEEDS FIXES BEFORE SHIP / BLOCKED
 
+**Emit the examination surface block at the end of ANALYZE:**
+
+Load `references/skill-scope-matrix.yaml` if available to confirm mandatory domains for the risk tier. Then emit:
+
+```
+[EXAMINATION SURFACE — code-review ANALYZE]
+Risk tier:    {LOW | MED | HIGH}
+Examined:     [comma-separated domains checked]
+Not examined: [domain — reason]
+```
+
+Mandatory domains for HIGH: logic, error_handling, data, quality, tests, security_secrets, security_injection, security_auth, security_authz, security_data_exposure. Any mandatory domain in "Not examined" must have an explicit reason — omission without reason = SCOPE_MISS.
+
 > Compact phase summary: "N findings (X CRITICAL, Y HIGH, Z MEDIUM). Ship status: ___."
 
 ---
@@ -214,6 +227,28 @@ Notes (INFO):
 Evidence:
   {What was checked — phases run, categories covered, risk tier applied.}
 ```
+
+**Emit the examination surface block immediately after every VERDICT:**
+
+```
+[EXAMINATION SURFACE — code-review]
+Risk tier:    {LOW | MED | HIGH}
+Examined:     [comma-separated list of categories actually checked]
+              Valid categories: logic, error_handling, data, quality, tests,
+              security_secrets, security_injection, security_auth, security_authz,
+              security_data_exposure, security_deps, youk_write_path, concurrency,
+              performance, redundancy
+Not examined: [category — reason]
+              e.g. "security_auth — no auth surface in this diff"
+              e.g. "concurrency — single-threaded path, no shared state"
+              e.g. "security_deps — no new dependencies added"
+```
+
+Rules:
+- "Not examined" with no reason = SCOPE_MISS attribution to code-review. Always give a reason.
+- HIGH risk tier: security_auth and security_authz are mandatory. If not examined, reason must be explicit.
+- `[SHALLOW]` from Phase 3.5 self-check maps to "Not examined: concurrency/state — shallow review, system model unknown".
+- This block is the attribution surface for the skill self-improvement system. Accuracy here directly affects code-review's skill health score.
 
 Rules:
 - `NEEDS REVISION` if any CRITICAL or HIGH finding is unresolved

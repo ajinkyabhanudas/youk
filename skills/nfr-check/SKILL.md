@@ -8,7 +8,9 @@ description: >
   is written. Prevents NFR decisions from being deferred until they become production
   incidents. Triggers on: "add feature", "build X", "implement Y", any new module,
   endpoint, background job, or integration point. Can also be invoked standalone for
-  NFR-only review of an existing design.
+  NFR-only review of an existing design. Do not trigger for: pure refactors with no
+  external I/O change, doc-only changes, test additions to existing endpoints, or
+  renaming/moving code that introduces no new behavior.
 ---
 
 # nfr-check — Non-Functional Requirements Gate
@@ -55,7 +57,7 @@ Answer these 4 questions and emit a compact NFR block:
 ─ If task mentions UI / CSS / dark / frontend / component / style ─
 6. Dark mode?        {system preference respected? forced-colors handled? test at implementation time, not at review}
 
-─ If task mentions benchmark / eval / measurement / re-run / scoring ─
+─ If task mentions benchmark / eval / measurement / re-run / scoring / comparison / "run again" / "compare models" / "test results" / repeated LLM calls ─
 7. Measurement integrity?  {is cache/state cleared before each run? are runs independent? is a baseline (control) included? without clearing, repeated runs measure cache behavior not model behavior}
 ```
 
@@ -175,6 +177,10 @@ Optional:       [list — may skip with note]
 
 ### Phase 2 — PROBE
 
+Load `references/skill-scope-matrix.yaml` and cross-reference the feature type against
+mandatory NFR categories for this task. Confirm mandatory domains from the matrix are
+covered before proceeding to DECIDE.
+
 For each mandatory NFR category, ask the targeted questions from
 `references/nfr-categories.md`.
 
@@ -223,6 +229,11 @@ Force explicit decisions. No decision may be left as TBD. Every category gets on
 ---
 
 ### Phase 4 — DOCUMENT
+
+**Pre-output check (silent):** Before emitting the NFR Decision Block, verify: (1) every
+mandatory category has DECIDED or DEFER-with-trigger — no TBD allowed; (2) caching is
+DECIDED for all external API / LLM calls; (3) the block is ≤25 lines. If any check fails,
+revise the decisions before surfacing.
 
 Emit the **NFR Decision Block** — a structured artifact carried into dev-loop as
 mandatory context. Strict maximum: 25 lines.
@@ -277,6 +288,26 @@ Each pre-build gap flagged = a potential incident avoided. Pass `nfr_gaps=[list]
 `youk-core.session_end()` when closing the session.
 
 If BLOCKED, state what must be resolved before implementation can begin.
+
+**Emit the examination surface block immediately after CONNECTIONS:**
+
+```
+[EXAMINATION SURFACE — nfr-check]
+Mode:         {quick | full | validate}
+Feature type: {new_endpoint | schema_change | llm_call | ui_component | background_job | other}
+Examined:     [comma-separated NFR categories actually probed]
+              Valid categories: caching, retry, auth, idempotency, rate_limiting,
+              observability, consistency, data_volume, rendering_env, measurement_integrity
+Not examined: [category — reason]
+              e.g. "rate_limiting — internal-only endpoint, no public surface"
+              e.g. "caching — N/A: no repeated expensive computation in this path"
+              e.g. "rendering_env — no UI surface"
+```
+
+Rules:
+- `caching` is mandatory for any LLM call or external API. If not examined: reason must be explicit and must not be "N/A" unless the feature has zero external calls.
+- In `validate` mode: only gaps appear in Examined (categories the developer did NOT pre-empt). Pre-empted categories go in Not examined with reason "developer pre-empted at {DEPTH}".
+- This block is the attribution surface for the skill self-improvement system. SCOPE_MISS on a mandatory NFR category (e.g., caching on an LLM path) triggers a deduction in nfr-check's health score.
 
 ---
 

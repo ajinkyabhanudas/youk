@@ -1818,6 +1818,11 @@ def start_session(project_dir: str) -> SessionState:
                     "Running /build now to catch any missed direction gates and NFR checks."
                 )
 
+    # Gate sequence resume: surface incomplete routing context so context-clear loses nothing.
+    _gate_resume = get_gate_sequence_resume_item()
+    if _gate_resume:
+        session_plan.insert(0, _gate_resume)
+
     # Outcome follow-up: if last session shipped or staged with PENDING/UNKNOWN result,
     # surface a one-line prompt so the developer can confirm what happened.
     # Only fires on returning sessions (days_since_last != 0) and only appended (never inserted)
@@ -2047,6 +2052,23 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass
 
+    # Falsifier monitor: check if any applied skill improvement proposals have been
+    # falsified (the signal they targeted is still firing after N sessions).
+    # Silent-fail — never blocks session start.
+    _falsifier_alerts: list[dict] = []
+    try:
+        from skill_signals import check_falsifier_conditions
+        _falsifier_alerts = check_falsifier_conditions(session_n=counter)
+    except Exception:
+        pass
+
+    _audit_patterns: list[dict] = []
+    try:
+        from skill_signals import read_audit_patterns
+        _audit_patterns = read_audit_patterns(project_slug=slug, lookback_sessions=5)
+    except Exception:
+        pass
+
     return SessionState(
         project=slug,
         resume_point=resume_point,
@@ -2072,6 +2094,8 @@ def start_session(project_dir: str) -> SessionState:
         developer_autonomy_rate=round(_nfr_autonomy_rate, 2),
         force_learn=close_cluster_missed and days_since_last != 0,
         knowledge_index_line=_knowledge_index_line,
+        falsifier_alerts=_falsifier_alerts,
+        audit_patterns=_audit_patterns,
     )
 
 
@@ -2460,6 +2484,35 @@ def _compute_session_delta(
     return delta
 
 
+# Task type keyword map for audit-line inference
+_TASK_TYPE_KEYWORDS: dict[str, list[str]] = {
+    "new_endpoint":    ["endpoint", "api", "route", "handler", "controller", "webhook"],
+    "schema_change":   ["schema", "migration", "column", "table", "model change", "alter"],
+    "ui_component":    ["component", "ui", "frontend", "page", "modal", "form", "button"],
+    "bug_fix":         ["fix", "bug", "broken", "regression", "error", "crash", "failing"],
+    "refactor":        ["refactor", "rename", "restructure", "extract", "cleanup", "clean up"],
+    "llm_integration": ["llm", "claude", "openai", "prompt", "embedding", "inference", "model call"],
+    "background_job":  ["job", "worker", "queue", "cron", "scheduled", "async task"],
+}
+
+
+def _infer_task_type_from_active_task() -> str:
+    """Infer task_type from active_task.json. Falls back to 'other'."""
+    try:
+        active_task_file = YOUK_ROOT / "state" / "active_task.json"
+        if not active_task_file.exists():
+            return "other"
+        data = json.loads(active_task_file.read_text())
+        task_str = (data.get("task") or "").lower()
+        # Priority order matches scope matrix specificity
+        for task_type, keywords in _TASK_TYPE_KEYWORDS.items():
+            if any(kw in task_str for kw in keywords):
+                return task_type
+        return "other"
+    except Exception:
+        return "other"
+
+
 def end_session(
     summary: str,
     commits_made: bool,
@@ -2481,6 +2534,7 @@ def end_session(
     contract_violations: list[str] | None = None,
     outcome: str = "NONE",
     outcome_result: str = "UNKNOWN",
+    cognitive_assessment: str = "",
 ) -> dict:
     """
     Write structured audit log entry, detect and save contract phrases.
@@ -2581,6 +2635,10 @@ def end_session(
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     skills_line = ", ".join(skills_used) if skills_used else "none"
     close_line = "yes" if close_cluster else "no"
+
+    # Infer task_type from active_task.json routing_context or task string.
+    # Written as TaskType: line so skill_signals.py can attribute SCOPE_MISS correctly.
+    _task_type = _infer_task_type_from_active_task()
     gap_lines = ""
     if skill_gaps:
         for skill_name, gaps in skill_gaps.items():
@@ -2655,6 +2713,16 @@ def end_session(
     outcome_line = f"Outcome: {outcome}\n" if outcome != "NONE" else ""
     outcome_result_line = f"OutcomeResult: {outcome_result}\n" if outcome != "NONE" else ""
 
+    # Cognitive assessment — structured growth signal from cog-psych skill.
+    # Written as a single-line field so audit parsers can extract it.
+    cog_line = ""
+    if cognitive_assessment and cognitive_assessment.strip():
+        # Collapse multiline block to one line for audit log compactness
+        cog_summary = " | ".join(
+            line.strip() for line in cognitive_assessment.splitlines() if line.strip()
+        )[:400]
+        cog_line = f"CognitiveAssessment: {cog_summary}\n"
+
     token_data = _read_and_clear_tokens()
     total_tokens = token_data["total_input"] + token_data["total_output"]
     budget = token_data.get("token_budget", 0)
@@ -2686,11 +2754,14 @@ def end_session(
             pass
     compact_count_line = f"Compactions: {compact_count}\n" if compact_count > 0 else ""
 
+    task_type_line = f"TaskType: {_task_type}\n" if _task_type != "other" else ""
+
     entry = (
         f"\n### Session — {timestamp}\n"
         f"Project: {_slug(_load_state().get('last_project', ''))}\n"
         f"{summary}\n"
         f"Skills: {skills_line}\n"
+        f"{task_type_line}"
         f"CloseCluster: {close_line}\n"
         f"Commits: {'yes' if commits_made else 'no'}\n"
         f"{tokens_line}"
@@ -2713,6 +2784,7 @@ def end_session(
         f"{contract_violation_lines}"
         f"{outcome_line}"
         f"{outcome_result_line}"
+        f"{cog_line}"
     )
 
     with open(audit_file, "a") as f:
@@ -2881,6 +2953,53 @@ def end_session(
             "skill_gaps={'skill': ['reason']} to document the miss."
         )
 
+    # 3B — Skill signal detection: compute per-skill improvement signals from this session.
+    # Silent-fail, never blocks session_end. Appends to state/skill-signals.jsonl.
+    skill_signals_result: dict = {}
+    try:
+        from skill_signals import record_session_signals as _record_session_signals
+        _session_n = current_state.get("session_counter", 0)
+        skill_signals_result = _record_session_signals(entry, _session_n)
+    except Exception:
+        pass
+
+    # 3C — Concept graph population: extract concepts from this session's domain output.
+    # Only fires when /learn ran (domain files exist) — silent-fail, never blocks close.
+    concepts_written = 0
+    if "learn" in (skills_used or []):
+        try:
+            from concept_graph import extract_concepts as _extract_concepts, write_concepts as _write_concepts
+            _domain_dir = YOUK_ROOT / "knowledge" / "domain"
+            _raw_patterns: list[str] = []
+            _raw_domain: list[str] = []
+            if _domain_dir.exists():
+                for _f in _domain_dir.glob("*.md"):
+                    if _f.name == "gaps.md":
+                        continue
+                    try:
+                        _text = _f.read_text()
+                        for _line in _text.splitlines():
+                            _stripped = _line.strip().lstrip("- ").strip()
+                            if _stripped and not _stripped.startswith("#"):
+                                if "pattern" in _f.name.lower():
+                                    _raw_patterns.append(_stripped)
+                                else:
+                                    _raw_domain.append(_stripped)
+                    except Exception:
+                        pass
+            _concepts = _extract_concepts(
+                patterns=_raw_patterns[:30],
+                domain_knowledge=_raw_domain[:30],
+                project_slug=slug or "unknown",
+                session_n=current_state.get("session_counter", 0),
+            )
+            if _concepts:
+                _result = _write_concepts(_concepts, slug or "unknown",
+                                          current_state.get("session_counter", 0))
+                concepts_written = _result.get("written", 0)
+        except Exception:
+            pass
+
     # /learn enforcement — /learn is non-optional at /done.
     # Separate key so the capability-skill gate and the /learn gate are independently checkable.
     learn_ran = "learn" in (skills_used or [])
@@ -2913,8 +3032,10 @@ def end_session(
 
     return {
         "knowledge_extracted": summary.count("##"),
+        "concepts_written": concepts_written,
         "global_contracts_promoted": global_contracts_promoted,
         "audit_written": True,
+        "skill_signals": skill_signals_result,
         "session_close_cluster_detected": session_close_detected,
         "contract_phrases_detected": detected_contracts,
         "contracts_saved": contracts_saved,
@@ -3057,3 +3178,100 @@ def enrich_route_result(result: dict, task: str) -> None:
             }
     except Exception:
         pass  # graph_state omitted on failure — not a required field
+
+
+_GATES_FOR_CEREMONY: dict[str, list[str]] = {
+    "standard": ["challenge", "nfr", "challenge_gate", "dev-loop"],
+    "minimal":  ["nfr", "dev-loop"],
+    "none":     [],
+}
+
+
+def write_routing_context(task: str, result: dict, youk_root: Path | None = None) -> None:
+    """Write semantic routing context into active_task.json immediately after route_task fires.
+
+    Extends (not replaces) active_task.json — preserves files_touched and other
+    hook-written fields while adding routing_context so a context-clear loses nothing.
+    Lives in session.py (no mcp dependency) for testability.
+    """
+    root = youk_root or YOUK_ROOT
+    active_task_file = root / "state" / "active_task.json"
+    ceremony = result.get("ceremony", "standard")
+    gates_expected = _GATES_FOR_CEREMONY.get(ceremony, _GATES_FOR_CEREMONY["standard"])
+
+    routing_ctx = {
+        "task": task[:200],
+        "size": result.get("size", "?"),
+        "plan_hook": result.get("plan_hook", ""),
+        "gates_expected": gates_expected,
+        "gates_sequence": [],
+        "routed_at": datetime.utcnow().isoformat(),
+    }
+    existing: dict = {}
+    if active_task_file.exists():
+        try:
+            existing = json.loads(active_task_file.read_text())
+        except Exception:
+            existing = {}
+    existing["routing_context"] = routing_ctx
+    if not existing.get("task") or existing.get("task", "").startswith(("editing ", "running:")):
+        existing["task"] = task[:200]
+    try:
+        active_task_file.write_text(json.dumps(existing, indent=2))
+    except Exception:
+        pass
+
+
+def append_gate_to_active_task(gate_name: str, youk_root: Path | None = None) -> None:
+    """Append a gate passage record to active_task.json['routing_context']['gates_sequence'].
+
+    Idempotent — gate_name only appended once. Silent-fail.
+    Lives in session.py (no mcp dependency) for testability.
+    """
+    root = youk_root or YOUK_ROOT
+    active_task_file = root / "state" / "active_task.json"
+    if not active_task_file.exists():
+        return
+    try:
+        existing = json.loads(active_task_file.read_text())
+        ctx = existing.get("routing_context")
+        if not isinstance(ctx, dict):
+            return
+        seq: list = ctx.get("gates_sequence", [])
+        if any(g.get("gate") == gate_name for g in seq):
+            return
+        seq.append({"gate": gate_name, "fired_at": datetime.utcnow().isoformat()})
+        ctx["gates_sequence"] = seq
+        existing["routing_context"] = ctx
+        active_task_file.write_text(json.dumps(existing, indent=2))
+    except Exception:
+        pass
+
+
+def get_gate_sequence_resume_item(youk_root: Path | None = None) -> str | None:
+    """Return a plan item string if active_task.json has incomplete gate sequence, else None.
+
+    Used by session_start plan builder and testable in isolation.
+    """
+    root = youk_root or YOUK_ROOT
+    active_task_file = root / "state" / "active_task.json"
+    if not active_task_file.exists():
+        return None
+    try:
+        data = json.loads(active_task_file.read_text())
+        ctx = data.get("routing_context", {})
+        task_label = ctx.get("task", "")
+        expected = ctx.get("gates_expected", [])
+        fired = [g["gate"] for g in ctx.get("gates_sequence", [])]
+        remaining = [g for g in expected if g not in fired]
+        if task_label and expected and remaining and len(fired) > 0:
+            next_gate = remaining[0]
+            return (
+                f"⚠ Routing in progress for '{task_label[:80]}': "
+                f"{len(fired)}/{len(expected)} gates done "
+                f"(fired: {', '.join(fired)}). "
+                f"Next gate: {next_gate}. Resume with /build."
+            )
+    except Exception:
+        pass
+    return None

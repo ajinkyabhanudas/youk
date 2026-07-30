@@ -121,6 +121,14 @@ class SessionState:
     force_learn: bool = False
     # Knowledge index R10 line: "knowledge: N entries (H hot, C cold, A archived); loaded H summaries (XB)"
     knowledge_index_line: str = ""
+    # Falsifier alerts from skill improvement proposals that have been applied but haven't improved signals.
+    # Non-empty list = a proposal was applied N sessions ago and the targeted signal is still firing.
+    # CLAUDE.md: surface one-line alert per entry, suggest revert or deeper redesign.
+    falsifier_alerts: list[dict] = field(default_factory=list)
+    # Recurring domain audit patterns from audit-signals.jsonl (cross-session).
+    # Non-empty = domain flagged HIGH in ≥40% of last 5 sessions on this project.
+    # Surface as: "Recurring audit signal: {domain} flagged HIGH in {count}/{total} sessions on {project}"
+    audit_patterns: list[dict] = field(default_factory=list)
     # Convergence state — tracks which of the seven angles have converged on external pressure.
     # Updated mechanically from exchange structure: user-generated pressure that didn't move
     # the answer = convergence signal. Model-generated pressure = noise, not counted.
@@ -162,6 +170,8 @@ class SessionState:
             "developer_autonomy_rate": self.developer_autonomy_rate,
             "force_learn": self.force_learn,
             "knowledge_index_line": self.knowledge_index_line,
+            "falsifier_alerts": self.falsifier_alerts,
+            "audit_patterns": self.audit_patterns,
             "convergence_state": self.convergence_state,
         }
 

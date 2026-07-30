@@ -1,0 +1,133 @@
+# Skill Scope Matrix
+# Defines which examination domains are MANDATORY, CONDITIONAL, or N/A
+# for each task type. Used by:
+#   - dev-loop AUDIT phase: to declare examination surface
+#   - skill_signals.py: to attribute SCOPE_MISS signals
+#   - nfr-check: to classify mandatory vs conditional NFR categories
+#
+# Signal weight: MANDATORY domain not examined = SCOPE_MISS (1.5x penalty)
+#                CONDITIONAL domain not examined = GAP if task has that surface
+
+# ─── dev-loop examination domains ───────────────────────────────────────────
+
+dev_loop:
+  domains:
+    - error_handling
+    - auth
+    - rate_limiting
+    - idempotency
+    - data_validation
+    - concurrency
+    - naming
+    - complexity
+    - tests
+    - security_injection
+    - security_secrets
+    - performance
+    - data_volume
+    - consistency
+    - logging
+
+  task_types:
+    new_endpoint:
+      mandatory: [error_handling, auth, data_validation, security_injection, tests, logging]
+      conditional: [rate_limiting, idempotency, concurrency, performance, data_volume]
+      na_default: [consistency]  # only mandatory when endpoint mutates shared state
+
+    schema_change:
+      mandatory: [idempotency, data_volume, consistency, tests]
+      conditional: [auth, performance, concurrency]
+      na_default: [rate_limiting, security_injection, naming]
+
+    ui_component:
+      mandatory: [error_handling, data_validation, tests, naming]
+      conditional: [performance, concurrency, auth]
+      na_default: [rate_limiting, idempotency, data_volume, consistency, logging]
+
+    bug_fix:
+      mandatory: [error_handling, tests]
+      conditional: [auth, data_validation, concurrency]
+      na_default: []  # bug fixes: examiner decides based on bug class
+
+    refactor:
+      mandatory: [tests, naming, complexity]
+      conditional: [performance, error_handling, concurrency]
+      na_default: [auth, rate_limiting, idempotency, data_volume]
+
+    llm_integration:
+      mandatory: [error_handling, auth, idempotency, logging, tests, security_secrets]
+      conditional: [rate_limiting, performance, data_volume, consistency]
+      na_default: [security_injection]  # LLM output is not executable; injection N/A unless eval()
+
+    background_job:
+      mandatory: [error_handling, idempotency, logging, tests]
+      conditional: [concurrency, performance, data_volume, consistency]
+      na_default: [auth, rate_limiting, security_injection]
+
+    other:
+      mandatory: [error_handling, tests]
+      conditional: []
+      na_default: []
+
+# ─── code-review examination categories ─────────────────────────────────────
+
+code_review:
+  risk_tiers:
+    LOW:
+      mandatory: [logic, error_handling, quality, tests]
+      conditional: [data, security_secrets]
+      na_default: [security_auth, security_authz, security_data_exposure, security_deps,
+                   youk_write_path, concurrency, performance, redundancy]
+
+    MED:
+      mandatory: [logic, error_handling, data, quality, tests, security_secrets,
+                  security_injection]
+      conditional: [concurrency, performance, redundancy, youk_write_path]
+      na_default: [security_auth, security_authz, security_data_exposure]  # only if no auth surface
+
+    HIGH:
+      mandatory: [logic, error_handling, data, quality, tests, security_secrets,
+                  security_injection, security_auth, security_authz, security_data_exposure,
+                  youk_write_path]
+      conditional: [security_deps, concurrency, performance, redundancy]
+      na_default: []
+
+# ─── nfr-check examination categories ────────────────────────────────────────
+
+nfr_check:
+  feature_types:
+    new_endpoint:
+      mandatory: [auth, observability, idempotency]
+      conditional: [caching, retry, rate_limiting, consistency, data_volume]
+      na_default: [rendering_env, measurement_integrity]
+
+    llm_call:
+      mandatory: [caching, retry, observability, idempotency]
+      conditional: [auth, rate_limiting, consistency, data_volume]
+      na_default: [rendering_env, measurement_integrity]
+
+    schema_change:
+      mandatory: [idempotency, consistency, data_volume]
+      conditional: [caching, retry, observability]
+      na_default: [auth, rate_limiting, rendering_env, measurement_integrity]
+
+    ui_component:
+      mandatory: [rendering_env]
+      conditional: [observability, consistency]
+      na_default: [caching, retry, auth, idempotency, rate_limiting, data_volume,
+                   measurement_integrity]
+
+    benchmark_eval:
+      mandatory: [measurement_integrity]
+      conditional: [caching, observability]
+      na_default: [auth, retry, rate_limiting, idempotency, rendering_env]
+
+    background_job:
+      mandatory: [idempotency, observability, retry]
+      conditional: [caching, consistency, data_volume, rate_limiting]
+      na_default: [auth, rendering_env, measurement_integrity]
+
+    other:
+      mandatory: [observability]
+      conditional: []
+      na_default: []

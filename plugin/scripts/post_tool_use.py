@@ -69,13 +69,16 @@ def get_touched_file(tool_name: str, tool_input: dict) -> str | None:
     return None
 
 
-def infer_task_label(tool_name: str, tool_input: dict, existing_task: str) -> str:
+def infer_task_label(tool_name: str, tool_input: dict, existing_task: str, routing_task: str = "") -> str:
     """
     Infer a human-readable task label from tool activity.
-    Prefers the existing label if it looks meaningful.
+    Prefers routing_context.task (semantic intent) over file-derived labels.
     """
-    if existing_task and not existing_task.startswith("unknown"):
-        return existing_task
+    if routing_task:
+        return routing_task  # routing_context.task is always the authoritative semantic label
+
+    if existing_task and not existing_task.startswith(("unknown", "editing ", "running:")):
+        return existing_task  # existing label already semantic (set by a prior routing_context write)
 
     file_path = get_touched_file(tool_name, tool_input)
     if file_path:
@@ -132,8 +135,12 @@ def main() -> None:
     # Extract signal from this tool call
     signal = extract_signal(tool_name, tool_input, str(tool_result))
 
+    # Prefer semantic label from routing_context if present
+    _routing_ctx = existing.get("routing_context", {})
+    _routing_task = _routing_ctx.get("task", "") if isinstance(_routing_ctx, dict) else ""
+
     # Infer task label
-    task_label = infer_task_label(tool_name, tool_input, existing.get("task", ""))
+    task_label = infer_task_label(tool_name, tool_input, existing.get("task", ""), _routing_task)
 
     updated = {
         "task": task_label,

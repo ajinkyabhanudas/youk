@@ -6,7 +6,7 @@ sys.path.insert(0, "/shared")
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
-from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state, _record_outcome_followup, enrich_route_result as _enrich_route_result_impl
+from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state, _record_outcome_followup, enrich_route_result as _enrich_route_result_impl, write_routing_context as _write_routing_context_impl, append_gate_to_active_task as _append_gate_impl
 from routing import route_task as _route_task
 from health import (
     run_health_check_with_skill_signals,
@@ -33,7 +33,19 @@ from file_index import (
     index_project as _index_project,
     find_relevant as _find_relevant,
     find_affected as _find_affected,
+    find_relations as _find_relations,
+    find_related_docs as _find_related_docs,
     get_index_stats as _get_index_stats,
+)
+from concept_graph import (
+    query_concept_graph as _query_concept_graph,
+    get_concept_stats as _get_concept_stats,
+)
+from skill_signals import (
+    generate_improvement_proposal as _generate_skill_improvement_proposal,
+    select_skill_arm as _select_skill_arm,
+    record_arm_reward as _record_arm_reward,
+    mark_proposal_applied as _mark_proposal_applied,
 )
 
 YOUK_ROOT = Path("/youk")
@@ -63,6 +75,16 @@ def _increment_tool_call_count() -> int:
 def _reset_tool_call_count() -> None:
     """Reset counter when compact_context fires."""
     _TOOL_CALL_COUNT_FILE.write_text('{"count": 0}')
+
+
+def _write_routing_context(task: str, result: dict) -> None:
+    """Delegate to session.write_routing_context — lives in session.py for testability."""
+    _write_routing_context_impl(task, result, youk_root=YOUK_ROOT)
+
+
+def _append_gate_to_active_task(gate_name: str) -> None:
+    """Delegate to session.append_gate_to_active_task — lives in session.py for testability."""
+    _append_gate_impl(gate_name, youk_root=YOUK_ROOT)
 
 
 mcp = FastMCP(
@@ -442,6 +464,8 @@ def route_task(
         existing = [e for e in existing if e.get("slug") == slug]
         existing.append(new_entry)
         flag_file.write_text(_json.dumps(existing))
+        # Write semantic routing context into active_task.json so context-clear loses nothing.
+        _write_routing_context(task, result)
         # Seed task graph node for M+ tasks so gate tools can write to it immediately.
         # Fails silently — graph is the durable record, not the gate enforcer.
         if result.get("size") in {"M", "L", "XL"}:
@@ -608,6 +632,7 @@ def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) 
             }))
         except Exception:
             pass
+        _append_gate_to_active_task("nfr")
         # Mirror gate passage to task graph for cross-session recovery.
         # Fails silently — JSON flag file is the authoritative gate; graph is the durable record.
         try:
@@ -673,6 +698,7 @@ def mark_challenge_ran(task: str, angles_checked: list[str], mode: str = "full")
             "angles_validated": True,
             "mode": mode,
         }))
+        _append_gate_to_active_task("challenge")
         return {"recorded": True, "challenge_rounds": new_rounds, "angles_validated": True}
     except Exception:
         return {"recorded": False, "challenge_rounds": 0, "angles_validated": False}
@@ -716,6 +742,7 @@ def check_challenge_gate(task: str, size: str) -> dict:
             }))
         except Exception:
             pass
+        _append_gate_to_active_task("challenge_gate")
         # Mirror gate passage to task graph for cross-session recovery.
         # Also set unblocked=True when challenge clears — challenge is the final gate before dev-loop.
         try:
@@ -1362,13 +1389,183 @@ def find_affected(file_path: str, project_slug: str) -> dict:
 
 
 @mcp.tool()
+def find_relations(file_path: str, project_slug: str, direction: str = "both") -> dict:
+    """Return relation edges for a file from the relation graph.
+
+    direction: "out" = what this file links to; "in" = what links to this file;
+               "both" = union (default).
+
+    Relation types captured during indexing:
+    - doc_link: markdown [text](path) hrefs pointing to another file
+    - doc_map_ref: explicit declarations in docs/doc-map.yaml (weight 2.0 — authoritative)
+    - config_ref: file paths found as values in YAML/TOML/JSON config files
+    - import: code → imported module (stem-level, same as find_affected)
+
+    Use to answer:
+    - "What docs reference session.py?" → direction="in"
+    - "What does guardrails.md link to?" → direction="out"
+    - "Full neighbourhood of this file?" → direction="both"
+
+    Returns: {file_path, relations: [{file_path, rel_type, weight, direction}],
+              total, outbound_count, inbound_count}
+    """
+    return _find_relations(file_path, project_slug, direction=direction)
+
+
+@mcp.tool()
+def find_related_docs(query: str, project_slug: str | None = None, limit: int = 8) -> dict:
+    """BM25 search that bridges code and non-code docs via the relation graph.
+
+    Returns two ranked buckets:
+    - related_code: code files matching the query or linked from matching docs
+    - related_docs: doc/config files matching the query or linked from matching code
+
+    Each result includes: file_path, project_slug, summary, score, source
+    (source is "bm25" for direct hits, "relation:<type>" for graph-expanded hits).
+
+    Example questions this answers:
+    - "What docs explain route_task?" → surfaces README + doc-map + server.py
+    - "What code implements the NFR gate?" → surfaces session.py + nfr.py via doc hits
+    - "What is connected to guardrails?" → surfaces guardrails.yaml + guardrails.md + server.py
+
+    query: natural language or symbol name
+    project_slug: if set, boosts current-project results first
+    limit: max results per bucket (code and docs capped separately)
+
+    Returns: {related_code, related_docs, query, project_slug, total}
+    """
+    return _find_related_docs(query, project_slug=project_slug, limit=limit)
+
+
+@mcp.tool()
 def get_file_index_stats(project_slug: str | None = None) -> dict:
-    """Return file index health: file counts per project and last indexed timestamps.
+    """Return file index health: file counts, relation edge counts, last indexed timestamps.
 
     project_slug: if set, returns stats for that project only; None returns all projects.
-    Returns: {status, projects: [{project_slug, file_count, last_indexed}], total_files}
+    Returns: {status, projects: [{project_slug, file_count, last_indexed}],
+              total_files, relations: {rel_type: count}, total_relations}
     """
     return _get_index_stats(project_slug=project_slug)
+
+
+@mcp.tool()
+def query_concept_graph(query: str, project_slug: str | None = None, limit: int = 5) -> dict:
+    """Search the cross-session concept graph for concepts matching the query label.
+
+    Returns seed matches (label substring) extended with one-hop neighbors via
+    concept_edges. Use to surface related patterns, decisions, and domain knowledge
+    from past sessions across all projects.
+
+    query: search term (substring match on concept label)
+    project_slug: filter to a specific project (youk, canopy, genie-fertility); None = all
+    limit: max seed results (neighbors are additive, capped at 2x limit)
+
+    Returns: {concepts: [{label, type, project_slug, session_n, summary, match}], total}
+    match field: "direct" | "neighbor:{edge_type}"
+    """
+    return _query_concept_graph(query, project_slug=project_slug, limit=limit)
+
+
+@mcp.tool()
+def get_concept_graph_stats(project_slug: str | None = None) -> dict:
+    """Return concept graph health: concept and edge counts per project.
+
+    project_slug: filter to one project; None returns all.
+    Returns: {status, projects: [{project_slug, concept_count}], total_concepts, total_edges}
+    """
+    return _get_concept_stats(project_slug=project_slug)
+
+
+@mcp.tool()
+def get_skill_signals(skill_name: str | None = None, window: int = 10) -> dict:
+    """Return skill self-improvement signals and health summary.
+
+    skill_name: filter to one skill; None returns all tracked skills.
+    window: number of recent sessions to include in pattern detection.
+    Returns: {health: {skill: {points, status}}, patterns: [...], fork_candidates: [...]}
+    """
+    try:
+        from skill_signals import get_skill_health_summary, detect_patterns, get_fork_candidates
+        health = get_skill_health_summary()
+        if skill_name:
+            health = {k: v for k, v in health.items() if k == skill_name}
+        patterns = detect_patterns(window=window)
+        if skill_name:
+            patterns = [p for p in patterns if p["skill"] == skill_name]
+        fork_candidates = get_fork_candidates()
+        if skill_name:
+            fork_candidates = [c for c in fork_candidates if c["skill"] == skill_name]
+        return {
+            "health": health,
+            "patterns": patterns,
+            "fork_candidates": fork_candidates,
+            "improvement_queue_ready": len(patterns) > 0,
+        }
+    except Exception as e:
+        return {"error": str(e), "health": {}, "patterns": [], "fork_candidates": []}
+
+
+@mcp.tool()
+def generate_skill_improvement_proposal(skill_name: str, dimension: str = "") -> dict:
+    """Generate a 5-part evaluable improvement proposal for a skill with a detected pattern.
+
+    Reads the current improvement queue (state/skill-improvement-queue.json), finds the
+    pattern for skill_name (optionally filtered by dimension), loads the skill SKILL.md,
+    and produces a structured proposal in the 5-part evaluable format. Queues it via
+    add_proposal — requires human approval before apply_proposal can act on it.
+
+    Returns: {proposal_id, proposal_text, queued, pattern_used}
+    Returns {no_pattern: true} if no qualifying pattern exists for this skill.
+    """
+    return _generate_skill_improvement_proposal(skill_name, dimension)
+
+
+@mcp.tool()
+def select_skill_arm(skill_name: str, task_type: str = "other", developer_stage: str = "COMPETENT") -> dict:
+    """LinUCB arm selection for a skill with an active candidate competition.
+
+    When a skill has been forked (dropped below 40 points and a candidate was generated),
+    this selects which version to use for the current task based on task_type and
+    developer_stage context.
+
+    Returns: {arm: "current"|"candidate", candidate_id, reason}
+    Returns {arm: "current", reason: "no candidate"} if no competition is active.
+    """
+    return _select_skill_arm(skill_name, task_type, developer_stage)
+
+
+@mcp.tool()
+def record_arm_reward(
+    skill_name: str,
+    arm_index: int,
+    reward: float,
+    task_type: str = "other",
+    developer_stage: str = "COMPETENT",
+    session_n: int = 0,
+) -> dict:
+    """Record a reward signal for a LinUCB arm after observing session outcome.
+
+    arm_index: 0=current/archived version, 1=candidate version.
+    reward: positive (STABLE/VALIDATED) or negative (GAP/SCOPE_MISS weight).
+    Updates arm statistics and triggers promotion/reversion check after 5 sessions.
+
+    Returns: {updated, promoted, reverted, promotion_note?, reversion_note?}
+    """
+    return _record_arm_reward(skill_name, arm_index, reward, task_type, developer_stage, session_n)
+
+
+@mcp.tool()
+def mark_proposal_applied(proposal_id: str, session_n: int) -> dict:
+    """Mark a skill improvement proposal as applied so the falsifier monitor can watch it.
+
+    Call this immediately after apply_proposal succeeds on a SKILL-SIGNAL-* proposal.
+    Updates applied-proposals.json with applied status and session number so
+    session_start can check falsifier conditions in future sessions.
+
+    Returns: {marked: bool, proposal_id}
+    """
+    marked = _mark_proposal_applied(proposal_id, session_n)
+    return {"marked": marked, "proposal_id": proposal_id}
 
 
 @mcp.tool()
