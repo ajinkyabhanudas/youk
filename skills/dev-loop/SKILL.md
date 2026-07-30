@@ -147,6 +147,25 @@ After all findings:
 
 > If zero findings: say so explicitly. Do not invent issues to seem thorough.
 
+**Emit the examination surface block at the end of every AUDIT phase:**
+
+```
+[EXAMINATION SURFACE — dev-loop AUDIT]
+Task type:    {new_endpoint | schema_change | ui_component | bug_fix | refactor | other}
+Examined:     [comma-separated list of domains actually checked]
+              Valid domains: error_handling, auth, rate_limiting, idempotency,
+              data_validation, concurrency, naming, complexity, tests, security_injection,
+              security_secrets, performance, data_volume, consistency, logging
+Not examined: [domain — reason]
+              e.g. "auth — read-only endpoint, no auth surface"
+              e.g. "concurrency — single-threaded, no shared state"
+```
+
+Rules:
+- "Not examined" with no reason = SCOPE_MISS in the signal detector. Always give a reason.
+- If a domain is in scope for the task type but was not examined: list it in Not examined with reason "time constraint" or "skipped" — do not omit it. Omission is indistinguishable from examination.
+- Task type drives expected domains (from `references/skill-scope-matrix.yaml` when it exists).
+
 ---
 
 ### Phase 4 — TEST

@@ -2052,6 +2052,16 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass
 
+    # Falsifier monitor: check if any applied skill improvement proposals have been
+    # falsified (the signal they targeted is still firing after N sessions).
+    # Silent-fail — never blocks session start.
+    _falsifier_alerts: list[dict] = []
+    try:
+        from skill_signals import check_falsifier_conditions
+        _falsifier_alerts = check_falsifier_conditions(session_n=counter)
+    except Exception:
+        pass
+
     return SessionState(
         project=slug,
         resume_point=resume_point,
@@ -2077,6 +2087,7 @@ def start_session(project_dir: str) -> SessionState:
         developer_autonomy_rate=round(_nfr_autonomy_rate, 2),
         force_learn=close_cluster_missed and days_since_last != 0,
         knowledge_index_line=_knowledge_index_line,
+        falsifier_alerts=_falsifier_alerts,
     )
 
 
@@ -2898,6 +2909,16 @@ def end_session(
             "skill_gaps={'skill': ['reason']} to document the miss."
         )
 
+    # 3B — Skill signal detection: compute per-skill improvement signals from this session.
+    # Silent-fail, never blocks session_end. Appends to state/skill-signals.jsonl.
+    skill_signals_result: dict = {}
+    try:
+        from skill_signals import record_session_signals as _record_session_signals
+        _session_n = current_state.get("session_counter", 0)
+        skill_signals_result = _record_session_signals(entry, _session_n)
+    except Exception:
+        pass
+
     # 3C — Concept graph population: extract concepts from this session's domain output.
     # Only fires when /learn ran (domain files exist) — silent-fail, never blocks close.
     concepts_written = 0
@@ -2970,6 +2991,7 @@ def end_session(
         "concepts_written": concepts_written,
         "global_contracts_promoted": global_contracts_promoted,
         "audit_written": True,
+        "skill_signals": skill_signals_result,
         "session_close_cluster_detected": session_close_detected,
         "contract_phrases_detected": detected_contracts,
         "contracts_saved": contracts_saved,

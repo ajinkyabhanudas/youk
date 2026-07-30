@@ -215,6 +215,28 @@ Evidence:
   {What was checked — phases run, categories covered, risk tier applied.}
 ```
 
+**Emit the examination surface block immediately after every VERDICT:**
+
+```
+[EXAMINATION SURFACE — code-review]
+Risk tier:    {LOW | MED | HIGH}
+Examined:     [comma-separated list of categories actually checked]
+              Valid categories: logic, error_handling, data, quality, tests,
+              security_secrets, security_injection, security_auth, security_authz,
+              security_data_exposure, security_deps, youk_write_path, concurrency,
+              performance, redundancy
+Not examined: [category — reason]
+              e.g. "security_auth — no auth surface in this diff"
+              e.g. "concurrency — single-threaded path, no shared state"
+              e.g. "security_deps — no new dependencies added"
+```
+
+Rules:
+- "Not examined" with no reason = SCOPE_MISS attribution to code-review. Always give a reason.
+- HIGH risk tier: security_auth and security_authz are mandatory. If not examined, reason must be explicit.
+- `[SHALLOW]` from Phase 3.5 self-check maps to "Not examined: concurrency/state — shallow review, system model unknown".
+- This block is the attribution surface for the skill self-improvement system. Accuracy here directly affects code-review's skill health score.
+
 Rules:
 - `NEEDS REVISION` if any CRITICAL or HIGH finding is unresolved
 - `APPROVED WITH COMMENTS` if only MEDIUM/LOW/INFO findings remain

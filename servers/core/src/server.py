@@ -39,6 +39,12 @@ from concept_graph import (
     query_concept_graph as _query_concept_graph,
     get_concept_stats as _get_concept_stats,
 )
+from skill_signals import (
+    generate_improvement_proposal as _generate_skill_improvement_proposal,
+    select_skill_arm as _select_skill_arm,
+    record_arm_reward as _record_arm_reward,
+    mark_proposal_applied as _mark_proposal_applied,
+)
 
 YOUK_ROOT = Path("/youk")
 CLAUDE_ROOT = Path("/claude")
@@ -1416,6 +1422,98 @@ def get_concept_graph_stats(project_slug: str | None = None) -> dict:
     Returns: {status, projects: [{project_slug, concept_count}], total_concepts, total_edges}
     """
     return _get_concept_stats(project_slug=project_slug)
+
+
+@mcp.tool()
+def get_skill_signals(skill_name: str | None = None, window: int = 10) -> dict:
+    """Return skill self-improvement signals and health summary.
+
+    skill_name: filter to one skill; None returns all tracked skills.
+    window: number of recent sessions to include in pattern detection.
+    Returns: {health: {skill: {points, status}}, patterns: [...], fork_candidates: [...]}
+    """
+    try:
+        from skill_signals import get_skill_health_summary, detect_patterns, get_fork_candidates
+        health = get_skill_health_summary()
+        if skill_name:
+            health = {k: v for k, v in health.items() if k == skill_name}
+        patterns = detect_patterns(window=window)
+        if skill_name:
+            patterns = [p for p in patterns if p["skill"] == skill_name]
+        fork_candidates = get_fork_candidates()
+        if skill_name:
+            fork_candidates = [c for c in fork_candidates if c["skill"] == skill_name]
+        return {
+            "health": health,
+            "patterns": patterns,
+            "fork_candidates": fork_candidates,
+            "improvement_queue_ready": len(patterns) > 0,
+        }
+    except Exception as e:
+        return {"error": str(e), "health": {}, "patterns": [], "fork_candidates": []}
+
+
+@mcp.tool()
+def generate_skill_improvement_proposal(skill_name: str, dimension: str = "") -> dict:
+    """Generate a 5-part evaluable improvement proposal for a skill with a detected pattern.
+
+    Reads the current improvement queue (state/skill-improvement-queue.json), finds the
+    pattern for skill_name (optionally filtered by dimension), loads the skill SKILL.md,
+    and produces a structured proposal in the 5-part evaluable format. Queues it via
+    add_proposal — requires human approval before apply_proposal can act on it.
+
+    Returns: {proposal_id, proposal_text, queued, pattern_used}
+    Returns {no_pattern: true} if no qualifying pattern exists for this skill.
+    """
+    return _generate_skill_improvement_proposal(skill_name, dimension)
+
+
+@mcp.tool()
+def select_skill_arm(skill_name: str, task_type: str = "other", developer_stage: str = "COMPETENT") -> dict:
+    """LinUCB arm selection for a skill with an active candidate competition.
+
+    When a skill has been forked (dropped below 40 points and a candidate was generated),
+    this selects which version to use for the current task based on task_type and
+    developer_stage context.
+
+    Returns: {arm: "current"|"candidate", candidate_id, reason}
+    Returns {arm: "current", reason: "no candidate"} if no competition is active.
+    """
+    return _select_skill_arm(skill_name, task_type, developer_stage)
+
+
+@mcp.tool()
+def record_arm_reward(
+    skill_name: str,
+    arm_index: int,
+    reward: float,
+    task_type: str = "other",
+    developer_stage: str = "COMPETENT",
+    session_n: int = 0,
+) -> dict:
+    """Record a reward signal for a LinUCB arm after observing session outcome.
+
+    arm_index: 0=current/archived version, 1=candidate version.
+    reward: positive (STABLE/VALIDATED) or negative (GAP/SCOPE_MISS weight).
+    Updates arm statistics and triggers promotion/reversion check after 5 sessions.
+
+    Returns: {updated, promoted, reverted, promotion_note?, reversion_note?}
+    """
+    return _record_arm_reward(skill_name, arm_index, reward, task_type, developer_stage, session_n)
+
+
+@mcp.tool()
+def mark_proposal_applied(proposal_id: str, session_n: int) -> dict:
+    """Mark a skill improvement proposal as applied so the falsifier monitor can watch it.
+
+    Call this immediately after apply_proposal succeeds on a SKILL-SIGNAL-* proposal.
+    Updates applied-proposals.json with applied status and session number so
+    session_start can check falsifier conditions in future sessions.
+
+    Returns: {marked: bool, proposal_id}
+    """
+    marked = _mark_proposal_applied(proposal_id, session_n)
+    return {"marked": marked, "proposal_id": proposal_id}
 
 
 @mcp.tool()

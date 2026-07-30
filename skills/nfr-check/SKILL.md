@@ -278,6 +278,26 @@ Each pre-build gap flagged = a potential incident avoided. Pass `nfr_gaps=[list]
 
 If BLOCKED, state what must be resolved before implementation can begin.
 
+**Emit the examination surface block immediately after CONNECTIONS:**
+
+```
+[EXAMINATION SURFACE — nfr-check]
+Mode:         {quick | full | validate}
+Feature type: {new_endpoint | schema_change | llm_call | ui_component | background_job | other}
+Examined:     [comma-separated NFR categories actually probed]
+              Valid categories: caching, retry, auth, idempotency, rate_limiting,
+              observability, consistency, data_volume, rendering_env, measurement_integrity
+Not examined: [category — reason]
+              e.g. "rate_limiting — internal-only endpoint, no public surface"
+              e.g. "caching — N/A: no repeated expensive computation in this path"
+              e.g. "rendering_env — no UI surface"
+```
+
+Rules:
+- `caching` is mandatory for any LLM call or external API. If not examined: reason must be explicit and must not be "N/A" unless the feature has zero external calls.
+- In `validate` mode: only gaps appear in Examined (categories the developer did NOT pre-empt). Pre-empted categories go in Not examined with reason "developer pre-empted at {DEPTH}".
+- This block is the attribution surface for the skill self-improvement system. SCOPE_MISS on a mandatory NFR category (e.g., caching on an LLM path) triggers a deduction in nfr-check's health score.
+
 ---
 
 ## Autonomy Depth Rubric
