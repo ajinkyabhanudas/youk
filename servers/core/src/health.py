@@ -2942,11 +2942,20 @@ def _execute_proposal(proposal: Proposal) -> dict:
             return {"applied": False, "error": f"SKILL.md not found at {skill_path}"}
         current = skill_path.read_text()
         section = proposal.target_section
+        # Match the section heading and capture the existing body separately so we
+        # can append to it rather than replacing it. Group 1 = heading line,
+        # group 2 = existing body (may be empty), lookahead stops at next ## or EOF.
         pattern = rf"(## {re.escape(section)}\n)(.*?)(?=\n## |\Z)"
-        replacement = f"## {section}\n{proposal.content}"
-        new_content, count = re.subn(pattern, replacement, current, flags=re.DOTALL)
-        if count == 0:
+        match = re.search(pattern, current, flags=re.DOTALL)
+        if match:
+            existing_body = match.group(2)
+            separator = "\n" if existing_body.rstrip() else ""
+            new_section = f"## {section}\n{existing_body.rstrip()}{separator}\n{proposal.content}"
+            new_content = current[: match.start()] + new_section + current[match.end() :]
+            count = 1
+        else:
             new_content = current.rstrip() + f"\n\n## {section}\n{proposal.content}\n"
+            count = 0
         # Compute unified diff before writing — full diff to audit, truncated preview to return.
         import difflib as _difflib
         old_lines = current.splitlines(keepends=True)

@@ -2062,6 +2062,13 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass
 
+    _audit_patterns: list[dict] = []
+    try:
+        from skill_signals import read_audit_patterns
+        _audit_patterns = read_audit_patterns(project_slug=slug, lookback_sessions=5)
+    except Exception:
+        pass
+
     return SessionState(
         project=slug,
         resume_point=resume_point,
@@ -2088,6 +2095,7 @@ def start_session(project_dir: str) -> SessionState:
         force_learn=close_cluster_missed and days_since_last != 0,
         knowledge_index_line=_knowledge_index_line,
         falsifier_alerts=_falsifier_alerts,
+        audit_patterns=_audit_patterns,
     )
 
 

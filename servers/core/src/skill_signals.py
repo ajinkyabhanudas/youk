@@ -1187,3 +1187,108 @@ def check_fork_threshold_and_maybe_fork(session_n: int) -> list[dict]:
             results.append(result)
 
     return results
+
+
+# ── domain-level audit signals ────────────────────────────────────────────────
+
+_AUDIT_SIGNALS_FILE = _STATE_DIR / "audit-signals.jsonl"
+
+
+def write_domain_signal(
+    project_slug: str,
+    session_n: int,
+    skill: str,
+    domain: str,
+    severity: str,
+    task_type: str = "",
+) -> None:
+    """Write a domain-level HIGH finding to audit-signals.jsonl (mid-session).
+
+    Called after any AUDIT/ANALYZE phase produces ≥2 HIGH findings in a domain.
+    Separate from skill-signals.jsonl — no double-count risk to org_score.
+    Silent-fails so it never blocks the skill that calls it.
+    """
+    try:
+        _AUDIT_SIGNALS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "ts": datetime.now(UTC).isoformat(),
+            "project": project_slug,
+            "session": session_n,
+            "skill": skill,
+            "domain": domain,
+            "severity": severity,
+            "task_type": task_type,
+        }
+        with open(_AUDIT_SIGNALS_FILE, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except Exception:
+        pass
+
+
+def read_audit_patterns(
+    project_slug: str,
+    lookback_sessions: int = 5,
+) -> list[dict]:
+    """Return domains flagged HIGH in ≥40% of recent sessions for the project.
+
+    Returns list of dicts: {domain, count, total, pct, skill, example_task_type}
+    Called by session_start to surface recurring patterns before the developer writes code.
+    Silent-fails to [] if file missing or malformed.
+    """
+    try:
+        if not _AUDIT_SIGNALS_FILE.exists():
+            return []
+
+        lines = _AUDIT_SIGNALS_FILE.read_text().strip().splitlines()
+        records = []
+        for line in lines:
+            try:
+                r = json.loads(line)
+                if r.get("project") == project_slug:
+                    records.append(r)
+            except Exception:
+                continue
+
+        if not records:
+            return []
+
+        # Get distinct sessions seen for this project (capped at lookback_sessions)
+        sessions_seen = sorted({r["session"] for r in records}, reverse=True)
+        recent_sessions = set(sessions_seen[:lookback_sessions])
+        recent_records = [r for r in records if r["session"] in recent_sessions]
+        total_sessions = len(recent_sessions)
+
+        if total_sessions == 0:
+            return []
+
+        # Count per domain: how many distinct sessions had this domain flagged HIGH
+        from collections import defaultdict
+        domain_sessions: dict[str, set] = defaultdict(set)
+        domain_skill: dict[str, str] = {}
+        domain_task_type: dict[str, str] = {}
+
+        for r in recent_records:
+            if r.get("severity", "").upper() in ("HIGH", "CRITICAL"):
+                domain = r["domain"]
+                domain_sessions[domain].add(r["session"])
+                domain_skill[domain] = r.get("skill", "")
+                domain_task_type[domain] = r.get("task_type", "")
+
+        threshold = 0.4  # 40% of recent sessions
+        patterns = []
+        for domain, sess_set in domain_sessions.items():
+            count = len(sess_set)
+            pct = count / total_sessions
+            if pct >= threshold:
+                patterns.append({
+                    "domain": domain,
+                    "count": count,
+                    "total": total_sessions,
+                    "pct": round(pct * 100),
+                    "skill": domain_skill[domain],
+                    "example_task_type": domain_task_type[domain],
+                })
+
+        return sorted(patterns, key=lambda x: -x["pct"])
+    except Exception:
+        return []

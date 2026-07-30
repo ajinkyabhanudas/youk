@@ -1221,18 +1221,37 @@ class TestExecuteProposal:
         assert "New Section" in content
         assert "brand new" in content
 
-    def test_skill_edit_replaces_existing_section(self, youk_root, claude_root):
+    def test_skill_edit_appends_to_existing_section(self, youk_root, claude_root):
         skill_dir = claude_root / "skills" / "learn"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("# learn\n\n## Phase 1\nold content\n\n## Phase 2\nkeep\n")
-        p = self._make_proposal("SKILL_EDIT", "learn", section="Phase 1", content="replaced")
+        p = self._make_proposal("SKILL_EDIT", "learn", section="Phase 1", content="new addition")
         from health import _execute_proposal
         result = _execute_proposal(p)
         assert result["applied"] is True
         content = (skill_dir / "SKILL.md").read_text()
-        assert "replaced" in content
+        # existing content must be preserved
+        assert "old content" in content
+        # new content must be appended
+        assert "new addition" in content
+        # unrelated section must survive
         assert "keep" in content
-        assert "old content" not in content
+
+    def test_skill_edit_preserves_all_other_sections(self, youk_root, claude_root):
+        skill_dir = claude_root / "skills" / "learn"
+        skill_dir.mkdir(parents=True)
+        original = "# learn\n\n## Rules\nrule A\nrule B\n\n## Output Format\nformat here\n"
+        (skill_dir / "SKILL.md").write_text(original)
+        p = self._make_proposal("SKILL_EDIT", "learn", section="Rules", content="rule C")
+        from health import _execute_proposal
+        result = _execute_proposal(p)
+        assert result["applied"] is True
+        content = (skill_dir / "SKILL.md").read_text()
+        assert "rule A" in content
+        assert "rule B" in content
+        assert "rule C" in content
+        assert "Output Format" in content
+        assert "format here" in content
 
     def test_skill_edit_missing_skill_md(self, youk_root, claude_root):
         p = self._make_proposal("SKILL_EDIT", "nonexistent", section="Phase 1", content="x")
