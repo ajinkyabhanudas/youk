@@ -13,7 +13,9 @@ import pytest
 from concept_graph import (
     _connect,
     _clean_label,
+    _parse_domain_file,
     extract_concepts,
+    extract_concepts_from_domain_dir,
     write_concepts,
     query_concept_graph,
     get_concept_stats,
@@ -278,3 +280,169 @@ class TestGetConceptStats:
         result = get_concept_stats(db_path=db)
         assert result["total_concepts"] == 2
         assert len(result["projects"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# _parse_domain_file — structured .md parsing
+# ---------------------------------------------------------------------------
+
+_SAMPLE_DOMAIN_MD = """\
+---
+name: architecture-decision-making
+description: Patterns for build-vs-buy decisions and constraint verification
+---
+
+# Architecture Decision-Making
+
+## Build-vs-buy decision framework
+*Added: 2026-07-13*
+*Source: canopy — LlamaIndex migration evaluation*
+
+**What it is:** A structured set of questions that determines whether a library should replace custom code.
+
+**Analogy:** Make-vs-buy in product roadmap prioritization.
+
+## Constraint verification discipline
+*Added: 2026-07-13*
+*Source: canopy — Azure endpoint testing*
+
+**What it is:** The practice of verifying a physical constraint with a live test before presenting it as a decision input.
+
+**When to reach for this:** Any time you're about to say "X is possible" based on documentation alone.
+"""
+
+_SINGLE_CONCEPT_MD = """\
+---
+name: measurement-integrity
+description: Patterns for ensuring benchmark isolation and baseline inclusion
+---
+
+No headings here — just frontmatter.
+"""
+
+
+class TestParseDomainFile:
+    def test_extracts_headings_as_labels(self):
+        pairs = _parse_domain_file(_SAMPLE_DOMAIN_MD, "domain")
+        labels = [p[0] for p in pairs]
+        assert "Build-vs-buy decision framework" in labels
+        assert "Constraint verification discipline" in labels
+
+    def test_extracts_what_it_is_as_summary(self):
+        pairs = _parse_domain_file(_SAMPLE_DOMAIN_MD, "domain")
+        by_label = {p[0]: p[1] for p in pairs}
+        assert "structured set of questions" in by_label["Build-vs-buy decision framework"]
+        assert "verifying a physical constraint" in by_label["Constraint verification discipline"]
+
+    def test_skips_added_and_source_lines_not_h1(self):
+        pairs = _parse_domain_file(_SAMPLE_DOMAIN_MD, "domain")
+        labels = [p[0] for p in pairs]
+        assert "Architecture Decision-Making" not in labels  # h1 skipped
+        assert not any("Added" in l for l in labels)
+        assert not any("Source" in l for l in labels)
+
+    def test_single_concept_falls_back_to_frontmatter(self):
+        pairs = _parse_domain_file(_SINGLE_CONCEPT_MD, "domain")
+        assert len(pairs) == 1
+        assert pairs[0][0] == "measurement-integrity"
+        assert "benchmark" in pairs[0][1]
+
+    def test_empty_file_returns_no_pairs(self):
+        pairs = _parse_domain_file("", "domain")
+        assert pairs == []
+
+
+# ---------------------------------------------------------------------------
+# extract_concepts_from_domain_dir
+# ---------------------------------------------------------------------------
+
+class TestExtractConceptsFromDomainDir:
+    def test_parses_structured_md_not_lines(self, tmp_path):
+        domain_dir = tmp_path / "domain"
+        domain_dir.mkdir()
+        (domain_dir / "architecture.md").write_text(_SAMPLE_DOMAIN_MD)
+
+        concepts = extract_concepts_from_domain_dir(domain_dir, "canopy", 10)
+        labels = [c["label"] for c in concepts]
+
+        # Should have heading-level labels, not prose fragments
+        assert any("Build-vs-buy" in l for l in labels)
+        assert any("Constraint verification" in l for l in labels)
+        # Must NOT have garbage like "Added 2026-07-13" or "Source canopy"
+        assert not any(l.startswith("Added") for l in labels)
+        assert not any(l.startswith("Source") for l in labels)
+
+    def test_skips_gaps_md(self, tmp_path):
+        domain_dir = tmp_path / "domain"
+        domain_dir.mkdir()
+        (domain_dir / "gaps.md").write_text("## Some gap\n**What it is:** A gap.\n")
+
+        concepts = extract_concepts_from_domain_dir(domain_dir, "youk", 1)
+        assert concepts == []
+
+    def test_missing_dir_returns_empty(self, tmp_path):
+        concepts = extract_concepts_from_domain_dir(tmp_path / "nonexistent", "youk", 1)
+        assert concepts == []
+
+    def test_project_slug_stamped_correctly(self, tmp_path):
+        domain_dir = tmp_path / "domain"
+        domain_dir.mkdir()
+        (domain_dir / "arch.md").write_text(_SAMPLE_DOMAIN_MD)
+
+        concepts = extract_concepts_from_domain_dir(domain_dir, "canopy", 5)
+        assert all(c["project_slug"] == "canopy" for c in concepts)
+        assert all(c["session_n"] == 5 for c in concepts)
+
+    def test_no_duplicate_labels(self, tmp_path):
+        domain_dir = tmp_path / "domain"
+        domain_dir.mkdir()
+        # Write the same file twice with different names
+        (domain_dir / "a.md").write_text(_SAMPLE_DOMAIN_MD)
+        (domain_dir / "b.md").write_text(_SAMPLE_DOMAIN_MD)
+
+        concepts = extract_concepts_from_domain_dir(domain_dir, "youk", 1)
+        labels = [c["label"] for c in concepts]
+        assert len(labels) == len(set(l.lower() for l in labels))
+
+
+# ---------------------------------------------------------------------------
+# Proposal project isolation (via _count_pending_proposals logic)
+# ---------------------------------------------------------------------------
+
+class TestProposalProjectIsolation:
+    def test_proposal_markdown_includes_project_field(self):
+        """Proposal.to_markdown() must emit **Project:** so filters work."""
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "shared"))
+        from models import Proposal
+        p = Proposal(
+            id="PENDING-TEST",
+            target="skills/test/SKILL.md",
+            change_description="test",
+            reason="test reason",
+            before="",
+            after="",
+            status="PENDING",
+            proposed_date="2026-07-31",
+            project_slug="canopy",
+        )
+        md = p.to_markdown()
+        assert "**Project:** canopy" in md
+
+    def test_proposal_without_project_slug_has_no_project_field(self):
+        """Legacy proposals (no slug) must not emit **Project:** line."""
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "shared"))
+        from models import Proposal
+        p = Proposal(
+            id="PENDING-OLD",
+            target="skills/test/SKILL.md",
+            change_description="old proposal",
+            reason="old",
+            before="",
+            after="",
+            status="PENDING",
+            proposed_date="2026-01-01",
+        )
+        md = p.to_markdown()
+        assert "**Project:**" not in md

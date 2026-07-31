@@ -1416,32 +1416,50 @@ def _read_forge_run() -> dict | None:
         return None
 
 
-def _count_pending_proposals() -> int:
+def _count_pending_proposals(project_slug: str = "") -> int:
+    """Count open proposals. When project_slug is given, only count proposals for that project.
+
+    Proposals written after this change carry a **Project:** field. Older proposals without
+    the field are attributed to "youk" (the only project that existed when they were written).
+    """
     pending_file = YOUK_ROOT / "knowledge" / "proposals" / "PENDING.md"
     if not pending_file.exists():
         return 0
     content = pending_file.read_text()
     count = 0
 
-    # Format 1: auto-generated PENDING-* blocks (from self_heal / session_end)
     _DONE_STATUSES = ("APPLIED", "SUPERSEDED", "CLOSED")
+
+    # Format 1: auto-generated PENDING-* blocks (from self_heal / session_end)
+    import re as _re
     for block in content.split("## PENDING-")[1:]:
         status_line = next(
             (ln for ln in block.splitlines() if "**Status:**" in ln),
             "",
         )
-        if not any(s in status_line for s in _DONE_STATUSES):
-            count += 1
+        if any(s in status_line for s in _DONE_STATUSES):
+            continue
+        if project_slug:
+            proj_match = _re.search(r"\*\*Project:\*\*\s*(\S+)", block)
+            # Proposals without a Project: field pre-date isolation — treat as "youk"
+            block_slug = proj_match.group(1) if proj_match else "youk"
+            if block_slug != project_slug:
+                continue
+        count += 1
 
     # Format 2: named ### PROPOSAL blocks (from simulate-experience / gate-check audits)
-    # Each "### PROPOSAL" heading is one proposal; skip those marked SUPERSEDED inline.
-    import re as _re
     positions = [m.start() for m in _re.finditer(r"^### PROPOSAL\b", content, _re.MULTILINE)]
     for i, start in enumerate(positions):
         end = positions[i + 1] if i + 1 < len(positions) else len(content)
         block = content[start:end]
-        if not any(s in block for s in _DONE_STATUSES):
-            count += 1
+        if any(s in block for s in _DONE_STATUSES):
+            continue
+        if project_slug:
+            proj_match = _re.search(r"\*\*Project:\*\*\s*(\S+)", block)
+            block_slug = proj_match.group(1) if proj_match else "youk"
+            if block_slug != project_slug:
+                continue
+        count += 1
 
     return count
 
@@ -1713,7 +1731,7 @@ def start_session(project_dir: str) -> SessionState:
         except Exception:
             pass
 
-    pending = _count_pending_proposals()
+    pending = _count_pending_proposals(project_slug=slug)
     counter = state["session_counter"]
     health_check_due = counter % 3 == 0
     dashboard_summary = _compute_dashboard_summary(audit_dir, pending, slug=slug)
@@ -2069,6 +2087,35 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass
 
+    # Cross-project concept graph: query on resume_point to surface related patterns
+    # from other projects. Top-3 cross-project hits only (project_slug=None = all projects).
+    # Filtered to exclude concepts from the current project (those are in domain/ already).
+    # Silent-fail — never blocks session_start.
+    _cross_project_concepts: list[dict] = []
+    try:
+        from concept_graph import query_concept_graph as _qcg
+        _db = YOUK_ROOT / "knowledge" / "shared-index.db"
+        if _db.exists() and resume_point:
+            # Use first 60 chars of resume_point as query seed
+            _query = resume_point[:60].strip()
+            if _query:
+                _cg_result = _qcg(_query, project_slug=None, limit=5)
+                _cross_project_concepts = [
+                    c for c in _cg_result.get("concepts", [])
+                    if c.get("project_slug") != slug
+                ][:3]
+    except Exception:
+        pass
+
+    # Append cross-project signals to brief so they appear at session open without a separate call.
+    if _cross_project_concepts and brief:
+        _cpc_lines = "\nCross-project patterns (from concept graph):"
+        for _c in _cross_project_concepts:
+            _cpc_lines += f"\n  [{_c.get('project_slug', '?')}] {_c['label']}"
+            if _c.get("summary"):
+                _cpc_lines += f" — {_c['summary'][:100]}"
+        brief = brief.rstrip() + _cpc_lines + "\n"
+
     return SessionState(
         project=slug,
         resume_point=resume_point,
@@ -2096,6 +2143,7 @@ def start_session(project_dir: str) -> SessionState:
         knowledge_index_line=_knowledge_index_line,
         falsifier_alerts=_falsifier_alerts,
         audit_patterns=_audit_patterns,
+        cross_project_concepts=_cross_project_concepts,
     )
 
 
@@ -2497,12 +2545,23 @@ _TASK_TYPE_KEYWORDS: dict[str, list[str]] = {
 
 
 def _infer_task_type_from_active_task() -> str:
-    """Infer task_type from active_task.json. Falls back to 'other'."""
+    """Infer task_type from active_task.json. Falls back to 'other'.
+
+    Guards against cross-project bleed: skips the file if its slug doesn't match
+    the current session slug from session-open.json.
+    """
     try:
         active_task_file = YOUK_ROOT / "state" / "active_task.json"
         if not active_task_file.exists():
             return "other"
         data = json.loads(active_task_file.read_text())
+        # Slug isolation: if active_task was written by a different project, ignore it.
+        sopen = YOUK_ROOT / "state" / "session-open.json"
+        if sopen.exists():
+            current_slug = json.loads(sopen.read_text()).get("slug", "")
+            task_slug = data.get("slug", "")
+            if current_slug and task_slug and current_slug != task_slug:
+                return "other"
         task_str = (data.get("task") or "").lower()
         # Priority order matches scope matrix specificity
         for task_type, keywords in _TASK_TYPE_KEYWORDS.items():
@@ -2963,39 +3022,19 @@ def end_session(
     except Exception:
         pass
 
-    # 3C — Concept graph population: extract concepts from this session's domain output.
-    # Only fires when /learn ran (domain files exist) — silent-fail, never blocks close.
+    # 3C — Concept graph population: parse domain .md files into structured concepts.
+    # Uses extract_concepts_from_domain_dir which reads ## headings + "What it is:" summaries
+    # instead of line-splitting (which produced meaningless one-per-prose-line garbage).
+    # Only fires when /learn ran — silent-fail, never blocks close.
     concepts_written = 0
     if "learn" in (skills_used or []):
         try:
-            from concept_graph import extract_concepts as _extract_concepts, write_concepts as _write_concepts
+            from concept_graph import extract_concepts_from_domain_dir as _extract_from_dir, write_concepts as _write_concepts
             _domain_dir = YOUK_ROOT / "knowledge" / "domain"
-            _raw_patterns: list[str] = []
-            _raw_domain: list[str] = []
-            if _domain_dir.exists():
-                for _f in _domain_dir.glob("*.md"):
-                    if _f.name == "gaps.md":
-                        continue
-                    try:
-                        _text = _f.read_text()
-                        for _line in _text.splitlines():
-                            _stripped = _line.strip().lstrip("- ").strip()
-                            if _stripped and not _stripped.startswith("#"):
-                                if "pattern" in _f.name.lower():
-                                    _raw_patterns.append(_stripped)
-                                else:
-                                    _raw_domain.append(_stripped)
-                    except Exception:
-                        pass
-            _concepts = _extract_concepts(
-                patterns=_raw_patterns[:30],
-                domain_knowledge=_raw_domain[:30],
-                project_slug=slug or "unknown",
-                session_n=current_state.get("session_counter", 0),
-            )
+            _session_n = current_state.get("session_counter", 0)
+            _concepts = _extract_from_dir(_domain_dir, slug or "unknown", _session_n)
             if _concepts:
-                _result = _write_concepts(_concepts, slug or "unknown",
-                                          current_state.get("session_counter", 0))
+                _result = _write_concepts(_concepts, slug or "unknown", _session_n)
                 concepts_written = _result.get("written", 0)
         except Exception:
             pass

@@ -973,6 +973,18 @@ def add_proposal(
     """
     from models import Proposal
     from datetime import datetime
+    import json as _json
+
+    # Stamp with current project slug so session_start can filter by project.
+    # Skill-system proposals (change_type SKILL_EDIT / REFERENCE_ADD) belong to "youk"
+    # regardless of calling project — they improve the global skill set.
+    _sopen = YOUK_ROOT / "state" / "session-open.json"
+    _current_slug = "youk"
+    if change_type not in ("SKILL_EDIT", "REFERENCE_ADD") and _sopen.exists():
+        try:
+            _current_slug = _json.loads(_sopen.read_text()).get("slug", "youk")
+        except Exception:
+            pass
 
     proposal = Proposal(
         id=f"PENDING-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
@@ -986,22 +998,45 @@ def add_proposal(
         change_type=change_type,
         target_section=target_section,
         content=content,
+        project_slug=_current_slug,
     )
     _add_proposal(proposal)
     return {"proposal_id": proposal.id, "status": "added", "target": target}
 
 
 @mcp.tool()
-def get_proposals() -> dict:
+def get_proposals(project_slug: str | None = None) -> dict:
     """
-    Return all pending self-heal proposals awaiting founder review.
-    Surface these when session_start returns pending_proposals_count > 0.
+    Return pending self-heal proposals for the current project.
 
-    Returns: proposals (list with id, target, change, reason, before, after, status).
+    project_slug: filter to a specific project. If None, reads current slug from
+    session-open.json. Pass project_slug="" explicitly to see all projects (admin use).
+    Skill-system proposals (SKILL_EDIT / REFERENCE_ADD) are always attributed to "youk".
+
+    Returns: proposals (list with id, target, change, reason, before, after, status, project).
     """
+    import json as _json
+
+    # Resolve slug: explicit arg > session-open.json > show all
+    if project_slug is None:
+        _sopen = YOUK_ROOT / "state" / "session-open.json"
+        try:
+            project_slug = _json.loads(_sopen.read_text()).get("slug", "") if _sopen.exists() else ""
+        except Exception:
+            project_slug = ""
+
     proposals = _load_pending_proposals()
+
+    # Filter by project: empty string = show all (backward-compat for /improve)
+    if project_slug:
+        proposals = [
+            p for p in proposals
+            if (p.project_slug or "youk") == project_slug
+        ]
+
     return {
         "count": len(proposals),
+        "project_filter": project_slug or "all",
         "proposals": [
             {
                 "id": p.id,
@@ -1012,6 +1047,7 @@ def get_proposals() -> dict:
                 "after": p.after,
                 "status": p.status,
                 "proposed_date": p.proposed_date,
+                "project": p.project_slug or "youk",
             }
             for p in proposals
         ],

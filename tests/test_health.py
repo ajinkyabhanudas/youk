@@ -2176,7 +2176,11 @@ def _audit_block_with_findings(
     nfr_gaps: list[str] | None = None,
     direction_reversal: bool = False,
 ) -> str:
-    parts = [f"### Session — 2026-07-{n:02d} 10:00 UTC\n"]
+    from datetime import datetime, timedelta
+    # Use dates clearly within the 30-day window, offset by n days back from today.
+    # Avoids boundary failures when test date coincides with the cutoff timestamp.
+    date_str = (datetime.utcnow() - timedelta(days=n)).strftime("%Y-%m-%d")
+    parts = [f"### Session — {date_str} 10:00 UTC\n"]
     parts.append("Skills: code-review\n")
     parts.append("CloseCluster: yes\n")
     parts.append("Commits: yes\n")

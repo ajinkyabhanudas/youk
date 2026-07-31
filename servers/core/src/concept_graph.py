@@ -96,16 +96,81 @@ def _infer_type(section_key: str) -> str:
     return "concept"
 
 
+def _parse_domain_file(text: str, concept_type: str) -> list[tuple[str, str]]:
+    """Parse a structured domain .md file into (label, summary) pairs.
+
+    Domain files have the format:
+      ---
+      name: slug-label
+      description: one-line description
+      ---
+      ## Section Heading
+      *Added: ...*
+      *Source: ...*
+      **What it is:** first prose sentence...
+
+    Extracts one concept per ## heading (the heading text is the label).
+    Summary is the first **What it is:** sentence, or the frontmatter description
+    if no headings exist (single-concept files).
+    """
+    pairs: list[tuple[str, str]] = []
+
+    # Extract frontmatter description as fallback summary
+    fm_desc = ""
+    fm_match = re.search(r"^---\n.*?description:\s*(.+?)\n.*?---", text, re.DOTALL)
+    if fm_match:
+        fm_desc = fm_match.group(1).strip()[:200]
+
+    # Find all ## level headings (entry titles) — skip # h1
+    heading_pattern = re.compile(r"^#{2,3} (.+)$", re.MULTILINE)
+    headings = list(heading_pattern.finditer(text))
+
+    if not headings:
+        # Single-concept file: use frontmatter name + description
+        name_match = re.search(r"^---\nname:\s*(.+)$", text, re.MULTILINE)
+        if name_match and fm_desc:
+            pairs.append((name_match.group(1).strip(), fm_desc))
+        return pairs
+
+    for i, h in enumerate(headings):
+        label = h.group(1).strip()
+        # Skip meta-headings that are structural, not conceptual
+        if label.lower() in ("added", "source", "note", "notes", "context"):
+            continue
+        # Extract block text between this heading and the next
+        block_start = h.end()
+        block_end = headings[i + 1].start() if i + 1 < len(headings) else len(text)
+        block = text[block_start:block_end]
+
+        # Best summary: first "What it is:" sentence
+        what_match = re.search(r"\*\*What it is:\*\*\s*(.+?)(?:\n|$)", block)
+        if what_match:
+            summary = what_match.group(1).strip()[:200]
+        else:
+            # Fallback: first non-metadata, non-empty line
+            summary = ""
+            for line in block.splitlines():
+                stripped = line.strip().lstrip("*").strip()
+                if stripped and not stripped.startswith("Added") and not stripped.startswith("Source"):
+                    summary = stripped[:200]
+                    break
+
+        pairs.append((label, summary or fm_desc))
+
+    return pairs
+
+
 def extract_concepts(
     patterns: list[str],
     domain_knowledge: list[str],
     project_slug: str,
     session_n: int,
 ) -> list[dict[str, Any]]:
-    """Convert /learn output fields into concept dicts ready for write_concepts().
+    """Convert /learn raw line lists into concept dicts.
 
-    Only extracts from structured lists — never from free-form prose — so
-    signal-to-noise stays high without an LLM call.
+    Legacy interface kept for backward compat. Prefer extract_concepts_from_domain_dir
+    which parses the structured .md format correctly instead of treating each line
+    as a separate concept label.
 
     Returns list of {"label", "type", "project_slug", "session_n", "summary"}.
     """
@@ -115,7 +180,14 @@ def extract_concepts(
 
     def _add(raw: str, concept_type: str, summary: str = "") -> None:
         label = _clean_label(raw)
+        # Reject lines that are clearly metadata fragments, not concept labels
+        _SKIP_PREFIXES = ("added", "source", "what it is", "analogy", "where the", "project example",
+                          "when to reach", "sharper", "rule:", "the ", "a ", "an ", "in ", "note")
         if not label or label.lower() in seen:
+            return
+        if any(label.lower().startswith(p) for p in _SKIP_PREFIXES):
+            return
+        if len(label) > 80:  # prose sentence, not a label
             return
         seen.add(label.lower())
         concepts.append({
@@ -134,6 +206,55 @@ def extract_concepts(
     for d in domain_knowledge or []:
         if isinstance(d, str) and d.strip():
             _add(d.strip(), "domain")
+
+    return concepts
+
+
+def extract_concepts_from_domain_dir(
+    domain_dir: Path,
+    project_slug: str,
+    session_n: int,
+) -> list[dict[str, Any]]:
+    """Parse all domain .md files in domain_dir into concept dicts.
+
+    Uses _parse_domain_file to extract structured (label, summary) pairs
+    from the ## heading format — not line-splitting. Produces one concept
+    per knowledge entry, not one per prose line.
+
+    Returns list of {"label", "type", "project_slug", "session_n", "summary"}.
+    """
+    concepts: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    now = datetime.now(UTC).isoformat()
+
+    if not domain_dir.exists():
+        return concepts
+
+    for md_file in domain_dir.glob("*.md"):
+        if md_file.name == "gaps.md":
+            continue
+        try:
+            text = md_file.read_text()
+        except Exception:
+            continue
+
+        # Infer concept type from filename
+        concept_type = "pattern" if "pattern" in md_file.name.lower() else "domain"
+        pairs = _parse_domain_file(text, concept_type)
+
+        for label_raw, summary in pairs:
+            label = _clean_label(label_raw)
+            if not label or label.lower() in seen:
+                continue
+            seen.add(label.lower())
+            concepts.append({
+                "label": label,
+                "type": concept_type,
+                "project_slug": project_slug,
+                "session_n": session_n,
+                "created_at": now,
+                "summary": summary[:200],
+            })
 
     return concepts
 
