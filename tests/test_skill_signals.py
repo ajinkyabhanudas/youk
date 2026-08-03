@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+import skill_signals
 from skill_signals import (
     _parse_examination_surfaces,
     _extract_downstream_findings,
@@ -18,6 +19,8 @@ from skill_signals import (
     update_points,
     get_fork_candidates,
     get_skill_health_summary,
+    write_domain_signal,
+    read_audit_patterns,
     record_session_signals,
     POINT_WEIGHTS,
     _STARTING_POINTS,
@@ -934,3 +937,106 @@ class TestFalsifierAlertContract:
         session_content = session_src.read_text()
         assert "falsifier_alerts" in session_content, "session.py must wire falsifier_alerts into SessionState"
         assert "check_falsifier_conditions" in session_content, "session.py must call check_falsifier_conditions"
+
+
+# ── TestWriteDomainSignal + TestReadAuditPatterns ─────────────────────────────
+
+class TestWriteDomainSignal:
+    def test_writes_jsonl_record(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(skill_signals, "_STATE_DIR", tmp_path)
+        monkeypatch.setattr(skill_signals, "_AUDIT_SIGNALS_FILE", tmp_path / "audit-signals.jsonl")
+        write_domain_signal("canopy", 5, "dev-loop", "auth", "HIGH", "new_endpoint")
+        lines = (tmp_path / "audit-signals.jsonl").read_text().strip().splitlines()
+        assert len(lines) == 1
+        r = __import__("json").loads(lines[0])
+        assert r["project"] == "canopy"
+        assert r["domain"] == "auth"
+        assert r["severity"] == "HIGH"
+        assert r["skill"] == "dev-loop"
+        assert r["task_type"] == "new_endpoint"
+        assert r["session"] == 5
+
+    def test_appends_multiple_records(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(skill_signals, "_AUDIT_SIGNALS_FILE", tmp_path / "audit-signals.jsonl")
+        write_domain_signal("youk", 1, "dev-loop", "auth", "HIGH")
+        write_domain_signal("youk", 2, "dev-loop", "concurrency", "HIGH")
+        lines = (tmp_path / "audit-signals.jsonl").read_text().strip().splitlines()
+        assert len(lines) == 2
+
+    def test_silent_fail_on_permission_error(self, tmp_path, monkeypatch):
+        # Point at a path inside a non-existent deeply nested dir — write will succeed
+        # (mkdir is called). Point at a read-only file to trigger silent fail.
+        bad_file = tmp_path / "audit-signals.jsonl"
+        bad_file.write_text("")
+        bad_file.chmod(0o444)
+        monkeypatch.setattr(skill_signals, "_AUDIT_SIGNALS_FILE", bad_file)
+        # Must not raise — silent-fail contract
+        write_domain_signal("youk", 1, "dev-loop", "auth", "HIGH")
+        bad_file.chmod(0o644)  # restore so tmp_path cleanup works
+
+
+class TestReadAuditPatterns:
+    def _write_signals(self, path: Path, records: list[dict]) -> None:
+        import json
+        with open(path, "w") as f:
+            for r in records:
+                f.write(json.dumps(r) + "\n")
+
+    def test_returns_domain_above_40pct_threshold(self, tmp_path, monkeypatch):
+        sig_file = tmp_path / "audit-signals.jsonl"
+        monkeypatch.setattr(skill_signals, "_AUDIT_SIGNALS_FILE", sig_file)
+        # 3 sessions, auth flagged in 2 → 67% ≥ 40%
+        self._write_signals(sig_file, [
+            {"project": "youk", "session": 1, "domain": "auth", "severity": "HIGH", "skill": "dev-loop", "task_type": "new_endpoint"},
+            {"project": "youk", "session": 2, "domain": "auth", "severity": "HIGH", "skill": "dev-loop", "task_type": "new_endpoint"},
+            {"project": "youk", "session": 3, "domain": "concurrency", "severity": "HIGH", "skill": "dev-loop", "task_type": "bug_fix"},
+        ])
+        patterns = read_audit_patterns("youk", lookback_sessions=5)
+        domains = [p["domain"] for p in patterns]
+        assert "auth" in domains
+        assert "concurrency" not in domains  # 1/3 = 33% < 40%
+
+    def test_excludes_other_projects(self, tmp_path, monkeypatch):
+        sig_file = tmp_path / "audit-signals.jsonl"
+        monkeypatch.setattr(skill_signals, "_AUDIT_SIGNALS_FILE", sig_file)
+        self._write_signals(sig_file, [
+            {"project": "canopy", "session": 1, "domain": "auth", "severity": "HIGH", "skill": "dev-loop", "task_type": ""},
+            {"project": "canopy", "session": 2, "domain": "auth", "severity": "HIGH", "skill": "dev-loop", "task_type": ""},
+            {"project": "youk",   "session": 1, "domain": "auth", "severity": "LOW",  "skill": "dev-loop", "task_type": ""},
+        ])
+        patterns = read_audit_patterns("youk", lookback_sessions=5)
+        assert patterns == []  # canopy's auth signals don't bleed into youk
+
+    def test_missing_file_returns_empty(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(skill_signals, "_AUDIT_SIGNALS_FILE", tmp_path / "nonexistent.jsonl")
+        assert read_audit_patterns("youk") == []
+
+    def test_lookback_window_caps_sessions(self, tmp_path, monkeypatch):
+        sig_file = tmp_path / "audit-signals.jsonl"
+        monkeypatch.setattr(skill_signals, "_AUDIT_SIGNALS_FILE", sig_file)
+        # 6 sessions; lookback=3 means only sessions 6,5,4 are counted
+        # auth only in sessions 1,2 (outside window) → should not appear
+        self._write_signals(sig_file, [
+            {"project": "youk", "session": i, "domain": "auth", "severity": "HIGH", "skill": "dev-loop", "task_type": ""}
+            for i in [1, 2]
+        ] + [
+            {"project": "youk", "session": i, "domain": "concurrency", "severity": "HIGH", "skill": "dev-loop", "task_type": ""}
+            for i in [4, 5, 6]
+        ])
+        patterns = read_audit_patterns("youk", lookback_sessions=3)
+        domains = [p["domain"] for p in patterns]
+        assert "auth" not in domains          # outside lookback window
+        assert "concurrency" in domains        # 3/3 sessions = 100%
+
+    def test_result_sorted_by_pct_descending(self, tmp_path, monkeypatch):
+        sig_file = tmp_path / "audit-signals.jsonl"
+        monkeypatch.setattr(skill_signals, "_AUDIT_SIGNALS_FILE", sig_file)
+        self._write_signals(sig_file, [
+            {"project": "youk", "session": 1, "domain": "auth", "severity": "HIGH", "skill": "dev-loop", "task_type": ""},
+            {"project": "youk", "session": 2, "domain": "auth", "severity": "HIGH", "skill": "dev-loop", "task_type": ""},
+            {"project": "youk", "session": 1, "domain": "concurrency", "severity": "HIGH", "skill": "dev-loop", "task_type": ""},
+            {"project": "youk", "session": 2, "domain": "concurrency", "severity": "HIGH", "skill": "dev-loop", "task_type": ""},
+            {"project": "youk", "session": 3, "domain": "concurrency", "severity": "HIGH", "skill": "dev-loop", "task_type": ""},
+        ])
+        patterns = read_audit_patterns("youk", lookback_sessions=5)
+        assert patterns[0]["domain"] == "concurrency"  # 3/3 > auth 2/3
