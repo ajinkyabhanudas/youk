@@ -404,6 +404,27 @@ class TestExtractConceptsFromDomainDir:
         labels = [c["label"] for c in concepts]
         assert len(labels) == len(set(l.lower() for l in labels))
 
+    def test_edges_bounded_by_file_not_total_concepts(self, tmp_path):
+        """Edges must be scoped to source file — O(n²) across all concepts regresses
+        the everything-neighbor bug (2083 edges from 68 concepts, 2026-07)."""
+        domain_dir = tmp_path / "domain"
+        domain_dir.mkdir()
+        # Two files, 2 concepts each → max 1 edge per file = 2 edges total.
+        # O(n²) across all 4 concepts would yield C(4,2) = 6 edges.
+        file_b_md = _SAMPLE_DOMAIN_MD.replace(
+            "Build-vs-buy decision framework", "X-concept-alpha"
+        ).replace("Constraint verification discipline", "Y-concept-beta")
+        (domain_dir / "file_a.md").write_text(_SAMPLE_DOMAIN_MD)
+        (domain_dir / "file_b.md").write_text(file_b_md)
+        db = tmp_path / "test.db"
+        concepts = extract_concepts_from_domain_dir(domain_dir, "youk", 1)
+        result = write_concepts(concepts, "youk", 1, db_path=db)
+        # 4 unique concepts, 2 per file → 1 intra-file edge each = 2 edges max
+        assert result["edges_written"] <= 2, (
+            f"Expected ≤2 edges (file-scoped), got {result['edges_written']} — "
+            "O(n²) everything-neighbor regression detected"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Proposal project isolation (via _count_pending_proposals logic)

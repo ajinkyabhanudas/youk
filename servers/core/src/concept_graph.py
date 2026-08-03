@@ -121,8 +121,8 @@ def _parse_domain_file(text: str, concept_type: str) -> list[tuple[str, str]]:
     if fm_match:
         fm_desc = fm_match.group(1).strip()[:200]
 
-    # Find all ## level headings (entry titles) — skip # h1
-    heading_pattern = re.compile(r"^#{2,3} (.+)$", re.MULTILINE)
+    # Find all ## level headings (entry titles) — skip # h1 and ### sub-headings
+    heading_pattern = re.compile(r"^## (.+)$", re.MULTILINE)
     headings = list(heading_pattern.finditer(text))
 
     if not headings:

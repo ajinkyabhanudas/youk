@@ -1021,9 +1021,9 @@ def get_proposals(project_slug: str | None = None) -> dict:
     if project_slug is None:
         _sopen = YOUK_ROOT / "state" / "session-open.json"
         try:
-            project_slug = _json.loads(_sopen.read_text()).get("slug", "") if _sopen.exists() else ""
+            project_slug = _json.loads(_sopen.read_text()).get("slug", "youk") if _sopen.exists() else "youk"
         except Exception:
-            project_slug = ""
+            project_slug = "youk"
 
     proposals = _load_pending_proposals()
 
