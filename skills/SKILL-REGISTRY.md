@@ -1,6 +1,6 @@
 # Skill Registry — y2k-1
 
-**Company:** y2k-1 | **Activation:** say "activate y2k-1" | **Roster size:** 27
+**Company:** y2k | **Activation:** say "activate y2k" | **Roster size:** 27
 *Living document. Updated by /skill-health after each review. Last updated: 2026-07-27.*
 *Owner: Ajinkya Dessai. All skills are scoped to the ~/.claude/skills/ directory.*
 
@@ -36,6 +36,7 @@ for all generated `references/stacks/{framework}.md` overlays (6 sections, WAF-g
 | `/stress-test` | Red Team Lead | Before committing to any major design | ACTIVE |
 | `/pm-review` | AI Product Manager | Any new feature request or prioritization question | ACTIVE |
 | `/write-spec` | Technical PM | After build decision — define WHAT to build precisely | ACTIVE |
+| `/doc-suite` | Product Portfolio Orchestrator | Full 4-doc phase for a project (PRD → engineering doc → interview-prep → retrospective) — sequences write-spec's system-prd mode end to end, retrospective or prospective, resumable | ACTIVE |
 | `/orchestrate` | Chief of Staff / COO | New project, feature sprint, or "what's next?" | ACTIVE |
 | `/context-sync` | Context Manager | Session start, session end, when context feels stale | ACTIVE |
 | `/humanize` | Technical Writer | Commit messages, docs, decision rationale | ACTIVE |
@@ -225,6 +226,7 @@ Proposed skills that don't yet exist. Evaluated against the hiring bar before cr
 | 2026-07-17 | Added /challenge, /adversary-loop, /done to inventory. Updated known gaps table. Org score: 7.2/10 (+1.4 vs. prior review). Top gap: dev_loop not registering in audit for M+ sessions. | skill-health review Jul 2026 |
 | 2026-07-20 | Added 4 skills from stack scan: /self-heal (closes audit registration gap for health work), /install-experience (first-run install audit), /namespace-safety (collision gate before write), /dependency-audit (Python dep pinning + CVE). Roster: 22 → 26. | Track A stack scan via /improve |
 | 2026-07-27 | Added /overengineering-auditor (planning gate — context-free subagent audits M+ plans for overengineering, surfaces simpler alternative with constraints + circumstantial reasoning, triggers stress-test after approval). Roster: 26 → 27. | User-directed; closes confirmation-bias gap in in-session plan review; isolation via hardcoded subagent prompt template |
+| 2026-08-03 | Extended /write-spec with a `system-prd` mode (mandatory origin interview, number-and-date OKR discipline, standalone-PRD quality bar, measurement-gap-vs-new-capability prioritization instead of a mechanical RICE default). Added /doc-suite (orchestrates the resulting 4-document product-portfolio phase — PRD, engineering doc, interview-prep, retrospective — end to end, retrospective or prospective, resumable). Roster: 27 → 28. | User-directed; built live against the Genie Fertility repo. Real corrections caught mid-build and folded back into the skill itself: a fabricated origin story drafted from artifacts instead of asked for, soft "not measured" metrics standing in as acceptable, a non-build item ranked first in a build-scoped list, ADR numbering conflated with true build order, RICE applied before checking it fit the items, and the PRD initially leaning on sibling docs for support instead of standing alone. |
 
 ---
 
