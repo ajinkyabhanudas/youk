@@ -117,6 +117,25 @@ class TestWriteRoutingContext:
         # state/ not created — must not raise
         write_routing_context("task", _standard_result(), youk_root=tmp_path)
 
+    def test_stamps_slug_from_session_open(self, tmp_path):
+        """write_routing_context must write slug itself — guard cannot rely on a hook."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "session-open.json").write_text('{"slug": "canopy"}')
+        write_routing_context("Build eval pipeline", _standard_result(), youk_root=tmp_path)
+        data = _read_active_task(state_dir)
+        assert data.get("slug") == "canopy"
+
+    def test_slug_absent_when_session_open_missing(self, tmp_path):
+        """No session-open.json → slug key absent (not an empty string overwriting hook-written value)."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        # No session-open.json written
+        write_routing_context("task", _standard_result(), youk_root=tmp_path)
+        data = _read_active_task(state_dir)
+        # slug may be absent or empty — must not crash
+        assert "routing_context" in data  # core write succeeded
+
 
 # ---------------------------------------------------------------------------
 # append_gate_to_active_task

@@ -121,8 +121,8 @@ def _parse_domain_file(text: str, concept_type: str) -> list[tuple[str, str]]:
     if fm_match:
         fm_desc = fm_match.group(1).strip()[:200]
 
-    # Find all ## level headings (entry titles) — skip # h1
-    heading_pattern = re.compile(r"^#{2,3} (.+)$", re.MULTILINE)
+    # Find all ## level headings (entry titles) — skip # h1 and ### sub-headings
+    heading_pattern = re.compile(r"^## (.+)$", re.MULTILINE)
     headings = list(heading_pattern.finditer(text))
 
     if not headings:
@@ -254,6 +254,7 @@ def extract_concepts_from_domain_dir(
                 "session_n": session_n,
                 "created_at": now,
                 "summary": summary[:200],
+                "source_file": md_file.name,  # scopes co-occurrence edges to same file
             })
 
     return concepts
@@ -263,20 +264,40 @@ def _cooccurrence_edges(
     concepts: list[dict[str, Any]],
     session_n: int,
 ) -> list[tuple[str, str, str, float]]:
-    """Emit (label_a, label_b, edge_type, weight) pairs for same-session co-occurrence.
+    """Emit (label_a, label_b, edge_type, weight) pairs for same-file co-occurrence.
 
-    Only pairs concepts of the same type within a single session — cross-type
-    edges would be noise at this stage.
+    Only pairs concepts that share the same source_file — entries from the same
+    knowledge .md file are genuinely related. Cross-file pairing is O(n²) noise:
+    68 youk domain concepts would produce 2278 edges making every concept a
+    neighbor of every other, defeating the graph query entirely.
+
+    Falls back to same-type pairing (original behaviour) when source_file is absent,
+    so the legacy extract_concepts() path still works.
     """
     edges: list[tuple[str, str, str, float]] = []
-    by_type: dict[str, list[str]] = {}
-    for c in concepts:
-        by_type.setdefault(c["type"], []).append(c["label"])
 
-    for ctype, labels in by_type.items():
-        for i, a in enumerate(labels):
-            for b in labels[i + 1 :]:
-                edges.append((a, b, f"co_{ctype}", 1.0))
+    # Prefer grouping by source_file — only pair within the same file
+    has_source = any(c.get("source_file") for c in concepts)
+    if has_source:
+        by_file: dict[str, list[tuple[str, str]]] = {}
+        for c in concepts:
+            key = c.get("source_file") or "__unknown__"
+            by_file.setdefault(key, []).append((c["label"], c["type"]))
+        for items in by_file.values():
+            for i, (a, atype) in enumerate(items):
+                for b, btype in items[i + 1:]:
+                    edge_type = f"co_{atype}" if atype == btype else "co_related"
+                    edges.append((a, b, edge_type, 1.0))
+    else:
+        # Legacy fallback: pair same-type within session (kept for backward compat)
+        by_type: dict[str, list[str]] = {}
+        for c in concepts:
+            by_type.setdefault(c["type"], []).append(c["label"])
+        for ctype, labels in by_type.items():
+            for i, a in enumerate(labels):
+                for b in labels[i + 1:]:
+                    edges.append((a, b, f"co_{ctype}", 1.0))
+
     return edges
 
 

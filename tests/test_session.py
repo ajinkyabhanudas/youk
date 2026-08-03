@@ -934,13 +934,16 @@ class TestParseLastSessionFlags:
 
     def _write_audit(self, audit_dir, sessions):
         """Write audit with CloseCluster: yes/no lines for each session."""
+        from datetime import datetime, timedelta
         lines = []
+        today = datetime.utcnow()
         for i, s in enumerate(sessions):
-            lines.append(f"\n### Session — 2026-07-0{i + 1}T10:00:00Z")
+            date_str = (today - timedelta(days=len(sessions) - i)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            lines.append(f"\n### Session — {date_str}")
             lines.append(f"CloseCluster: {'yes' if s.get('close_cluster') else 'no'}")
             skills = s.get("skills", "none")
             lines.append(f"Skills: {skills}")
-        month = "2026-07"
+        month = today.strftime("%Y-%m")
         (audit_dir / f"{month}.md").write_text("\n".join(lines))
 
     def test_close_cluster_missed_when_last_session_no(self, tmp_path):
