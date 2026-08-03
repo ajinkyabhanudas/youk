@@ -3255,6 +3255,14 @@ def write_routing_context(task: str, result: dict, youk_root: Path | None = None
     existing["routing_context"] = routing_ctx
     if not existing.get("task") or existing.get("task", "").startswith(("editing ", "running:")):
         existing["task"] = task[:200]
+    # Stamp slug so _infer_task_type_from_active_task's cross-project guard doesn't
+    # depend on a hook writing it — the guard owns its own invariant.
+    sopen = root / "state" / "session-open.json"
+    if sopen.exists():
+        try:
+            existing["slug"] = json.loads(sopen.read_text()).get("slug", "")
+        except Exception:
+            pass
     try:
         active_task_file.write_text(json.dumps(existing, indent=2))
     except Exception:
