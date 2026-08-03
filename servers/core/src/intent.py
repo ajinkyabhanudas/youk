@@ -279,6 +279,70 @@ def _check_fast_patterns(raw_input: str) -> dict | None:
     return None
 
 
+_OPAQUE_WORDS = {
+    "elite", "better", "cleaner", "properly", "right", "trust", "feel", "mindset",
+    "pattern", "principle", "production", "grade", "bullet", "proof", "crystal",
+    "solid", "robust", "mature", "complete",
+}
+
+
+def _heuristic_brief(raw_input: str, mode: str, error: str | None = None) -> dict:
+    """
+    Build an intent brief without calling the API.
+
+    Used on BOTH no-API paths:
+      - the SDK/key is unavailable      -> mode="fallback_no_api"
+      - the API call failed at runtime  -> mode="api_error"
+
+    The second case is why this is a function rather than an inline block. A
+    runtime failure (billing, rate limit, network) previously returned a stub
+    asserting ambiguity_detected=False and translation_risk="none" — claiming
+    the input had been analysed and found unambiguous, when nothing had run.
+    That is worse than having no SDK at all, because the routing loop reads
+    those fields and cannot distinguish "analysed, clean" from "never analysed".
+
+    Degrading to the same heuristic in both cases means credit exhaustion costs
+    accuracy, never silent false confidence.
+    """
+    is_ambiguous = len(raw_input.split()) < 8
+    is_opaque = any(w in raw_input.lower().split() for w in _OPAQUE_WORDS)
+    # Multi-level convergence: structural angle always checked first for quality words.
+    # If opaque, translation_risk=high regardless of other angles — structural fails first.
+    intake_required = _detect_solution_language(raw_input) and not _intake_has_run()
+
+    brief = {
+        "problem": raw_input,
+        "success_criteria": "Task completed as described.",
+        "constraints": [],
+        "architecture_recommendation": "Proceed with standard patterns for this domain.",
+        "anti_patterns": [],
+        "out_of_scope": [],
+        "solution_fork": {
+            "collapsing_question": "Could you describe the expected output in concrete terms?"
+        } if is_ambiguous else None,
+        "ambiguity_detected": is_ambiguous,
+        "goal_translation": {
+            "stated_as": raw_input,
+            "interpreted_as": raw_input,
+            "observable_outcome": "Task completed as described.",
+            "translation_risk": "high" if is_opaque else ("low" if is_ambiguous else "none"),
+            "translation_question": "What would you observe at the end of this that tells you it worked — in terms of your own experience, not the system's output?" if is_opaque else None,
+        },
+        "clarifying_questions": ["Could you describe the expected output in concrete terms?"] if is_ambiguous else [],
+        "estimated_size": "M",
+        "token_efficiency_gain": "n/a",
+        "raw_input": raw_input,
+        "mode": mode,
+        "intake_required": intake_required,
+        # True whenever the brief came from heuristics rather than the model.
+        # Callers that would otherwise trust ambiguity_detected must check this.
+        "degraded": True,
+    }
+    if error is not None:
+        brief["error"] = error
+    return brief
+
+
 def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dict:
     """
     Compress raw user input into a structured intent brief.
@@ -320,41 +384,7 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
         interpretation_context = f"\n\nKnown interpretation patterns for this user:\n{interpretation_file.read_text()[:2000]}"
 
     if not _ANTHROPIC_AVAILABLE:
-        is_ambiguous = len(raw_input.split()) < 8
-        _OPAQUE_WORDS = {"elite", "better", "cleaner", "properly", "right", "trust", "feel", "mindset", "pattern", "principle",
-                         "production", "grade", "bullet", "proof", "crystal", "solid", "robust", "mature", "complete"}
-        is_opaque = any(w in raw_input.lower().split() for w in _OPAQUE_WORDS)
-        # Multi-level convergence: structural angle always checked first for quality words.
-        # If opaque, translation_risk=high regardless of other angles — structural fails first.
-        _intake_required_fallback = (
-            _detect_solution_language(raw_input)
-            and not _intake_has_run()
-        )
-        return {
-            "problem": raw_input,
-            "success_criteria": "Task completed as described.",
-            "constraints": [],
-            "architecture_recommendation": "Proceed with standard patterns for this domain.",
-            "anti_patterns": [],
-            "out_of_scope": [],
-            "solution_fork": {
-                "collapsing_question": "Could you describe the expected output in concrete terms?"
-            } if is_ambiguous else None,
-            "ambiguity_detected": is_ambiguous,
-            "goal_translation": {
-                "stated_as": raw_input,
-                "interpreted_as": raw_input,
-                "observable_outcome": "Task completed as described.",
-                "translation_risk": "high" if is_opaque else ("low" if is_ambiguous else "none"),
-                "translation_question": "What would you observe at the end of this that tells you it worked — in terms of your own experience, not the system's output?" if is_opaque else None,
-            },
-            "clarifying_questions": ["Could you describe the expected output in concrete terms?"] if is_ambiguous else [],
-            "estimated_size": "M",
-            "token_efficiency_gain": "n/a",
-            "raw_input": raw_input,
-            "mode": "fallback_no_api",
-            "intake_required": _intake_required_fallback,
-        }
+        return _heuristic_brief(raw_input, mode="fallback_no_api")
 
     user_content = f"Raw input: {raw_input}"
     if clarified_context:
@@ -393,30 +423,7 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
                 "Set the env var in your shell profile or create the fallback file. "
                 f"Original error: {e}"
             )
-        return {
-            "problem": raw_input,
-            "success_criteria": "Task completed as described.",
-            "constraints": [],
-            "architecture_recommendation": "Proceed with standard patterns.",
-            "anti_patterns": [],
-            "out_of_scope": [],
-            "solution_fork": None,
-            "ambiguity_detected": False,
-            "goal_translation": {
-                "stated_as": raw_input,
-                "interpreted_as": raw_input,
-                "observable_outcome": "Task completed as described.",
-                "translation_risk": "none",
-                "translation_question": None,
-            },
-            "clarifying_questions": [],
-            "estimated_size": "M",
-            "token_efficiency_gain": "n/a",
-            "raw_input": raw_input,
-            "mode": "api_error",
-            "error": error_msg,
-            "intake_required": (
-                _detect_solution_language(raw_input)
-                and not _intake_has_run()
-            ),
-        }
+        # Degrade to the heuristic path rather than returning a stub. A billing
+        # failure, rate limit, or network error must not produce a brief that
+        # claims the input was analysed and found unambiguous.
+        return _heuristic_brief(raw_input, mode="api_error", error=error_msg)
