@@ -109,6 +109,15 @@ Focus: the specific domain (e.g. bioacoustics, conservation data) and user type.
 Produce: domain-specific vocabulary decisions, what to explain vs. assume, and
 how to frame outputs for a non-technical domain expert.
 
+**Agent D — Craft**
+Read `references/craft.md` first.
+Focus: the systems that separate competent from exceptional — typographic scale,
+spatial unit, colour ramp, elevation, motion, and the single unified idea of the
+screen.
+Produce: a named type scale with every size derived from a stated ratio, a base
+spatial unit, semantic colour tokens, an elevation set, motion durations and
+easings, and a one-sentence statement of what the screen is *for*.
+
 Each agent produces their proposal independently before synthesis.
 
 ---
@@ -173,6 +182,24 @@ or is blocked.
 
 ---
 
+### Phase 6b — CRAFT GATE
+
+Read `references/craft-gate.md`. Score the spec across nine craft dimensions and
+emit the `[CRAFT GATE]` block in the exact format that file specifies.
+
+**This gate blocks.** A REJECTED verdict means the spec does not proceed to
+HANDOFF. A REVISE verdict means the named change is applied and the gate is
+re-run once.
+
+The gate is distinct from CRITIC REVIEW and both must pass. CRITIC REVIEW asks
+whether the interface *works*. CRAFT GATE asks whether it is *good*. A spec that
+passes the first and fails the second is functional and forgettable, which is the
+outcome this phase exists to prevent.
+
+D9 (the unified idea) is an independent veto — see the gate file.
+
+---
+
 ### Phase 7 — HANDOFF
 
 Produce two outputs:
@@ -195,6 +222,17 @@ Produce two outputs:
   working memory at once
 - The happy path must be achievable in ≤3 interactions from page load
 
+**Craft bars — a spec violating any of these cannot be APPROVED:**
+
+- Every type size derives from a stated ratio. Ad-hoc sizes are defects.
+- Every spacing value is a multiple of one stated base unit.
+- Space between groups exceeds space within groups by a clear factor.
+- One accent colour. Chrome in neutrals.
+- Body text is constrained to 45–75 characters of measure.
+- Dark mode is re-modelled, never inverted, and screenshot-verified.
+- Motion has non-linear easing and respects `prefers-reduced-motion`.
+- Each screen states, in one sentence, the single thing it is for.
+
 ---
 
 ## Reference Files
@@ -203,7 +241,12 @@ Produce two outputs:
 |------|-------------|
 | `references/cognition.md` | EMPATHY MAP + TEAM SESSION (Agent B) |
 | `references/patterns.md` | UNDERSTAND + TEAM SESSION (Agent A) |
+| `references/craft.md` | TEAM SESSION (Agent D) + CRAFT GATE |
 | `references/checklist.md` | CRITIC REVIEW phase |
+| `references/craft-gate.md` | CRAFT GATE phase — scoring rubric and verdicts |
+
+For charts, plots, and data visualisation colour, use the bundled `dataviz`
+skill rather than deriving a palette here.
 
 ---
 
