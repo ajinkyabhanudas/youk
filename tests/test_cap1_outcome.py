@@ -234,10 +234,11 @@ class TestEndSessionEnumValidation:
 
 class TestOutcomeAuditLines:
     def _audit_text(self, youk_root, claude_root, monkeypatch, **kwargs) -> str:
+        from datetime import datetime
         import session as sess
         monkeypatch.setattr(sess, "CLAUDE_ROOT", claude_root)
         (claude_root / "audit").mkdir(parents=True, exist_ok=True)
-        month_file = claude_root / "audit" / "2026-07.md"
+        month_file = claude_root / "audit" / f"{datetime.utcnow().strftime('%Y-%m')}.md"
         sess.end_session(summary="test", commits_made=False, **kwargs)
         return month_file.read_text() if month_file.exists() else ""
 
