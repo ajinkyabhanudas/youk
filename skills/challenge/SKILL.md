@@ -255,8 +255,8 @@ Coherence:      ALIGNED — all lenses attacked the same problem |
 If DIVERGED: the divergence is a HIGH objection. Surface it before proceeding. The direction cannot be CLEAR while lenses disagree on what they were challenging. Do not call `mark_challenge_ran` until coherence is ALIGNED.
 
 After all lenses run and coherence is confirmed:
-- If zero objections: direction SURVIVES — call `youk-core.mark_challenge_ran(task, angles_checked=[<list of angles run>], mode=<mode>)`. If it returns `blocked: true`, run the missing angles and call again. On `recorded: true`, the verdict is confirmed — proceed.
-- If only LOW objections: direction SURVIVES WITH NOTES — emit findings inline, then call `mark_challenge_ran` as above and proceed.
+- If zero objections: direction SURVIVES — call `youk-core.mark_challenge_ran(task, angles_checked=[<list of angles run>], mode=<mode>)`. If it returns `blocked: true`, run the missing angles and call again. On `recorded: true`, the verdict is confirmed — proceed. **For M+ tasks:** emit one-line non-goals artifact: `Non-goals (from Lens 2): {what was explicitly ruled out and why}` — this persists scope decisions as a standing reference.
+- If only LOW objections: direction SURVIVES WITH NOTES — emit findings inline, then call `mark_challenge_ran` as above and proceed. Emit non-goals artifact as above.
 - If any HIGH: direction NEEDS SHARPENING — emit findings, propose revised direction, go to Phase 3
 - If any BLOCKING: direction WRONG — stop, surface the blocking objection, ask user to redirect
 
@@ -281,7 +281,7 @@ Only runs when verdict is NEEDS SHARPENING.
 1. Propose a revised direction that addresses the HIGH objections
 2. State what changes from the original direction and what stays the same
 3. Re-run lenses against the revised direction (one more round only)
-4. If the revised direction survives: call `youk-core.mark_challenge_ran(task, angles_checked=[<all angles run across both rounds>], mode=<mode>)`. On `recorded: true`, the verdict `[CHALLENGE PASSED — revised direction]` is confirmed.
+4. If the revised direction survives: call `youk-core.mark_challenge_ran(task, angles_checked=[<all angles run across both rounds>], mode=<mode>)`. On `recorded: true`, the verdict `[CHALLENGE PASSED — revised direction]` is confirmed. Emit non-goals artifact: `Non-goals (from Lens 2): {what was ruled out in arriving at this revised direction}`.
 5. If new BLOCKING/HIGH objections emerge: surface them and ask user — do not iterate a third time automatically
 
 **Exit rule:** The loop exits when two conditions are both true:

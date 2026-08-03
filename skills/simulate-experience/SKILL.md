@@ -53,6 +53,15 @@ from memory — call session_start and observe what it returns.
 
 ## The Four Personas
 
+**Evidence tier ladder (apply to every friction finding):**
+| Tier | Basis | Use when |
+|------|-------|----------|
+| E1 | Single persona observed it | One persona hit this friction |
+| E2 | ≥3 personas hit it independently | Pattern across multiple personas without leading questions |
+| E3 | Measurable from session data | Detectable in audit logs, skill signals, or session metrics |
+
+E2 findings are the proposal-generation priority — they signal a structural gap, not a persona-specific quirk. E3 findings go directly to `add_proposal(CODE_EDIT)`.
+
 **Contract capture verification (required field in every persona output — do not skip):**
 At some point in each persona simulation, the persona must verbalize a working agreement
 ("always X", "never Y", "from now on Z"). Then verify the full durability chain:
@@ -93,6 +102,7 @@ First task experience: {what ceremony fires for "add a button to the form"}
 Friction point {n}:
   Moment: {when exactly in the experience this happens}
   Observed: {what the developer sees or doesn't see}
+  Evidence tier: E1 (single persona) | E2 (≥3 personas independently) | E3 (measurable from session data)
   Impact: HIGH | MEDIUM | LOW
   Fix: {specific, one-sentence change that removes this friction}
   Proposal type: SKILL_EDIT | CODE_EDIT | CONFIG_EDIT | CLAUDE_MD_EDIT

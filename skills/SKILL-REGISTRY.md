@@ -56,6 +56,8 @@ for all generated `references/stacks/{framework}.md` overlays (6 sections, WAF-g
 | `/namespace-safety` | Collision Gate | Before any generate_skill or new MCP tool — checks skill names, MCP tool names, config keys for collisions | ACTIVE |
 | `/dependency-audit` | Dependency Auditor | New dependency added, "are deps safe?", pre-release — INVENTORY → PINNING → VULNERABILITIES → REMEDIATE | ACTIVE |
 | `/intake` | Adversarial Intake | Before routing any new M+ problem — interrogates the problem statement, generates pessimistic hypotheses, surfaces unconsidered constraints before challenge runs | ACTIVE |
+| `/research-absorb` | Research Ingestion | When you find a paper/post/doc and want to route its findings into youk — INGEST → CLASSIFY → ROUTE → VERIFY. Distinct from /research (proactive scan); this processes research you bring. | ACTIVE |
+| `/forward-deployed-pod` | Product Pod | Simulates a forward-deployed product team over a real codebase — discovery, evals, metric tree, measurement, honest evidence write-up. Use when adding product rigour, measurables, or evals to a project. | ACTIVE |
 
 ---
 
