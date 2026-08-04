@@ -67,6 +67,8 @@ Q6 and Q7 are conditional — only ask when the task surface matches. Skip silen
 
 ---
 
+─ If task mentions benchmark / eval / measurement / re-run / scoring / comparison / "run again" / "compare models" / "test results" / repeated LLM calls ─
+7. Measurement integrity?  {is cache/state cleared before each run? are runs independent? is a baseline (control) included? without clearing, repeated runs measure cache behavior not model behavior}
 ## Full NFR Check (L and XL features only)
 
 Invoke the full 5-phase check when:

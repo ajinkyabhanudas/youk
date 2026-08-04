@@ -184,6 +184,16 @@ Codebase has 60+ new commits from the team. Stack may have changed.
 
 ---
 
+**Contract capture verification (required field in every persona output — do not skip):**
+At some point in each persona simulation, the persona must verbalize a working agreement
+("always X", "never Y", "from now on Z"). Then verify the full durability chain:
+1. save_contract fired immediately (not deferred to /done)
+2. Read contracts.md directly — confirm exact text appears (not just that the call was made)
+3. Simulate what session_start returns — confirm the contract appears in the brief
+
+If step 2 or 3 fails: HIGH friction finding — "contract verbalized but not durable".
+If step 1 fails: CRITICAL friction finding — "contract detection not firing".
+Do not pass this check by observing the confirmation message alone. The file must be read.
 ## Team Collaboration Gap
 
 youk knowledge is per-user (`~/.claude/youk/knowledge/`). A developer joining a project
