@@ -216,6 +216,11 @@ if (-not (Test-Path $CLAUDE_MD)) {
     New-Item -ItemType File -Path $CLAUDE_MD -Force | Out-Null
 }
 
+# NOTE: parity gap with install.sh — the bash installer now wraps this block in
+# <!-- BEGIN youk (managed) --> / <!-- END youk --> fence markers and takes a
+# pre-install snapshot, so uninstall can remove it surgically. This PowerShell
+# path still appends unfenced. Until it is brought to parity, uninstall.ps1
+# correctly falls back to its manual-removal warning on Windows.
 $existing = Get-Content $CLAUDE_MD -Raw -ErrorAction SilentlyContinue
 if ($existing -match "youk") {
     ok "CLAUDE.md already contains youk block — skipping"

@@ -51,6 +51,7 @@ Every `make` target has a direct shell equivalent. Pick whichever works on your 
 |------|--------|------------------------|------------|
 | First install | `make install` | `bash scripts/install.sh` | `.\scripts\install.ps1` |
 | Update + rebuild | `make update` | `git pull --rebase && bash scripts/install.sh` | `git pull --rebase; .\scripts\install.ps1` |
+| Uninstall / revert | `make uninstall` | `bash scripts/uninstall.sh` | `.\scripts\uninstall.ps1` |
 | Fast checkup | `make checkup-fast` | `python3 -m pytest tests/integration/test_l0_environment.py tests/integration/test_l1_infrastructure.py -v --tb=short -m integration --no-cov` | same (in Git Bash or WSL2) |
 | Build images | `make build` | `docker build -t youk-core:latest -f servers/core/Dockerfile . && docker build -t youk-code:latest -f servers/code/Dockerfile .` | same |
 | Unit tests | `make test-unit` | `python3 -m pytest tests/ -v -m "not integration"` | same |
@@ -113,6 +114,47 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 Run as Administrator (or with Developer Mode enabled) for symlinks. The script creates directory junctions as fallback if symlinks fail.
 
 > `make` is optional on all platforms. `bash scripts/install.sh` is the canonical install command — `make install` just calls it.
+
+---
+
+## Uninstalling / reverting
+
+To return Claude Code to its pre-youk state:
+
+**macOS / Linux / Git Bash / WSL2:**
+```bash
+cd ~/.claude/youk
+bash scripts/uninstall.sh      # or: make uninstall
+```
+
+**Windows — PowerShell:**
+```powershell
+cd "$HOME\.claude\youk"
+.\scripts\uninstall.ps1
+```
+
+This reverses everything the installer added — MCP servers, skill symlinks, the hooks
+plugin, the `CLAUDE.md` block, and the scheduled jobs — and removes the Docker images.
+It restores `CLAUDE.md` from a snapshot the installer took **before** its first change
+(kept at `~/.claude/youk-restore/`), so any content you had before youk comes back
+byte-for-byte.
+
+Your accumulated knowledge is **preserved by default** (`~/.claude/youk/knowledge`,
+`state/`, and `~/.claude/audit`), so re-installing later resumes with full history. To
+remove that too:
+
+```bash
+bash scripts/uninstall.sh --purge
+```
+
+Other flags: `--keep-images` (leave the Docker images), `--dry-run` (print every action
+without changing anything). On PowerShell these are `-Purge`, `-KeepImages`, `-DryRun`.
+The youk repo itself is left in place — delete it with `rm -rf ~/.claude/youk` (or
+`Remove-Item -Recurse -Force "$HOME\.claude\youk"`) when you no longer want it.
+
+> Note: the PowerShell installer currently appends the `CLAUDE.md` block unfenced, so on
+> Windows `uninstall.ps1` will ask you to remove that one section by hand (everything else
+> reverts automatically). Fence/snapshot parity for `install.ps1` is a tracked follow-up.
 
 ---
 

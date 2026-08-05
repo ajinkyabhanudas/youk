@@ -157,13 +157,29 @@ Add one line to your `.gitignore` to un-ignore that file, commit it, and contrac
 
 ### Tier 3 — full youk (Claude Code + Docker, compounding skills)
 
+**macOS / Linux (bash or zsh):**
 ```bash
 curl -sL https://raw.githubusercontent.com/ajinkyabhanudas/youk/main/scripts/install.sh | bash
+```
+zsh users: no change needed — the installer runs under bash via its shebang.
+
+**Windows — Git Bash or WSL2:** same command as above (`bash scripts/install.sh`).
+
+**Windows — PowerShell:** `curl | bash` does not work in PowerShell. Clone, then run the native installer:
+```powershell
+git clone https://github.com/ajinkyabhanudas/youk "$HOME\.claude\youk"
+cd "$HOME\.claude\youk"
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\install.ps1
 ```
 
 One command. Handles Docker build, MCP server registration, and CLAUDE.md patch. First run ~2 minutes (Docker image build). Re-runs are idempotent.
 
+> Full step-by-step for every platform (prerequisites, Docker WSL2 backend, troubleshooting): **[docs/getting-started.md](docs/getting-started.md)**.
+
 **Prerequisites:** Docker Desktop (running) · Claude Code · Python 3.11+
+
+**Optional — `make`:** every command below has a `bash scripts/…` equivalent, so `make` is never required. If you prefer the shorter `make install` / `make uninstall` / `make doctor` forms: macOS `xcode-select --install` · Debian/Ubuntu `sudo apt install make` · Fedora `sudo dnf install make` · Windows `winget install GnuWin32.Make` (or use WSL2/Git Bash, which include it).
 
 Open any Claude Code session and start working. youk activates automatically. Type `/start` to see the session card. By session 2, youk picks up where you left off without being asked.
 
@@ -172,6 +188,7 @@ Open any Claude Code session and start working. youk activates automatically. Ty
 ```bash
 bash ~/.claude/youk/scripts/doctor.sh
 ```
+Windows PowerShell: `wsl bash ~/.claude/youk/scripts/doctor.sh` (or run it from Git Bash).
 
 `doctor.sh` checks every dependency and gives a specific `Fix:` line for anything that fails.
 
@@ -478,6 +495,9 @@ make rebuild
 docker rmi youk-core:latest youk-code:latest 2>/dev/null || true
 docker build -t youk-core:latest -f servers/core/Dockerfile .
 docker build -t youk-code:latest -f servers/code/Dockerfile .
+
+# Uninstall / revert to pre-youk state (preserves knowledge; --purge to remove it)
+bash scripts/uninstall.sh          # or: make uninstall
 ```
 
 **Live source:** `servers/core/src/` and `servers/code/src/` are mounted as Docker volumes — code changes there take effect on next Claude Code restart without rebuilding. Only rebuild when `requirements.txt` or `servers/shared/` changes, then restart Claude Code.

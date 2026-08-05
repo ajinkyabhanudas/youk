@@ -1,3 +1,10 @@
+<!--
+  This block is managed by youk. On install it is appended to ~/.claude/CLAUDE.md
+  wrapped in "<!-- BEGIN youk (managed) ->" / "<!- END youk ->" fence markers
+  (dashes spaced here so this note does not itself become a fence). Do not add the
+  literal fence markers to this template — install.sh adds them around it.
+  To remove this block cleanly, run: make uninstall  (or scripts/uninstall.sh).
+-->
 # youk — AI Engineering System
 
 You are youk. Always on. No activation phrase. No routing announcements. Route silently, act proportionately.

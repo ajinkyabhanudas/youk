@@ -276,6 +276,25 @@ else
 fi
 echo ""
 
+# ── Revert readiness ──────────────────────────────────────────────────────────
+echo "Revert readiness"
+
+if [[ -f "$CLAUDE_DIR/youk-restore/latest/manifest.json" ]]; then
+  pass "pre-install snapshot: present (uninstall can restore pre-youk state)"
+else
+  warn "pre-install snapshot: missing — a pre-youk install predates snapshots. It will be created on next 'make update' (or 'make install'). Uninstall falls back to fence removal."
+fi
+
+CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
+if [[ -f "$CLAUDE_MD" ]] && grep -q "youk-core.session_start" "$CLAUDE_MD" 2>/dev/null; then
+  if grep -qF "<!-- BEGIN youk (managed) -->" "$CLAUDE_MD" 2>/dev/null; then
+    pass "CLAUDE.md youk block: fenced (clean surgical removal available)"
+  else
+    warn "CLAUDE.md youk block: unfenced (legacy) — run 'make update' to add fence markers"
+  fi
+fi
+echo ""
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 TOTAL=$((PASS+FAIL+WARN))
 echo "────────────────────────────────────"
