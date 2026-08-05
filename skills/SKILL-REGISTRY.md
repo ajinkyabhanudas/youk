@@ -59,6 +59,8 @@ for all generated `references/stacks/{framework}.md` overlays (6 sections, WAF-g
 | `/intake` | Adversarial Intake | Before routing any new M+ problem — interrogates the problem statement, generates pessimistic hypotheses, surfaces unconsidered constraints before challenge runs | ACTIVE |
 | `/research-absorb` | Research Ingestion | When you find a paper/post/doc and want to route its findings into youk — INGEST → CLASSIFY → ROUTE → VERIFY. Distinct from /research (proactive scan); this processes research you bring. | ACTIVE |
 | `/forward-deployed-pod` | Product Pod | Simulates a forward-deployed product team over a real codebase — discovery, evals, metric tree, measurement, honest evidence write-up. Use when adding product rigour, measurables, or evals to a project. | ACTIVE |
+| `/schema-migration-audit` | SQLite Migration Gate | Before any ALTER TABLE, DROP COLUMN, or migration script runs against SQLite — CLASSIFY → PROBE → VERDICT with version-specific DDL support matrix | ACTIVE |
+| `/proposal-review` | Proposal Validity Auditor | Before /improve cycle or when PENDING.md has ≥3 CODE_EDIT proposals — LOAD → VERIFY → TRIAGE to separate APPLY NOW from stale/conflicting proposals | ACTIVE |
 
 ---
 
