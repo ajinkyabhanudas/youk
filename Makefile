@@ -34,6 +34,10 @@ coverage-badge: ## Run health.py coverage and print the badge URL with current n
 install: ## First-time setup: build images, register MCP servers, patch CLAUDE.md
 	@bash scripts/install.sh
 
+.PHONY: uninstall
+uninstall: ## Revert youk integration (preserves knowledge; pass ARGS="--purge" to remove it)
+	@bash scripts/uninstall.sh $(ARGS)
+
 .PHONY: update
 update: ## Pull latest + rebuild images + prune stale containers
 	git pull --rebase

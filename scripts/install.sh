@@ -105,6 +105,15 @@ CLAUDE_HOST_DIR=$CLAUDE_DIR
 EOF
 ok "path-map.env written to state/"
 
+# ── Step 2b: Pre-install snapshot ────────────────────────────────────────────
+# Capture the pre-youk state of everything below BEFORE the first host mutation,
+# so scripts/uninstall.sh can restore it exactly. Idempotent — a good snapshot is
+# never overwritten. See scripts/lib/snapshot.sh.
+step "Pre-install snapshot"
+# shellcheck source=lib/snapshot.sh
+. "$SCRIPT_DIR/lib/snapshot.sh"
+youk_take_snapshot
+
 # ── Step 3: Symlinks ─────────────────────────────────────────────────────────
 step "Symlinks"
 
@@ -247,16 +256,50 @@ step "CLAUDE.md"
 
 CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
 TEMPLATE="$YOUK_DIR/docs/claude-md-template.md"
+FENCE_BEGIN="<!-- BEGIN youk (managed) -->"
+FENCE_END="<!-- END youk -->"
 
 if [[ ! -f "$CLAUDE_MD" ]]; then
   touch "$CLAUDE_MD"
 fi
 
-if grep -q "youk-core.session_start" "$CLAUDE_MD" 2>/dev/null; then
-  ok "CLAUDE.md already contains youk block — skipping"
+# Three cases. Fence markers let uninstall.sh remove youk's block surgically
+# without touching the user's own content.
+if grep -qF "$FENCE_BEGIN" "$CLAUDE_MD" 2>/dev/null; then
+  # (1) Already fenced → replace the fenced region with the current template.
+  #     Makes `make update` self-healing for the youk block.
+  tmp="$(mktemp)"
+  awk -v begin="$FENCE_BEGIN" -v end="$FENCE_END" -v tpl="$TEMPLATE" '
+    $0 == begin { print; while ((getline line < tpl) > 0) print line; skip=1; next }
+    $0 == end   { print; skip=0; next }
+    !skip       { print }
+  ' "$CLAUDE_MD" > "$tmp"
+  if [[ -s "$tmp" ]]; then mv "$tmp" "$CLAUDE_MD"; else rm -f "$tmp"; fail "CLAUDE.md refresh produced empty output — left unchanged"; fi
+  ok "CLAUDE.md youk block refreshed (fenced region replaced)"
+elif grep -q "youk-core.session_start" "$CLAUDE_MD" 2>/dev/null; then
+  # (2) Unfenced youk block (legacy install / hand-edited) → wrap it in fences
+  #     in place. The block runs from the first youk H1 heading to EOF; insert
+  #     BEGIN before that heading, append END at EOF. Content above is untouched.
+  tmp="$(mktemp)"
+  awk -v begin="$FENCE_BEGIN" -v end="$FENCE_END" '
+    !wrapped && /^# youk( |$|—)/ { print begin; wrapped=1 }
+    { print }
+    END { if (wrapped) print end }
+  ' "$CLAUDE_MD" > "$tmp"
+  if [[ -s "$tmp" ]]; then mv "$tmp" "$CLAUDE_MD"; else rm -f "$tmp"; fail "CLAUDE.md wrap produced empty output — left unchanged"; fi
+  if grep -qF "$FENCE_END" "$CLAUDE_MD" 2>/dev/null; then
+    ok "CLAUDE.md legacy youk block wrapped in fence markers (content preserved)"
+  else
+    warn "Could not locate youk H1 heading to fence — leaving CLAUDE.md unchanged"
+  fi
 else
-  printf "\n\n%s\n" "$(cat "$TEMPLATE")" >> "$CLAUDE_MD"
-  ok "youk block appended to $CLAUDE_MD"
+  # (3) No youk block → append the template, fenced.
+  {
+    printf "\n\n%s\n" "$FENCE_BEGIN"
+    cat "$TEMPLATE"
+    printf "%s\n" "$FENCE_END"
+  } >> "$CLAUDE_MD"
+  ok "youk block appended to $CLAUDE_MD (fenced)"
 fi
 
 # ── Step 7: Seed audit log ───────────────────────────────────────────────────

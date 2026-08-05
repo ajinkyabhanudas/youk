@@ -478,6 +478,9 @@ make rebuild
 docker rmi youk-core:latest youk-code:latest 2>/dev/null || true
 docker build -t youk-core:latest -f servers/core/Dockerfile .
 docker build -t youk-code:latest -f servers/code/Dockerfile .
+
+# Uninstall / revert to pre-youk state (preserves knowledge; --purge to remove it)
+bash scripts/uninstall.sh          # or: make uninstall
 ```
 
 **Live source:** `servers/core/src/` and `servers/code/src/` are mounted as Docker volumes — code changes there take effect on next Claude Code restart without rebuilding. Only rebuild when `requirements.txt` or `servers/shared/` changes, then restart Claude Code.
