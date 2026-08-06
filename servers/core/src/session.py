@@ -567,14 +567,83 @@ def _write_project_context(slug: str, project_type: str, git_log: str, first_see
     )
 
 
+def _strip_resume_wrapping(text: str) -> str:
+    """Collapse repeated leading resume prefixes to a single one.
+
+    The recursive-Resume bug (Task 1) was caused by resume-in -> summary -> resume-out
+    with no guard: last session's resume line got scraped into this session's summary and
+    re-prefixed, compounding into "Resume: Resume: Resume: ..." every close.
+
+    This does NOT strip all prefixes — a single leading prefix is semantic and load-bearing
+    (session_start branches on `resume_point.startswith("Resume:")` at plan generation, and
+    call sites deliberately tag "Last working on:" / "In progress:"). It removes only the
+    REPETITION: the innermost bare content is recovered, then the OUTERMOST prefix (the
+    caller's intended tag) is preserved. Idempotent on already-clean text.
+    """
+    prefixes = ("Resume:", "Last working on:", "In progress:")
+
+    def _leading_prefix(s: str) -> str | None:
+        s = s.lstrip()
+        for p in prefixes:
+            if s.startswith(p):
+                return p
+        return None
+
+    outer = _leading_prefix(text)
+    if outer is None:
+        return text  # no prefix at all — nothing to collapse
+
+    # Strip every leading prefix down to the bare content...
+    bare = text
+    while True:
+        p = _leading_prefix(bare)
+        if p is None:
+            break
+        bare = bare.lstrip()[len(p):].lstrip()
+
+    # ...then restore exactly one: the caller's outermost tag.
+    return f"{outer} {bare}" if bare else outer
+
+
 def _update_resume_point(slug: str, resume_text: str) -> None:
-    """Write the resume point for the next session into external context.md."""
+    """Write the resume point for the next session into external context.md.
+
+    Validates through the ResumePointer schema (ADR-009), which rejects recursively
+    wrapped text — so this writer structurally cannot persist the 'Resume: Resume:'
+    corruption, at any call site. On validation failure it strips wrapping and retries
+    once; if still invalid, it writes nothing rather than persist a malformed pointer
+    (fail-safe: a stale-but-valid prior pointer beats a corrupt new one).
+    """
     ctx_file = YOUK_ROOT / "knowledge" / "projects" / slug / "context.md"
     if not ctx_file.exists():
         return
+
+    # Break the recursion at the source before validation.
+    clean_text = _strip_resume_wrapping(resume_text)[:200]
     try:
-        lines = [ln for ln in ctx_file.read_text().splitlines() if not ln.startswith("resume-from:")]
-        lines.append(f"resume-from: {resume_text[:200]}")
+        from state_schema import ResumePointer, StateValidationError
+
+        try:
+            ResumePointer(slug=slug, text=clean_text)
+        except StateValidationError:
+            # One retry after an aggressive strip; if it still fails, do not write.
+            clean_text = _strip_resume_wrapping(clean_text)[:200]
+            try:
+                ResumePointer(slug=slug, text=clean_text)
+            except StateValidationError:
+                return
+    except ImportError:
+        # Schema layer unavailable (host without shared on path) — proceed with the
+        # stripped text, which already breaks the known recursion class.
+        pass
+
+    try:
+        lines = [
+            ln
+            for ln in ctx_file.read_text().splitlines()
+            if not ln.startswith("resume-from:")
+        ]
+        lines.append(f"resume-from: {clean_text}")
         ctx_file.write_text("\n".join(lines) + "\n")
     except Exception:
         pass
