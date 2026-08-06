@@ -73,8 +73,13 @@ Every concept defined in PRD.md or well-architected.md has exactly one authority
 | `make checkup-fast` | L0+L1 only — environment + Docker + MCP handshake; replaces `make doctor` for quick infra checks |
 | `_check_doc_freshness()` at session_start | Catches documentation drift before it causes confusion in later sessions |
 | Compounding context loop | `session_end` writes `resume-from:` externally; `session_start` reads it — sessions compound without relying on Claude's context window surviving |
+| Validated state store | Mutable-claim state (plan, active task, queue, gate flags) is schema-validated on read and write in a single store — a malformed write raises rather than silently corrupting. Append-only logs and monotonic counters stay out; they cannot lie, only grow |
+| Read-time verification | A stored claim about system state ("X is broken", "gap open") is re-checked against current code before session_start surfaces it as live — a fixed issue never resurfaces as a to-do, and a claim that cannot be verified surfaces tagged, never as a clean item |
+| Project-scoped next task | "What's next" is computed at session_end from the project's own validated task graph and written automatically — scoped to the project youk is in, never a generic cross-project list, never a manual pointer edit |
 
 **Key invariant:** No session data is stored in project repos. Zero footprint. A clean `git clone` of any project repo is unaffected by youk.
+
+**Reliability requirement (not yet fully built — see `knowledge/domain/self-evolution-build-plan.md`):** persisted state must be validated, single-sourced, self-verifying at read, and project-scoped. State stored as unschematized loose files with no read-time verification is how a compounding system quietly stops compounding — fixed issues resurface and queued work evaporates. The compounding-context loop above is only as trustworthy as the store underneath it.
 
 ---
 
@@ -134,6 +139,12 @@ Every concept defined in PRD.md or well-architected.md has exactly one authority
 | Proposals require `confirmed=True` | Security (no auto-apply), Operational Excellence (founder in loop), Cost (no wasted token spend) |
 | `session_end` extracts, not logs | Security (no transcripts), Reliability (structured audit), Operational Excellence (machine-readable) |
 | `knowledge/projects/` gitignored | Security (no accidental exposure), Reliability (no cross-install contamination), Sustainability (zero footprint) |
+
+### Steer the model in its own terms, not with personas
+
+A quality label — "senior engineer", "rigorous", "thorough", "L9" — is a compressed human pointer to a region of the model's behavior. Prompting the model *with* the label asks it to reconstruct that region from a stereotype, which is lossy. The model has direct access to what the label resolves to, and that resolution is task-relative: "rigorous" means one set of behaviors for a code review and a different set for an estimate. So youk's design goal is to resolve a steering label to the specific behaviors the task needs at the point of use, rather than freezing one label — or one fixed decomposition of it — into a prompt. A frozen decomposition is just a richer stereotype; it is still lossy in the next context.
+
+The stronger form, which youk builds toward: do not trust the model's description of its own good behavior, and do not treat natural language as the only steering channel. Steer by what verifiably worked — concrete past outputs that passed an objective check or a developer's judgment — conditioned back as examples. This only holds if those examples are outcome-filtered (verified-good only) and sourced from the ceiling (the model's best output under pressure, plus developer corrections), never from the system's own averaged history. A system that conditions on its own mediocre past teaches itself to stay mediocre. (Design detail: `knowledge/domain/self-evolution-build-plan.md`; runs on the self-revision meta-loop, not as a parallel mechanism.)
 
 ---
 
