@@ -1460,6 +1460,26 @@ def _check_doc_freshness() -> list[str]:
     except Exception:
         pass
 
+    # Part 4: refresh derivable DATA fields in docs (skill counts, coverage badges, etc.)
+    # across ALL docs — not just whole-file generators. Corrects numbers that drift as the
+    # code changes; leaves prose untouched (a field only changes when its value is
+    # mechanically computable from source and differs from what's written).
+    try:
+        import glob
+        from doc_data_refresh import refresh_doc_data
+        docs = [
+            p for p in glob.glob(str(YOUK_ROOT / "**" / "*.md"), recursive=True)
+            if "/archive/" not in p and "/node_modules/" not in p
+        ]
+        rels = [str(Path(p).relative_to(YOUK_ROOT)) for p in docs]
+        refreshed = refresh_doc_data(rels, youk_root=YOUK_ROOT)
+        for u in refreshed.get("updated", []):
+            undocumented.append(
+                f"✓ Refreshed {u['doc']}: {u['field']} {u['old']} → {u['new']}"
+            )
+    except Exception:
+        pass
+
     return undocumented
 
 
