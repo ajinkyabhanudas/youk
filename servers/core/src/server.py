@@ -36,6 +36,7 @@ from file_index import (
     find_affected as _find_affected,
     find_relations as _find_relations,
     find_related_docs as _find_related_docs,
+    find_stale_relations as _find_stale_relations,
     get_index_stats as _get_index_stats,
 )
 from concept_graph import (
@@ -1504,6 +1505,27 @@ def find_related_docs(query: str, project_slug: str | None = None, limit: int = 
     Returns: {related_code, related_docs, query, project_slug, total}
     """
     return _find_related_docs(query, project_slug=project_slug, limit=limit)
+
+
+@mcp.tool()
+def find_stale_relations(project_slug: str | None = None, limit: int = 20) -> dict:
+    """Graph-driven staleness: flag derived files whose source changed more recently.
+
+    Walks the full file_relations graph (every indexed link) and reports each relation
+    where the source/authority (from_path) was re-indexed more recently than its derived
+    file (to_path) — meaning the source changed and the derived doc may not have followed.
+
+    Replaces the hand-maintained doc-map.yaml staleness list (which only covered a handful
+    of files) with the whole indexed link graph across all indexed files. Use at session
+    start or before a docs commit to catch stale derived files no one remembered to update.
+
+    project_slug: restrict to one project, or None for all.
+    limit: max stale relations to return (most-recently-diverged first).
+
+    Returns: {stale: [{project_slug, from_path, to_path, rel_type, source_indexed,
+              derived_indexed}], checked: int, stale_count: int}
+    """
+    return _find_stale_relations(project_slug=project_slug, limit=limit)
 
 
 @mcp.tool()
