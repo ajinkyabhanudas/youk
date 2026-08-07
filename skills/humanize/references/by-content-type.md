@@ -41,7 +41,7 @@ After: "README didn't reflect cache module, streaming UI, or current test count.
 
 ## README Sections
 
-**Audience:** Mixed — technical reviewers (Pedro), potential contributors, public
+**Audience:** Mixed — technical reviewers, potential contributors, public
 **Length:** As long as needed, not longer. Aim for one paragraph per section.
 **Structure:** Headers follow existing README structure. Prose, not bullet lists for explanations.
 
@@ -67,7 +67,7 @@ After: "README didn't reflect cache module, streaming UI, or current test count.
 
 ## DECISIONS.md Rationale
 
-**Audience:** Future Ajinkya, future maintainers, technical
+**Audience:** Future self, future maintainers, technical
 **Length:** 2-4 sentences per section (Context, Decision, Why Not, Consequences)
 **Structure:** Follow ADR format from /adr references
 
@@ -80,7 +80,7 @@ After: "README didn't reflect cache module, streaming UI, or current test count.
 
 **Example Context section:**
 Before: "There were considerations around the caching approach that needed to be addressed."
-After: "Repeated identical queries (common in Jajean's grant workflow) paid full LLM API cost on every run. We needed to decide: in-process dict, Redis, or SQLite."
+After: "Repeated identical queries (common in the user's recurring workflow) paid full LLM API cost on every run. We needed to decide: in-process dict, Redis, or SQLite."
 
 **Example Why Not section:**
 Before: "Redis was not chosen because it would add complexity."
@@ -138,7 +138,7 @@ results = _format_result(rows, exclude=_SENSITIVE_COLUMNS)
 
 ## Stakeholder Brief (from /pm-review BRIEF output)
 
-**Audience:** Jajean (non-technical) or organizational stakeholders
+**Audience:** a non-technical or organizational stakeholder
 **Length:** 1 paragraph, maximum 5 sentences
 **Structure:** Problem → Decision → What this means for you → What was NOT done (if relevant)
 
@@ -155,4 +155,4 @@ results = _format_result(rows, exclude=_SENSITIVE_COLUMNS)
 ```
 
 **Example:**
-"We added a memory feature to the tool so that questions you've asked before are answered immediately — no wait. When you ask Jajean a question you've asked in the last 24 hours, the system retrieves the stored answer rather than re-running the database query. New questions still take the usual 10-15 seconds. We'll revisit the time window once we see which questions you repeat most often."
+"We added a memory feature to the tool so that questions you've asked before are answered immediately — no wait. When you ask a question you've asked in the last 24 hours, the system retrieves the stored answer rather than re-running the database query. New questions still take the usual 10-15 seconds. We'll revisit the time window once we see which questions you repeat most often."

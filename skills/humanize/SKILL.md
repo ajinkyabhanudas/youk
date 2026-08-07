@@ -1,9 +1,9 @@
 ---
 name: humanize
 description: >
-  Writing style enforcer. Applies Ajinkya's voice to commit messages, documentation
+  Writing style enforcer. Applies the developer's voice to commit messages, documentation
   sections, DECISIONS.md rationale, code comments, and any other written output that
-  represents him publicly or persistently. Ensures consistency of voice across the
+  represents the developer publicly or persistently. Ensures a consistent voice across the
   project's written artifacts. Not applied to code itself, test names, or structured
   data — only to prose that a human reads. Triggers on: draft commit message, any
   README section being written, DECISIONS.md rationale text, inline code comments
@@ -13,7 +13,7 @@ description: >
 # humanize — Voice and Writing Style Skill
 
 A style application skill that ensures all written output from the project reflects
-Ajinkya's voice — consistent, first-principles, technically precise but accessible,
+the developer's voice: consistent, first-principles, technically precise but accessible,
 and free of the filler language that makes AI-generated text feel impersonal.
 
 The goal is not stylistic decoration. It is reputation consistency: every commit,
@@ -43,7 +43,7 @@ Before applying voice, identify:
 
 ```
 CONTENT TYPE:  [commit | doc section | decision rationale | code comment | stakeholder brief | conversational reply]
-AUDIENCE:      [technical (Pedro) | non-technical (Jajean) | self (project record) | public (GitHub)]
+AUDIENCE:      [technical peer | non-technical stakeholder | self (project record) | public (GitHub)]
 TONE:          [factual | explanatory | persuasive]
 DRAFT:         [the text to be transformed]
 ```
@@ -94,8 +94,12 @@ If a draft is provided, analyze it:
 
 ### Phase 3 — VOICE
 
-Apply Ajinkya's voice characteristics. Read `references/voice-profile.md` for the
-full profile with examples.
+Apply the developer's voice characteristics. Load the profile in this order:
+1. `knowledge/global/voice-profile.md` — the developer's OWN learned voice (gitignored,
+   local, populated by the voice-fingerprint system). Use it if it exists.
+2. `references/voice-profile.md` — the committed generic template. Fall back to this when
+   no local profile exists yet.
+Never ship or commit a personal profile; it is per-developer data.
 
 **Core transformations to apply:**
 
@@ -132,8 +136,8 @@ Remove meta-framing: "worth being precise", "easily-confused", "Put simply", "to
 Lead with the answer. Match length to information content, not to perceived thoroughness.
 
 **6. Calibrate to audience**
-For Jajean: plain English, no acronyms, no SQL, outcomes over mechanics
-For Pedro: technical precision, SQL can appear, mechanisms matter
+For a non-technical stakeholder: plain English, no acronyms, no SQL, outcomes over mechanics
+For a technical peer: technical precision, SQL can appear, mechanisms matter
 For public (GitHub): assume smart reader, brief context, decision-forward
 
 ---
@@ -189,7 +193,7 @@ This skill passes the hiring committee if it can:
 1. **First-principles test**: Given "fixed the cache bug", it produces "Cache lookup was using case-sensitive comparison — normalized to lowercase before hashing so 'What is X?' and 'what is X?' share a cache entry."
 2. **Trade-off test**: Given any "added X" commit, it adds at least one clause about what was NOT done or what the trade-off is.
 3. **Filler test**: Given a paragraph with "In order to leverage the existing infrastructure...", it produces a paragraph starting with the actual decision or action.
-4. **Audience test**: The same technical decision expressed for Jajean (plain English) and for GitHub (technical) should read noticeably differently, and both should feel natural for their audience.
+4. **Audience test**: The same technical decision expressed for a non-technical stakeholder (plain English) and for GitHub (technical) should read noticeably differently, and both should feel natural for their audience.
 5. **Brevity test**: A commit message never exceeds 3 sentences unless it's documenting a breaking change. If it's getting long, the change should be split.
 
 ---
@@ -212,7 +216,7 @@ This skill passes the hiring committee if it can:
 
 CLASSIFY (commit, public) → DRAFT (analyze what changed) → VOICE:
 "Wire exact-match cache into the query loop: SHA-256 key, 24h TTL, 500-entry LRU.
-Repeated questions (common in Jajean's grant workflows) skip the LLM call entirely.
+Repeated questions (common in the user's recurring workflows) skip the LLM call entirely.
 First query for any new question still pays full API cost."
 
 **README section:**
