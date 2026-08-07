@@ -1505,6 +1505,17 @@ def _check_doc_freshness() -> list[str]:
     except Exception:
         pass
 
+    # Part 6: PERSONAL-DATA PULSE — the backstop for identifier leaks in committed files.
+    # The primary defense is the pre-commit gate (blocks the leak from entering history); this
+    # catches anything already committed. Auto-seeds names from git author + attribution; also
+    # flags emails. Boundary is honest: known identifiers, not all PII.
+    try:
+        from personal_data_pulse import check_personal_data, format_leak_warnings
+        pd = check_personal_data(YOUK_ROOT)
+        undocumented.extend(format_leak_warnings(pd, cap=5))
+    except Exception:
+        pass
+
     return undocumented
 
 

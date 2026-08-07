@@ -71,6 +71,17 @@ def _default_commands() -> list[tuple[str, str]]:
             "python -m pytest tests/ -q --tb=no 2>/dev/null",
             "always run full pytest suite before committing",
         ),
+        # Personal-data gate: block a commit that would ship a known identifier (the git
+        # author's name, or an email) into a committed file. Prevention, not just detection —
+        # the leak never enters history. Exits non-zero (blocks) when scan_for_precommit finds one.
+        (
+            "python -c \"import sys; sys.path.insert(0,'servers/core/src'); "
+            "from pathlib import Path; from personal_data_pulse import scan_for_precommit; "
+            "r=scan_for_precommit(Path('.')); "
+            "[print('  LEAK', l['file']+':'+str(l['line_no']), l['kind'], repr(l['hit'])) for l in r['leaks']]; "
+            "sys.exit(1 if r['blocked'] else 0)\"",
+            "never commit personal data (names/emails) into shipped files — keep it local",
+        ),
     ]
 
 

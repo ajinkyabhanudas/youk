@@ -47,7 +47,7 @@ They do not contain: full conversation transcripts, code content, file contents,
 If you find a credential exposure, data leak, or other security issue:
 
 1. Do not open a public GitHub issue
-2. Email: ajinkya.dessai25@imperial.ac.uk with subject `[youk security]`
+2. Report privately via GitHub Security Advisories (repo → Security → "Report a vulnerability")
 3. Include: description, reproduction steps, potential impact
 4. Expected response: within 48 hours
 
