@@ -1,14 +1,14 @@
 # youk — session stats
 
-*Exported: 2026-07-14 · 39 sessions recorded*
+*Exported: 2026-08-07 · 88 sessions recorded*
 
 > **What this measures:** youk tracks process discipline — whether engineering gates fired (NFR check, code review, skill invocation) before code was written. A high org\_score means the gates ran. It does not measure whether the code shipped was correct, performant, or secure. Those are separate quality signals.
 
 ## org score trajectory
 
-**6.3/10  (+0.2 over 6 health checks)**
+**9.7/10  (+1.6 over 10 health checks)**
 
-`▅▅▅▅▅▅`
+`▆▆▇███████`
 
 *Left = oldest health check, right = most recent. Scale: 0–10.*
 
@@ -16,7 +16,7 @@
 
 ## skill invocation rate
 
-**70%** — capability skill fired in 14 of 20 sessions with real work (commits or skill activity).
+**75% (40/53 real-work sessions)** — capability skill fired in at least one session with real work (commits or skill activity).
 
 Capability skills: `nfr-check`, `dev-loop`, `code-review`, `stress-test`, `adr`, `write-spec`, `pm-review`, `security-review`, `verify`, `learn`.
 
@@ -24,7 +24,7 @@ Capability skills: `nfr-check`, `dev-loop`, `code-review`, `stress-test`, `adr`,
 
 ## session close rate
 
-**41%** — 16 of 39 sessions closed with `/done` (code-review + verify + learn in sequence).
+**53% (47/88 all sessions)** — sessions closed with `/done` (code-review + verify + learn in sequence).
 
 *Target: >50%. `/done` is what closes the learning loop.*
 
@@ -32,7 +32,7 @@ Capability skills: `nfr-check`, `dev-loop`, `code-review`, `stress-test`, `adr`,
 
 *Did the developer pre-empt gates before youk asked? This is the primary signal that compounding is working — the developer internalised the gate, not just the tool.*
 
-**0%** — developer pre-empted a gate in 0 of 38 sessions where a gate could have fired.
+**0% (0/87 gate-eligible sessions)** — developer pre-empted a gate before youk asked.
 
 *Target: rising trend over time. 0% is normal in early sessions.*
 
@@ -43,7 +43,8 @@ Capability skills: `nfr-check`, `dev-loop`, `code-review`, `stress-test`, `adr`,
 | month | gaps logged |
 |-------|-------------|
 | 2026-06 | 2 |
-| 2026-07 | 23 |
+| 2026-07 | 25 |
+| 2026-08 | 1 |
 
 *Target: stable or decreasing after session 20.*
 
@@ -51,12 +52,26 @@ Capability skills: `nfr-check`, `dev-loop`, `code-review`, `stress-test`, `adr`,
 
 | date | org score |
 |------|-----------|
-| 2026-07-02 | 6.1/10 |
-| 2026-07-03 | 6.1/10 |
-| 2026-07-05 | 6.2/10 |
-| 2026-07-09 | 6.1/10 |
-| 2026-07-10 | 6.1/10 |
-| 2026-07-13 | 6.3/10 |
+| 2026-07-20 | 8.1/10 |
+| 2026-07-21 | 8.1/10 |
+| 2026-07-23 | 8.7/10 |
+| 2026-07-24 | 9.4/10 |
+| 2026-07-28 | 9.4/10 |
+| 2026-07-30 | 9.5/10 |
+| 2026-07-31 | 9.6/10 |
+| 2026-08-03 | 9.7/10 |
+| 2026-08-04 | 9.7/10 |
+| 2026-08-05 | 9.7/10 |
+
+## denominator reconciliation
+
+> Two metrics use different session pools. Skill rate counts only sessions with real work; close rate counts all sessions. A session without commits or skills is counted by close rate but not skill rate.
+
+| metric | value | numerator | denominator | denominator definition |
+|--------|-------|-----------|-------------|------------------------|
+| skill invocation rate | 75% | 40 | 53 | sessions with commits or skill activity |
+| session close rate | 53% | 47 | 88 | all recorded sessions |
+| developer autonomy | 0% | 0 | 87 | sessions with a gate-eligible Skills: line |
 
 ---
 

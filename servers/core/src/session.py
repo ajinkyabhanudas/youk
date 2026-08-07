@@ -1450,12 +1450,26 @@ def _check_doc_freshness() -> list[str]:
     # whose source changed but they didn't — the coverage gap the 13-entry list missed.
     try:
         from file_index import find_stale_relations
+        from doc_regen import regenerate_stale_generated_docs, is_generated
         # project_slug=None — this helper is project-agnostic; scan all indexed relations.
-        result = find_stale_relations(project_slug=None, limit=3)
-        for s in result.get("stale", []):
+        result = find_stale_relations(project_slug=None, limit=20)
+        stale_list = result.get("stale", [])
+
+        # Close the loop: auto-regenerate GENERATED stale docs (STATS.md etc.). Source files
+        # and hand-written prose are never touched — only reported. This makes youk ACT on the
+        # link graph, not just report it — while never rewriting code or prose (unsafe).
+        regen = regenerate_stale_generated_docs(stale_list, youk_root=YOUK_ROOT)
+        for doc in regen.get("regenerated", []):
+            undocumented.append(f"✓ Regenerated stale doc: {doc} (source had changed)")
+        for err in regen.get("errors", []):
+            undocumented.append(f"⚠ Could not regenerate {err['doc']}: {err['error'][:80]}")
+
+        # Report the ones a human must handle (capped so it doesn't flood the plan).
+        human_docs = [s for s in stale_list if not is_generated(s.get("to_path", ""))]
+        for s in human_docs[:3]:
             undocumented.append(
-                f"⚠ Stale (graph): {s['to_path']} — its source {s['from_path']} "
-                f"changed more recently. Review or re-index."
+                f"⚠ Stale (graph): {s['to_path']} — source {s['from_path']} "
+                f"changed more recently. Review (not auto-generated)."
             )
     except Exception:
         pass
