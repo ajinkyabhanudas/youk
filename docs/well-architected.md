@@ -146,6 +146,8 @@ A quality label — "senior engineer", "rigorous", "thorough", "L9" — is a com
 
 The stronger form, which youk builds toward: do not trust the model's description of its own good behavior, and do not treat natural language as the only steering channel. Steer by what verifiably worked — concrete past outputs that passed an objective check or a developer's judgment — conditioned back as examples. This only holds if those examples are outcome-filtered (verified-good only) and sourced from the ceiling (the model's best output under pressure, plus developer corrections), never from the system's own averaged history. A system that conditions on its own mediocre past teaches itself to stay mediocre. (Design detail: `knowledge/domain/self-evolution-build-plan.md`; runs on the self-revision meta-loop, not as a parallel mechanism.)
 
+**How this is wired (built, not aspirational):** the steering vocabulary is live via two tools. Before steering on a quality label, call `get_steering_vocab(label)` — if it returns `learned=True`, steer with those concrete, confidence-weighted behaviors; if `learned=False`, elicit a fresh decomposition from the model for *this* task and record it, never fall back to the bare-label stereotype. After work completes, call `record_steering_decomposition(label, behavior, task_context, confidence)` with an honest confidence (`verified` if the work passed an objective check, `approved` if the developer accepted it, `corrected` if they rejected it). New skills should reach for this instead of inventing a persona label. Confidence is a read-time weight, so the strict/lenient balance is tunable without discarding recorded data.
+
 ---
 
 ## MCP access hierarchy

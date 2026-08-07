@@ -39,6 +39,10 @@ from file_index import (
     find_stale_relations as _find_stale_relations,
     get_index_stats as _get_index_stats,
 )
+from steering_vocab import (
+    record_decomposition as _record_decomposition,
+    get_steering as _get_steering,
+)
 from concept_graph import (
     query_concept_graph as _query_concept_graph,
     get_concept_stats as _get_concept_stats,
@@ -1781,6 +1785,39 @@ def get_revisable_sets() -> dict:
     """List enrolled revisable sets and their current state (for session_end accountability)."""
     names = _rs_list_enrolled()
     return {"enrolled": names, "sets": {n: _rs_get_set(n) for n in names}}
+
+
+# ---------------------------------------------------------------------------
+# Steering vocabulary (Task 3) — steer Claude in its own terms, not with personas
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def get_steering_vocab(label: str) -> dict:
+    """Get learned behavior decompositions for a quality label ("rigorous", "L9", "thorough").
+
+    Returns {"label", "behaviors": [{behavior, confidence, weight, count}], "learned": bool}.
+    - learned=True: steer with these concrete behaviors (weighted by confidence — verified >
+      approved; corrected excluded) instead of injecting the raw label.
+    - learned=False: youk hasn't learned this label yet — elicit a fresh decomposition from
+      the model for THIS task (point-of-use), then record it below. Do NOT fall back to the
+      stereotype the bare label evokes.
+    """
+    return _get_steering(label)
+
+
+@mcp.tool()
+def record_steering_decomposition(
+    label: str, behavior: str, task_context: str, confidence: str = "approved"
+) -> dict:
+    """Record that a quality label decomposed into a concrete behavior for a task.
+
+    confidence: "verified" (the work it steered passed an objective check — tests/bug real),
+    "approved" (user accepted the result), or "corrected" (user rejected this decomposition —
+    a veto that drops it from future steering). Nothing is rejected at write time; quality is
+    applied at read time via get_steering_vocab's weighting, so the vocabulary fills fast and
+    the strictness stays tunable. Call after work completes with the honest confidence.
+    """
+    return _record_decomposition(label, behavior, task_context, confidence=confidence)
 
 
 if __name__ == "__main__":
