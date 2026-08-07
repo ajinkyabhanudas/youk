@@ -96,6 +96,45 @@ Each phase begins with a compact token: `[PHASE: NAME]`
    version, not a future-proof version. If a dict covers the use case, don't add Redis.
    If one function covers it, don't add a class. Additions require a stated reason tied
    to a constraint in CONTEXT BLOCK — not anticipated future use.
+
+0b. **Blast-radius trip-wire** — a cost-tiered guard against drifted fixes: a change that is
+   locally correct but breaks something downstream because you didn't check what depends on it.
+   Each tier gates the next, so cost tracks actual risk — you never pay the expensive tier on a
+   local edit.
+
+   Applies when: about to modify or delete an EXISTING shared surface — a function signature,
+   a return-value shape, a constant/flag other code reads, a schema, a string another branch
+   matches on. Skip entirely for: brand-new code, test files, comments, and additive-only
+   changes that touch no existing dependent.
+
+   - **Tier 1 — free grep (always, when the guard applies):** one search for dependents of the
+     symbol you're changing — `grep` its name, and for a string/flag also grep any `startswith`
+     / `==` / membership check against it. If zero dependents → proceed, no further cost.
+   - **Tier 2 — find_affected (only if Tier 1 shows dependents):** call
+     `youk-core.find_affected(file_path, project_slug)` to map the reach. State in one line what
+     depends on this and how the change affects each. If the reach is contained and understood →
+     proceed.
+   - **Tier 3 — challenge (only if the change is FORCED by an error/regression/reversal AND
+     Tier 2 shows the change alters behavior other code relies on):** this is the drifted-fix
+     danger zone — a fix made under the pressure of something breaking, touching depended-on
+     behavior. Route the DOWNSTREAM IMPACT (not the local fix) through `challenge`: does this fix
+     hold the system's actual intent, or does it satisfy the local failure while breaking the
+     contract the dependents assume? Resolve before writing.
+
+   The rule this encodes: the cost of the check must stay below the cost of the rework it prevents.
+   A one-line grep is cheaper than a failed test cycle; a failed test cycle is cheaper than a
+   drifted fix that ships. Spend at the tier the risk justifies, never above it. (Worked example:
+   changing `_update_resume_point` to "strip all prefixes" was locally correct but a Tier-1 grep
+   for `startswith("Resume:")` would have surfaced session_start's dependency BEFORE the broken
+   test — Tier 1 alone would have caught it.)
+
+   **Known limits (do not oversell this guard):** Tier 1 finds STATIC dependents. It will miss
+   dynamic references (getattr, string interpolation, cross-boundary deps like a Python symbol
+   read by CLAUDE.md prose) — for those, a passing grep does not prove safety. And this guard is
+   prose-triggered: it works only if step 0b actually runs. It is deliberately kept to one grep
+   precisely so the cost of running it is too low to rationalize skipping — a heavier check here
+   would be skipped under pressure and be worse than none. It reduces drifted fixes; it does not
+   eliminate them.
 1. Write the implementation using idiomatic patterns for the detected language
    and framework.
 2. Apply best practices by default — see `references/best-practices.md` for
@@ -124,6 +163,12 @@ Emit findings as:
 ```
 
 Severity levels: `CRITICAL` | `HIGH` | `MEDIUM` | `LOW` | `INFO`
+
+**Drift check (mandatory when this pass modified an existing shared surface):** for each change
+to a depended-on symbol, ask "what assumed the old behavior, and does it still hold?" If the
+blast-radius trip-wire (WRITE step 0b) escalated to Tier 2/3, confirm its finding was addressed.
+A fix that passes its own test but changes a contract a dependent relies on is a `HIGH` finding,
+not a pass — the local test cannot see the dependent.
 
 After all findings:
 - Count by severity
