@@ -42,6 +42,19 @@ from concept_graph import (
     query_concept_graph as _query_concept_graph,
     get_concept_stats as _get_concept_stats,
 )
+from revisable_sets import (
+    enroll as _rs_enroll,
+    learn_add as _rs_learn_add,
+    unlearn_prune as _rs_unlearn_prune,
+    revert as _rs_revert,
+    get_set as _rs_get_set,
+    list_enrolled as _rs_list_enrolled,
+    EnrollmentError as _EnrollmentError,
+)
+from revision_detectors import (
+    detect_grow_candidates as _detect_grow_candidates,
+    detect_prune_candidates as _detect_prune_candidates,
+)
 from skill_signals import (
     generate_improvement_proposal as _generate_skill_improvement_proposal,
     select_skill_arm as _select_skill_arm,
@@ -1655,6 +1668,83 @@ def request_external_review(scope: str, notes: str = "") -> dict:
     Does NOT affect org_score — scoring the fix for self-scoring recreates the disease.
     """
     return _build_review_bundle(scope, notes, youk_root=YOUK_ROOT, claude_root=CLAUDE_ROOT)
+
+
+# ---------------------------------------------------------------------------
+# Self-revision meta-loop (Task 2) — youk revises its own judgment-sets
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def enroll_revisable_set(name: str, policy: str, initial_elements: list[str]) -> dict:
+    """Register a judgment-set as revisable (grow/prune/both). Opt-in; default is frozen.
+
+    Safety/fact sets (_ALLOWED_WRITE_ROOTS, _CODE_EXTS, secret rules, etc.) are hard-blocked
+    and raise — self-revision there is a breach, not learning. Use only for sets that encode
+    an OPINION youk could be wrong about (challenge angles, NFR questions, risk tiers).
+
+    Returns {"enrolled", "policy", "element_count"} or {"error"} if hard-blocked.
+    """
+    try:
+        return _rs_enroll(name, policy, initial_elements)
+    except _EnrollmentError as e:
+        return {"error": str(e), "enrolled": None}
+    except ValueError as e:
+        return {"error": str(e), "enrolled": None}
+
+
+@mcp.tool()
+def propose_set_revisions(
+    name: str,
+    recurring_gaps: list[str] | None = None,
+    fire_counts: dict[str, int] | None = None,
+    corrected: list[str] | None = None,
+) -> dict:
+    """Surface grow/prune candidates for an enrolled set — the LEARN/UNLEARN detectors.
+
+    recurring_gaps: gap/unknown_unknown labels seen this window (grow input).
+    fire_counts: element -> times it fired this window (prune input — 0 = dead).
+    corrected: elements the developer explicitly rejected (prune input).
+
+    Returns {"grow": [...], "prune": [...]}. Each candidate STILL owes a challenge pass
+    before you call apply_set_revision — this only proposes, it does not apply.
+    """
+    grow = _detect_grow_candidates(name, recurring_gaps or []) if recurring_gaps else []
+    prune = (
+        _detect_prune_candidates(name, fire_counts, corrected)
+        if fire_counts is not None else []
+    )
+    return {"set": name, "grow": grow, "prune": prune}
+
+
+@mcp.tool()
+def apply_set_revision(name: str, action: str, element: str, driver: str,
+                       challenge_cleared: bool) -> dict:
+    """Apply a grow or prune to an enrolled set — AFTER the candidate survived challenge.
+
+    action: "grow" (add element) | "prune" (remove element) | "revert" (undo last change)
+    challenge_cleared: must be True for grow/prune — a revision that hasn't survived
+        challenge is refused (the candidate-challenge gate). Ignored for revert.
+
+    Every mutation is versioned; use action="revert" to roll back the last change (the
+    human veto / revert floor). Autonomous apply + after-the-fact veto.
+    """
+    if action == "revert":
+        return _rs_revert(name)
+    if not challenge_cleared:
+        return {"ok": False, "reason": "revision must survive challenge before apply "
+                "(pass challenge_cleared=True only after route_to_skill('challenge'))"}
+    if action == "grow":
+        return _rs_learn_add(name, element, driver)
+    if action == "prune":
+        return _rs_unlearn_prune(name, element, driver)
+    return {"ok": False, "reason": f"unknown action '{action}'; use grow|prune|revert"}
+
+
+@mcp.tool()
+def get_revisable_sets() -> dict:
+    """List enrolled revisable sets and their current state (for session_end accountability)."""
+    names = _rs_list_enrolled()
+    return {"enrolled": names, "sets": {n: _rs_get_set(n) for n in names}}
 
 
 if __name__ == "__main__":
