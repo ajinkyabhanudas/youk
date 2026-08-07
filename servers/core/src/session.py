@@ -1494,6 +1494,17 @@ def _check_doc_freshness() -> list[str]:
     except Exception:
         pass
 
+    # Part 5: WIRING PULSE — autoruns EVERY session_start (not "due in N sessions"). Catches
+    # capabilities that were built + tested but are never invoked in the live loop (orphaned).
+    # This is the vital the ~10k unit tests can't see: they verify parts work, not that parts
+    # are connected. An orphan is late tech debt in the making — surfaced the moment it exists.
+    try:
+        from wiring_pulse import check_wiring, format_wiring_warnings
+        wiring = check_wiring(YOUK_ROOT, CLAUDE_ROOT)
+        undocumented.extend(format_wiring_warnings(wiring, cap=5))
+    except Exception:
+        pass
+
     return undocumented
 
 
@@ -1851,8 +1862,26 @@ def start_session(project_dir: str) -> SessionState:
 
     pending = _count_pending_proposals(project_slug=slug)
     counter = state["session_counter"]
+    # counter gates only the EXPENSIVE full self-heal. The cheap always-on vitals (org_score
+    # read, wiring pulse, stale detection) autorun every session below — a health signal you
+    # have to remember to run, or that waits N sessions, is a health signal that doesn't run.
     health_check_due = counter % 3 == 0
     dashboard_summary = _compute_dashboard_summary(audit_dir, pending, slug=slug)
+
+    # Always-on pulse (autoruns EVERY session_start, no counter gate): a one-line vitals read
+    # so youk's live health is visible every session, not just every third one.
+    pulse_line = ""
+    try:
+        from wiring_pulse import check_wiring
+        w = check_wiring(YOUK_ROOT, CLAUDE_ROOT)
+        if w["orphaned"]:
+            pulse_line = (
+                f"⚡ PULSE: {w['wired']}/{w['wired'] + len(w['orphaned'])} tools wired "
+                f"({int(w['wired_ratio'] * 100)}%) — {len(w['orphaned'])} orphaned "
+                f"(built, never invoked). See wiring warnings below."
+            )
+    except Exception:
+        pass
 
     doc_gaps = _check_doc_freshness()
 
@@ -1874,6 +1903,11 @@ def start_session(project_dir: str) -> SessionState:
         days_since_last=days_since_last,
         new_commits=new_commits,
     )
+
+    # Surface the always-on pulse as the FIRST plan item when youk has orphaned capabilities —
+    # so the health of the live wiring is the first thing seen every session, not buried.
+    if pulse_line:
+        session_plan = [pulse_line, *session_plan][:8]
 
     # Staleness awareness — surface when returning after a significant gap.
     # For gaps ≥30 days, fetch commits-since-gap from git so the plan answers
