@@ -206,6 +206,9 @@ def next_task(project: str | None = None, db_path: Path = _DB_PATH) -> dict:
     project_clause = ""
     if project is not None:
         # match the project OR untagged legacy rows (project IS NULL)
+        # youk: NULL-inclusion is a transitional bridge for pre-tag rows → upgrade when
+        # all live rows are project-tagged (drop "OR t.project IS NULL" so an untagged
+        # task from another project can never surface as this project's next task).
         project_clause = " AND (t.project = ? OR t.project IS NULL)"
         params = (project,)
 
@@ -227,6 +230,7 @@ def next_task(project: str | None = None, db_path: Path = _DB_PATH) -> dict:
                     AND p.unblocked = 0
               )
               {project_clause}
+            ORDER BY t.id
             LIMIT 1
         """, params).fetchall()
 
