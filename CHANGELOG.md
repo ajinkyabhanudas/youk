@@ -10,6 +10,10 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ## [unreleased]
 
+---
+
+## [0.6.0-alpha] — 2026-08-07
+
 ### Added
 
 **Validated state store (#10)**
@@ -39,6 +43,30 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 ### Fixed
 
 - Health and verification vitals autorun every session instead of waiting for `session_end` or an every-N-session counter.
+
+---
+
+## [0.5.0-alpha] — 2026-08-05
+
+*Backfilled — this version was tagged without a changelog entry.*
+
+### Added
+- Project isolation for proposals and task state; structured concept-graph extraction (#4).
+
+### Fixed
+- Concept graph correctness and self-owned invariants (#4).
+
+---
+
+## [0.4.0-alpha] — 2026-07-31
+
+*Backfilled — this version was tagged without a changelog entry.*
+
+### Added
+- Shared SQLite file index — BM25 cross-project retrieval and impact analysis.
+- SQLite task graph for gate-state persistence and cross-session recovery; `set_gate()` wired into gate tools for machine-recorded gate passage.
+- `route_task` enriched with `file_context` (BM25) and `graph_state` fields.
+- L10 skill hardening — scope-matrix enforcement, pre-output checks, A/B bench (#3).
 
 ---
 
