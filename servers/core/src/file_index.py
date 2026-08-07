@@ -632,6 +632,78 @@ def find_affected(
     }
 
 
+def find_stale_relations(
+    project_slug: str | None = None,
+    db_path: Path = _INDEX_DB,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Graph-driven staleness: walk file_relations and flag derived files whose source
+    was re-indexed more recently than they were.
+
+    This replaces the hand-maintained 13-entry doc-map.yaml staleness list with the full
+    file_relations graph (all indexed links). For each relation (from_path -> to_path),
+    if the authority/source (from_path) has a newer last_indexed than the derived doc
+    (to_path), the derived doc is a staleness candidate — the source changed, the doc may
+    not have followed. Uses last_indexed (updated on each re-index when file_hash changes)
+    as the freshness signal; both endpoints must be indexed to compare.
+
+    project_slug: restrict to one project's relations, or None for all.
+    Returns {"stale": [{from_path, to_path, rel_type, source_indexed, derived_indexed,
+             project_slug}], "checked": int, "stale_count": int}
+    """
+    project_clause = ""
+    params: tuple = ()
+    if project_slug is not None:
+        project_clause = " WHERE r.from_project = ?"
+        params = (project_slug,)
+
+    with _connect(db_path) as conn:
+        # Join each relation to its two endpoints' last_indexed timestamps.
+        # A relation is stale when the source endpoint is newer than the derived endpoint.
+        rows = conn.execute(
+            f"""
+            SELECT r.from_project AS project_slug, r.from_path, r.to_path, r.rel_type,
+                   src.last_indexed AS source_indexed,
+                   dst.last_indexed AS derived_indexed
+            FROM file_relations r
+            JOIN file_index src
+              ON src.project_slug = r.from_project AND src.file_path = r.from_path
+            JOIN file_index dst
+              ON dst.project_slug = r.from_project AND dst.file_path = r.to_path
+            {project_clause}
+            """,
+            params,
+        ).fetchall()
+
+    checked = len(rows)
+    stale = []
+    for r in rows:
+        src_t = r["source_indexed"]
+        dst_t = r["derived_indexed"]
+        if src_t is None or dst_t is None:
+            continue
+        if src_t > dst_t:
+            stale.append(
+                {
+                    "project_slug": r["project_slug"],
+                    "from_path": r["from_path"],
+                    "to_path": r["to_path"],
+                    "rel_type": r["rel_type"],
+                    "source_indexed": src_t,
+                    "derived_indexed": dst_t,
+                }
+            )
+
+    # Most-recently-diverged first (by how new the source is), capped.
+    # last_indexed is an ISO-8601 string — lexical order equals chronological order.
+    stale.sort(key=lambda s: s["source_indexed"], reverse=True)
+    return {
+        "stale": stale[:limit],
+        "checked": checked,
+        "stale_count": len(stale),
+    }
+
+
 def find_relations(
     file_path: str,
     project_slug: str,

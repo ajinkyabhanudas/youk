@@ -1445,6 +1445,21 @@ def _check_doc_freshness() -> list[str]:
     except Exception:
         pass
 
+    # Part 3: graph-driven staleness — walks the full file_relations link graph, not the
+    # hand-maintained doc-map list. Catches derived files (STATS.md, PHILOSOPHY.md, etc.)
+    # whose source changed but they didn't — the coverage gap the 13-entry list missed.
+    try:
+        from file_index import find_stale_relations
+        # project_slug=None — this helper is project-agnostic; scan all indexed relations.
+        result = find_stale_relations(project_slug=None, limit=3)
+        for s in result.get("stale", []):
+            undocumented.append(
+                f"⚠ Stale (graph): {s['to_path']} — its source {s['from_path']} "
+                f"changed more recently. Review or re-index."
+            )
+    except Exception:
+        pass
+
     return undocumented
 
 
