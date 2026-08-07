@@ -3025,17 +3025,36 @@ def end_session(
 
     if resume_slug:
         resume_text = ""
-        lines = summary.splitlines()
-        for i, line in enumerate(lines):
-            if line.startswith("##"):
-                for next_line in lines[i + 1:]:
-                    if next_line.strip():
-                        resume_text = next_line.strip()
-                        break
-                if resume_text:
-                    break
+
+        # 1.4b (contract R3): AUTHORITATIVE source first — the project's own task graph.
+        # If youk has a next actionable task for THIS project, that IS what's next, computed
+        # from validated state rather than scraped from prose. This is what makes youk know
+        # its project-scoped next task by itself, every close, without a manual pointer edit.
+        # The scrape below remains the fallback for when the graph has no ready task.
+        try:
+            from graph import next_task as _graph_next_task
+            nxt = _graph_next_task(project=resume_slug)
+            if nxt.get("found") and nxt.get("task"):
+                label = (nxt["task"].get("label") or "").strip()
+                if label:
+                    resume_text = f"NEXT (from task graph): {label}"
+        except Exception:
+            pass
+
+        # Fallback: scrape the summary (first non-empty line after a ## heading).
         if not resume_text:
-            resume_text = next((ln.strip() for ln in lines if ln.strip()), "")
+            lines = summary.splitlines()
+            for i, line in enumerate(lines):
+                if line.startswith("##"):
+                    for next_line in lines[i + 1:]:
+                        if next_line.strip():
+                            resume_text = next_line.strip()
+                            break
+                    if resume_text:
+                        break
+            if not resume_text:
+                resume_text = next((ln.strip() for ln in lines if ln.strip()), "")
+
         if resume_text:
             _update_resume_point(resume_slug, resume_text)
 
