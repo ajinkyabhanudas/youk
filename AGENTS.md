@@ -18,9 +18,12 @@ This file is loaded by AI coding agents (Cursor, Windsurf, GitHub Copilot, Claud
 youk is a compounding engineering system. Every session, it:
 
 1. Loads working agreements (contracts) from `knowledge/projects/{slug}/contracts.md`
-2. Presents a resume point — picks up where you left off
+2. Presents a resume point derived from the project's own task graph — picks up where you left off
 3. Routes tasks by size (XS: respond directly / M+: challenge → nfr_check → dev-loop)
 4. Extracts patterns at session end (`/done`) and promotes them to the knowledge base
+5. Runs a wiring pulse — checks that every capability it built is actually invoked in the live loop, not just defined and tested; orphans surface immediately
+6. Revises its own judgment-sets (challenge angles, risk tiers) from evidence, gated by challenge with a versioned revert floor
+7. Auto-refreshes stale generated docs and derivable data fields; never rewrites source or hand-written prose
 
 The longer you use it, the more it adapts to exactly how you build.
 
@@ -38,7 +41,7 @@ skills/          — capability skills (learn, challenge, dev-loop, code-review,
 knowledge/       — gitignored: per-project contracts, decisions, domain concepts
 plugin/          — Claude Code plugin (hooks: PreCompact, UserPromptSubmit, PostToolUse)
 docs/            — guides, templates, architecture docs
-tests/           — pytest suite (~725 tests)
+tests/           — pytest suite (~1760 tests)
 ```
 
 ---
