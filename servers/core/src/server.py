@@ -1377,7 +1377,7 @@ def get_guardrails() -> str:
 
 @mcp.resource("youk://knowledge/interpretation")
 def get_interpretation() -> str:
-    """Interpretation patterns — how Ajinkya's phrases map to actual intent."""
+    """Interpretation patterns — how the developer's phrases map to actual intent."""
     ui_file = YOUK_ROOT / "knowledge" / "interpretation" / "user-intent.md"
     return ui_file.read_text() if ui_file.exists() else "No interpretation patterns yet."
 

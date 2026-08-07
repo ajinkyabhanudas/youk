@@ -146,7 +146,7 @@ Review cadence:     {when we check — after N uses / after N weeks}
 ```
 
 If you cannot define a primary metric, state why and what proxy you'll use.
-"Users are happy" is not a metric. "Jajean's average query time drops from 12s to < 3s
+"Users are happy" is not a metric. "the stakeholder's average query time drops from 12s to < 3s
 for repeated questions" is a metric.
 
 ---
@@ -225,7 +225,7 @@ One paragraph. Readable by a non-technical stakeholder in 30 seconds.
 {What we're not doing and why}.
 ```
 
-No more than 5 sentences. This is the thing you'd read to Jajean before building.
+No more than 5 sentences. This is the thing you'd read to the stakeholder before building.
 If she wouldn't understand every word, revise.
 
 ---
@@ -719,13 +719,13 @@ returning developer should read first, before touching docs 1-3 again.
 > "/write-spec: add query result caching"
 
 PROBLEM (repeated queries pay full LLM cost every time) →
-USERS (Jajean: repeats donor-report queries weekly) →
+USERS (the stakeholder: repeats donor-report queries weekly) →
 SCOPE (in: exact-match cache with TTL; out: semantic caching, cross-user cache) →
 REQUIREMENTS (F1: must return cached result < 200ms when hit; F2: must expire after 24h by default) →
 SUCCESS METRICS (primary: cache hit rate > 30% within 2 weeks; counter: no incorrect cached results) →
 ACCEPTANCE CRITERIA (AC1: Given repeated identical query, when submitted, then result returned in < 200ms; AC-EDGE-1: Given TTL=0, when submitted, then cache bypassed) →
 OPEN QUESTIONS (Q1: should cache persist across Docker restarts? Default: no) →
-EXEC BRIEF (plain English for Jajean)
+EXEC BRIEF (plain English for the stakeholder)
 
 **Quick spec for a small UI change:**
 > "/write-spec quick: add cache hit indicator to status bar"

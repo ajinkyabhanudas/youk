@@ -43,7 +43,7 @@ thing after current P0s complete.
 - No hard deadline, but meaningful to ship before the next major milestone
 
 **P1 examples:**
-- Cache hit UI indicator (Jajean would see faster responses and trust the tool more)
+- Cache hit UI indicator (the stakeholder would see faster responses and trust the tool more)
 - Export to CSV (enables the primary workflow of sharing results with donors)
 - Better error messages (reduces user confusion on SQL failures)
 
