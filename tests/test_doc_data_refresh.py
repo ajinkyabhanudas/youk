@@ -68,17 +68,31 @@ def test_non_md_and_missing_files_skipped(tmp_path):
     assert "9 capability skills" in (tmp_path / "code.py").read_text()  # untouched
 
 
-def test_real_skill_count_is_computable_and_matches_docs():
-    """On the real repo, the skill count is computable, and after a refresh the docs agree
-    with the computed value (no stale count remains). This stays true whether the docs were
-    already fresh or just got fixed — it asserts convergence, not staleness."""
+def test_real_skill_count_is_computable():
+    """On the real repo, the skill count IS computable (>0). Asserting the exact number, or
+    that the live docs already match it, would couple the test to mutable repo state (how
+    many skill dirs exist right now) — which differs between a dev checkout and CI. So we
+    only assert the compute works; convergence is proven on a controlled fixture below."""
     from doc_data_refresh import _count_skills
     true_count = _count_skills(_YOUK)
     assert true_count is not None and int(true_count) > 0
 
-    # A second refresh proposes nothing — the docs already match the computed truth.
-    result = refresh_doc_data(
-        ["docs/getting-started.md", "docs/well-architected.md"],
-        youk_root=_YOUK, dry_run=True,
-    )
-    assert result["updated"] == [], "docs should already match the computed skill count"
+
+def test_refresh_converges_on_a_fixture(tmp_path):
+    """Convergence, tested deterministically: after one refresh the doc matches the computed
+    value, and a second refresh proposes nothing (idempotent). No dependence on live state."""
+    (tmp_path / "skills").mkdir()
+    for name in ("a", "b", "c", "d", "e"):
+        d = tmp_path / "skills" / name
+        d.mkdir()
+        (d / "SKILL.md").write_text("x")
+    doc = tmp_path / "doc.md"
+    doc.write_text("youk ships 9 capability skills.\n")  # stale
+
+    first = refresh_doc_data(["doc.md"], youk_root=tmp_path)
+    assert any(u["new"] == "5" for u in first["updated"])
+    assert "5 capability skills" in doc.read_text()
+
+    # Second pass: already converged -> nothing to change.
+    second = refresh_doc_data(["doc.md"], youk_root=tmp_path)
+    assert second["updated"] == []
