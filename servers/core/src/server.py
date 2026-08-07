@@ -18,6 +18,7 @@ from health import (
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
 from nfr_gate import check_nfr_gate as _check_nfr_gate
 from challenge_gate import check_challenge_gate as _check_challenge_gate
+from intake_gate import check_intake_gate as _check_intake_gate
 from intent import optimize_intent as _optimize_intent
 from compaction import build_brief, write_contracts
 from tokens import init_token_tracker, record_checkpoint
@@ -761,6 +762,38 @@ def check_challenge_gate(task: str, size: str) -> dict:
         except Exception:
             pass
     return result
+
+
+@mcp.tool()
+def check_intake_gate(task: str, size: str, intake_required: bool) -> dict:
+    """
+    Gate that blocks M+ implementation when intake was required but has not run.
+
+    Call this on M+ tasks when optimize_intent returned intake_required=True, before
+    invoking dev-loop. Mirrors check_nfr_gate and check_challenge_gate — the last
+    direction-gate to become machine-checkable rather than prose-enforced.
+
+    task: The task being routed (for logging context).
+    size: The routing size from route_task — XS, S, M, L, or XL.
+    intake_required: The intake_required field returned by optimize_intent.
+
+    Returns: {"blocked": bool, "reason": str}
+    When blocked=True: run the intake protocol (skills/intake), call mark_intake_ran(task),
+    then re-call check_intake_gate. Do not route while intake is owed.
+    When blocked=False: proceed (to challenge/nfr gates, then dev-loop).
+    """
+    # Reuse the same session-scoped intake flag intent.py checks.
+    intake_has_run = False
+    try:
+        import json as _json
+        flag_file = YOUK_ROOT / "state" / "intake-ran.json"
+        if flag_file.exists():
+            data = _json.loads(flag_file.read_text())
+            intake_has_run = data.get("slug", "") == _get_session_slug()
+    except Exception:
+        pass
+
+    return _check_intake_gate(task, size, intake_required, intake_has_run)
 
 
 @mcp.tool()

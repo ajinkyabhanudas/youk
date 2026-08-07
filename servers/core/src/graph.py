@@ -32,6 +32,7 @@ _DDL = """
 CREATE TABLE IF NOT EXISTS tasks (
     id                  TEXT PRIMARY KEY,
     label               TEXT NOT NULL,
+    project             TEXT,
     challenge_cleared   INTEGER NOT NULL DEFAULT 0,
     nfr_cleared         INTEGER NOT NULL DEFAULT 0,
     unblocked           INTEGER NOT NULL DEFAULT 0,
@@ -47,6 +48,20 @@ CREATE TABLE IF NOT EXISTS edges (
 """
 
 
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Additive migrations for DBs created before a column existed.
+
+    The `project` column (Task 1.4 / contract R1) makes next_task project-scoped so
+    "next task for youk" can never again return another project's task. Existing rows
+    get project=NULL and are treated as unscoped (visible to any project query) until
+    re-tagged — a backward-compatible default, not a breaking change.
+    Idempotent: checks the column exists before adding.
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+    if "project" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN project TEXT")
+
+
 class _DB:
     """Context manager that opens, initialises, and closes a SQLite connection."""
 
@@ -56,11 +71,16 @@ class _DB:
         self._conn: sqlite3.Connection | None = None
 
     def __enter__(self) -> sqlite3.Connection:
-        self._conn = sqlite3.connect(str(self._path))
+        self._conn = sqlite3.connect(str(self._path), timeout=5.0)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
+        # busy_timeout: a concurrent writer (e.g. a second Claude tab) WAITS up to 5s
+        # for the lock rather than failing immediately. NFR decision for the state-store
+        # rework (Task 1). Paired with the sqlite3.connect(timeout=5.0) above.
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(_DDL)
+        _migrate_schema(self._conn)
         self._conn.commit()
         return self._conn
 
@@ -99,8 +119,8 @@ def create_task_graph(tasks: list[dict], edges: list[tuple[str, str]] | None = N
     with _connect(db_path) as conn:
         for t in tasks:
             cur = conn.execute(
-                "INSERT OR IGNORE INTO tasks (id, label) VALUES (?, ?)",
-                (t["id"], t["label"]),
+                "INSERT OR IGNORE INTO tasks (id, label, project) VALUES (?, ?, ?)",
+                (t["id"], t["label"], t.get("project")),
             )
             created += cur.rowcount
 
@@ -170,18 +190,35 @@ def is_unblocked(task_id: str, db_path: Path = _DB_PATH) -> dict:
     }
 
 
-def next_task(db_path: Path = _DB_PATH) -> dict:
+def next_task(project: str | None = None, db_path: Path = _DB_PATH) -> dict:
     """Return the next actionable task: unblocked=True, in_flight=False, all parents done.
 
-    Uses a recursive CTE to walk the DAG and find leaf-ready nodes.
+    project: when given, restrict to that project's tasks (plus untagged project=NULL
+    tasks, which are legacy/unscoped). When None, current behavior — any project's task.
+    This makes "next task for youk" structurally unable to return another project's task
+    (contract R1). Optional with a None default so existing callers are unaffected — the
+    blast-radius check found 3 call sites that pass no project; they keep working.
+
+    Uses the edge DAG to find leaf-ready nodes.
     Returns {"found": bool, "task": dict | None}
     """
+    params: tuple = ()
+    project_clause = ""
+    if project is not None:
+        # match the project OR untagged legacy rows (project IS NULL)
+        # youk: NULL-inclusion is a transitional bridge for pre-tag rows → upgrade when
+        # all live rows are project-tagged (drop "OR t.project IS NULL" so an untagged
+        # task from another project can never surface as this project's next task).
+        project_clause = " AND (t.project = ? OR t.project IS NULL)"
+        params = (project,)
+
     with _connect(db_path) as conn:
         # A task is ready when:
         # 1. unblocked = 1, in_flight = 0
         # 2. All parents have unblocked = 1 (or has no parents)
-        rows = conn.execute("""
-            SELECT t.id, t.label, t.challenge_cleared, t.nfr_cleared,
+        # 3. (if project given) belongs to that project or is untagged
+        rows = conn.execute(f"""
+            SELECT t.id, t.label, t.project, t.challenge_cleared, t.nfr_cleared,
                    t.unblocked, t.in_flight, t.stale
             FROM tasks t
             WHERE t.unblocked = 1
@@ -192,8 +229,10 @@ def next_task(db_path: Path = _DB_PATH) -> dict:
                   WHERE e.child_id = t.id
                     AND p.unblocked = 0
               )
+              {project_clause}
+            ORDER BY t.id
             LIMIT 1
-        """).fetchall()
+        """, params).fetchall()
 
     if not rows:
         return {"found": False, "task": None}
@@ -204,6 +243,7 @@ def next_task(db_path: Path = _DB_PATH) -> dict:
         "task": {
             "id": row["id"],
             "label": row["label"],
+            "project": row["project"],
             "challenge_cleared": bool(row["challenge_cleared"]),
             "nfr_cleared": bool(row["nfr_cleared"]),
             "unblocked": bool(row["unblocked"]),
