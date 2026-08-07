@@ -34,6 +34,8 @@ knowledge/*.db
 # Capabilities (skills, server code) belong in the repo; accumulated knowledge does not
 knowledge/proposals/
 knowledge/global/
+knowledge/imported/
+knowledge/voice-corpus.jsonl
 knowledge/domain/*
 !knowledge/domain/.gitkeep
 !knowledge/domain/reasoning-integrity.md
