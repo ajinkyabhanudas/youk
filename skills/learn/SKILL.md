@@ -199,7 +199,7 @@ Example that illustrates the difference:
 ### Phase 4 — GAP
 
 Identify what is genuinely new territory — concepts that have no strong analogy in
-Ajinkya's existing background, or where the analogy is so weak it would mislead.
+the developer's existing background, or where the analogy is so weak it would mislead.
 
 Emit:
 ```

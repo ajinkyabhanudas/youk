@@ -1,6 +1,6 @@
-# Domain Map — Ajinkya's Background to CS/Engineering Concepts
+# Domain Map — Developer Background (template) to CS/Engineering Concepts
 
-Used in the MAP phase. Maps Ajinkya's existing domain knowledge to patterns and
+Used in the MAP phase. Maps the developer's existing domain knowledge to patterns and
 concepts that appear in engineering work. When a new concept is encountered, look
 for the closest analogy here first.
 
@@ -10,7 +10,7 @@ This file should be updated as new analogies are discovered.
 
 ## Domain 1: AWS Cloud
 
-**Ajinkya's depth:** Deep — production experience with core services.
+**Depth:** Deep — production experience with core services.
 
 | CS/Engineering Concept | AWS Analogy | Analogy Quality | Where It Breaks |
 |---|---|---|---|
@@ -32,7 +32,7 @@ This file should be updated as new analogies are discovered.
 
 ## Domain 2: Azure IoT
 
-**Ajinkya's depth:** Production experience with device management and telemetry.
+**Depth:** Production experience with device management and telemetry.
 
 | CS/Engineering Concept | Azure IoT Analogy | Analogy Quality | Where It Breaks |
 |---|---|---|---|
@@ -48,7 +48,7 @@ This file should be updated as new analogies are discovered.
 
 ## Domain 3: Data Science / ML
 
-**Ajinkya's depth:** Working knowledge — Python data stack, statistical reasoning, some ML ops.
+**Depth:** Working knowledge — Python data stack, statistical reasoning, some ML ops.
 
 | CS/Engineering Concept | Data Science Analogy | Analogy Quality | Where It Breaks |
 |---|---|---|---|
@@ -66,7 +66,7 @@ This file should be updated as new analogies are discovered.
 
 ## Domain 4: Python (Server-side)
 
-**Ajinkya's depth:** Strong — production Python, data pipelines, scripting.
+**Depth:** Strong — production Python, data pipelines, scripting.
 
 | CS/Engineering Concept | Python Analogy | Analogy Quality | Notes |
 |---|---|---|---|
@@ -82,7 +82,7 @@ This file should be updated as new analogies are discovered.
 
 ## Domain 5: React / Frontend
 
-**Ajinkya's depth:** Moderate — can build and modify, less familiar with deep patterns.
+**Depth:** Moderate — can build and modify, less familiar with deep patterns.
 
 | CS/Engineering Concept | React Analogy | Analogy Quality | Where It Breaks |
 |---|---|---|---|
@@ -96,7 +96,7 @@ This file should be updated as new analogies are discovered.
 
 ## Domain 6: MCP (Model Context Protocol)
 
-**Ajinkya's depth:** Working knowledge — understands protocol, has built with it.
+**Depth:** Working knowledge — understands protocol, has built with it.
 
 | CS/Engineering Concept | MCP Analogy | Analogy Quality | Where It Breaks |
 |---|---|---|---|
@@ -109,7 +109,7 @@ This file should be updated as new analogies are discovered.
 
 ## Domain 7: MBA / Business
 
-**Ajinkya's depth:** Formal training — prioritization, trade-off reasoning, stakeholder communication.
+**Depth:** Formal training — prioritization, trade-off reasoning, stakeholder communication.
 
 | Engineering Concept | MBA Analogy | Analogy Quality | Notes |
 |---|---|---|---|
@@ -125,7 +125,7 @@ This file should be updated as new analogies are discovered.
 
 ## Concepts With No Strong Analogy (Known Gaps)
 
-These are areas where Ajinkya's background doesn't provide a direct analogy.
+These are areas where the developer's background doesn't provide a direct analogy.
 Study these explicitly rather than force-fitting an analogy.
 
 | Concept | Why No Strong Analogy | Recommended Approach |

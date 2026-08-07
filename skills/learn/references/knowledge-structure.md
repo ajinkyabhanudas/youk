@@ -19,7 +19,7 @@ knowledge/
 ├── python-patterns.md  — Python-specific patterns: ABCs, dataclasses, threading, generators
 ├── security.md         — security patterns: auth, parameterized queries, secret management
 ├── testing.md          — test patterns: monkeypatching, fixtures, integration vs. unit
-├── system-design.md    — distributed systems concepts mapped to Ajinkya's background
+├── system-design.md    — distributed systems concepts mapped to the developer's background
 ├── architecture.md     — architectural patterns: layering, separation of concerns, interfaces
 ├── product-thinking.md — PM patterns: prioritization, scope, trade-off reasoning
 ├── cto-track.md        — CTO-specific skills: decision-making, team design, strategy
@@ -40,7 +40,7 @@ Every entry in a knowledge file follows this format:
 
 **Core model:** {the mental model that makes it work — 2-3 sentences}
 
-**Analogy from background:** {the closest thing from Ajinkya's existing domains}
+**Analogy from background:** {the closest thing from the developer's existing domains}
 - Domain: {AWS / Azure IoT / data science / etc.}
 - What transfers: {the model or behavior that's the same}
 - What doesn't transfer: {where the analogy breaks — non-optional}

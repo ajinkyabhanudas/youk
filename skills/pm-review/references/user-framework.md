@@ -22,8 +22,8 @@ Every feature assessment must answer:
 The user can accomplish something they previously could not.
 
 Examples:
-- "Jajean can now answer donor questions about species trends without needing Pedro's help"
-- "Jajean can generate grant reports directly from the database instead of asking for a spreadsheet"
+- "the stakeholder can now answer donor questions about species trends without needing the technical lead's help"
+- "the stakeholder can generate grant reports directly from the database instead of asking for a spreadsheet"
 
 This is the highest-value impact. Features that change outcomes are P1 or P0 candidates.
 
@@ -34,9 +34,9 @@ This is the highest-value impact. Features that change outcomes are P1 or P0 can
 The user can accomplish the same thing, but faster, with less friction, or with more confidence.
 
 Examples:
-- "Jajean gets her answer in 2 seconds from cache instead of 10 seconds from the model"
-- "Jajean sees a clear progress indicator instead of a blank screen while waiting"
-- "Jajean gets a plain-English error message instead of a Python traceback"
+- "the stakeholder gets her answer in 2 seconds from cache instead of 10 seconds from the model"
+- "the stakeholder sees a clear progress indicator instead of a blank screen while waiting"
+- "the stakeholder gets a plain-English error message instead of a Python traceback"
 
 These are important but typically P1 or P2 unless they're currently causing the user to abandon the tool.
 
@@ -48,8 +48,8 @@ The user experiences the same outcome with the same friction, but something abou
 experience is more pleasant.
 
 Examples:
-- "Jajean sees the results in a nicer table format"
-- "Jajean can resize the input box"
+- "the stakeholder sees the results in a nicer table format"
+- "the stakeholder can resize the input box"
 
 These are P2 at best unless the current experience is actively harmful to trust.
 
@@ -61,7 +61,7 @@ Define once, reference by name. Update as understanding of the user deepens.
 
 ---
 
-### Jajean Rose-Burney
+### the primary user (non-technical stakeholder)
 
 **Role:** Director (non-technical)
 **Use case:** Asks natural-language questions about species monitoring data for
@@ -72,7 +72,7 @@ donor communications and grant proposals
   - Answers in plain English (no jargon)
   - Clear indication when the system is working vs. broken
   - Ability to see the underlying data (Results tab) for verification
-  - SQL visible for technical review by Pedro
+  - SQL visible for technical review by the technical lead
 **Pain points:**
   - Blank screen during query (fixed by streaming)
   - Confusing error messages (partially fixed by Guard error handling)
@@ -80,11 +80,11 @@ donor communications and grant proposals
 **What makes her successful:**
   - Gets an accurate answer in ≤15 seconds
   - Can share the answer with confidence (she verified it)
-  - Doesn't need to ask Pedro to run queries for her
+  - Doesn't need to ask the technical lead to run queries for her
 
 ---
 
-### Pedro (Lead Data Scientist)
+### the technical lead (data scientist)
 
 **Role:** Technical reviewer, not primary user
 **Use case:** Reviews canopy outputs for scientific accuracy; validates SQL
@@ -103,7 +103,7 @@ donor communications and grant proposals
 
 ---
 
-### Ajinkya Dessai (Developer / AI PM)
+### the developer (engineer / product owner)
 
 **Role:** Builder, decision-maker, owner of all scoping and design decisions
 **Use case:** Developing, testing, iterating on canopy; managing the handover
@@ -155,7 +155,7 @@ SECONDARY USERS AFFECTED (if any):
 
 After describing the user impact, always ask "so what?" once:
 
-"Jajean gets a faster response from cache."
+"the stakeholder gets a faster response from cache."
 So what?
 "She's less likely to think the tool is broken and abandon the query."
 So what?

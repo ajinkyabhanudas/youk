@@ -255,7 +255,7 @@ If nothing was committed and no new knowledge was gained, `/context-sync end` al
 | NFR blocks | Exist before dev-loop runs | Dev-loop with no NFR reference |
 | DECISIONS.md | Updated per architectural decision | Stale, last entry > 2 weeks ago |
 | /learn invocations | Every 2-3 sessions | Never |
-| Spec quality | Exec brief passes Jajean test | "Build it and we'll see" |
+| Spec quality | Exec brief passes the non-technical-stakeholder test | "Build it and we'll see" |
 
 ---
 
@@ -280,7 +280,7 @@ If nothing was committed and no new knowledge was gained, `/context-sync end` al
 | `/adr` | `/adr: decision about X` | DECISIONS.md entry with "why not" |
 | `/stress-test` | `/stress-test: design for X` | SURVIVES / NEEDS REVISION / BLOCKED |
 | `/dev-loop` | `/dev-loop: implement X` | Code, tests, verified |
-| `/humanize` | `/humanize: commit for X` | Ajinkya-voice commit message |
+| `/humanize` | `/humanize: commit for X` | developer-voice commit message |
 | `/learn` | `/learn` (end of session) | 5-bullet knowledge update |
 | `/context-sync` | `/context-sync start` or `/context-sync end` | Context health report or flush |
 | `/skill-health` | `/skill-health` | Org efficiency score + skill scorecards |

@@ -219,7 +219,7 @@ What we are NOT building (and why): {the adjacent thing that could have been req
 
 ### Phase 7 — BRIEF
 
-A one-paragraph summary written in Ajinkya's voice, ready to share with a stakeholder
+A one-paragraph summary written in the developer's voice, ready to share with a stakeholder
 or to paste into a project document.
 
 ```

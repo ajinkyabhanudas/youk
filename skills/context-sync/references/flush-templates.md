@@ -117,7 +117,7 @@ Do not write to L1 directly — flag for /learn to process.
 ```
 [LEARN FLAG]
 Concept: {what was learned}
-Domain connection: {how this connects to Ajinkya's existing domains}
+Domain connection: {how this connects to the developer's existing domains}
 New territory: {yes/no — was this genuinely new or reinforcing existing knowledge}
 Where demonstrated: {which feature/decision in this session}
 ```

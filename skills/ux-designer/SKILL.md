@@ -269,6 +269,6 @@ Claude: UNDERSTAND → SPEC → stop (no team session, faster output)
 Claude: UNDERSTAND → CRITIC REVIEW against checklist → findings + fix list
 
 **Empathy-first:**
-> "I need to understand what Jajean actually experiences. empathy only."
+> "I need to understand what the stakeholder actually experiences. empathy only."
 
 Claude: UNDERSTAND → EMPATHY MAP → stop
