@@ -1494,6 +1494,17 @@ def _check_doc_freshness() -> list[str]:
     except Exception:
         pass
 
+    # Part 5: WIRING PULSE — autoruns EVERY session_start (not "due in N sessions"). Catches
+    # capabilities that were built + tested but are never invoked in the live loop (orphaned).
+    # This is the vital the ~10k unit tests can't see: they verify parts work, not that parts
+    # are connected. An orphan is late tech debt in the making — surfaced the moment it exists.
+    try:
+        from wiring_pulse import check_wiring, format_wiring_warnings
+        wiring = check_wiring(YOUK_ROOT, CLAUDE_ROOT)
+        undocumented.extend(format_wiring_warnings(wiring, cap=5))
+    except Exception:
+        pass
+
     return undocumented
 
 
