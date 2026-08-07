@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 YOUK_ROOT = Path("/youk")
+# youk: registry is a plain JSON file (read-modify-write) → upgrade to the validated
+# SQLite store when concurrent multi-tab revisions become common (rare + human-gated today).
 _REGISTRY_FILE = YOUK_ROOT / "state" / "revisable-sets.json"
 
 
@@ -30,6 +32,9 @@ class EnrollmentError(ValueError):
 
 # ── Eligibility boundary (design-time safety; NEVER a runtime/user decision) ──
 # These names are hard-blocked from enrollment. Membership here is a wall, not a default.
+# youk: this is a name denylist → the backstop is that enrollment is never automatic (every
+# enroll() is a deliberate human/tool action naming the set). Upgrade to a positive-allowlist
+# model (only explicitly-tagged-revisable sets enrollable) if auto-enrollment is ever added.
 FROZEN_HARD_BLOCKED: frozenset[str] = frozenset({
     # mechanical facts — not opinions that can be wrong
     "_CODE_EXTS", "_DOC_EXTS", "_CONFIG_EXTS", "_ALL_EXTS", "_SKIP_DIRS", "_STOP_WORDS",

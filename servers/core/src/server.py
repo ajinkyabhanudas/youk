@@ -1717,22 +1717,36 @@ def propose_set_revisions(
 
 
 @mcp.tool()
-def apply_set_revision(name: str, action: str, element: str, driver: str,
-                       challenge_cleared: bool) -> dict:
+def apply_set_revision(name: str, action: str, element: str, driver: str) -> dict:
     """Apply a grow or prune to an enrolled set — AFTER the candidate survived challenge.
 
     action: "grow" (add element) | "prune" (remove element) | "revert" (undo last change)
-    challenge_cleared: must be True for grow/prune — a revision that hasn't survived
-        challenge is refused (the candidate-challenge gate). Ignored for revert.
 
-    Every mutation is versioned; use action="revert" to roll back the last change (the
-    human veto / revert floor). Autonomous apply + after-the-fact veto.
+    The candidate-challenge gate is machine-checked, not self-certified: grow/prune are
+    refused unless the challenge-ran flag for this session is present (same mechanism as
+    check_challenge_gate — a caller cannot bypass it by asserting a boolean). Run
+    route_to_skill('challenge') + mark_challenge_ran first. Ignored for revert.
+
+    Every mutation is versioned; use action="revert" to roll back (the human veto / revert
+    floor). Autonomous apply + after-the-fact veto.
     """
     if action == "revert":
         return _rs_revert(name)
-    if not challenge_cleared:
-        return {"ok": False, "reason": "revision must survive challenge before apply "
-                "(pass challenge_cleared=True only after route_to_skill('challenge'))"}
+
+    # Machine-checked challenge gate: read the flag, don't trust a caller boolean.
+    challenge_ran = False
+    try:
+        import json as _json
+        flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
+        if flag_file.exists():
+            data = _json.loads(flag_file.read_text())
+            challenge_ran = data.get("slug", "") == _get_session_slug()
+    except Exception:
+        pass
+    if not challenge_ran:
+        return {"ok": False, "reason": "revision must survive challenge before apply — "
+                "run route_to_skill('challenge') + mark_challenge_ran, then retry"}
+
     if action == "grow":
         return _rs_learn_add(name, element, driver)
     if action == "prune":
