@@ -76,6 +76,7 @@ Every concept defined in PRD.md or well-architected.md has exactly one authority
 | Validated state store | Mutable-claim state (plan, active task, queue, gate flags) is schema-validated on read and write in a single store — a malformed write raises rather than silently corrupting. Append-only logs and monotonic counters stay out; they cannot lie, only grow |
 | Read-time verification | A stored claim about system state ("X is broken", "gap open") is re-checked against current code before session_start surfaces it as live — a fixed issue never resurfaces as a to-do, and a claim that cannot be verified surfaces tagged, never as a clean item |
 | Project-scoped next task | "What's next" is computed at session_end from the project's own validated task graph and written automatically — scoped to the project youk is in, never a generic cross-project list, never a manual pointer edit |
+| Wiring pulse | Every session_start checks whether each capability youk built is actually invoked in the live loop (CLAUDE.md routing, session code, another tool, or a skill) — not merely defined and tested. A tool referenced nowhere is orphaned and surfaced loudly. Unit tests verify a part works; the pulse verifies it is reached. Autoruns unconditionally, so built-but-not-wired fails fast instead of becoming late tech debt |
 
 **Key invariant:** No session data is stored in project repos. Zero footprint. A clean `git clone` of any project repo is unaffected by youk.
 

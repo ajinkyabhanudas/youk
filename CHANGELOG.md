@@ -12,6 +12,64 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ---
 
+## [0.6.0-alpha] — 2026-08-07
+
+### Added
+
+**Validated state store (#10)**
+- SQLite-backed task graph with a `project` column and `next_task(project)` — "next task for youk" can no longer return another project's task. WAL + `busy_timeout` for concurrent sessions; deterministic `ORDER BY` selection.
+- `session_end` derives the resume pointer from the project's own task graph — no manual pointer edits, no generic cross-project list.
+- `check_intake_gate` — the last direction gate becomes machine-checkable, mirroring `check_nfr_gate` / `check_challenge_gate`.
+- State schema layer (stdlib dataclasses, ADR-009) that raises on malformed writes; kills the recursive-resume corruption at the write boundary. Machine-checked seam test.
+
+**Doc freshness (#11, #13, #14)**
+- Graph-driven staleness: walks the full file-relation graph instead of a hand-maintained 13-file list — catches derived docs whose source changed.
+- Auto-regenerates stale *generated* docs (via discovered generators, no hand-list); source code and hand-written prose are never auto-touched.
+- Refreshes derivable data fields (skill counts, badges) in place across all docs; prose left alone.
+
+**Self-revision meta-loop (#12)**
+- A registry that lets youk's judgment-sets grow and prune from evidence, gated by challenge, with a versioned revert floor. Safety and fact sets are hard-blocked from enrollment by construction. Wired into the `learn` skill's self-revision sweep.
+
+**Steering vocabulary (#15)**
+- youk learns the concrete behaviors a quality label ("rigorous", "L9") decomposes into, tagged by confidence, filtered at read time. Wired into the `humanize` VOICE phase.
+
+**Wiring pulse (#16)**
+- Every `session_start` checks whether each built capability is actually invoked in the live loop — not just defined and tested. Orphans surface loudly. Autoruns unconditionally, decoupled from the N-session health counter.
+
+### Changed
+
+- README rewritten (630 → 126 lines), leading with impact rather than cross-session memory (#17).
+
+### Fixed
+
+- Health and verification vitals autorun every session instead of waiting for `session_end` or an every-N-session counter.
+
+---
+
+## [0.5.0-alpha] — 2026-08-05
+
+*Backfilled — this version was tagged without a changelog entry.*
+
+### Added
+- Project isolation for proposals and task state; structured concept-graph extraction (#4).
+
+### Fixed
+- Concept graph correctness and self-owned invariants (#4).
+
+---
+
+## [0.4.0-alpha] — 2026-07-31
+
+*Backfilled — this version was tagged without a changelog entry.*
+
+### Added
+- Shared SQLite file index — BM25 cross-project retrieval and impact analysis.
+- SQLite task graph for gate-state persistence and cross-session recovery; `set_gate()` wired into gate tools for machine-recorded gate passage.
+- `route_task` enriched with `file_context` (BM25) and `graph_state` fields.
+- L10 skill hardening — scope-matrix enforcement, pre-output checks, A/B bench (#3).
+
+---
+
 ## [0.3.0-alpha] — 2026-07-21
 
 ### Added
