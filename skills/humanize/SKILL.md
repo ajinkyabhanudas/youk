@@ -94,12 +94,24 @@ If a draft is provided, analyze it:
 
 ### Phase 3 — VOICE
 
+**Before applying voice, consult the learned steering vocabulary.** Call
+`youk-core.get_steering_vocab("voice")` (or the relevant quality label). If it returns
+`learned=True`, apply those confidence-weighted behaviors — they were learned from what
+actually landed with this developer. If `learned=False`, proceed with the profile below,
+then record what you applied.
+
 Apply the developer's voice characteristics. Load the profile in this order:
 1. `knowledge/global/voice-profile.md` — the developer's OWN learned voice (gitignored,
    local, populated by the voice-fingerprint system). Use it if it exists.
 2. `references/voice-profile.md` — the committed generic template. Fall back to this when
    no local profile exists yet.
 Never ship or commit a personal profile; it is per-developer data.
+
+**After voicing, record the decomposition** so the vocabulary compounds: call
+`youk-core.record_steering_decomposition("voice", "<the concrete move you applied>",
+"<content type>", confidence="approved")`. If the developer later accepts the output
+unedited, that's a `verified` signal; if they correct it, record `corrected` (a veto).
+This is how youk's voice steering learns from real outcomes instead of a static profile.
 
 **Core transformations to apply:**
 

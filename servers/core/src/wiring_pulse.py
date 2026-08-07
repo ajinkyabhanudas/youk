@@ -34,6 +34,11 @@ _TERMINAL_TOOLS: frozenset[str] = frozenset({
     "session_start", "session_end", "route_task", "optimize_intent",
     "compact_context", "self_heal", "track_tokens", "check_command",
     "request_external_review", "index_project", "rebuild_knowledge_index",
+    # Read-only stat/query tools: called ad-hoc by the model or developer when they want
+    # the number, not wired into a loop. Flagging these as orphans cries wolf — a health
+    # check that reports legitimate utilities as debt is itself dishonest.
+    "get_concept_graph_stats", "get_file_index_stats", "get_skill_signals",
+    "check_loop_dry", "mark_task_done",
 })
 
 

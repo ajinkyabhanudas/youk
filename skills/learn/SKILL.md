@@ -348,6 +348,21 @@ Example:
 - "challenge skill must extract FIXED_CONSTRAINTS before running lenses — never attack walls" → **SHIPPED** (quality bar for `skills/challenge/SKILL.md`)
 - "a skill without hiring validation tests will drift silently — drift sentinels are non-negotiable" → **SHIPPED** (add to `docs/well-architected.md` under Operational Excellence)
 
+**[SELF-REVISION SWEEP] — required when a recurring gap or an unused judgment-set element was observed**
+
+The learnings above may be evidence that one of youk's own judgment-sets should grow or prune. This is
+where the self-revision meta-loop actually fires — not just exists.
+
+1. If a gap recurred this session that no current angle/lens/question covers: call
+   `youk-core.propose_set_revisions(set_name, recurring_gaps=[...])` for the relevant enrolled set. If the
+   set isn't enrolled yet and it genuinely encodes a revisable judgment (not a safety/fact set), call
+   `youk-core.enroll_revisable_set(name, "both", [current elements])` first.
+2. For each proposed grow/prune candidate, run it through `challenge` (a revision must survive challenge).
+3. Apply survivors: `youk-core.apply_set_revision(set_name, "grow"|"prune", element, driver)` — the gate
+   machine-checks that challenge ran. Autonomous apply; reversible via `apply_set_revision(..., "revert")`.
+4. At session_end accountability, `youk-core.get_revisable_sets()` surfaces every mutation for the
+   developer to veto. Skip this whole sweep silently if no set-level gap was observed.
+
 ---
 
 ### Phase 6 — MICRO-BRIEF
