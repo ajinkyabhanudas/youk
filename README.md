@@ -8,7 +8,7 @@
 [![MCP](https://img.shields.io/badge/protocol-MCP-8B5CF6)](https://modelcontextprotocol.io)
 [![License](https://img.shields.io/badge/license-MIT-22C55E)](LICENSE)
 
-**Most AI coding tools give you a smart assistant. youk gives you one that gets measurably better at *your* work every week — and audits itself to prove it actually is.**
+**youk makes your AI coding agent get better at your work the longer you use it. It also checks its own work, so it can tell you whether that's actually happening.**
 
 </div>
 
@@ -16,23 +16,23 @@
 
 ## The one-minute version
 
-A fresh AI agent is as good on session 50 as session 1 — no better. youk changes the slope: the agent compounds.
+A normal AI agent gets sharper as a conversation goes — you correct it, it adapts. Then the session ends and it's back to zero. Next session you're re-explaining the same context and re-making the same corrections. youk keeps that progress instead of dropping it, and pushes it further.
 
-- **It improves at your work.** When it's missing a capability for what you're doing, it builds one from your actual task. When a skill fails or gets skipped, it's patched *in that same session* — not queued. Recurring mistakes turn into fixes you approve once and never see again.
-- **It routes by stakes.** A typo and a new subsystem get different treatment. Non-trivial work passes real gates — scope, non-functional requirements, review — *before* code is written.
-- **It keeps itself honest.** youk runs its own health pulse every session, including checking that the capabilities it built are actually wired into the live loop — not just passing tests. It's designed to *not* become the tech-debt factory it exists to save you from.
+- **It builds what it's missing.** Hit a task youk has no skill for, and it writes one from what you were actually doing. When a skill trips up during a session, youk fixes that skill before the session ends.
+- **It treats a typo differently from a rewrite.** Bigger changes go through gates first — scope, non-functional requirements, a review pass — before any code gets written.
+- **It watches its own health.** Every session, youk checks whether the things it built are actually wired into the real loop and being used. Run `/health` for a score and a trend.
 
-The foundation under all of it is memory — working agreements, decisions, and your resume point written to files that outlive any chat and survive `git clone`. That part is table stakes; plenty of tools remember now. **What's rare is the layer on top: a system that improves at your specific work and can tell you whether it's succeeding.**
+Underneath all that is plain memory: your working agreements, decisions, and resume point saved to files that survive a `git clone`. Plenty of tools remember context now. The part worth having is what youk does on top of it.
 
-Nothing changes in how you work except the install.
+You don't change how you work. You just install it.
 
-| A typical AI assistant | youk |
+| A normal AI agent | youk |
 |---|---|
-| Equally capable on session 50 as session 1 | Compounds — fewer corrections over time |
-| Same treatment for a typo and a rewrite | Routes by stakes; gates guard non-trivial work |
-| Repeats mistakes you've corrected before | Patches the failing skill in the session it failed |
-| No idea if it's actually helping | Reports its own `org_score` and health trend |
-| (Also remembers context across sessions) | (Also remembers — but that's the floor, not the point) |
+| Learns within a session, forgets at the end | Carries the progress into the next session |
+| Handles every task the same way | Sizes the work and gates the risky parts |
+| Forgets the correction you made last week | Patches the skill that got it wrong |
+| Can't tell you if it's helping | Shows you a score and a direction |
+| Remembers your context | Remembers, and builds skills on top of it |
 
 > **Status:** Active development (v0.1.0). Compounding starts on day one; the gains get obvious around session 10–20 as youk tunes to your patterns and the audit log fills.
 
@@ -73,13 +73,13 @@ Full platform-by-platform walkthrough: **[docs/getting-started.md](docs/getting-
 
 ## What youk does, in four ideas
 
-1. **Improves at your work.** When a skill is missing, youk generates one from your actual task — not a generic template. When a skill fails or gets skipped, it's patched in the same session it failed. Recurring gaps become proposals you approve once.
+1. **It builds skills from your work.** No skill for what you're doing? youk writes one, shaped by your task and your stack. A skill that fails gets fixed in the session it failed. Repeated gaps turn into proposals you approve once.
 
-2. **Routes by stakes.** A one-line fix and a new subsystem get different treatment. Non-trivial work passes gates (scope → non-functional requirements → review) *before* code is written.
+2. **It sizes the work.** A one-liner and a new subsystem don't get the same handling. Anything substantial runs through gates — scope, non-functional requirements, review — before code.
 
-3. **Audits itself.** youk runs its own pulse every session — including checking that the capabilities it built are actually wired into the live loop, not just passing tests. Run `/health` anytime for an `org_score` (0–10) and a trend. This is the guard against youk quietly becoming tech debt.
+3. **It checks itself.** Every session, youk verifies the capabilities it built are actually running in the real loop, and reports an `org_score` you can watch over time. That check is what stops youk from quietly turning into the tech debt it's meant to save you from.
 
-4. **Remembers (the foundation).** Working agreements, decisions, and your resume point are written to files, reloaded every session, and survive `git clone`. Necessary groundwork — but the three above are what make youk different from a tool that only remembers.
+4. **It remembers.** Your agreements, decisions, and resume point live in files that reload each session and survive a `git clone`. Groundwork for the three above.
 
 Deeper on any of these: **[docs/well-architected.md](docs/well-architected.md)** · **[PHILOSOPHY.md](PHILOSOPHY.md)** · [Wiki](https://github.com/ajinkyabhanudas/youk/wiki).
 
