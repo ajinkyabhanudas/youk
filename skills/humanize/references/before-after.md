@@ -1,7 +1,7 @@
 # Before / After — Voice Transformation Examples
 
 Used in the VOICE phase. Reference these examples to understand the transformation.
-Each example shows AI-default voice → Ajinkya's voice.
+Each example shows AI-default voice → the target voice.
 
 ---
 
@@ -19,7 +19,7 @@ and implements LRU eviction with a configurable maximum size. Cache hits are sur
 in the UI with a status indicator.
 ```
 
-After (Ajinkya's voice):
+After (target voice):
 ```
 Repeated questions hit the LLM every time — expensive and slow. Exact-match cache
 with SHA-256 key, 24h TTL, 500-entry LRU now short-circuits the model call for
@@ -102,7 +102,7 @@ After:
 ```
 Context:
 Repeated identical queries paid full LLM API cost (~$0.01-0.05/query) every run.
-With Jajean asking the same donor-report questions regularly, this adds up and
+With a stakeholder asking the same report questions regularly, this adds up and
 adds 8-10s latency for questions with known answers. The decision: in-process dict,
 Redis, or SQLite file.
 ```
