@@ -114,3 +114,32 @@ Two-channels is this. The confidence signal is this. The coverage tree is this. 
 
 Each step: build → test → ruff → commit (small logical commit). Steps 3+ subagent paths built with degraded
 fallback FIRST so nothing ships that only works API-up.
+
+## Build status (session #73 — API was down, local + degraded paths built)
+
+DONE (built, tested, committed on `feat/agentic-ux-rework`):
+- `confidence_signal.py` (12 tests) — layered signal, false-green impossible, forcing budget+predicate.
+- `output_channels.py` (9 tests) — two-channel render, paced digest.
+- `coverage_tree.py` (10 tests) — MECE tree, builder+adversary (injected), degraded no-API path first-class.
+- `mode_coverage_view.py` (5 tests) — coverage view generalized across challenge/stress-test/nfr-check.
+- Full suite: 1819 pass, 0 fail. ruff clean.
+
+OPEN — API-blocked (do when credit restored):
+- LIVE builder/adversary subagents: the injected callables' real LLM implementations. Degraded path tested;
+  live path is AUDITED-NOT-RUN. This is the largest open boundary.
+- SKILL.md wiring: `mode_coverage_view` adapter exists but no mode flow calls it yet (wiring it to a
+  capability that can't execute would be a wiring_pulse orphan). Wire challenge/stress-test/nfr-check +
+  code-review to emit the view once subagents are live.
+- Cognitive-forcing PROMPT flow: budget + predicate live in `confidence_signal`; the predict-before-reveal
+  prompt/interaction is not yet wired into the routing loop.
+
+OPEN — follow-ups surfaced by dogfood self-review (coverage tree run on its own build):
+- [GAP/data] `TEMPLATES` and `MODE_ANGLES` are mutable MODULE globals. Self-revision (add_concept_to_template)
+  does NOT persist across sessions — the accumulator leaks on restart. Persist to a state file
+  (state/coverage-templates.json) so human-caught misses durably accumulate. Also removes the test-isolation
+  fragility (currently manual restore).
+- [correctness] `ForcingBudget` is shared-mutable; fine for the single-session single-thread runtime, race-prone
+  if ever shared concurrently. Named, low priority.
+
+METRIC C: `_compute_autonomy_rate` (health.py:391) enrichment (override-rate + pull-depth proxies) — NOT yet
+wired; requires the channels to be emitting in the live loop first.
