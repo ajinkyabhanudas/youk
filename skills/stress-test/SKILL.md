@@ -248,6 +248,7 @@ If the subject is revised based on remediation suggestions, run a focused retest
 
 ## Quality Bars (Non-Negotiable)
 
+- **Emit the coverage view.** Render the three attack lenses as a coverage view (`mode_coverage_view.view_from_outcomes("stress-test", target, outcomes)`) so completeness is glanceable — a lens the pass never reached shows as a MISSING gap. Generated from the pass, never hand-authored. UNVERIFIED unless an independent adversary ran over the lens set; never imply the pass self-verified its own completeness.
 - **Run to dry, not to round count.** Before surfacing any verdict, both must be true: (1) the last attack round produced zero new findings from all three agents, (2) no attack surface or compound interaction remains unprobed. Emergency brake is 5 rounds — cap hit surfaces the unresolved tension explicitly, never silently exits.
 - **Findings must be specific.** "This could fail under load" is not a finding. "When 50 simultaneous users submit queries, the thread pool exhausts at 10 threads and new requests queue indefinitely" is a finding.
 - **Agents must be independent.** If the three agents produce identical findings, the attack was not independent. Revise.

@@ -337,6 +337,8 @@ If they also pre-explained failure modes or tradeoffs: pass `ELITE`.
 
 These apply regardless of invocation mode:
 
+- **Emit the coverage view.** Render the NFR dimensions as a coverage view (`mode_coverage_view.view_from_outcomes("nfr-check", target, outcomes)`) so completeness is glanceable — a dimension the pass never reached shows as a MISSING gap. Generated from the pass, never hand-authored. UNVERIFIED unless an independent adversary ran over the dimension set; never imply the pass self-verified its own completeness.
+
 - **No TBD.** Every mandatory NFR must be DECIDED or DEFER. TBD is not a valid state.
 - **DEFER requires a trigger.** "We'll figure it out" is rejected. "Defer until we have 100+ users" is accepted.
 - **Caching is mandatory for all external API calls and LLM calls.** Reclassifying these as optional requires explicit product approval.

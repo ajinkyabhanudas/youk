@@ -323,6 +323,7 @@ record both `developer_caught=["challenge"]` and `autonomy_depth={"challenge": "
 
 ## Quality Bars (Non-Negotiable)
 
+- **Emit the coverage view.** Render the pass's angle-set as a coverage view (`mode_coverage_view.view_from_outcomes("challenge", target, outcomes)`) so completeness is glanceable — an angle the pass never reached shows as a MISSING gap. Generated from the pass, never hand-authored. UNVERIFIED unless an independent adversary ran over the angle-set; never imply the pass self-verified its own completeness.
 - **Objections must be specific.** "This might be the wrong approach" is not an objection. "We're about to build a cross-project pattern scanner when the user's actual complaint was about a single contract not promoting — the scope is 10x larger than the problem" is an objection.
 - **Fixed constraints are never attacked.** If the user said "we're using SQLite", Lens 3 does not produce "assumes SQLite is the right database." That constraint is a wall.
 - **BLOCKING means stop.** If a BLOCKING objection is found, work does not start. The objection is surfaced, the user redirects. Not negotiable.
