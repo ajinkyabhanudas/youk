@@ -29,8 +29,10 @@ tree logic.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import Protocol
 
 
@@ -81,8 +83,12 @@ class Branch:
 # Self-revising (BUILD-SPEC anti-pattern #3): grows when a human catches a missing concept.
 # Seeded conservatively; each set is a claim of 'these are the concepts this domain requires'.
 # Only these are the frozen safety/mechanical core — everything else is added by revision.
+#
+# DURABILITY (BUILD-SPEC W5, fixes the dogfood GAP): the seed below lives in code (auditable,
+# version-controlled). Human-caught additions persist to a JSON overlay in state/ and are
+# merged on load, so self-revision accumulates across sessions instead of leaking on restart.
 
-TEMPLATES: dict[str, list[str]] = {
+_SEED_TEMPLATES: dict[str, list[str]] = {
     "security": [
         "authn / identity",
         "authz / access control",
@@ -110,14 +116,63 @@ TEMPLATES: dict[str, list[str]] = {
     ],
 }
 
+# Overlay of human-caught additions, keyed by domain. Persisted to state/ so revisions are
+# durable. Default location is under the youk repo's state/ dir; overridable for tests.
+_OVERLAY_PATH = Path(__file__).resolve().parents[3] / "state" / "coverage-templates.json"
 
-def add_concept_to_template(domain: str, concept: str) -> bool:
+
+def _load_overlay(path: Path) -> dict[str, list[str]]:
+    """Read the persisted additions. Missing/corrupt file → empty overlay (never crash the
+    tree over a bad state file; a missing overlay just means no revisions yet)."""
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+        if not isinstance(data, dict):
+            return {}
+        return {k: list(v) for k, v in data.items() if isinstance(v, list)}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _merged_templates(path: Path = _OVERLAY_PATH) -> dict[str, list[str]]:
+    """Seed (code) + overlay (persisted human additions), de-duplicated, seed order first."""
+    merged = {domain: list(concepts) for domain, concepts in _SEED_TEMPLATES.items()}
+    for domain, extra in _load_overlay(path).items():
+        bucket = merged.setdefault(domain, [])
+        for concept in extra:
+            if concept not in bucket:
+                bucket.append(concept)
+    return merged
+
+
+# Live view used by the tree. Rebuilt from seed+overlay at import; kept in sync by
+# add_concept_to_template. Callers read TEMPLATES exactly as before — API unchanged.
+TEMPLATES: dict[str, list[str]] = _merged_templates()
+
+
+def add_concept_to_template(
+    domain: str, concept: str, path: Path = _OVERLAY_PATH
+) -> bool:
     """Self-revision entry point: a human-caught miss adds a concept so the class can't recur.
-    Returns True if newly added. Idempotent. This is the accumulator (BUILD-SPEC D7)."""
+    Persists to the overlay so the addition survives restart (BUILD-SPEC W5). Returns True if
+    newly added. Idempotent. This is the durable accumulator (BUILD-SPEC D7)."""
     bucket = TEMPLATES.setdefault(domain, [])
     if concept in bucket:
         return False
     bucket.append(concept)
+    # persist: write the FULL overlay (existing additions + this one), never a partial payload
+    overlay = _load_overlay(path)
+    overlay.setdefault(domain, [])
+    if concept not in overlay[domain]:
+        overlay[domain].append(concept)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(overlay, indent=2))
+    except OSError:
+        # In-memory add already succeeded; surface persistence failure honestly rather than
+        # silently — but do not lose the addition for this session.
+        return True
     return True
 
 

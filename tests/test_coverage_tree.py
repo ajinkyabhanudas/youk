@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "servers" / "core" / "src"))
 
 from coverage_tree import (  # noqa: E402
+    _SEED_TEMPLATES,
     TEMPLATES,
     AdversaryStatus,
     Branch,
@@ -143,12 +144,38 @@ def test_review_order_security_gap_ranks_before_nfr_gap():
 
 # --- 5. template self-revision ------------------------------------------------------------
 
-def test_human_caught_miss_updates_template():
+def test_human_caught_miss_updates_template(tmp_path):
     before = list(TEMPLATES["nfr"])
-    added = add_concept_to_template("nfr", "backpressure")
+    overlay = tmp_path / "coverage-templates.json"
+    added = add_concept_to_template("nfr", "backpressure", path=overlay)
     assert added
     assert "backpressure" in TEMPLATES["nfr"]
     # idempotent
-    assert add_concept_to_template("nfr", "backpressure") is False
-    # restore for other tests
+    assert add_concept_to_template("nfr", "backpressure", path=overlay) is False
+    # restore in-memory view for other tests (persistence covered separately below)
     TEMPLATES["nfr"] = before
+
+
+def test_addition_persists_to_overlay(tmp_path):
+    from coverage_tree import _load_overlay, _merged_templates
+    overlay = tmp_path / "coverage-templates.json"
+    add_concept_to_template("security", "supply-chain / deps", path=overlay)
+    # written to disk
+    assert overlay.exists()
+    assert "supply-chain / deps" in _load_overlay(overlay)["security"]
+    # a fresh merge (simulating next-session restart) includes the addition
+    merged = _merged_templates(overlay)
+    assert "supply-chain / deps" in merged["security"]
+    # ...and the seed concepts are still there (overlay augments, never replaces)
+    assert "authn / identity" in merged["security"]
+    TEMPLATES["security"] = list(_SEED_TEMPLATES["security"])
+
+
+def test_corrupt_overlay_does_not_crash(tmp_path):
+    from coverage_tree import _load_overlay, _merged_templates
+    overlay = tmp_path / "coverage-templates.json"
+    overlay.write_text("{ not valid json")
+    assert _load_overlay(overlay) == {}          # bad file → empty, no raise
+    assert _merged_templates(overlay) == {        # falls back to seed cleanly
+        k: list(v) for k, v in _SEED_TEMPLATES.items()
+    }
