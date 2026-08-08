@@ -124,14 +124,46 @@ DONE (built, tested, committed on `feat/agentic-ux-rework`):
 - `mode_coverage_view.py` (5 tests) — coverage view generalized across challenge/stress-test/nfr-check.
 - Full suite: 1819 pass, 0 fail. ruff clean.
 
-OPEN — API-blocked (do when credit restored):
-- LIVE builder/adversary subagents: the injected callables' real LLM implementations. Degraded path tested;
-  live path is AUDITED-NOT-RUN. This is the largest open boundary.
-- SKILL.md wiring: `mode_coverage_view` adapter exists but no mode flow calls it yet (wiring it to a
-  capability that can't execute would be a wiring_pulse orphan). Wire challenge/stress-test/nfr-check +
-  code-review to emit the view once subagents are live.
-- Cognitive-forcing PROMPT flow: budget + predicate live in `confidence_signal`; the predict-before-reveal
-  prompt/interaction is not yet wired into the routing loop.
+## CORRECTION (session #73, post-build): the intelligence is the HARNESS, not youk's API key
+
+The "API-blocked" framing below was WRONG-PREMISED. youk's MCP servers making outbound
+anthropic.messages.create() calls is dead (no credit) — but the reasoning those calls were
+meant to do is done by the HARNESS RUNTIME (the model executing CLAUDE.md), which is present
+whether or not youk has credit. So "no API, ever" is not a degraded mode; it is the correct
+location of the intelligence. The design works with no API forever. The three roles bind:
+  - BUILDER (populate coverage tree) → the harness model (me), structuring task reasoning it
+    already does into nodes. Not an outbound call.
+  - ADVERSARY (attack tree for misses) → a HARNESS Agent/Task subagent with genuinely stripped
+    context, spawned by the model — NOT youk's API. This is the real independence (prompt-level
+    "act as critic" is not isolation, per contract; a separate harness subagent IS).
+  - MCP tools that used to call the API (optimize_intent, pm_review, nfr_check) → become
+    STRUCTURING SHELLS: they define the output SHAPE and RECORD what the model returns; they do
+    local compute (structural signal, MECE, budget, template store — already pure-Python) and
+    state I/O (SQLite/JSON — already local). They never call out.
+
+The injected Populator/Adversary callables were the right seam — they just bind to
+(model + harness-subagent), not to a future API implementation. The degraded UNVERIFIED path
+stays, but now means "the model CHOSE not to spawn the adversary" (low stakes / budget spent) —
+a stakes decision, not an availability accident.
+
+THE ONE REAL LIMIT: independence holds only if the model actually SPAWNS the adversary subagent
+and does not shortcut to inline self-critique. The wiring must enforce spawn-don't-fake — same
+class as every other gate.
+
+## NEXT UNIT — wiring (no API required)
+
+W1. Bind coverage_tree's Populator to the harness model + Adversary to a harness Agent subagent.
+    Add the CLAUDE.md routing instruction: at coverage-tree time (post-task, stakes-gated),
+    populate then SPAWN the stripped adversary subagent; degraded UNVERIFIED only when stakes
+    don't warrant the spawn or budget is spent.
+W2. Convert the API-calling MCP tools to structuring shells (shape + record, never call out).
+    Mark each with a degraded=True→shell sentinel so callers know the model supplies content.
+W3. Wire mode_coverage_view into challenge / stress-test / nfr-check / code-review flows (emit
+    the view from the pass the model already runs). Drift-sentinel test on the SKILL.md sections.
+W4. Cognitive-forcing PROMPT flow: budget + predicate live in confidence_signal; wire the
+    predict-before-reveal interaction into the routing loop (model-driven, no API).
+W5. Persist coverage templates (state/coverage-templates.json) so self-revision durably
+    accumulates — fixes the dogfood GAP; also removes test-isolation fragility.
 
 OPEN — follow-ups surfaced by dogfood self-review (coverage tree run on its own build):
 - [GAP/data] `TEMPLATES` and `MODE_ANGLES` are mutable MODULE globals. Self-revision (add_concept_to_template)
