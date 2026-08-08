@@ -1546,6 +1546,17 @@ def _check_doc_freshness() -> list[str]:
     except Exception:
         pass
 
+    # Part 7: DOCKER BLOAT PULSE — surfaces accumulating youk containers/images so cleanup
+    # doesn't depend on the user remembering to run doctor.sh. DETECTION ONLY — it never
+    # deletes (a challenge pass rejected autorun-delete: youk can't tell an orphaned container
+    # from one another live Claude tab is using). It surfaces the one-command fix; the human runs it.
+    try:
+        from docker_bloat_pulse import check_docker_bloat, format_bloat_warnings
+        bloat = check_docker_bloat()
+        undocumented.extend(format_bloat_warnings(bloat))
+    except Exception:
+        pass
+
     return undocumented
 
 
