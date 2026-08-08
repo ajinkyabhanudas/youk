@@ -37,6 +37,20 @@ you supply the reasoning content and spawn the adversary subagent.
 5. If it returns False: render the tree UNVERIFIED. That is the true state, and it is cheap for
    the human to override ("adversary this"). Do not manufacture a clean result.
 
+### Cognitive forcing (predict-before-reveal) — the germane-load moment
+
+The forcing gate is the ONLY channel that actively builds the human's understanding (everything
+else in the rework REDUCES load). It is rationed by the same stakes/budget as the adversary
+(ForcingBudget, default 2/session) so it stays rare — Buçinca: forcing works but is disliked, so
+a too-frequent gate decays into skimmed ceremony (the original disease reborn).
+
+When `warrants_forcing(signal)` is True AND a budget slot remains (`ForcingBudget.try_spend()`):
+before revealing the change's outcome, surface a ONE-LINE predict-before-reveal prompt and WAIT —
+e.g. "this changes retry semantics on the payment path — expected effect on idempotency?" Then
+reveal. The prediction is what exercises the human's schema; the gate is placed exactly where
+over-trust is most expensive (high-blast / irreversible / novel). Never fire it on low-stakes
+work — a spent budget or low stakes means no gate, silently.
+
 ## Phase 3 — surface (Level-1 review)
 
 6. Render the tree (`CoverageTree.render()`). Gaps and contested nodes are already ordered first
