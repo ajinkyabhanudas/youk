@@ -176,6 +176,31 @@ def add_concept_to_template(
     return True
 
 
+# --- spawn decision (W1): when must the independent adversary run? -------------------------
+# Domains where a missed CONCEPT (not a bug — a concept never considered) has unbounded cost.
+# The adversary spawn is NEVER rationed away for these, regardless of stakes/budget — an L9
+# floor: a token budget does not get to decide whether secrets handling was checked.
+_SAFETY_FLOOR_DOMAINS: frozenset[str] = frozenset({"security", "data"})
+
+
+def must_spawn_adversary(
+    domains: list[str],
+    high_stakes: bool,
+    budget_available: bool,
+) -> bool:
+    """True if the independent adversary MUST run for this task.
+
+    Two independent triggers:
+      - SAFETY FLOOR: any in-scope domain is security/data → always spawn, unrationed.
+      - DISCRETIONARY: the task is high-stakes AND a forcing-budget slot remains → spawn.
+    Otherwise the tree renders UNVERIFIED honestly (a true state, cheap for the human to
+    override with an explicit request). Pure predicate — testable without spawning anything.
+    """
+    if any(d in _SAFETY_FLOOR_DOMAINS for d in domains):
+        return True
+    return high_stakes and budget_available
+
+
 # --- injected agent roles -----------------------------------------------------------------
 
 class Populator(Protocol):

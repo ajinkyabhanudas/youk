@@ -24,6 +24,7 @@ from coverage_tree import (  # noqa: E402
     add_concept_to_template,
     build_tree,
     check_mece,
+    must_spawn_adversary,
 )
 
 
@@ -169,6 +170,27 @@ def test_addition_persists_to_overlay(tmp_path):
     # ...and the seed concepts are still there (overlay augments, never replaces)
     assert "authn / identity" in merged["security"]
     TEMPLATES["security"] = list(_SEED_TEMPLATES["security"])
+
+
+# --- W1 spawn decision: stakes-gated + unrationed safety floor ----------------------------
+
+def test_safety_floor_forces_spawn_even_when_budget_spent():
+    # security in scope → spawn, even if low stakes AND no budget. The floor is unrationed.
+    assert must_spawn_adversary(["security"], high_stakes=False, budget_available=False)
+    assert must_spawn_adversary(["data"], high_stakes=False, budget_available=False)
+
+
+def test_high_stakes_with_budget_spawns():
+    assert must_spawn_adversary(["correctness"], high_stakes=True, budget_available=True)
+
+
+def test_high_stakes_without_budget_does_not_spawn():
+    # discretionary spawn respects the budget — this is where UNVERIFIED is honest.
+    assert not must_spawn_adversary(["correctness"], high_stakes=True, budget_available=False)
+
+
+def test_low_stakes_non_safety_does_not_spawn():
+    assert not must_spawn_adversary(["nfr"], high_stakes=False, budget_available=True)
 
 
 def test_corrupt_overlay_does_not_crash(tmp_path):
