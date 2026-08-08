@@ -605,6 +605,32 @@ def _strip_resume_wrapping(text: str) -> str:
     return f"{outer} {bare}" if bare else outer
 
 
+def _resolve_youk_root() -> Path:
+    """Return the real youk root, whether running IN the container or on the HOST.
+
+    In the container YOUK_ROOT = /youk and exists. Run host-side (tests, tooling, a session
+    executing outside Docker), /youk does NOT exist — and every write silently no-ops because
+    the target path is unreachable. This was the root of the recurring "resume pointer never
+    updates / reverts to the old string" bug: the writer targeted a container path that isn't
+    there on the host. Fall back to YOUK_HOST_DIR from state/path-map.env (written by install.sh).
+    """
+    if YOUK_ROOT.exists():
+        return YOUK_ROOT
+    path_map = YOUK_ROOT / "state" / "path-map.env"
+    # path-map itself is under YOUK_ROOT — if /youk is absent, read it relative to cwd instead.
+    for candidate_map in (path_map, Path("state/path-map.env"), Path.cwd() / "state" / "path-map.env"):
+        if candidate_map.exists():
+            try:
+                for line in candidate_map.read_text().splitlines():
+                    if line.startswith("YOUK_HOST_DIR="):
+                        host = Path(line.split("=", 1)[1].strip())
+                        if host.exists():
+                            return host
+            except Exception:
+                pass
+    return YOUK_ROOT  # last resort — behaves as before (may no-op host-side)
+
+
 def _update_resume_point(slug: str, resume_text: str) -> None:
     """Write the resume point for the next session into external context.md.
 
@@ -613,8 +639,12 @@ def _update_resume_point(slug: str, resume_text: str) -> None:
     corruption, at any call site. On validation failure it strips wrapping and retries
     once; if still invalid, it writes nothing rather than persist a malformed pointer
     (fail-safe: a stale-but-valid prior pointer beats a corrupt new one).
+
+    Resolves the real youk root first (container vs host) so the write actually lands —
+    targeting the unreachable /youk container path was why the pointer silently never updated.
     """
-    ctx_file = YOUK_ROOT / "knowledge" / "projects" / slug / "context.md"
+    root = _resolve_youk_root()
+    ctx_file = root / "knowledge" / "projects" / slug / "context.md"
     if not ctx_file.exists():
         return
 
