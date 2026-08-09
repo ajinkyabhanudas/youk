@@ -7,8 +7,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 _REPO = Path(__file__).parent.parent
 for _p in [str(_REPO / "servers" / "shared"), str(_REPO / "servers" / "core" / "src")]:
     if _p not in sys.path:
@@ -162,7 +160,23 @@ class TestNextTask:
         r = G.next_task(db_path=db)
         assert r["found"] is False  # child blocked by unfinished parent
 
-    def test_child_ready_after_parent_unblocked(self, tmp_path):
+    def test_child_stays_blocked_until_parent_DONE_not_merely_ready(self, tmp_path):
+        # THE REGRESSION GUARD for the gating bug: a parent being merely `unblocked`
+        # (ready to start) must NOT release its child. Only `done` releases the child.
+        # Previously next_task gated on parent.unblocked, so a ready-but-unfinished parent
+        # wrongly surfaced its child — the exact bug this fix closes.
+        db = tmp_path / "graph.db"
+        G.create_task_graph(
+            [{"id": "p", "label": "Parent"}, {"id": "c", "label": "Child"}],
+            edges=[("p", "c")],
+            db_path=db,
+        )
+        G.set_gate("p", "unblocked", True, db_path=db)  # parent READY, not done
+        G.set_gate("c", "unblocked", True, db_path=db)
+        # Only the parent is actionable; the child is still gated by the unfinished parent.
+        assert G.next_task(db_path=db)["task"]["id"] == "p"
+
+    def test_child_ready_only_after_parent_marked_done(self, tmp_path):
         db = tmp_path / "graph.db"
         G.create_task_graph(
             [{"id": "p", "label": "Parent"}, {"id": "c", "label": "Child"}],
@@ -171,10 +185,11 @@ class TestNextTask:
         )
         G.set_gate("p", "unblocked", True, db_path=db)
         G.set_gate("c", "unblocked", True, db_path=db)
+        G.mark_done("p", db_path=db)  # NOW the parent is finished
         r = G.next_task(db_path=db)
         assert r["found"] is True
-        # Parent is returned first (it has no blocking parent itself)
-        assert r["task"]["id"] in ("p", "c")
+        # parent is done (excluded); the child is now the actionable leaf
+        assert r["task"]["id"] == "c"
 
 
 # ---------------------------------------------------------------------------
@@ -183,14 +198,17 @@ class TestNextTask:
 
 class TestMarkDone:
 
-    def test_mark_done_clears_in_flight(self, tmp_path):
+    def test_mark_done_sets_done_and_clears_in_flight(self, tmp_path):
+        # mark_done sets the dedicated `done` bit and clears in_flight. It must NOT touch
+        # `unblocked` — that bit means 'ready to start', a distinct concept from 'finished'.
         db = tmp_path / "graph.db"
         G.create_task_graph([{"id": "t1", "label": "Task"}], db_path=db)
         G.set_gate("t1", "in_flight", True, db_path=db)
         G.mark_done("t1", db_path=db)
         state = G.is_unblocked("t1", db_path=db)
         assert state["gates"]["in_flight"] is False
-        assert state["gates"]["unblocked"] is True
+        task = next(t for t in G.get_all_tasks(db_path=db) if t["id"] == "t1")
+        assert task["done"] == 1
 
     def test_mark_done_is_idempotent(self, tmp_path):
         db = tmp_path / "graph.db"
