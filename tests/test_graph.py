@@ -191,6 +191,77 @@ class TestNextTask:
         # parent is done (excluded); the child is now the actionable leaf
         assert r["task"]["id"] == "c"
 
+    def test_multi_parent_child_waits_for_ALL_parents_done(self, tmp_path):
+        # ADVERSARY FINDING (highest-value): the AND-semantics across >1 parent was untested.
+        # A regression flipping AND→OR would pass every single-parent test but break here.
+        db = tmp_path / "graph.db"
+        G.create_task_graph(
+            [{"id": "p1", "label": "P1"}, {"id": "p2", "label": "P2"},
+             {"id": "c", "label": "Child"}],
+            edges=[("p1", "c"), ("p2", "c")],
+            db_path=db,
+        )
+        for t in ("p1", "p2", "c"):
+            G.set_gate(t, "unblocked", True, db_path=db)
+        G.mark_done("p1", db_path=db)  # only ONE parent done
+        # child must NOT surface — the other parent is unfinished
+        ids = []
+        r = G.next_task(db_path=db)
+        while r["found"]:
+            ids.append(r["task"]["id"])
+            G.mark_done(r["task"]["id"], db_path=db)
+            r = G.next_task(db_path=db)
+        # p2 comes before c; c only after BOTH parents done
+        assert ids.index("p2") < ids.index("c")
+
+
+class TestDagValidation:
+
+    def test_self_edge_rejected(self, tmp_path):
+        db = tmp_path / "graph.db"
+        r = G.create_task_graph(
+            [{"id": "t1", "label": "T"}], edges=[("t1", "t1")], db_path=db,
+        )
+        assert r.get("ok") is False
+        assert "self-edge" in r["error"]
+
+    def test_cycle_rejected(self, tmp_path):
+        db = tmp_path / "graph.db"
+        r = G.create_task_graph(
+            [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}],
+            edges=[("a", "b"), ("b", "a")],
+            db_path=db,
+        )
+        assert r.get("ok") is False
+        assert "cycle" in r["error"]
+
+    def test_valid_dag_still_accepted(self, tmp_path):
+        db = tmp_path / "graph.db"
+        r = G.create_task_graph(
+            [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}, {"id": "c", "label": "C"}],
+            edges=[("a", "b"), ("b", "c")],
+            db_path=db,
+        )
+        assert r["edges_added"] == 2
+
+    def test_orphan_parent_edge_auto_stubs_no_crash(self, tmp_path):
+        # ADVERSARY FINDING: an edge to a never-inserted parent raised an uncaught
+        # IntegrityError. Now it auto-stubs and returns gracefully.
+        db = tmp_path / "graph.db"
+        r = G.create_task_graph(
+            [{"id": "c", "label": "Child"}], edges=[("ghost-parent", "c")], db_path=db,
+        )
+        assert r.get("ok") is not False  # did not error out
+        assert G.is_unblocked("ghost-parent", db_path=db)["found"] is True
+
+    def test_is_unblocked_reports_done(self, tmp_path):
+        # ADVERSARY FINDING: done was invisible on the public read-path.
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "T"}], db_path=db)
+        assert G.is_unblocked("t1", db_path=db)["gates"]["done"] is False
+        G.mark_done("t1", db_path=db)
+        assert G.is_unblocked("t1", db_path=db)["gates"]["done"] is True
+
 
 # ---------------------------------------------------------------------------
 # mark_done

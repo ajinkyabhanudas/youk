@@ -122,11 +122,21 @@ def create_task_graph(tasks: list[dict], edges: list[tuple[str, str]] | None = N
     edges: list of (parent_id, child_id) — parent must complete before child
 
     Idempotent: existing tasks and edges are silently skipped (INSERT OR IGNORE).
-    Returns {"created": int, "edges_added": int, "total_tasks": int}
+    Rejects edges that would break the DAG (a self-edge or a cycle) — because next_task gates
+    a child on its parents' done state, a self-edge makes a task its own unfinished parent
+    (never actionable) and a cycle deadlocks every task in it. These are surfaced as an error,
+    not silently inserted. Returns {"created", "edges_added", "total_tasks"}
+    or {"ok": False, "error": ...} when an edge would break the DAG.
     """
     edges = edges or []
     created = 0
     edges_added = 0
+
+    # Self-edge guard: parent == child can never be satisfied (a task can't finish before
+    # itself), so it permanently removes the task from next_task. Reject up front.
+    self_edges = [e for e in edges if e[0] == e[1]]
+    if self_edges:
+        return {"ok": False, "error": f"self-edge(s) not allowed: {self_edges}"}
 
     with _connect(db_path) as conn:
         for t in tasks:
@@ -136,7 +146,22 @@ def create_task_graph(tasks: list[dict], edges: list[tuple[str, str]] | None = N
             )
             created += cur.rowcount
 
+        # Cycle guard: build the adjacency of existing + proposed edges and reject if adding
+        # them introduces a cycle (a cycle deadlocks next_task for the whole component).
+        existing = [(r["parent_id"], r["child_id"])
+                    for r in conn.execute("SELECT parent_id, child_id FROM edges")]
+        if _would_cycle(existing + list(edges)):
+            conn.rollback()
+            return {"ok": False, "error": "edge(s) would introduce a cycle in the task DAG"}
+
         for parent, child in edges:
+            # Auto-stub any edge endpoint not already a task, so an edge referencing a
+            # not-yet-created node degrades gracefully (matching set_gate's stub behavior)
+            # instead of raising an uncaught FK IntegrityError that aborts the whole call.
+            for node in (parent, child):
+                conn.execute(
+                    "INSERT OR IGNORE INTO tasks (id, label) VALUES (?, ?)", (node, node),
+                )
             cur = conn.execute(
                 "INSERT OR IGNORE INTO edges (parent_id, child_id) VALUES (?, ?)",
                 (parent, child),
@@ -147,6 +172,28 @@ def create_task_graph(tasks: list[dict], edges: list[tuple[str, str]] | None = N
         conn.commit()
 
     return {"created": created, "edges_added": edges_added, "total_tasks": total}
+
+
+def _would_cycle(edges: list[tuple[str, str]]) -> bool:
+    """True if the directed edge set contains a cycle (DFS three-colour). Pure function."""
+    adj: dict[str, list[str]] = {}
+    for p, c in edges:
+        adj.setdefault(p, []).append(c)
+    WHITE, GREY, BLACK = 0, 1, 2
+    color: dict[str, int] = {}
+
+    def visit(node: str) -> bool:
+        color[node] = GREY
+        for nxt in adj.get(node, []):
+            c = color.get(nxt, WHITE)
+            if c == GREY:            # back-edge → cycle
+                return True
+            if c == WHITE and visit(nxt):
+                return True
+        color[node] = BLACK
+        return False
+
+    return any(color.get(n, WHITE) == WHITE and visit(n) for n in list(adj))
 
 
 def set_gate(task_id: str, gate_name: str, value: bool,
@@ -192,6 +239,10 @@ def is_unblocked(task_id: str, db_path: Path = _DB_PATH) -> dict:
         "nfr_cleared": bool(row["nfr_cleared"]),
         "unblocked": bool(row["unblocked"]),
         "in_flight": bool(row["in_flight"]),
+        # `done` must be readable here: mark_done sets it, and external gate logic asking
+        # "is this task finished?" uses is_unblocked. Omitting it (the original API gap) left
+        # completion invisible on the one public read-path a caller would reach for.
+        "done": bool(row["done"]) if "done" in row.keys() else False,
         "stale": bool(row["stale"]),
     }
     return {
