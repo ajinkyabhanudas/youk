@@ -2,14 +2,19 @@
 
 Schema
 ------
-tasks  : id, label, challenge_cleared, nfr_cleared, unblocked, in_flight, stale
+tasks  : id, label, challenge_cleared, nfr_cleared, unblocked, in_flight, done, stale
 edges  : parent_id → child_id (directed: parent must complete before child)
 
 Gate booleans (written by set_gate, read by is_unblocked):
   challenge_cleared  — challenge skill ran and passed
   nfr_cleared        — nfr_check ran and gate unblocked
-  unblocked          — both challenge + nfr cleared (derived, stored for fast reads)
+  unblocked          — both challenge + nfr cleared (derived; means READY to start)
   in_flight          — currently being worked on this session
+  done               — task is FINISHED. Distinct from unblocked: a task can be
+                       unblocked (ready) without being done. next_task gates a child
+                       on its parents' `done`, NOT `unblocked` — previously these were
+                       the same bit, so a child unblocked when its parent was merely
+                       ready, not finished. mark_done sets this; next_task excludes it.
 
 stale column is reserved for dirty-bit propagation (impact() tool — future build).
 It is written to 0 on insert and never mutated here.
@@ -37,6 +42,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     nfr_cleared         INTEGER NOT NULL DEFAULT 0,
     unblocked           INTEGER NOT NULL DEFAULT 0,
     in_flight           INTEGER NOT NULL DEFAULT 0,
+    done                INTEGER NOT NULL DEFAULT 0,
     stale               INTEGER NOT NULL DEFAULT 0
 );
 
@@ -60,6 +66,12 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
     if "project" not in cols:
         conn.execute("ALTER TABLE tasks ADD COLUMN project TEXT")
+    if "done" not in cols:
+        # Completion state, split out from the overloaded `unblocked` bit. Existing rows
+        # backfill to done=0: nothing is ASSUMED finished — a genuinely-done task is
+        # re-marked via mark_done going forward. Conservative: never a false "done" that
+        # would wrongly release a child. Idempotent.
+        conn.execute("ALTER TABLE tasks ADD COLUMN done INTEGER NOT NULL DEFAULT 0")
 
 
 class _DB:
@@ -213,21 +225,24 @@ def next_task(project: str | None = None, db_path: Path = _DB_PATH) -> dict:
         params = (project,)
 
     with _connect(db_path) as conn:
-        # A task is ready when:
-        # 1. unblocked = 1, in_flight = 0
-        # 2. All parents have unblocked = 1 (or has no parents)
+        # A task is actionable when:
+        # 1. unblocked = 1 (gates cleared), in_flight = 0, done = 0 (not itself finished)
+        # 2. All parents are DONE (done = 1) — a child stays blocked until its parent is
+        #    actually finished, not merely ready. This gates on `done`, not `unblocked`;
+        #    conflating them let a child surface while its parent was still in flight.
         # 3. (if project given) belongs to that project or is untagged
         rows = conn.execute(f"""
             SELECT t.id, t.label, t.project, t.challenge_cleared, t.nfr_cleared,
-                   t.unblocked, t.in_flight, t.stale
+                   t.unblocked, t.in_flight, t.done, t.stale
             FROM tasks t
             WHERE t.unblocked = 1
               AND t.in_flight = 0
+              AND t.done = 0
               AND NOT EXISTS (
                   SELECT 1 FROM edges e
                   JOIN tasks p ON p.id = e.parent_id
                   WHERE e.child_id = t.id
-                    AND p.unblocked = 0
+                    AND p.done = 0
               )
               {project_clause}
             ORDER BY t.id
@@ -248,19 +263,24 @@ def next_task(project: str | None = None, db_path: Path = _DB_PATH) -> dict:
             "nfr_cleared": bool(row["nfr_cleared"]),
             "unblocked": bool(row["unblocked"]),
             "in_flight": bool(row["in_flight"]),
+            "done": bool(row["done"]),
             "stale": bool(row["stale"]),
         },
     }
 
 
 def mark_done(task_id: str, db_path: Path = _DB_PATH) -> dict:
-    """Mark a task as done by clearing in_flight and ensuring unblocked=1.
+    """Mark a task as FINISHED: set done=1 and clear in_flight.
+
+    Sets the dedicated `done` bit — NOT `unblocked` (which means 'ready to start'). This
+    is what releases the task's children in next_task, and what excludes the task itself
+    from future next_task results. Idempotent.
 
     Returns {"ok": bool, "task_id": str}
     """
     with _connect(db_path) as conn:
         conn.execute(
-            "UPDATE tasks SET in_flight = 0, unblocked = 1 WHERE id = ?",
+            "UPDATE tasks SET done = 1, in_flight = 0 WHERE id = ?",
             (task_id,),
         )
         conn.commit()
