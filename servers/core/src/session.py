@@ -512,6 +512,27 @@ def _read_git_log_since_days(project_dir: str, days: int) -> tuple[int, list[str
         return 0, []
 
 
+def _current_project_head(project_dir: str) -> str | None:
+    """Current HEAD sha of the project, for the deployment-freshness baseline."""
+    try:
+        import deploy_freshness
+        return deploy_freshness.current_head(str(_resolve_project_path(project_dir)))
+    except Exception:
+        return None
+
+
+def _check_deploy_freshness(project_dir: str, last_head):
+    """Run the deployment-freshness gate. Returns a FreshnessVerdict (or None on error).
+    Never raises into session_start — a freshness-check failure must not block a session."""
+    try:
+        import deploy_freshness
+        return deploy_freshness.check_freshness(
+            str(_resolve_project_path(project_dir)), last_head
+        )
+    except Exception:
+        return None
+
+
 def _count_commits_since(project_dir: str, since_hash: str) -> int:
     """Count commits in project_dir that came after since_hash."""
     resolved = str(_resolve_project_path(project_dir))
@@ -1783,9 +1804,17 @@ def start_session(project_dir: str) -> SessionState:
     _merge_stale_checkpoint()
 
     state = _load_state()
+    # Deployment-freshness gate: capture the HEAD recorded at the END of the prior session
+    # BEFORE we overwrite it, so we can detect merges that landed since then. merged ≠ in
+    # effect — a schema/gate commit merged but not restarted into the running server would
+    # otherwise make next_task silently mispoint. See deploy_freshness.py.
+    _prior_head = state.get("last_head")
+    _freshness = _check_deploy_freshness(project_dir, _prior_head)
     state["session_counter"] = state.get("session_counter", 0) + 1
     state["last_project"] = project_dir
     state["last_session"] = datetime.utcnow().isoformat()
+    # Record current HEAD as the baseline the NEXT session will diff against.
+    state["last_head"] = _current_project_head(project_dir)
     stack_ctx = _detect_stack_context(project_dir)
     state["stack"] = stack_ctx["stack"]
     state["framework"] = stack_ctx["framework"]
@@ -2044,6 +2073,12 @@ def start_session(project_dir: str) -> SessionState:
     _gate_resume = get_gate_sequence_resume_item()
     if _gate_resume:
         session_plan.insert(0, _gate_resume)
+
+    # Deployment-freshness warning goes ABOVE everything: it says "the running server may not
+    # reflect what's merged — verify before trusting next_task or task state." A stale-risk
+    # here undermines every other plan item derived from graph/routing state.
+    if _freshness is not None and _freshness.warning():
+        session_plan.insert(0, _freshness.warning())
 
     # Outcome follow-up: if last session shipped or staged with PENDING/UNKNOWN result,
     # surface a one-line prompt so the developer can confirm what happened.
