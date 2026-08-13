@@ -7,7 +7,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
 
 _REPO = Path(__file__).parent.parent
 for _p in [str(_REPO / "servers" / "shared"), str(_REPO / "servers" / "core" / "src")]:
@@ -86,7 +85,8 @@ class TestIndexProject:
         # Both projects have main.py — composite key keeps them separate
         p1 = tmp_path / "proj1"
         p2 = tmp_path / "proj2"
-        p1.mkdir(); p2.mkdir()
+        p1.mkdir()
+        p2.mkdir()
         (p1 / "main.py").write_text("def foo(): pass\n")
         (p2 / "main.py").write_text("def bar(): pass\n")
         db = tmp_path / "idx.db"
@@ -153,8 +153,10 @@ class TestFindRelevant:
 
     def test_project_slug_filter_boosts_current_project(self, tmp_path):
         # Two projects; current-project results come first
-        p1 = tmp_path / "proj1"; p1.mkdir()
-        p2 = tmp_path / "proj2"; p2.mkdir()
+        p1 = tmp_path / "proj1"
+        p1.mkdir()
+        p2 = tmp_path / "proj2"
+        p2.mkdir()
         (p1 / "router.py").write_text("def route(): pass\n")
         (p2 / "router.py").write_text("def route(): pass\n")
         db = tmp_path / "idx.db"
@@ -168,8 +170,10 @@ class TestFindRelevant:
             assert slugs.index("proj1") < slugs.index("proj2")
 
     def test_cross_project_search_when_no_slug(self, tmp_path):
-        p1 = tmp_path / "proj1"; p1.mkdir()
-        p2 = tmp_path / "proj2"; p2.mkdir()
+        p1 = tmp_path / "proj1"
+        p1.mkdir()
+        p2 = tmp_path / "proj2"
+        p2.mkdir()
         (p1 / "a.py").write_text("def unique_func_proj1(): pass\n")
         (p2 / "b.py").write_text("def unique_func_proj2(): pass\n")
         db = tmp_path / "idx.db"
@@ -182,7 +186,8 @@ class TestFindRelevant:
         assert "proj2" in slugs
 
     def test_limit_respected(self, tmp_path):
-        proj = tmp_path / "proj"; proj.mkdir()
+        proj = tmp_path / "proj"
+        proj.mkdir()
         for i in range(20):
             (proj / f"mod{i}.py").write_text(f"def func{i}(): pass\n")
         db = tmp_path / "idx.db"
@@ -231,7 +236,8 @@ class TestFindAffected:
         assert r["module_stem"] == "session"
 
     def test_no_importers_returns_empty(self, tmp_path):
-        proj = tmp_path / "proj"; proj.mkdir()
+        proj = tmp_path / "proj"
+        proj.mkdir()
         (proj / "standalone.py").write_text("def lone(): pass\n")
         db = tmp_path / "idx.db"
         FI.index_project(proj, "proj", db_path=db)
@@ -264,8 +270,10 @@ class TestGetIndexStats:
         assert "myproject" in slugs
 
     def test_per_project_filter(self, tmp_path):
-        p1 = tmp_path / "p1"; p1.mkdir()
-        p2 = tmp_path / "p2"; p2.mkdir()
+        p1 = tmp_path / "p1"
+        p1.mkdir()
+        p2 = tmp_path / "p2"
+        p2.mkdir()
         (p1 / "a.py").write_text("x = 1\n")
         (p2 / "b.py").write_text("y = 2\n")
         (p2 / "c.py").write_text("z = 3\n")

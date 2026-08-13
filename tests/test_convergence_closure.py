@@ -21,9 +21,7 @@ import json
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "core" / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "shared"))
@@ -220,7 +218,6 @@ class TestPendingActionTTL:
         _write_pending_action(state_dir, age_seconds=86399)  # 1s under 24h
         pa_file = state_dir / "pending-action.json"
 
-        close_cluster_missed = True
         if pa_file.exists():
             data = json.loads(pa_file.read_text())
             written = data.get("written_at", "")
@@ -228,7 +225,6 @@ class TestPendingActionTTL:
                 age_secs = (datetime.utcnow() - datetime.fromisoformat(written)).total_seconds()
                 if age_secs > 86400:
                     pa_file.unlink()
-                    close_cluster_missed = False
 
         assert pa_file.exists()
 

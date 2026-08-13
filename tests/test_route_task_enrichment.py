@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
 import session as _session_mod  # conftest puts servers/core/src on sys.path
 
@@ -54,7 +53,7 @@ def _enrich(monkeypatch, tmp_path, task="test task", *,
     finally:
         # Restore real modules — avoid polluting other tests
         for mod_name in ("file_index", "graph"):
-            real = sys.modules.pop(mod_name, None)
+            sys.modules.pop(mod_name, None)
             # Re-import the real module if it was replaced
             try:
                 import importlib

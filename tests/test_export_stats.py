@@ -10,7 +10,6 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
 
 # Add scripts/ to path so we can import export_stats directly.
 _SCRIPTS = Path(__file__).parent.parent / "scripts"

@@ -261,7 +261,6 @@ class TestCompoundingVerdict:
     """Test the compounding_verdict string construction logic directly."""
 
     def _verdict_for(self, autonomy_rate: float) -> str:
-        from health import _compute_autonomy_rate, _compute_depth_multiplier
         # Mirror the logic from self_heal base dict
         if autonomy_rate >= 0.4:
             return "ELITE — developer pre-empting skills; compounding loop closed"
