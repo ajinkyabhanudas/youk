@@ -198,30 +198,71 @@ make -C "$YOUK_DIR" build 2>&1 | grep -E "(Step|Successfully|error|DONE|naming)"
 }
 ok "Images built (youk-core:latest, youk-code:latest)"
 
-# ── Step 5: Register MCP servers ─────────────────────────────────────────────
-step "MCP server registration"
+# ── Step 5: Start persistent HTTP servers ────────────────────────────────────
+step "Persistent youk-core and youk-code servers"
 
-# Remove stale registrations first (idempotent — no-op if not registered)
+# Port conflict check — fail early before launchd tries to bind
+for PORT in 8001 8002; do
+  if lsof -i:$PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
+    SERVER=$([ "$PORT" -eq 8001 ] && echo "core" || echo "code")
+    warn "Port $PORT in use — stopping existing youk-${SERVER}-server if present"
+    docker stop "youk-${SERVER}-server" 2>/dev/null || true
+    sleep 2
+    if lsof -i:$PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
+      fail "Port $PORT still in use after stop attempt — cannot continue"
+    fi
+  fi
+done
+
+# Unload any existing launchd agents and remove named containers from prior installs
+for SERVER in core code; do
+  PLIST="$HOME/Library/LaunchAgents/com.youk.${SERVER}-server.plist"
+  launchctl unload "$PLIST" 2>/dev/null || true
+  docker stop "youk-${SERVER}-server" 2>/dev/null || true
+  docker rm "youk-${SERVER}-server" 2>/dev/null || true
+done
+
+# Generate plists from templates (substitute real paths) and load them
+declare -A _YOUK_PORTS=([core]=8001 [code]=8002)
+for SERVER in core code; do
+  PORT=${_YOUK_PORTS[$SERVER]}
+  sed \
+    -e "s|{{CLAUDE_DIR}}|$CLAUDE_DIR|g" \
+    -e "s|{{YOUK_DIR}}|$YOUK_DIR|g" \
+    -e "s|{{HOST_HOME}}|$HOME|g" \
+    -e "s|{{PORT}}|$PORT|g" \
+    -e "s|{{SERVER}}|$SERVER|g" \
+    "$YOUK_DIR/scripts/com.youk.${SERVER}-server.plist.tmpl" \
+    > "$HOME/Library/LaunchAgents/com.youk.${SERVER}-server.plist"
+  launchctl load "$HOME/Library/LaunchAgents/com.youk.${SERVER}-server.plist"
+done
+ok "launchd agents loaded (core :8001, code :8002)"
+
+# Wait for servers to be reachable (max 30s — Docker cold-start)
+echo -n "  Waiting for servers to respond"
+for i in $(seq 1 30); do
+  CORE_STATUS=$(curl -o /dev/null -w "%{http_code}" -s http://127.0.0.1:8001/mcp 2>/dev/null)
+  CODE_STATUS=$(curl -o /dev/null -w "%{http_code}" -s http://127.0.0.1:8002/mcp 2>/dev/null)
+  # 406 = server up but needs MCP headers (correct); 200 = also fine
+  if [[ "$CORE_STATUS" =~ ^(200|406)$ ]] && [[ "$CODE_STATUS" =~ ^(200|406)$ ]]; then
+    echo " done"
+    break
+  fi
+  echo -n "."
+  sleep 1
+  if [ "$i" -eq 30 ]; then
+    echo
+    fail "Servers did not respond within 30s — check /tmp/youk-core.log and /tmp/youk-code.log"
+  fi
+done
+
+# Register with Claude Code as HTTP servers
 claude mcp remove youk-core 2>/dev/null || true
 claude mcp remove youk-code 2>/dev/null || true
-
-claude mcp add --scope user youk-core --transport stdio -- \
-  docker run -i --rm \
-    -v "$CLAUDE_DIR:/claude" \
-    -v "$YOUK_DIR:/youk" \
-    -v "$YOUK_DIR/servers/shared:/shared" \
-    -v "$HOME:/host-home:ro" \
-    youk-core:latest
-ok "youk-core registered"
-
-claude mcp add --scope user youk-code --transport stdio -- \
-  docker run -i --rm \
-    -v "$CLAUDE_DIR:/claude:ro" \
-    -v "$YOUK_DIR:/youk:ro" \
-    -v "$YOUK_DIR/servers/shared:/shared" \
-    -v "$HOME:/host-home:ro" \
-    youk-code:latest
-ok "youk-code registered"
+claude mcp add --scope user youk-core --transport http http://127.0.0.1:8001/mcp
+ok "youk-core registered (HTTP)"
+claude mcp add --scope user youk-code --transport http http://127.0.0.1:8002/mcp
+ok "youk-code registered (HTTP)"
 
 # ── Step 5b: Register youk context hooks plugin ──────────────────────────────
 step "Context hooks plugin"

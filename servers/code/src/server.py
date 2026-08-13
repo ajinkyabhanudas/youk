@@ -18,9 +18,16 @@ from skill_loader import list_skills as _list_skills
 from skill_gen import generate_skill as _generate_skill, assess_skill as _assess_skill, detect_skill_gaps as _detect_skill_gaps, generate_stack_overlay as _generate_stack_overlay, analyze_stack_for_skills as _analyze_stack_for_skills
 from contract_verifier import verify_contracts as _verify_contracts
 
+import argparse as _argparse
+_p = _argparse.ArgumentParser(add_help=False)
+_p.add_argument("--transport", default="stdio")
+_p.add_argument("--port", type=int, default=8000)
+_p.add_argument("--host", default="0.0.0.0")
+_server_args, _ = _p.parse_known_args()
+
 CLAUDE_ROOT = Path("/claude")
 
-mcp = FastMCP("youk-code")
+mcp = FastMCP("youk-code", host=_server_args.host, port=_server_args.port)
 
 
 @mcp.tool()
@@ -301,4 +308,4 @@ def get_project_context(project: str) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport=_server_args.transport)

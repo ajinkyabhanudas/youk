@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.youk.core-server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/docker</string>
+        <string>run</string>
+        <string>--rm</string>
+        <string>--name</string>
+        <string>youk-core-server</string>
+        <string>-p</string>
+        <string>127.0.0.1:8001:8001</string>
+        <string>-v</string>
+        <string>{{CLAUDE_DIR}}:/claude</string>
+        <string>-v</string>
+        <string>{{YOUK_DIR}}:/youk</string>
+        <string>-v</string>
+        <string>{{YOUK_DIR}}/servers/shared:/shared</string>
+        <string>-v</string>
+        <string>{{HOST_HOME}}:/host-home:ro</string>
+        <string>youk-core:latest</string>
+        <string>python3</string>
+        <string>server.py</string>
+        <string>--transport</string>
+        <string>streamable-http</string>
+        <string>--port</string>
+        <string>8001</string>
+    </array>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/youk-core.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/youk-core.log</string>
+
+    <!-- Prevents restart storm if container exits immediately (e.g. port conflict) -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>

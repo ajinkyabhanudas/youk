@@ -67,6 +67,13 @@ from skill_signals import (
     mark_proposal_applied as _mark_proposal_applied,
 )
 
+import argparse as _argparse
+_p = _argparse.ArgumentParser(add_help=False)
+_p.add_argument("--transport", default="stdio")
+_p.add_argument("--port", type=int, default=8000)
+_p.add_argument("--host", default="0.0.0.0")
+_server_args, _ = _p.parse_known_args()
+
 YOUK_ROOT = Path("/youk")
 CLAUDE_ROOT = Path("/claude")
 
@@ -108,6 +115,8 @@ def _append_gate_to_active_task(gate_name: str) -> None:
 
 mcp = FastMCP(
     "youk-core",
+    host=_server_args.host,
+    port=_server_args.port,
     instructions=(
         "youk behavioral DNA — always active.\n"
         "1. Reasoning loops exit on zero new objections from ALL angles, not on round count. "
@@ -1826,4 +1835,4 @@ def record_steering_decomposition(
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport=_server_args.transport)

@@ -57,8 +57,21 @@ fi
 RESTORE_ROOT="$CLAUDE_DIR/youk-restore"
 SNAP="$RESTORE_ROOT/latest"
 
-# ── Step 1: Deregister MCP servers ───────────────────────────────────────────
-step "MCP server deregistration"
+# ── Step 1: Stop persistent servers + deregister MCP ────────────────────────
+step "Stopping persistent servers and deregistering MCP"
+
+# Stop launchd agents and remove generated plists
+for SERVER in core code; do
+  PLIST="$HOME/Library/LaunchAgents/com.youk.${SERVER}-server.plist"
+  launchctl unload "$PLIST" 2>/dev/null || true
+  rm -f "$PLIST"
+done
+
+# Stop and remove named containers (in case launchd didn't clean them up)
+docker stop youk-core-server youk-code-server 2>/dev/null || true
+docker rm youk-core-server youk-code-server 2>/dev/null || true
+ok "Persistent servers stopped"
+
 if command -v claude >/dev/null 2>&1; then
   run claude mcp remove youk-core  2>/dev/null || warn "youk-core not registered (already removed)"
   run claude mcp remove youk-code  2>/dev/null || warn "youk-code not registered (already removed)"
