@@ -16,10 +16,18 @@ from skills import (
 from review import check_commit_quality as _check_commit_quality
 from skill_loader import list_skills as _list_skills
 from skill_gen import generate_skill as _generate_skill, assess_skill as _assess_skill, detect_skill_gaps as _detect_skill_gaps, generate_stack_overlay as _generate_stack_overlay, analyze_stack_for_skills as _analyze_stack_for_skills
+from contract_verifier import verify_contracts as _verify_contracts
+
+import argparse as _argparse
+_p = _argparse.ArgumentParser(add_help=False)
+_p.add_argument("--transport", default="stdio")
+_p.add_argument("--port", type=int, default=8000)
+_p.add_argument("--host", default="0.0.0.0")
+_server_args, _ = _p.parse_known_args()
 
 CLAUDE_ROOT = Path("/claude")
 
-mcp = FastMCP("youk-code")
+mcp = FastMCP("youk-code", host=_server_args.host, port=_server_args.port)
 
 
 @mcp.tool()
@@ -244,6 +252,21 @@ def analyze_stack_for_skills(
     return _analyze_stack_for_skills(stack, framework, domain, repo_paths, known_skills, standard)
 
 
+@mcp.tool()
+def verify_mcp_contracts() -> dict:
+    """
+    Detect drift between registered MCP tool signatures and their call sites.
+
+    Parses @mcp.tool() functions from youk-core and youk-code server.py files via AST,
+    then scans CLAUDE.md and all SKILL.md files for dot-notation call sites
+    (e.g. youk-core.session_start(...)).
+
+    Returns verdict CLEAN or DRIFT_DETECTED with per-finding severity (HIGH = tool
+    referenced but not registered; unreferenced tools are informational only).
+    """
+    return _verify_contracts()
+
+
 @mcp.resource("youk://skills")
 def list_available_skills() -> str:
     """List all available skills with health status and fast-path availability."""
@@ -285,4 +308,4 @@ def get_project_context(project: str) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport=_server_args.transport)

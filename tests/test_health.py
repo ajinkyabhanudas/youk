@@ -1,5 +1,6 @@
 """Tests for health.py — proposal filtering, 0-contracts finding, self-heal signals."""
 from __future__ import annotations
+from datetime import UTC
 
 
 def _audit_block(n: int, close: bool = True, skills: str = "code-review", project: str = "") -> str:
@@ -14,31 +15,29 @@ def _audit_block(n: int, close: bool = True, skills: str = "code-review", projec
 
 
 class TestLoadPendingProposals:
-    def test_filters_applied_by_status_field(self, youk_root):
-        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(
-            "# Proposals\n\n"
-            "## PENDING-001 — 2026-07-01\n"
-            "**Target:** foo\n**Change:** do X\n**Reason:** r\n"
-            "**Before:** \n**After:** y\n**Status:** APPLIED — 2026-07-02\n"
-            "**ChangeType:** CODE_EDIT\n**TargetSection:** f\n\n"
-            "## PENDING-002 — 2026-07-01\n"
-            "**Target:** bar\n**Change:** do Y\n**Reason:** r\n"
-            "**Before:** \n**After:** z\n**Status:** PENDING\n"
-            "**ChangeType:** SKILL_EDIT\n**TargetSection:** b\n"
+    def _p(self, id, status="PENDING"):
+        from models import Proposal
+        return Proposal(
+            id=id, target="t", change_description=f"c-{id}", reason="r",
+            before="", after="", status=status, proposed_date="2026-07-01",
+            change_type="SKILL_EDIT",
         )
-        from health import _load_pending_proposals
-        proposals = _load_pending_proposals()
+
+    def test_filters_applied_by_status_field(self, youk_root, claude_root):
+        import health
+        health.add_proposal(self._p("PENDING-LP001", status="APPLIED — 2026-07-02"))
+        health.add_proposal(self._p("PENDING-LP002", status="PENDING"))
+        proposals = health._load_pending_proposals()
         assert len(proposals) == 2  # _load_pending_proposals returns all
         pending_only = [p for p in proposals if "APPLIED" not in p.status]
         assert len(pending_only) == 1
-        assert "PENDING-002" in pending_only[0].id
+        assert "PENDING-LP002" in pending_only[0].id
 
-    def test_empty_file_returns_empty_list(self, youk_root):
-        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text("# No proposals\n")
+    def test_empty_db_returns_empty_list(self, youk_root, claude_root):
         from health import _load_pending_proposals
         assert _load_pending_proposals() == []
 
-    def test_no_file_returns_empty_list(self, youk_root):
+    def test_no_proposals_db_returns_empty_list(self, youk_root, claude_root):
         from health import _load_pending_proposals
         assert _load_pending_proposals() == []
 
@@ -538,37 +537,40 @@ class TestDormantSkillDetectionExpanded:
 
 
 class TestApplyProposalSafeTypes:
-    _PENDING = (
-        "# Proposals\n\n"
-        "## PENDING-001 — 2026-07-01\n"
-        "**Target:** skills/dev-loop/SKILL.md\n**Change:** add phase\n**Reason:** r\n"
-        "**Before:** \n**After:** new content\n**Status:** PENDING\n"
-        "**ChangeType:** SKILL_EDIT\n**TargetSection:** Phase 1\n\n"
-        "## PENDING-002 — 2026-07-01\n"
-        "**Target:** servers/core/src/session.py\n**Change:** fix func\n**Reason:** r\n"
-        "**Before:** old_code\n**After:** new_code\n**Status:** PENDING\n"
-        "**ChangeType:** CODE_EDIT\n**TargetSection:** session_start\n"
-    )
+    def _setup(self, health_mod):
+        from models import Proposal
+        health_mod.add_proposal(Proposal(
+            id="PENDING-001", target="skills/dev-loop/SKILL.md",
+            change_description="add phase", reason="r", before="", after="",
+            status="PENDING", proposed_date="2026-07-01",
+            change_type="SKILL_EDIT", target_section="Phase 1", content="new content",
+        ))
+        health_mod.add_proposal(Proposal(
+            id="PENDING-002", target="servers/core/src/session.py",
+            change_description="fix func", reason="r", before="old_code", after="new_code",
+            status="PENDING", proposed_date="2026-07-01",
+            change_type="CODE_EDIT", target_section="session_start",
+        ))
 
-    def test_confirmed_false_returns_blocked_true(self, youk_root):
-        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING)
-        from health import apply_proposal
-        result = apply_proposal("PENDING-001", confirmed=False)
+    def test_confirmed_false_returns_blocked_true(self, youk_root, claude_root):
+        import health
+        self._setup(health)
+        result = health.apply_proposal("PENDING-001", confirmed=False)
         assert result["blocked"] is True
         assert "Preview only" in result["message"]
 
-    def test_skill_edit_passes_safe_types_gate(self, youk_root, monkeypatch):
-        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING)
+    def test_skill_edit_passes_safe_types_gate(self, youk_root, claude_root, monkeypatch):
         import health as h
+        self._setup(h)
         captured = {}
         monkeypatch.setattr(h, "_execute_proposal", lambda p: (captured.update({"p": p}) or {"applied": True}))
         result = h.apply_proposal("PENDING-001", confirmed=True, safe_types=["SKILL_EDIT", "FILE_CREATE"])
         assert result.get("blocked") is not True
         assert captured["p"].change_type == "SKILL_EDIT"
 
-    def test_code_edit_blocked_by_safe_types_gate(self, youk_root, monkeypatch):
-        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING)
+    def test_code_edit_blocked_by_safe_types_gate(self, youk_root, claude_root, monkeypatch):
         import health as h
+        self._setup(h)
         executed = []
         monkeypatch.setattr(h, "_execute_proposal", lambda p: executed.append(p) or {"applied": True})
         result = h.apply_proposal("PENDING-002", confirmed=True, safe_types=["SKILL_EDIT", "FILE_CREATE"])
@@ -577,19 +579,19 @@ class TestApplyProposalSafeTypes:
         assert "manual review" in result["message"]
         assert executed == []  # _execute_proposal must NOT be called
 
-    def test_no_safe_types_applies_any_change_type(self, youk_root, monkeypatch):
-        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING)
+    def test_no_safe_types_applies_any_change_type(self, youk_root, claude_root, monkeypatch):
         import health as h
+        self._setup(h)
         executed = []
         monkeypatch.setattr(h, "_execute_proposal", lambda p: (executed.append(p) or {"applied": True}))
         result = h.apply_proposal("PENDING-002", confirmed=True)  # no safe_types
         assert result.get("blocked") is not True
         assert len(executed) == 1
 
-    def test_missing_proposal_returns_error(self, youk_root):
-        (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text(self._PENDING)
-        from health import apply_proposal
-        result = apply_proposal("PENDING-999", confirmed=True, safe_types=["SKILL_EDIT"])
+    def test_missing_proposal_returns_error(self, youk_root, claude_root):
+        import health
+        self._setup(health)
+        result = health.apply_proposal("PENDING-999", confirmed=True, safe_types=["SKILL_EDIT"])
         assert result["applied"] is False
         assert "not found" in result["error"]
 
@@ -845,7 +847,7 @@ class TestReadRecentAuditLogs:
 
     def test_reads_current_month_file(self, youk_root, claude_root):
         from datetime import datetime
-        month = datetime.utcnow().strftime("%Y-%m")
+        month = datetime.now(UTC).strftime("%Y-%m")
         (claude_root / "audit" / f"{month}.md").write_text("### Session — content\n")
         from health import _read_recent_audit_logs
         texts = _read_recent_audit_logs(days=30)
@@ -956,33 +958,34 @@ class TestRunHealthCheckWithSkillSignals:
 # ── _archive_applied_proposals ────────────────────────────────────────────────
 
 class TestArchiveAppliedProposals:
-    _PENDING_WITH_APPLIED = (
-        "# Proposals\n\n"
-        "## PENDING-001 — 2026-07-01\n**Status:** APPLIED — 2026-07-02\n\n"
-        "## PENDING-002 — 2026-07-01\n**Status:** PENDING\n"
-    )
-
-    def test_moves_applied_to_archive(self, youk_root):
-        proposals_dir = youk_root / "knowledge" / "proposals"
-        proposals_dir.mkdir(parents=True, exist_ok=True)
-        (proposals_dir / "PENDING.md").write_text(self._PENDING_WITH_APPLIED)
-        from health import _archive_applied_proposals
-        count = _archive_applied_proposals()
+    def test_counts_applied_proposals(self, youk_root, claude_root):
+        import health
+        from models import Proposal
+        # Insert one APPLIED and one PENDING proposal directly into SQLite
+        health.add_proposal(Proposal(
+            id="PENDING-ARCH-001", target="t", change_description="c",
+            reason="r", before="", after="", status="APPLIED — 2026-07-02",
+            proposed_date="2026-07-01", change_type="SKILL_EDIT",
+        ))
+        health.add_proposal(Proposal(
+            id="PENDING-ARCH-002", target="t", change_description="d",
+            reason="r", before="", after="", status="PENDING",
+            proposed_date="2026-07-01", change_type="SKILL_EDIT",
+        ))
+        count = health._archive_applied_proposals()
         assert count == 1
-        archive = (proposals_dir / "APPLIED-ARCHIVE.md").read_text()
-        assert "PENDING-001" in archive
-        pending = (proposals_dir / "PENDING.md").read_text()
-        assert "PENDING-001" not in pending
-        assert "PENDING-002" in pending
 
-    def test_returns_zero_when_nothing_to_archive(self, youk_root):
-        proposals_dir = youk_root / "knowledge" / "proposals"
-        proposals_dir.mkdir(parents=True, exist_ok=True)
-        (proposals_dir / "PENDING.md").write_text("# Proposals\n\n## PENDING-001\n**Status:** PENDING\n")
-        from health import _archive_applied_proposals
-        assert _archive_applied_proposals() == 0
+    def test_returns_zero_when_nothing_applied(self, youk_root, claude_root):
+        import health
+        from models import Proposal
+        health.add_proposal(Proposal(
+            id="PENDING-ARCH-003", target="t", change_description="e",
+            reason="r", before="", after="", status="PENDING",
+            proposed_date="2026-07-01", change_type="SKILL_EDIT",
+        ))
+        assert health._archive_applied_proposals() == 0
 
-    def test_returns_zero_when_file_missing(self, youk_root):
+    def test_returns_zero_when_no_proposals(self, youk_root, claude_root):
         from health import _archive_applied_proposals
         assert _archive_applied_proposals() == 0
 
@@ -1084,10 +1087,10 @@ class TestDetectCrossProjectPatterns:
 # ── add_proposal deduplication ────────────────────────────────────────────────
 
 class TestAddProposal:
-    def _make_proposal(self, desc="do X"):
+    def _make_proposal(self, id="PENDING-TEST", desc="do X"):
         from models import Proposal
         return Proposal(
-            id="PENDING-TEST",
+            id=id,
             target="skills/learn/SKILL.md",
             change_description=desc,
             reason="test",
@@ -1100,26 +1103,28 @@ class TestAddProposal:
             content="new content",
         )
 
-    def test_creates_file_when_missing(self, youk_root):
-        from health import add_proposal
-        add_proposal(self._make_proposal())
-        assert (youk_root / "knowledge" / "proposals" / "PENDING.md").exists()
+    def test_proposal_stored_in_db(self, youk_root, claude_root):
+        import health
+        health.add_proposal(self._make_proposal("PENDING-H001", "stored in db"))
+        loaded = health._load_pending_proposals()
+        assert any(p.id == "PENDING-H001" for p in loaded)
 
-    def test_deduplicates_by_change_description(self, youk_root):
-        from health import add_proposal
-        p = self._make_proposal("unique description for dedup test")
-        add_proposal(p)
-        add_proposal(p)  # second call should be a no-op
-        content = (youk_root / "knowledge" / "proposals" / "PENDING.md").read_text()
-        assert content.count("unique description for dedup test") == 1
+    def test_deduplicates_by_id(self, youk_root, claude_root):
+        import health
+        p = self._make_proposal("PENDING-H002", "unique description for dedup test")
+        health.add_proposal(p)
+        health.add_proposal(p)  # second call should be a no-op (INSERT OR IGNORE on id)
+        loaded = health._load_pending_proposals()
+        assert len([x for x in loaded if x.id == "PENDING-H002"]) == 1
 
-    def test_appends_distinct_proposals(self, youk_root):
-        from health import add_proposal
-        add_proposal(self._make_proposal("description one"))
-        add_proposal(self._make_proposal("description two"))
-        content = (youk_root / "knowledge" / "proposals" / "PENDING.md").read_text()
-        assert "description one" in content
-        assert "description two" in content
+    def test_appends_distinct_proposals(self, youk_root, claude_root):
+        import health
+        health.add_proposal(self._make_proposal("PENDING-H003", "description one"))
+        health.add_proposal(self._make_proposal("PENDING-H004", "description two"))
+        loaded = health._load_pending_proposals()
+        descs = {p.change_description for p in loaded}
+        assert "description one" in descs
+        assert "description two" in descs
 
 
 # ── _compute_diff_preview (SKILL_EDIT, FILE_CREATE, unknown) ──────────────────
@@ -1467,8 +1472,8 @@ class TestQueuePromotionProposals:
         count, gen_pending = health._queue_promotion_proposals(candidates)
         assert count == 1
         assert "verify" not in gen_pending
-        pending = (youk_root / "knowledge" / "proposals" / "PENDING.md").read_text()
-        assert "verify" in pending.lower()
+        loaded = health._load_pending_proposals()
+        assert any("verify" in p.target.lower() for p in loaded)
 
     def test_queues_code_edit_proposal(self, youk_root, claude_root, monkeypatch):
         (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
@@ -1487,8 +1492,8 @@ class TestQueuePromotionProposals:
         count, gen_pending = health._queue_promotion_proposals(candidates)
         assert count == 1
         assert "learn" not in gen_pending
-        pending = (youk_root / "knowledge" / "proposals" / "PENDING.md").read_text()
-        assert "CODE_EDIT" in pending
+        loaded = health._load_pending_proposals()
+        assert any(p.change_type == "CODE_EDIT" for p in loaded)
 
     def test_missing_skill_md_goes_to_gen_pending(self, youk_root, claude_root, monkeypatch):
         """Skills with no SKILL.md are returned in gen_pending, not queued as proposals."""
@@ -1688,7 +1693,7 @@ class TestAuditSkillQualitySingleWeak:
 class TestImprovementVelocityExtended:
     def _write_audit(self, claude_root, sessions_data):
         from datetime import datetime
-        month = datetime.utcnow().strftime("%Y-%m")
+        month = datetime.now(UTC).strftime("%Y-%m")
         audit_dir = claude_root / "audit"
         blocks = []
         for i, s in enumerate(sessions_data):
@@ -1756,7 +1761,7 @@ class TestAuditGlobalContractsExtended:
 class TestKnowledgeVelocityStalled:
     def _write_audit(self, claude_root, sessions_data):
         from datetime import datetime
-        month = datetime.utcnow().strftime("%Y-%m")
+        month = datetime.now(UTC).strftime("%Y-%m")
         blocks = []
         for i, s in enumerate(sessions_data):
             blocks.append(
@@ -2028,7 +2033,7 @@ class TestExecuteProposalExtended:
 class TestRunHealthCheckWithSkillSignalsExtended:
     def _write_audit_with_gaps(self, claude_root, gaps: list[tuple[str, str, str]]) -> None:
         from datetime import datetime
-        month = datetime.utcnow().strftime("%Y-%m")
+        month = datetime.now(UTC).strftime("%Y-%m")
         lines = []
         for i, (proj, skill, desc) in enumerate(gaps):
             lines.append(f"### Session — 2026-07-0{i+1} 10:00 UTC")
@@ -2179,7 +2184,7 @@ def _audit_block_with_findings(
     from datetime import datetime, timedelta
     # Use dates clearly within the 30-day window, offset by n days back from today.
     # Avoids boundary failures when test date coincides with the cutoff timestamp.
-    date_str = (datetime.utcnow() - timedelta(days=n)).strftime("%Y-%m-%d")
+    date_str = (datetime.now(UTC) - timedelta(days=n)).strftime("%Y-%m-%d")
     parts = [f"### Session — {date_str} 10:00 UTC\n"]
     parts.append("Skills: code-review\n")
     parts.append("CloseCluster: yes\n")
@@ -2428,12 +2433,12 @@ class TestRecomputeOrgScore:
     def test_skips_write_when_score_unchanged_same_day(self, youk_root, claude_root):
         """Second call on same day with same score is skipped."""
         import json
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         (claude_root / "audit" / "2026-07.md").write_text(
             _audit_block(n=1, skills="code-review")
         )
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        today = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         metrics_file = youk_root / "state" / "improvement-metrics.json"
         # Seed with today's entry at the exact same score recompute_org_score would compute
         from health import _score_org, _read_recent_audit_logs
@@ -2467,7 +2472,6 @@ class TestRecomputeOrgScore:
     def test_caps_entries_at_twenty(self, youk_root, claude_root):
         """Entries list is capped at 20 — old entries are pruned."""
         import json
-        from datetime import datetime, timezone
         (claude_root / "audit" / "2026-07.md").write_text(
             _audit_block(n=1, skills="code-review")
         )

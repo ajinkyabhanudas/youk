@@ -39,9 +39,12 @@ uninstall: ## Revert youk integration (preserves knowledge; pass ARGS="--purge" 
 	@bash scripts/uninstall.sh $(ARGS)
 
 .PHONY: update
-update: ## Pull latest + rebuild images + prune stale containers
+update: ## Pull latest + rebuild images + restart persistent servers
 	git pull --rebase
-	$(MAKE) rebuild
+	docker stop youk-core-server youk-code-server 2>/dev/null || true
+	$(MAKE) build
+	launchctl kickstart -k gui/$$(id -u)/com.youk.core-server 2>/dev/null || true
+	launchctl kickstart -k gui/$$(id -u)/com.youk.code-server 2>/dev/null || true
 	@$(MAKE) --no-print-directory _prune-stale-containers
 
 .PHONY: build

@@ -67,6 +67,13 @@ from skill_signals import (
     mark_proposal_applied as _mark_proposal_applied,
 )
 
+import argparse as _argparse
+_p = _argparse.ArgumentParser(add_help=False)
+_p.add_argument("--transport", default="stdio")
+_p.add_argument("--port", type=int, default=8000)
+_p.add_argument("--host", default="0.0.0.0")
+_server_args, _ = _p.parse_known_args()
+
 YOUK_ROOT = Path("/youk")
 CLAUDE_ROOT = Path("/claude")
 
@@ -108,6 +115,8 @@ def _append_gate_to_active_task(gate_name: str) -> None:
 
 mcp = FastMCP(
     "youk-core",
+    host=_server_args.host,
+    port=_server_args.port,
     instructions=(
         "youk behavioral DNA — always active.\n"
         "1. Reasoning loops exit on zero new objections from ALL angles, not on round count. "
@@ -1076,9 +1085,10 @@ def get_proposals(project_slug: str | None = None) -> dict:
         except Exception:
             project_slug = "youk"
 
-    proposals = _load_pending_proposals()
+    # Pass slug to DB for efficient filtering; empty string = fetch all projects
+    proposals = _load_pending_proposals(project_slug if project_slug else None)
 
-    # Filter by project: empty string = show all (backward-compat for /improve)
+    # Legacy in-memory filter: normalize empty project_slug to "youk" for old rows
     if project_slug:
         proposals = [
             p for p in proposals
@@ -1245,7 +1255,25 @@ def update_convergence_state(
     Returns the updated convergence_state with distance_from_optimum.
     """
     import json as _json
-    cs_file = YOUK_ROOT / "state" / "convergence-state.json"
+    from session import _slug_state_dir as _ssd
+    # Resolve per-slug convergence file from active session
+    _slug = None
+    _sopen = YOUK_ROOT / "state" / "session-open.json"
+    if _sopen.exists():
+        try:
+            _slug = _json.loads(_sopen.read_text()).get("slug", "")
+        except Exception:
+            pass
+    if not _slug:
+        _sessions = YOUK_ROOT / "state" / "sessions"
+        if _sessions.exists():
+            _cands = sorted(_sessions.glob("*/open.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if _cands:
+                try:
+                    _slug = _json.loads(_cands[0].read_text()).get("slug", "")
+                except Exception:
+                    pass
+    cs_file = (_ssd(_slug) / "convergence.json") if _slug else (YOUK_ROOT / "state" / "convergence-state.json")
     current = {}
     try:
         if cs_file.exists():
@@ -1384,9 +1412,13 @@ def get_interpretation() -> str:
 
 @mcp.resource("youk://knowledge/proposals")
 def get_proposals_resource() -> str:
-    """Pending self-heal proposals."""
-    pending = YOUK_ROOT / "knowledge" / "proposals" / "PENDING.md"
-    return pending.read_text() if pending.exists() else "No pending proposals."
+    """Pending self-heal proposals (rendered from SQLite store)."""
+    from health import _load_pending_proposals, _render_pending_md
+    proposals = _load_pending_proposals()
+    pending_only = [p for p in proposals if p.status == "PENDING"]
+    if not pending_only:
+        return "No pending proposals."
+    return _render_pending_md(pending_only)
 
 
 @mcp.tool()
@@ -1821,4 +1853,4 @@ def record_steering_decomposition(
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport=_server_args.transport)

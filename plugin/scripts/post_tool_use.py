@@ -108,7 +108,10 @@ def main() -> None:
         ok_no_output()
         return
 
-    active_task_file = state_dir / "active_task.json"
+    slug = slug_from_cwd(cwd)
+    slug_dir = root / "state" / "sessions" / slug
+    slug_dir.mkdir(parents=True, exist_ok=True)
+    active_task_file = slug_dir / "active_task.json"
 
     # Load existing state
     existing: dict = {}
@@ -117,12 +120,14 @@ def main() -> None:
             existing = json.loads(active_task_file.read_text())
         except Exception:
             existing = {}
-
-    # Only update if this session owns the file (cwd matches)
-    existing_cwd = existing.get("cwd", "")
-    if existing_cwd and existing_cwd != cwd:
-        # Different project — reset
-        existing = {}
+    elif (state_dir / "active_task.json").exists():
+        # Migrate from legacy flat path on first write for this slug
+        try:
+            legacy = json.loads((state_dir / "active_task.json").read_text())
+            if legacy.get("cwd", "") == cwd:
+                existing = legacy
+        except Exception:
+            pass
 
     # Update files_touched
     files_touched: list[str] = existing.get("files_touched", [])
@@ -145,7 +150,7 @@ def main() -> None:
     updated = {
         "task": task_label,
         "cwd": cwd,
-        "slug": slug_from_cwd(cwd),
+        "slug": slug,
         "files_touched": files_touched,
         "last_signal": signal or existing.get("last_signal", ""),
         "last_tool": tool_name,

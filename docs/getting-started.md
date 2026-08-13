@@ -242,7 +242,7 @@ make checkup
 | L0 Environment | Python ≥3.11, docker CLI, PyYAML, model imports | No |
 | L1 Infrastructure | Docker daemon, image existence, MCP handshake, critical tool list | Yes |
 | L2 Route Reachability | `route_task` sizing, session lifecycle, slug correlation | Yes |
-| L3 Skill Completeness | SKILL-REGISTRY.md vs SKILL.md files, `route_to_skill` for all 52 capability skills | Yes |
+| L3 Skill Completeness | SKILL-REGISTRY.md vs SKILL.md files, `route_to_skill` for all 53 capability skills | Yes |
 | L4 Integrity | YAML validity, doc-map authority paths, stale state detection | No (static) / Yes (dynamic) |
 | L5 Gates | NFR gate, challenge gate, task contract gate, guardrails, proposal lifecycle | No |
 | L6 End-to-End | Full session round-trip: `session_start → route_task → route_to_skill → self_heal → session_end` | Yes |

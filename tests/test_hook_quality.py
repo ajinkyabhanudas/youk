@@ -515,6 +515,13 @@ class TestPostToolUseHook:
         except SystemExit:
             pass
 
+        # Hook now writes to per-slug path: state/sessions/{slug}/active_task.json
+        cwd = data.get("cwd", "")
+        slug = Path(cwd).name if cwd else ""
+        slug_file = root / "state" / "sessions" / slug / "active_task.json"
+        if slug_file.exists():
+            return json.loads(slug_file.read_text())
+        # Fallback: legacy flat path (for tests without cwd)
         active_file = root / "state" / "active_task.json"
         if active_file.exists():
             return json.loads(active_file.read_text())
