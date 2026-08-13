@@ -16,6 +16,36 @@ YOUK_ROOT = Path("/youk")
 HOST_HOME = Path("/host-home")   # $HOME mounted :ro when install.sh adds -v $HOME:/host-home:ro
 STATE_FILE = YOUK_ROOT / "state" / "session.json"
 
+
+def _slug_state_dir(slug: str) -> Path:
+    """Per-session state directory — isolates concurrent sessions by project slug."""
+    d = YOUK_ROOT / "state" / "sessions" / slug
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _get_current_slug() -> str:
+    """Read the active session slug from per-slug dirs or legacy session-open.json."""
+    sopen = YOUK_ROOT / "state" / "session-open.json"
+    if sopen.exists():
+        try:
+            return json.loads(sopen.read_text()).get("slug", "")
+        except Exception:
+            pass
+    sessions_dir = YOUK_ROOT / "state" / "sessions"
+    if sessions_dir.exists():
+        candidates = sorted(
+            sessions_dir.glob("*/open.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            try:
+                return json.loads(candidates[0].read_text()).get("slug", "")
+            except Exception:
+                pass
+    return ""
+
 _CONTRACT_PHRASES = [
     "always ", "never ", "from now on", "remember to", "make sure you",
     "every time", "don't forget", "commit format", "test after", "before committing",
@@ -2251,14 +2281,20 @@ def start_session(project_dir: str) -> SessionState:
 
     # Write session-open.json AFTER build_brief — build_brief deletes this file
     # (because compact_context supersedes it), so we must write it last.
-    open_file = YOUK_ROOT / "state" / "session-open.json"
+    # Per-slug path isolates concurrent sessions; legacy flat path kept for
+    # _merge_stale_checkpoint backward-compat during transition.
+    _open_payload = json.dumps({
+        "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "slug": slug,
+        "session_counter": state["session_counter"],
+        "plan_items": session_plan[:3],
+    }, indent=2)
     try:
-        open_file.write_text(json.dumps({
-            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "slug": slug,
-            "session_counter": state["session_counter"],
-            "plan_items": session_plan[:3],
-        }, indent=2))
+        _slug_state_dir(slug).joinpath("open.json").write_text(_open_payload)
+    except Exception:
+        pass
+    try:
+        (YOUK_ROOT / "state" / "session-open.json").write_text(_open_payload)
     except Exception:
         pass
 
@@ -2583,7 +2619,8 @@ def task_checkpoint(
     # The model reads this and updates angles via update_convergence_state() as
     # external pressure arrives. Included in every M+ checkpoint return.
     if size.upper() not in ("XS", "S"):
-        cs_file = YOUK_ROOT / "state" / "convergence-state.json"
+        _current_slug = _get_current_slug()
+        cs_file = _slug_state_dir(_current_slug) / "convergence.json" if _current_slug else YOUK_ROOT / "state" / "convergence-state.json"
         try:
             if cs_file.exists():
                 result["convergence_state"] = json.loads(cs_file.read_text())
@@ -2790,7 +2827,7 @@ def _infer_task_type_from_active_task() -> str:
     the current session slug from session-open.json.
     """
     try:
-        active_task_file = YOUK_ROOT / "state" / "active_task.json"
+        active_task_file = _active_task_file(YOUK_ROOT)
         if not active_task_file.exists():
             return "other"
         data = json.loads(active_task_file.read_text())
@@ -2881,6 +2918,7 @@ def end_session(
     contract_violations: Contracts not followed this session.
     Written as ContractViolation: {text} lines in audit log.
     """
+    slug = ""  # set early so per-slug cleanup at session close is always safe
     _OUTCOME_ENUM = {"SHIPPED", "STAGED", "ABANDONED", "NONE"}
     _OUTCOME_RESULT_ENUM = {"WORKED", "FAILED", "UNKNOWN", "PENDING"}
     outcome = (outcome or "NONE").upper()
@@ -3118,7 +3156,8 @@ def end_session(
     # Write convergence state to audit — distance from optimum at session close.
     # Reality writeback: if convergence-state.json exists, log angles_converged
     # and any unknown_unknowns so self_heal can track cross-session drift.
-    cs_file = YOUK_ROOT / "state" / "convergence-state.json"
+    _cs_slug_file = _slug_state_dir(slug) / "convergence.json" if slug else None
+    cs_file = _cs_slug_file if (_cs_slug_file and _cs_slug_file.exists()) else YOUK_ROOT / "state" / "convergence-state.json"
     if cs_file.exists():
         try:
             cs = json.loads(cs_file.read_text())
@@ -3138,6 +3177,18 @@ def end_session(
 
     # Clear both recovery files — session_end is the authoritative audit entry.
     # If these aren't cleared, next session_start would write duplicate entries.
+    # Also clear per-slug open.json and convergence.json for this session.
+    if slug:
+        for _slug_file in [
+            _slug_state_dir(slug) / "open.json",
+            _slug_state_dir(slug) / "convergence.json",
+            _slug_state_dir(slug) / "active_task.json",
+        ]:
+            if _slug_file.exists():
+                try:
+                    _slug_file.unlink()
+                except Exception:
+                    pass
     for _recovery_file in [
         YOUK_ROOT / "state" / "session-checkpoint.json",
         YOUK_ROOT / "state" / "session-open.json",
@@ -3184,7 +3235,9 @@ def end_session(
     # project this session was opened as."
     resume_slug = slug
     try:
-        open_file = YOUK_ROOT / "state" / "session-open.json"
+        # Prefer per-slug open.json; fall back to legacy flat file for backward-compat.
+        _slug_open = _slug_state_dir(slug) / "open.json" if slug else None
+        open_file = _slug_open if (_slug_open and _slug_open.exists()) else YOUK_ROOT / "state" / "session-open.json"
         if open_file.exists():
             open_data = json.loads(open_file.read_text())
             open_slug = open_data.get("slug", "")
@@ -3484,6 +3537,34 @@ _GATES_FOR_CEREMONY: dict[str, list[str]] = {
 }
 
 
+def _active_task_file(root: Path) -> Path:
+    """Return the per-slug active_task.json path, falling back to flat state/ path."""
+    sopen = root / "state" / "session-open.json"
+    slug = None
+    if sopen.exists():
+        try:
+            slug = json.loads(sopen.read_text()).get("slug", "")
+        except Exception:
+            pass
+    if not slug:
+        # Try per-slug dirs — find the most recently written open.json
+        sessions_dir = root / "state" / "sessions"
+        if sessions_dir.exists():
+            candidates = sorted(
+                sessions_dir.glob("*/open.json"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if candidates:
+                try:
+                    slug = json.loads(candidates[0].read_text()).get("slug", "")
+                except Exception:
+                    pass
+    if slug:
+        return root / "state" / "sessions" / slug / "active_task.json"
+    return root / "state" / "active_task.json"
+
+
 def write_routing_context(task: str, result: dict, youk_root: Path | None = None) -> None:
     """Write semantic routing context into active_task.json immediately after route_task fires.
 
@@ -3492,7 +3573,7 @@ def write_routing_context(task: str, result: dict, youk_root: Path | None = None
     Lives in session.py (no mcp dependency) for testability.
     """
     root = youk_root or YOUK_ROOT
-    active_task_file = root / "state" / "active_task.json"
+    active_task_file = _active_task_file(root)
     ceremony = result.get("ceremony", "standard")
     gates_expected = _GATES_FOR_CEREMONY.get(ceremony, _GATES_FOR_CEREMONY["standard"])
 
@@ -3513,15 +3594,16 @@ def write_routing_context(task: str, result: dict, youk_root: Path | None = None
     existing["routing_context"] = routing_ctx
     if not existing.get("task") or existing.get("task", "").startswith(("editing ", "running:")):
         existing["task"] = task[:200]
-    # Stamp slug so _infer_task_type_from_active_task's cross-project guard doesn't
-    # depend on a hook writing it — the guard owns its own invariant.
-    sopen = root / "state" / "session-open.json"
-    if sopen.exists():
-        try:
-            existing["slug"] = json.loads(sopen.read_text()).get("slug", "")
-        except Exception:
-            pass
+    # Stamp slug from active_task_file's own dir name (per-slug) or session-open.json.
+    if not existing.get("slug"):
+        sopen = root / "state" / "session-open.json"
+        if sopen.exists():
+            try:
+                existing["slug"] = json.loads(sopen.read_text()).get("slug", "")
+            except Exception:
+                pass
     try:
+        active_task_file.parent.mkdir(parents=True, exist_ok=True)
         active_task_file.write_text(json.dumps(existing, indent=2))
     except Exception:
         pass
@@ -3534,7 +3616,7 @@ def append_gate_to_active_task(gate_name: str, youk_root: Path | None = None) ->
     Lives in session.py (no mcp dependency) for testability.
     """
     root = youk_root or YOUK_ROOT
-    active_task_file = root / "state" / "active_task.json"
+    active_task_file = _active_task_file(root)
     if not active_task_file.exists():
         return
     try:
@@ -3559,7 +3641,7 @@ def get_gate_sequence_resume_item(youk_root: Path | None = None) -> str | None:
     Used by session_start plan builder and testable in isolation.
     """
     root = youk_root or YOUK_ROOT
-    active_task_file = root / "state" / "active_task.json"
+    active_task_file = _active_task_file(root)
     if not active_task_file.exists():
         return None
     try:

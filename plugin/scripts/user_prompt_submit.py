@@ -19,6 +19,7 @@ These thresholds trigger compaction at ~30-40% of the 200k context window,
 leaving plenty of room and avoiding auto-compaction at 70%.
 """
 from __future__ import annotations
+import json
 import sys
 from pathlib import Path
 
@@ -95,7 +96,7 @@ def _estimate_turn_count(transcript_path: str) -> int:
         return 0
 
 
-def _load_session_counter(root: "Path") -> int:
+def _load_session_counter(root: Path) -> int:
     """Read current session counter from state/session.json."""
     try:
         f = root / "state" / "session.json"
@@ -106,7 +107,7 @@ def _load_session_counter(root: "Path") -> int:
     return 0
 
 
-def _load_session_id(root: "Path") -> str:
+def _load_session_id(root: Path) -> str:
     """Read current session slug/id from state/session-open.json."""
     try:
         f = root / "state" / "session-open.json"

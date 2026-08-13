@@ -76,7 +76,28 @@ def load_session_plan(root: Path, slug: str) -> list[str]:
         return []
 
 
-def load_active_task(root: Path) -> dict:
+def load_active_task(root: Path, slug: str = "") -> dict:
+    if slug:
+        f = root / "state" / "sessions" / slug / "active_task.json"
+        if f.exists():
+            try:
+                return json.loads(f.read_text())
+            except Exception:
+                pass
+    # Fallback: scan sessions dir for most-recently-written active_task.json
+    sessions_dir = root / "state" / "sessions"
+    if sessions_dir.exists():
+        candidates = sorted(
+            sessions_dir.glob("*/active_task.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            try:
+                return json.loads(candidates[0].read_text())
+            except Exception:
+                pass
+    # Legacy flat path
     f = root / "state" / "active_task.json"
     if not f.exists():
         return {}
@@ -304,7 +325,9 @@ def route_task_ran_this_session(root: Path, slug: str) -> bool:
         if not slug_match:
             return False
         # Session boundary check: route-task-ran.json must be newer than session-open.json
-        open_file = root / "state" / "session-open.json"
+        # Prefer per-slug open.json; fall back to legacy flat file.
+        _slug_open = root / "state" / "sessions" / slug / "open.json"
+        open_file = _slug_open if _slug_open.exists() else root / "state" / "session-open.json"
         if open_file.exists():
             open_mtime = open_file.stat().st_mtime
             flag_mtime = flag_file.stat().st_mtime
@@ -328,7 +351,8 @@ def count_route_warnings_this_session(root: Path, slug: str) -> int:
     if not warnings_file.exists():
         return 0
     try:
-        open_file = root / "state" / "session-open.json"
+        _slug_open = root / "state" / "sessions" / slug / "open.json"
+        open_file = _slug_open if _slug_open.exists() else root / "state" / "session-open.json"
         session_start = 0.0
         if open_file.exists():
             session_start = open_file.stat().st_mtime

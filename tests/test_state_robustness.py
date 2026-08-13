@@ -34,7 +34,21 @@ def _write_active_task(state_dir: Path, data: dict) -> None:
 
 
 def _read_active_task(state_dir: Path) -> dict:
-    return json.loads((state_dir / "active_task.json").read_text())
+    """Read active_task.json from flat path or per-slug path (whichever exists)."""
+    flat = state_dir / "active_task.json"
+    if flat.exists():
+        return json.loads(flat.read_text())
+    # Per-slug: find the most recently written active_task.json under sessions/
+    sessions = state_dir / "sessions"
+    if sessions.exists():
+        candidates = sorted(
+            sessions.glob("*/active_task.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            return json.loads(candidates[0].read_text())
+    raise FileNotFoundError(f"No active_task.json found under {state_dir}")
 
 
 def _standard_result(**kwargs) -> dict:

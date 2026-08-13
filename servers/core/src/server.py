@@ -1255,7 +1255,25 @@ def update_convergence_state(
     Returns the updated convergence_state with distance_from_optimum.
     """
     import json as _json
-    cs_file = YOUK_ROOT / "state" / "convergence-state.json"
+    from session import _slug_state_dir as _ssd
+    # Resolve per-slug convergence file from active session
+    _slug = None
+    _sopen = YOUK_ROOT / "state" / "session-open.json"
+    if _sopen.exists():
+        try:
+            _slug = _json.loads(_sopen.read_text()).get("slug", "")
+        except Exception:
+            pass
+    if not _slug:
+        _sessions = YOUK_ROOT / "state" / "sessions"
+        if _sessions.exists():
+            _cands = sorted(_sessions.glob("*/open.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if _cands:
+                try:
+                    _slug = _json.loads(_cands[0].read_text()).get("slug", "")
+                except Exception:
+                    pass
+    cs_file = (_ssd(_slug) / "convergence.json") if _slug else (YOUK_ROOT / "state" / "convergence-state.json")
     current = {}
     try:
         if cs_file.exists():
