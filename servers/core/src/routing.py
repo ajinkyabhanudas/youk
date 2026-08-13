@@ -10,13 +10,20 @@ from models import TaskSize, RoutingDecision, SoftRuleWarning, ViolationType
 
 YOUK_ROOT = Path("/youk")
 ROUTES_FILE = YOUK_ROOT / "config" / "routes.yaml"
-_BREADCRUMB_FILE = YOUK_ROOT / "state" / "routing-breadcrumb.json"
+def _breadcrumb_file(slug: str = "") -> Path:
+    """Return slug-scoped breadcrumb path, falling back to root for unknown slug."""
+    if slug:
+        d = YOUK_ROOT / "state" / "sessions" / slug
+        d.mkdir(parents=True, exist_ok=True)
+        return d / "routing-breadcrumb.json"
+    return YOUK_ROOT / "state" / "routing-breadcrumb.json"
 
 
-def _write_routing_breadcrumb(task: str, size: str) -> None:
+def _write_routing_breadcrumb(task: str, size: str, slug: str = "") -> None:
     """Record that route_task fired for this task. Cleared by task_checkpoint after read."""
     import hashlib as _hashlib
     task_id = _hashlib.sha1(task.encode()).hexdigest()[:12]
+    _BREADCRUMB_FILE = _breadcrumb_file(slug)
     try:
         _BREADCRUMB_FILE.parent.mkdir(parents=True, exist_ok=True)
         _BREADCRUMB_FILE.write_text(json.dumps({
@@ -80,6 +87,7 @@ def route_task(
     task: str,
     skills_already_invoked: list[str] | None = None,
     intent_brief: dict | None = None,
+    slug: str = "",
 ) -> RoutingDecision:
     # Scope-collapse gate: if an intent brief was provided and scope is still
     # ambiguous, block routing and surface the collapsing question.
@@ -186,5 +194,5 @@ def route_task(
     # Write breadcrumb so task_checkpoint can verify routing ran before M+ work.
     # Only write for non-blocked M+ decisions — XS/S bypass is intentional.
     if not decision.blocked and size in (TaskSize.M, TaskSize.L, TaskSize.XL):
-        _write_routing_breadcrumb(task, size.value)
+        _write_routing_breadcrumb(task, size.value, slug=slug)
     return decision

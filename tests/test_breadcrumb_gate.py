@@ -31,7 +31,7 @@ class TestRoutingBreadcrumbWrite:
     def test_m_task_writes_breadcrumb(self, tmp_path):
         from routing import route_task
         bf = tmp_path / "routing-breadcrumb.json"
-        with patch("routing._BREADCRUMB_FILE", bf):
+        with patch("routing._breadcrumb_file", return_value=bf):
             result = route_task("implement new feature in session tracking module")
         if not result.blocked and result.size.value in ("M", "L", "XL"):
             assert bf.exists()
@@ -40,7 +40,7 @@ class TestRoutingBreadcrumbWrite:
         from routing import route_task
         bf = tmp_path / "routing-breadcrumb.json"
         task = "implement routing breadcrumb feature for session enforcement"
-        with patch("routing._BREADCRUMB_FILE", bf):
+        with patch("routing._breadcrumb_file", return_value=bf):
             result = route_task(task)
         if not result.blocked and result.size.value in ("M", "L", "XL"):
             data = json.loads(bf.read_text())
@@ -51,14 +51,14 @@ class TestRoutingBreadcrumbWrite:
     def test_xs_task_does_not_write_breadcrumb(self, tmp_path):
         from routing import route_task
         bf = tmp_path / "routing-breadcrumb.json"
-        with patch("routing._BREADCRUMB_FILE", bf):
+        with patch("routing._breadcrumb_file", return_value=bf):
             route_task("fix typo")
         assert not bf.exists()
 
     def test_s_task_does_not_write_breadcrumb(self, tmp_path):
         from routing import route_task
         bf = tmp_path / "routing-breadcrumb.json"
-        with patch("routing._BREADCRUMB_FILE", bf):
+        with patch("routing._breadcrumb_file", return_value=bf):
             result = route_task("rename variable in one file")
         # Only assert no breadcrumb when routing actually returned XS/S
         if result.size.value in ("XS", "S"):
@@ -75,17 +75,16 @@ class TestRoutingBreadcrumbWrite:
             },
             "estimated_size": "M",
         }
-        with patch("routing._BREADCRUMB_FILE", bf):
+        with patch("routing._breadcrumb_file", return_value=bf):
             result = route_task("get it to elite level", intent_brief=intent_brief)
         assert result.blocked is True
         assert not bf.exists()
 
     def test_breadcrumb_write_failure_does_not_raise(self, tmp_path):
         from routing import route_task
-        # Non-existent parent directory — mkdir inside _write_routing_breadcrumb
-        # is patched to fail; routing should still return a valid decision
+        # _breadcrumb_file returns a path whose parent doesn't exist and mkdir fails
         bf = tmp_path / "no_dir" / "routing-breadcrumb.json"
-        with patch("routing._BREADCRUMB_FILE", bf):
+        with patch("routing._breadcrumb_file", return_value=bf):
             with patch("routing.Path.mkdir", side_effect=OSError("disk full")):
                 result = route_task("implement authentication system from scratch")
         assert result is not None

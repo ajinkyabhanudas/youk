@@ -691,12 +691,14 @@ def _update_resume_point(slug: str, resume_text: str) -> None:
         try:
             ResumePointer(slug=slug, text=clean_text)
         except StateValidationError:
-            # One retry after an aggressive strip; if it still fails, do not write.
+            # One retry after an aggressive strip.
             clean_text = _strip_resume_wrapping(clean_text)[:200]
             try:
                 ResumePointer(slug=slug, text=clean_text)
             except StateValidationError:
-                return
+                # Still invalid — truncate to bare text rather than writing nothing.
+                # A degraded pointer beats a stale one from a prior session.
+                clean_text = clean_text[:80].split(":")[0].strip() or clean_text[:40]
     except ImportError:
         # Schema layer unavailable (host without shared on path) — proceed with the
         # stripped text, which already breaks the known recursion class.
@@ -1874,8 +1876,8 @@ def start_session(project_dir: str) -> SessionState:
             if line.startswith("resume-from:"):
                 l2_resume = line[len("resume-from:"):].strip()
                 if l2_resume:
-                    if context_health == "NONE":
-                        context_health = "L1"
+                    if context_health in ("NONE", "L1"):
+                        context_health = "L2"
                 break
 
     if existing_ctx and context_health == "NONE":
@@ -1890,7 +1892,9 @@ def start_session(project_dir: str) -> SessionState:
         if bootstrap_signals:
             context_health = "L1-bootstrap"
 
-    # Priority-ordered resume point: L3 > L2 > active_task > README snippet > bootstrap > git log
+    # Priority-ordered resume point: L3 > L2 > pre-close > active_task > README > bootstrap > git log
+
+    # Read active_task.json — slug-guarded so cross-project bleed is impossible.
     _active_task_resume = ""
     _at_file = _active_task_file(YOUK_ROOT)
     if _at_file.exists():
@@ -1898,13 +1902,34 @@ def start_session(project_dir: str) -> SessionState:
             _at = json.loads(_at_file.read_text())
             _at_task = _at.get("task", "")
             _at_slug = _at.get("slug", "")
-            if _at_task and (_at_slug == slug or not _at_slug):
+            if _at_task and _at_slug == slug:
                 _active_task_resume = f"In progress: {_at_task[:180]}"
+        except Exception:
+            pass
+
+    # Read pre-close.json — written by end_session, consumed once here.
+    # Carries the last known task + whether the session closed cleanly (/done) or dropped.
+    _pre_close_task = ""
+    _pre_close_dropped = False
+    _pre_close_file = _slug_state_dir(slug) / "pre-close.json"
+    if _pre_close_file.exists():
+        try:
+            import time as _pct
+            _pc = json.loads(_pre_close_file.read_text())
+            _pc_age = _pct.time() - _pc.get("written_at", 0)
+            if _pc_age < 7 * 24 * 3600:  # ignore if >7 days stale
+                _pre_close_task = _pc.get("task", "")
+                _pre_close_dropped = not _pc.get("closed_cleanly", False)
+            _pre_close_file.unlink()  # consume — one read per session_start
         except Exception:
             pass
 
     if l2_resume:
         resume_point = l2_resume
+    elif _pre_close_task and _pre_close_dropped:
+        resume_point = f"⚠ Last session dropped mid-work: {_pre_close_task[:160]}"
+    elif _pre_close_task:
+        resume_point = f"Last session: {_pre_close_task[:160]}"
     elif _active_task_resume:
         resume_point = _active_task_resume
     elif project_scan["readme_snippet"]:
@@ -1938,7 +1963,9 @@ def start_session(project_dir: str) -> SessionState:
     # A stale force_learn block from a session 2+ days ago is noise — the window
     # to learn from that session has passed. Clearing prevents compounding false-positive
     # blocking across multiple returning sessions.
-    _pending_action_file = YOUK_ROOT / "state" / "pending-action.json"
+    _pa_slug_file = _slug_state_dir(slug) / "pending-action.json"
+    _pa_root_file = YOUK_ROOT / "state" / "pending-action.json"
+    _pending_action_file = _pa_slug_file if _pa_slug_file.exists() else _pa_root_file
     if _pending_action_file.exists():
         try:
             _pa_data = json.loads(_pending_action_file.read_text())
@@ -1956,7 +1983,9 @@ def start_session(project_dir: str) -> SessionState:
     # but task_checkpoint never consumed it — the work loop didn't close.
     # Surface it so the model re-establishes routing context before continuing.
     _stale_breadcrumb = False
-    _breadcrumb_file = YOUK_ROOT / "state" / "routing-breadcrumb.json"
+    _bc_slug_file = _slug_state_dir(slug) / "routing-breadcrumb.json"
+    _bc_root_file = YOUK_ROOT / "state" / "routing-breadcrumb.json"
+    _breadcrumb_file = _bc_slug_file if _bc_slug_file.exists() else _bc_root_file
     if _breadcrumb_file.exists():
         try:
             _bc_data = json.loads(_breadcrumb_file.read_text())
@@ -2064,7 +2093,7 @@ def start_session(project_dir: str) -> SessionState:
         # The return field makes CLAUDE.md Option C unambiguous: force_learn=true
         # is an instruction, not a suggestion.
         try:
-            pending_action_file = YOUK_ROOT / "state" / "pending-action.json"
+            pending_action_file = _slug_state_dir(slug) / "pending-action.json"
             pending_action_file.parent.mkdir(parents=True, exist_ok=True)
             pending_action_file.write_text(json.dumps({
                 "action": "learn",
@@ -2419,7 +2448,7 @@ def start_session(project_dir: str) -> SessionState:
         brief=brief,
         nfr_autonomy_mode=_nfr_autonomy_mode,
         developer_autonomy_rate=round(_nfr_autonomy_rate, 2),
-        force_learn=close_cluster_missed and days_since_last != 0,
+        force_learn=(close_cluster_missed and days_since_last != 0) or _pre_close_dropped,
         knowledge_index_line=_knowledge_index_line,
         falsifier_alerts=_falsifier_alerts,
         audit_patterns=_audit_patterns,
@@ -2584,8 +2613,11 @@ def task_checkpoint(
     # If the breadcrumb is absent, routing was bypassed — surface it so the model can correct now.
     routing_missed = False
     if size.upper() not in ("XS", "S"):
-        breadcrumb_file = YOUK_ROOT / "state" / "routing-breadcrumb.json"
-        if breadcrumb_file.exists():
+        _bc_slug = _slug_state_dir(_slug_val) / "routing-breadcrumb.json" if _slug_val else None
+        _bc_root = YOUK_ROOT / "state" / "routing-breadcrumb.json"
+        breadcrumb_file = (_bc_slug if (_bc_slug and _bc_slug.exists()) else
+                           (_bc_root if _bc_root.exists() else None))
+        if breadcrumb_file and breadcrumb_file.exists():
             try:
                 breadcrumb_file.unlink()  # consume: one breadcrumb per task
             except Exception:
@@ -3180,6 +3212,35 @@ def end_session(
         except Exception:
             pass
 
+    # Write pre-close.json — the drop-safe resume anchor.
+    # Written unconditionally so tab-close/context-limit sessions leave a trail.
+    # Read by session_start on the NEXT open; deleted after reading.
+    # closed_cleanly=True only when close_cluster=True — this is what distinguishes
+    # a proper /done from a dropped session.
+    if slug:
+        try:
+            import time as _time
+            _at_task_snap = ""
+            _at_f = _active_task_file(YOUK_ROOT)
+            if _at_f.exists():
+                _at_d = json.loads(_at_f.read_text())
+                if _at_d.get("slug") == slug:
+                    _at_task_snap = _at_d.get("task", "")
+            _sp.atomic_write(
+                _slug_state_dir(slug) / "pre-close.json",
+                json.dumps({
+                    "slug": slug,
+                    "task": _at_task_snap[:200],
+                    "summary": summary[:300],
+                    "skills_invoked": list(skills_used) if skills_used else [],
+                    "commits_made": commits_made,
+                    "closed_cleanly": close_cluster,
+                    "written_at": _time.time(),
+                }),
+            )
+        except Exception:
+            pass
+
     # Clear both recovery files — session_end is the authoritative audit entry.
     # If these aren't cleared, next session_start would write duplicate entries.
     # Also clear per-slug open.json and convergence.json for this session.
@@ -3188,6 +3249,8 @@ def end_session(
             _slug_state_dir(slug) / "open.json",
             _slug_state_dir(slug) / "convergence.json",
             _slug_state_dir(slug) / "active_task.json",
+            _slug_state_dir(slug) / "routing-breadcrumb.json",
+            _slug_state_dir(slug) / "pending-action.json",
         ]:
             if _slug_file.exists():
                 try:
@@ -3240,11 +3303,10 @@ def end_session(
     # project this session was opened as."
     resume_slug = slug
     try:
-        # Prefer per-slug open.json; fall back to legacy flat file for backward-compat.
+        # Per-slug open.json is authoritative — never fall back to legacy root file.
         _slug_open = _slug_state_dir(slug) / "open.json" if slug else None
-        open_file = _slug_open if (_slug_open and _slug_open.exists()) else YOUK_ROOT / "state" / "session-open.json"
-        if open_file.exists():
-            open_data = json.loads(open_file.read_text())
+        if _slug_open and _slug_open.exists():
+            open_data = json.loads(_slug_open.read_text())
             open_slug = open_data.get("slug", "")
             if open_slug and open_slug != slug:
                 resume_slug = open_slug
@@ -3282,6 +3344,21 @@ def end_session(
                         break
             if not resume_text:
                 resume_text = next((ln.strip() for ln in lines if ln.strip()), "")
+
+        # Fallback for XS/S-only sessions: active_task.json task field, if no other
+        # resume text was extracted. XS/S tasks never call task_checkpoint so
+        # _update_resume_point is never called mid-session — end_session is the only chance.
+        if not resume_text:
+            try:
+                _at_f = _active_task_file(YOUK_ROOT)
+                if _at_f.exists():
+                    _at_d = json.loads(_at_f.read_text())
+                    _at_t = _at_d.get("task", "")
+                    _at_s = _at_d.get("slug", "")
+                    if _at_t and _at_s == resume_slug:
+                        resume_text = f"Last worked on: {_at_t[:160]}"
+            except Exception:
+                pass
 
         if resume_text:
             _update_resume_point(resume_slug, resume_text)

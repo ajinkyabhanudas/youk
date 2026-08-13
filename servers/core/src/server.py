@@ -456,7 +456,8 @@ def route_task(
     When blocked=true: stop. Surface collapsing_question. Do not invoke any skill.
     If file_context is non-empty, pass it as leading context to the first route_to_skill call.
     """
-    decision = _route_task(task, skills_already_invoked or [], intent_brief)
+    slug = _get_session_slug()
+    decision = _route_task(task, skills_already_invoked or [], intent_brief, slug=slug)
     result = decision.to_dict()
     # Write routing flag so session_start can detect when routing ran this session.
     # Analogous to nfr-check-ran.json — enables "routing was missed" recovery at next open.
@@ -464,7 +465,6 @@ def route_task(
         import hashlib as _hashlib
         import json as _json
         from datetime import datetime as _dt
-        slug = _get_session_slug()
         flag_file = _sp.slug_state_dir(slug) / "route-task-ran.json"
         task_hash = _hashlib.md5(task.encode()).hexdigest()[:8]
         new_entry = {
