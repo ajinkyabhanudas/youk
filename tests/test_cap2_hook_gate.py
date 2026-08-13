@@ -124,7 +124,9 @@ class TestRouteTaskRanThisSession:
     def test_returns_false_when_flag_from_yesterday_no_session_marker(self, hook_root):
         """When session-open.json is absent, a flag from yesterday is treated as stale
         (prior session) and returns False — not True as slug-only fallback would give."""
-        import os, datetime as _dt, time as _time
+        import os
+        import datetime as _dt
+        import time as _time
         flag = hook_root / "state" / "route-task-ran.json"
         flag.write_text(json.dumps([{"slug": "myproject", "task_hash": "abc"}]))
         # Backdate the flag to yesterday
@@ -192,7 +194,7 @@ class TestLogRouteWarning:
         log_route_warning(hook_root, "myproject")
         log_route_warning(hook_root, "myproject")
         warnings_file = hook_root / "state" / "hook-warnings.jsonl"
-        lines = [l for l in warnings_file.read_text().splitlines() if l.strip()]
+        lines = [ln for ln in warnings_file.read_text().splitlines() if ln.strip()]
         assert len(lines) == 2
 
 

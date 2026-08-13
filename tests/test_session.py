@@ -1579,7 +1579,7 @@ class TestCognitiveAssessmentAuditLine:
         from datetime import datetime as _dt
         month = _dt.utcnow().strftime("%Y-%m")
         content = (tmp_path / "claude" / "audit" / f"{month}.md").read_text()
-        cog_lines = [l for l in content.splitlines() if l.startswith("CognitiveAssessment:")]
+        cog_lines = [ln for ln in content.splitlines() if ln.startswith("CognitiveAssessment:")]
         assert len(cog_lines) == 1  # multiline block collapsed to one line
 
     def test_no_cognitive_assessment_line_when_empty(self, youk_root, tmp_path, monkeypatch):
@@ -1623,6 +1623,6 @@ class TestCognitiveAssessmentAuditLine:
         from datetime import datetime as _dt
         month = _dt.utcnow().strftime("%Y-%m")
         content = (tmp_path / "claude" / "audit" / f"{month}.md").read_text()
-        cog_line = next(l for l in content.splitlines() if l.startswith("CognitiveAssessment:"))
+        cog_line = next(ln for ln in content.splitlines() if ln.startswith("CognitiveAssessment:"))
         # "CognitiveAssessment: " prefix + up to 400 chars
         assert len(cog_line) <= len("CognitiveAssessment: ") + 400

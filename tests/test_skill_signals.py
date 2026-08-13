@@ -24,7 +24,6 @@ from skill_signals import (
     record_session_signals,
     POINT_WEIGHTS,
     _STARTING_POINTS,
-    _FORK_THRESHOLD,
 )
 
 
@@ -49,7 +48,7 @@ def _make_audit_block(
     if loop_correction:
         lines.append("LoopCorrection: yes")
     if retrospectives:
-        lines.append(f"Retrospectives: 1 (VALIDATED=1)")
+        lines.append("Retrospectives: 1 (VALIDATED=1)")
         lines.append(f"  - {retrospectives}: VALIDATED (confirmed in production)")
     if examination_surfaces:
         lines.append(examination_surfaces)
@@ -319,14 +318,14 @@ class TestPointLedger:
         return tmp_path / "skill-points.json"
 
     def test_gap_deducts_points(self, tmp_path, monkeypatch):
-        pf = self._with_state_dir(tmp_path, monkeypatch)
+        self._with_state_dir(tmp_path, monkeypatch)
         signals = [{"session_n": 1, "skill": "dev-loop", "signal_type": "GAP",
                     "dimension": "auth", "weight": POINT_WEIGHTS["GAP"], "recorded_at": ""}]
         touched = update_points(signals)
         assert touched["dev-loop"] == _STARTING_POINTS + POINT_WEIGHTS["GAP"]
 
     def test_stable_recovers_points(self, tmp_path, monkeypatch):
-        pf = self._with_state_dir(tmp_path, monkeypatch)
+        self._with_state_dir(tmp_path, monkeypatch)
         # First deduct, then recover
         gap = [{"session_n": 1, "skill": "dev-loop", "signal_type": "GAP",
                 "dimension": "auth", "weight": POINT_WEIGHTS["GAP"], "recorded_at": ""}]
@@ -338,7 +337,7 @@ class TestPointLedger:
         assert touched["dev-loop"] == pytest.approx(expected)
 
     def test_points_floored_at_zero(self, tmp_path, monkeypatch):
-        pf = self._with_state_dir(tmp_path, monkeypatch)
+        self._with_state_dir(tmp_path, monkeypatch)
         # Many deductions
         signals = [{"session_n": i, "skill": "dev-loop", "signal_type": "SCOPE_MISS",
                     "dimension": "auth", "weight": POINT_WEIGHTS["SCOPE_MISS"], "recorded_at": ""}
@@ -347,7 +346,7 @@ class TestPointLedger:
         assert touched["dev-loop"] == 0.0
 
     def test_points_capped_at_starting(self, tmp_path, monkeypatch):
-        pf = self._with_state_dir(tmp_path, monkeypatch)
+        self._with_state_dir(tmp_path, monkeypatch)
         signals = [{"session_n": i, "skill": "dev-loop", "signal_type": "STABLE",
                     "dimension": "overall", "weight": POINT_WEIGHTS["STABLE"], "recorded_at": ""}
                    for i in range(1, 20)]  # many recoveries → cap at 100
@@ -355,7 +354,7 @@ class TestPointLedger:
         assert touched["dev-loop"] == _STARTING_POINTS
 
     def test_fork_candidate_below_threshold(self, tmp_path, monkeypatch):
-        pf = self._with_state_dir(tmp_path, monkeypatch)
+        self._with_state_dir(tmp_path, monkeypatch)
         signals = [{"session_n": i, "skill": "dev-loop", "signal_type": "SCOPE_MISS",
                     "dimension": "auth", "weight": POINT_WEIGHTS["SCOPE_MISS"], "recorded_at": ""}
                    for i in range(1, 12)]  # 11 × -6 = -66 → 34 points → below 40
@@ -364,7 +363,7 @@ class TestPointLedger:
         assert any(c["skill"] == "dev-loop" for c in candidates)
 
     def test_healthy_skill_not_in_fork_candidates(self, tmp_path, monkeypatch):
-        pf = self._with_state_dir(tmp_path, monkeypatch)
+        self._with_state_dir(tmp_path, monkeypatch)
         signals = [{"session_n": 1, "skill": "dev-loop", "signal_type": "STABLE",
                     "dimension": "overall", "weight": POINT_WEIGHTS["STABLE"], "recorded_at": ""}]
         update_points(signals)
@@ -388,7 +387,7 @@ class TestRecordSessionSignals:
 
         assert result["signals_recorded"] > 0
         assert signals_file.exists()
-        lines = [json.loads(l) for l in signals_file.read_text().splitlines() if l.strip()]
+        lines = [json.loads(ln) for ln in signals_file.read_text().splitlines() if ln.strip()]
         assert len(lines) > 0
 
     def test_idempotent_on_no_signals(self, tmp_path, monkeypatch):
@@ -442,10 +441,6 @@ class TestHealthSummary:
 
 from skill_signals import (
     generate_improvement_proposal,
-    _IMPROVEMENT_QUEUE,
-    _APPLIED_PROPOSALS,
-    _SKILL_ROOT,
-    _load_signal_evidence,
 )
 
 
@@ -513,7 +508,7 @@ class TestProposalGeneration:
             {"skill": "dev-loop", "signal_type": "GAP", "dimension": "auth",
              "count": 3, "sessions": [1, 2, 3], "evidence_samples": ["e"] * 3}
         ])
-        result = generate_improvement_proposal("dev-loop")
+        generate_improvement_proposal("dev-loop")
         applied_file = tmp_path / "applied-proposals.json"
         assert applied_file.exists()
         data = json.loads(applied_file.read_text())
@@ -654,9 +649,6 @@ from skill_signals import (
     fork_skill,
     select_skill_arm,
     record_arm_reward,
-    _CANDIDATES_FILE,
-    _FORK_THRESHOLD,
-    _STARTING_POINTS,
 )
 
 
@@ -689,12 +681,13 @@ class TestLinUCB:
     def test_linucb_prefers_higher_reward_arm(self):
         """After many positive rewards, the rewarded arm should be selected more."""
         d = 3
-        arm_template = lambda: {
-            "theta": [0.0] * d,
-            "A": [[1.0 if r == c else 0.0 for c in range(d)] for r in range(d)],
-            "A_inv": [[1.0 if r == c else 0.0 for c in range(d)] for r in range(d)],
-            "b": [0.0] * d,
-        }
+        def arm_template():
+            return {
+                    "theta": [0.0] * d,
+                    "A": [[1.0 if r == c else 0.0 for c in range(d)] for r in range(d)],
+                    "A_inv": [[1.0 if r == c else 0.0 for c in range(d)] for r in range(d)],
+                    "b": [0.0] * d,
+                }
         arm0 = arm_template()
         arm1 = arm_template()
         ctx = [1.0, 0.5, 0.5]
@@ -802,7 +795,7 @@ class TestTaskTypeInference:
         )
         signals = compute_signals_for_session(block, session_n=1)
         # auth is not mandatory for bug_fix (only conditional) — should be SCOPE_MISS not GAP
-        scope_miss = [s for s in signals if s["signal_type"] == "SCOPE_MISS" and s["skill"] == "dev-loop"]
+        [s for s in signals if s["signal_type"] == "SCOPE_MISS" and s["skill"] == "dev-loop"]
         # Either SCOPE_MISS or no signal for auth in bug_fix context — but NOT GAP
         gap = [s for s in signals if s["signal_type"] == "GAP" and s["dimension"] == "auth" and s["skill"] == "dev-loop"]
         assert len(gap) == 0  # auth was not in examined list
@@ -867,7 +860,7 @@ class TestBanditAutoFeed:
             "[FINDING: HIGH] Error handling — null check missing\n"
             + surface
         )
-        result = record_session_signals(block, session_n=2)
+        record_session_signals(block, session_n=2)
 
         # Candidate should have received a reward update
         candidates = _load_candidates()
@@ -881,7 +874,7 @@ class TestBanditAutoFeed:
     def test_no_bandit_update_when_no_candidate(self, tmp_path, monkeypatch):
         self._setup(tmp_path, monkeypatch)
         block = "Skills: dev-loop\n"
-        result = record_session_signals(block, session_n=1)
+        record_session_signals(block, session_n=1)
         # Should complete without error, no candidate file written
         assert not (tmp_path / "skill-candidates.json").exists() or True  # no crash
 
@@ -904,7 +897,7 @@ class TestBanditAutoFeed:
             "[FINDING: HIGH] Error handling — null check missing\n"
             + surface
         )
-        result = record_session_signals(block, session_n=2)
+        record_session_signals(block, session_n=2)
         candidates = _load_candidates()
         # If the arm selection was recorded, check the context was non-default
         selections = candidates.get("dev-loop", {}).get("arm_selections", [])

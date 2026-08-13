@@ -16,7 +16,6 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "core" / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "shared"))

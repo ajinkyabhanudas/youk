@@ -19,7 +19,6 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "core" / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "code" / "src"))
@@ -33,7 +32,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "shared"))
 class TestForceLearnsReturnValue:
     def test_force_learn_true_when_cluster_missed_and_returning(self):
         """close_cluster_missed=True + days_since_last > 0 → force_learn=True."""
-        from session import start_session
         # We can't easily call the full start_session without a real project dir,
         # so we test the condition directly from the logic.
         # Condition: force_learn = close_cluster_missed and days_since_last != 0
@@ -171,7 +169,7 @@ class TestPendingActionCleared:
 
     def test_learn_skill_clears_pending_action(self, tmp_path, monkeypatch):
         import skills
-        pending = self._write_pending(tmp_path)
+        self._write_pending(tmp_path)
         monkeypatch.setattr("skills.Path", lambda p: tmp_path / Path(p).relative_to("/"))
         with patch("skills.load_skill_with_context", return_value="# learn skill content"):
             with patch("skills._read_and_clear_pending_handoff", return_value=None):

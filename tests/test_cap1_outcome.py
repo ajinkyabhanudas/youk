@@ -7,7 +7,6 @@ Covers:
   - _record_outcome_followup (session.py): amends OutcomeResult in prior audit entry
 """
 from __future__ import annotations
-import json
 
 
 # ── Health: _compute_outcome_rates ───────────────────────────────────────────

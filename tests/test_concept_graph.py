@@ -8,7 +8,6 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-import pytest
 
 from concept_graph import (
     _connect,
@@ -208,7 +207,7 @@ class TestQueryConceptGraph:
         db = self._seed(tmp_path)
         result = query_concept_graph("BM25", db_path=db)
         labels = [c["label"] for c in result["concepts"]]
-        assert any("BM25" in l for l in labels)
+        assert any("BM25" in ln for ln in labels)
 
     def test_project_slug_filter(self, tmp_path):
         db = self._seed(tmp_path)
@@ -239,7 +238,7 @@ class TestQueryConceptGraph:
         result = query_concept_graph("alpha", db_path=db)
         labels = [c["label"] for c in result["concepts"]]
         # beta should appear as neighbor
-        assert any("beta" in l for l in labels)
+        assert any("beta" in ln for ln in labels)
 
     def test_total_field_set(self, tmp_path):
         db = self._seed(tmp_path)
@@ -338,8 +337,8 @@ class TestParseDomainFile:
         pairs = _parse_domain_file(_SAMPLE_DOMAIN_MD, "domain")
         labels = [p[0] for p in pairs]
         assert "Architecture Decision-Making" not in labels  # h1 skipped
-        assert not any("Added" in l for l in labels)
-        assert not any("Source" in l for l in labels)
+        assert not any("Added" in ln for ln in labels)
+        assert not any("Source" in ln for ln in labels)
 
     def test_single_concept_falls_back_to_frontmatter(self):
         pairs = _parse_domain_file(_SINGLE_CONCEPT_MD, "domain")
@@ -366,11 +365,11 @@ class TestExtractConceptsFromDomainDir:
         labels = [c["label"] for c in concepts]
 
         # Should have heading-level labels, not prose fragments
-        assert any("Build-vs-buy" in l for l in labels)
-        assert any("Constraint verification" in l for l in labels)
+        assert any("Build-vs-buy" in ln for ln in labels)
+        assert any("Constraint verification" in ln for ln in labels)
         # Must NOT have garbage like "Added 2026-07-13" or "Source canopy"
-        assert not any(l.startswith("Added") for l in labels)
-        assert not any(l.startswith("Source") for l in labels)
+        assert not any(ln.startswith("Added") for ln in labels)
+        assert not any(ln.startswith("Source") for ln in labels)
 
     def test_skips_gaps_md(self, tmp_path):
         domain_dir = tmp_path / "domain"
@@ -402,7 +401,7 @@ class TestExtractConceptsFromDomainDir:
 
         concepts = extract_concepts_from_domain_dir(domain_dir, "youk", 1)
         labels = [c["label"] for c in concepts]
-        assert len(labels) == len(set(l.lower() for l in labels))
+        assert len(labels) == len(set(ln.lower() for ln in labels))
 
     def test_edges_bounded_by_file_not_total_concepts(self, tmp_path):
         """Edges must be scoped to source file — O(n²) across all concepts regresses

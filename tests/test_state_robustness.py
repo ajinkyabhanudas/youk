@@ -16,7 +16,6 @@ from pathlib import Path
 
 import pytest
 
-import session as _session_mod
 from session import (
     write_routing_context,
     append_gate_to_active_task,

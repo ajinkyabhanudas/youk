@@ -10,7 +10,6 @@ Covers:
   GATE-E3 — no-score invariant: computed org_score equal with-vs-without recent review
 """
 from __future__ import annotations
-import json
 import re
 import sys
 from pathlib import Path
@@ -223,7 +222,7 @@ class TestR10HealthFindings:
         import health as h
 
         audit_texts = self._make_sessions_block(8, with_capability=True, with_developer_caught=True)
-        sessions = h._parse_audit_sessions(audit_texts)
+        h._parse_audit_sessions(audit_texts)
         findings = h._generate_findings(audit_texts, score=7.0)
 
         autonomy_findings = [f for f in findings if "autonomy" in f.lower()]
@@ -330,7 +329,7 @@ class TestR10ExportStats:
 
     def test_autonomy_rate_has_r10_label(self, tmp_path):
         """export_stats _render developer autonomy includes (n/d gate-eligible sessions)."""
-        from export_stats import _render, SessionRecord
+        from export_stats import _render
         # Build audit dir with DeveloperCaught entries
         audit_dir = tmp_path / "audit"
         audit_dir.mkdir()
