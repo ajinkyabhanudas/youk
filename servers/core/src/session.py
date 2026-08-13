@@ -1890,9 +1890,23 @@ def start_session(project_dir: str) -> SessionState:
         if bootstrap_signals:
             context_health = "L1-bootstrap"
 
-    # Priority-ordered resume point: L3 > L2 > external context.md > README snippet > bootstrap > git log
+    # Priority-ordered resume point: L3 > L2 > active_task > README snippet > bootstrap > git log
+    _active_task_resume = ""
+    _at_file = _active_task_file(YOUK_ROOT)
+    if _at_file.exists():
+        try:
+            _at = json.loads(_at_file.read_text())
+            _at_task = _at.get("task", "")
+            _at_slug = _at.get("slug", "")
+            if _at_task and (_at_slug == slug or not _at_slug):
+                _active_task_resume = f"In progress: {_at_task[:180]}"
+        except Exception:
+            pass
+
     if l2_resume:
         resume_point = l2_resume
+    elif _active_task_resume:
+        resume_point = _active_task_resume
     elif project_scan["readme_snippet"]:
         resume_point = f"Project: {project_scan['readme_snippet'][:120]}"
     elif bootstrap_signals:
