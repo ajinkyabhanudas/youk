@@ -861,12 +861,13 @@ def is_unblocked(task_id: str) -> dict:
 @mcp.tool()
 def next_task() -> dict:
     """
-    Return the next actionable task: unblocked=True, in_flight=False, all parents done.
+    Return the next actionable task for the CURRENT project only.
 
-    Uses recursive CTE to walk the task DAG. Returns the first ready leaf node.
+    Scopes to the active session's project slug so tasks from other projects
+    never surface here. Uses recursive CTE to walk the task DAG.
     Returns {"found": bool, "task": dict | None}
     """
-    return _next_task()
+    return _next_task(project=_get_session_slug() or None)
 
 
 @mcp.tool()
