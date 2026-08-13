@@ -4,7 +4,7 @@ import re
 import sqlite3
 import threading
 import yaml
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 
 import sys
@@ -121,7 +121,7 @@ def _migrate_pending_md_to_db(conn: sqlite3.Connection) -> None:
     conn.commit()
 
     try:
-        month = datetime.utcnow().strftime("%Y-%m")
+        month = datetime.now(UTC).strftime("%Y-%m")
         audit_file = AUDIT_DIR / f"{month}.md"
         with open(audit_file, "a") as af:
             af.write(f"ProposalMigration: PENDING.md → SQLite — {inserted} row(s) inserted\n")
@@ -232,13 +232,13 @@ def _read_forge_run() -> dict | None:
 def _read_recent_audit_logs(days: int = 30) -> list[str]:
     if not AUDIT_DIR.exists():
         return []
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
     entries = []
     for f in sorted(AUDIT_DIR.glob("*.md")):
         try:
             parts = f.stem.split("-")
             if len(parts) == 2:
-                file_date = datetime(int(parts[0]), int(parts[1]), 1)
+                file_date = datetime(int(parts[0]), int(parts[1]), 1, tzinfo=UTC)
                 if file_date >= cutoff.replace(day=1, hour=0, minute=0, second=0, microsecond=0):
                     entries.append(f.read_text())
         except (ValueError, IndexError):
@@ -462,8 +462,8 @@ def _compute_prevented_cost(sessions: list[dict], days: int = 30) -> dict:
 
     These feed the PREVENTED block in the /health report — the product value claim.
     """
-    from datetime import datetime, timedelta
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    from datetime import datetime, timedelta, UTC
+    cutoff = datetime.now(UTC) - timedelta(days=days)
 
     critical = 0
     high = 0
@@ -476,7 +476,7 @@ def _compute_prevented_cost(sessions: list[dict], days: int = 30) -> dict:
         date_match = re.search(r"### Session — (\d{4}-\d{2}-\d{2})", s.get("raw", ""))
         if date_match:
             try:
-                session_date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
+                session_date = datetime.strptime(date_match.group(1), "%Y-%m-%d").replace(tzinfo=UTC)
                 if session_date < cutoff:
                     continue
             except ValueError:
@@ -507,15 +507,15 @@ def _detect_recurring_findings(sessions: list[dict], min_sessions: int = 3, days
     Returns a list of dicts: [{category, count, sessions_pct}]
     These surface as PATTERN items in the /health report — the "you keep doing this" signal.
     """
-    from datetime import datetime, timedelta
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    from datetime import datetime, timedelta, UTC
+    cutoff = datetime.now(UTC) - timedelta(days=days)
     category_session_count: dict[str, int] = {}
 
     for s in sessions:
         date_match = re.search(r"### Session — (\d{4}-\d{2}-\d{2})", s.get("raw", ""))
         if date_match:
             try:
-                session_date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
+                session_date = datetime.strptime(date_match.group(1), "%Y-%m-%d").replace(tzinfo=UTC)
                 if session_date < cutoff:
                     continue
             except ValueError:
@@ -1911,7 +1911,7 @@ def _queue_promotion_proposals(candidates: list[dict]) -> tuple[int, list[str]]:
     is the list of skill names that crossed the threshold but have no SKILL.md —
     these need Track A generation, not just a SKILL_EDIT proposal.
     """
-    from datetime import datetime
+    from datetime import datetime, UTC
     skills_dir = CLAUDE_ROOT / "skills"
     if not skills_dir.exists():
         skills_dir = YOUK_ROOT / "skills"
@@ -1931,7 +1931,7 @@ def _queue_promotion_proposals(candidates: list[dict]) -> tuple[int, list[str]]:
 
         is_code_edit = c["change_type"] == "CODE_EDIT"
         proposal = Proposal(
-            id=f"PENDING-PROMO-{skill_name.upper()}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            id=f"PENDING-PROMO-{skill_name.upper()}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}",
             target=c["promotion_target"],
             change_description=f"Promote recurring gap pattern: {skill_name} ({c['occurrence_count']} occurrences across {c['distinct_projects']} project(s))",
             reason=(
@@ -1946,7 +1946,7 @@ def _queue_promotion_proposals(candidates: list[dict]) -> tuple[int, list[str]]:
             before="",
             after="",
             status="PENDING",
-            proposed_date=datetime.utcnow().strftime("%Y-%m-%d"),
+            proposed_date=datetime.now(UTC).strftime("%Y-%m-%d"),
             change_type=c["change_type"],
             target_section="",
             content="",
@@ -2066,7 +2066,7 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
         _conv = _compute_convergence_velocity(sessions_for_conv)
         _hpr = _compute_human_precision_rate(sessions_for_conv)
         entry = {
-            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "org_score": current_score,
             "velocity": velocity,
             "proposals_applied": proposals_applied,
@@ -2102,7 +2102,7 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
                         "org_score": current_score,
                         "sessions": total,
                         "close_rate": close_rate,
-                        "updated": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "updated": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     }
             except Exception:
                 pass
@@ -2159,14 +2159,14 @@ def recompute_org_score(slug: str = "") -> dict:
 
         if existing_entries:
             last_ts = existing_entries[-1].get("timestamp", "")
-            if last_ts and last_ts[:10] == datetime.utcnow().strftime("%Y-%m-%d"):
+            if last_ts and last_ts[:10] == datetime.now(UTC).strftime("%Y-%m-%d"):
                 # Same day — only write if score changed
                 last_score = existing_entries[-1].get("org_score")
                 if last_score is not None and abs(last_score - current_score) < 0.05:
                     return {"written": False, "org_score": current_score, "skipped_reason": "score unchanged today"}
 
         entry = {
-            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "org_score": current_score,
             "source": "done_close",
         }
@@ -2992,7 +2992,7 @@ def add_proposal(proposal: Proposal) -> None:
                 proposal.target_section or "",
                 proposal.content or "",
                 1 if proposal.review_required else 0,
-                proposal.proposed_date or datetime.utcnow().strftime("%Y-%m-%d"),
+                proposal.proposed_date or datetime.now(UTC).strftime("%Y-%m-%d"),
             ),
         )
         conn.commit()
@@ -3155,7 +3155,7 @@ def _execute_proposal(proposal: Proposal) -> dict:
         skill_path.write_text(new_content)
         # Write audit trail with full diff so self-heal can detect patch→gap cycles.
         try:
-            month = datetime.utcnow().strftime("%Y-%m")
+            month = datetime.now(UTC).strftime("%Y-%m")
             audit_file = CLAUDE_ROOT / "audit" / f"{month}.md"
             if audit_file.exists():
                 with open(audit_file, "a") as _af:
@@ -3292,8 +3292,8 @@ def apply_proposal(
             conn.execute(
                 "UPDATE proposals SET status=?, applied_at=? WHERE id=?",
                 (
-                    f"APPLIED — {datetime.utcnow().strftime('%Y-%m-%d')}",
-                    datetime.utcnow().isoformat(),
+                    f"APPLIED — {datetime.now(UTC).strftime('%Y-%m-%d')}",
+                    datetime.now(UTC).isoformat(),
                     proposal_id,
                 ),
             )

@@ -6,16 +6,27 @@ import os
 import re
 from pathlib import Path
 
-# Docker path when running inside container; host path otherwise (tests, local dev).
+# Repo root is 3 levels up from this file (servers/code/src/contract_verifier.py).
+# This works in CI (repo checkout), in Docker (/claude/youk/servers/...), and locally.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# CLAUDE.md and skills live either in the Docker mount (/claude) or the host ~/.claude.
+# We resolve from YOUK_CLAUDE_ROOT env var first, then Docker, then host ~/.claude.
+_env_root = os.environ.get("YOUK_CLAUDE_ROOT")
 _docker_root = Path("/claude")
-_host_root = Path(os.environ.get("YOUK_CLAUDE_ROOT", Path.home() / ".claude"))
-CLAUDE_ROOT = _docker_root if _docker_root.exists() else _host_root
+if _env_root:
+    CLAUDE_ROOT = Path(_env_root)
+elif _docker_root.exists():
+    CLAUDE_ROOT = _docker_root
+else:
+    CLAUDE_ROOT = Path.home() / ".claude"
+
 SKILLS_ROOT = CLAUDE_ROOT / "skills"
 
-# Server files keyed by MCP server name
+# Server files: always resolve from repo root — works in CI, Docker, and local dev.
 _SERVER_FILES = {
-    "youk-core": CLAUDE_ROOT / "youk" / "servers" / "core" / "src" / "server.py",
-    "youk-code": CLAUDE_ROOT / "youk" / "servers" / "code" / "src" / "server.py",
+    "youk-core": _REPO_ROOT / "servers" / "core" / "src" / "server.py",
+    "youk-code": _REPO_ROOT / "servers" / "code" / "src" / "server.py",
 }
 
 # CLAUDE.md call sites use dot notation: youk-core.tool_name(...)

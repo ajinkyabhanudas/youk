@@ -847,7 +847,7 @@ class TestReadRecentAuditLogs:
 
     def test_reads_current_month_file(self, youk_root, claude_root):
         from datetime import datetime
-        month = datetime.utcnow().strftime("%Y-%m")
+        month = datetime.now(UTC).strftime("%Y-%m")
         (claude_root / "audit" / f"{month}.md").write_text("### Session — content\n")
         from health import _read_recent_audit_logs
         texts = _read_recent_audit_logs(days=30)
@@ -1693,7 +1693,7 @@ class TestAuditSkillQualitySingleWeak:
 class TestImprovementVelocityExtended:
     def _write_audit(self, claude_root, sessions_data):
         from datetime import datetime
-        month = datetime.utcnow().strftime("%Y-%m")
+        month = datetime.now(UTC).strftime("%Y-%m")
         audit_dir = claude_root / "audit"
         blocks = []
         for i, s in enumerate(sessions_data):
@@ -1761,7 +1761,7 @@ class TestAuditGlobalContractsExtended:
 class TestKnowledgeVelocityStalled:
     def _write_audit(self, claude_root, sessions_data):
         from datetime import datetime
-        month = datetime.utcnow().strftime("%Y-%m")
+        month = datetime.now(UTC).strftime("%Y-%m")
         blocks = []
         for i, s in enumerate(sessions_data):
             blocks.append(
@@ -2033,7 +2033,7 @@ class TestExecuteProposalExtended:
 class TestRunHealthCheckWithSkillSignalsExtended:
     def _write_audit_with_gaps(self, claude_root, gaps: list[tuple[str, str, str]]) -> None:
         from datetime import datetime
-        month = datetime.utcnow().strftime("%Y-%m")
+        month = datetime.now(UTC).strftime("%Y-%m")
         lines = []
         for i, (proj, skill, desc) in enumerate(gaps):
             lines.append(f"### Session — 2026-07-0{i+1} 10:00 UTC")
@@ -2184,7 +2184,7 @@ def _audit_block_with_findings(
     from datetime import datetime, timedelta
     # Use dates clearly within the 30-day window, offset by n days back from today.
     # Avoids boundary failures when test date coincides with the cutoff timestamp.
-    date_str = (datetime.utcnow() - timedelta(days=n)).strftime("%Y-%m-%d")
+    date_str = (datetime.now(UTC) - timedelta(days=n)).strftime("%Y-%m-%d")
     parts = [f"### Session — {date_str} 10:00 UTC\n"]
     parts.append("Skills: code-review\n")
     parts.append("CloseCluster: yes\n")
