@@ -1076,9 +1076,10 @@ def get_proposals(project_slug: str | None = None) -> dict:
         except Exception:
             project_slug = "youk"
 
-    proposals = _load_pending_proposals()
+    # Pass slug to DB for efficient filtering; empty string = fetch all projects
+    proposals = _load_pending_proposals(project_slug if project_slug else None)
 
-    # Filter by project: empty string = show all (backward-compat for /improve)
+    # Legacy in-memory filter: normalize empty project_slug to "youk" for old rows
     if project_slug:
         proposals = [
             p for p in proposals
@@ -1384,9 +1385,13 @@ def get_interpretation() -> str:
 
 @mcp.resource("youk://knowledge/proposals")
 def get_proposals_resource() -> str:
-    """Pending self-heal proposals."""
-    pending = YOUK_ROOT / "knowledge" / "proposals" / "PENDING.md"
-    return pending.read_text() if pending.exists() else "No pending proposals."
+    """Pending self-heal proposals (rendered from SQLite store)."""
+    from health import _load_pending_proposals, _render_pending_md
+    proposals = _load_pending_proposals()
+    pending_only = [p for p in proposals if p.status == "PENDING"]
+    if not pending_only:
+        return "No pending proposals."
+    return _render_pending_md(pending_only)
 
 
 @mcp.tool()

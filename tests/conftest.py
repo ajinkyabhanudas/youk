@@ -38,6 +38,7 @@ def youk_root(tmp_path, monkeypatch):
     monkeypatch.setattr(session, "STATE_FILE", root / "state" / "session.json")
     monkeypatch.setattr(health, "YOUK_ROOT", root)
     monkeypatch.setattr(health, "PROPOSALS_FILE", root / "knowledge" / "proposals" / "PENDING.md")
+    monkeypatch.setattr(health, "_PROPOSALS_DB", root / "knowledge" / "shared-index.db")
     monkeypatch.setattr(compaction, "YOUK_ROOT", root)
     monkeypatch.setattr(review, "_DOC_MAP_PATH", root / "docs" / "doc-map.yaml")
     monkeypatch.setattr(task_contract, "YOUK_ROOT", root)

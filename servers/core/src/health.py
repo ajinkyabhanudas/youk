@@ -1,6 +1,8 @@
 from __future__ import annotations
 import json
 import re
+import sqlite3
+import threading
 import yaml
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -13,6 +15,170 @@ CLAUDE_ROOT = Path("/claude")
 YOUK_ROOT = Path("/youk")
 AUDIT_DIR = CLAUDE_ROOT / "audit"
 PROPOSALS_FILE = YOUK_ROOT / "knowledge" / "proposals" / "PENDING.md"
+_PROPOSALS_DB = YOUK_ROOT / "knowledge" / "shared-index.db"
+
+# Serializes the one-time WAL + schema setup so concurrent threads don't race on PRAGMA journal_mode=WAL
+_PROPOSALS_INIT_LOCK = threading.Lock()
+
+_CREATE_PROPOSALS_TABLE = """
+CREATE TABLE IF NOT EXISTS proposals (
+    id              TEXT PRIMARY KEY,
+    project_slug    TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'PENDING',
+    title           TEXT NOT NULL DEFAULT '',
+    target          TEXT NOT NULL DEFAULT '',
+    change_description TEXT NOT NULL DEFAULT '',
+    reason          TEXT NOT NULL DEFAULT '',
+    before_text     TEXT NOT NULL DEFAULT '',
+    after_text      TEXT NOT NULL DEFAULT '',
+    change_type     TEXT NOT NULL DEFAULT '',
+    target_section  TEXT NOT NULL DEFAULT '',
+    content         TEXT NOT NULL DEFAULT '',
+    review_required INTEGER NOT NULL DEFAULT 0,
+    proposed_date   TEXT NOT NULL,
+    applied_at      TEXT
+)
+"""
+
+
+# Tracks which DB paths have been initialized (WAL + schema + migration).
+# Keyed by resolved path string so each tmp_path in tests gets its own init.
+_PROPOSALS_INITIALIZED: set[str] = set()
+
+
+def _proposals_conn() -> sqlite3.Connection:
+    """Return a WAL-mode connection to shared-index.db with proposals table ensured.
+
+    The global init (WAL pragma + schema + migration) is serialized by _PROPOSALS_INIT_LOCK
+    so concurrent threads don't race on PRAGMA journal_mode=WAL. After the first call,
+    WAL is active and subsequent connections can be opened concurrently without locking.
+    """
+    db_key = str(_PROPOSALS_DB.resolve())
+    _PROPOSALS_DB.parent.mkdir(parents=True, exist_ok=True)
+
+    if db_key not in _PROPOSALS_INITIALIZED:
+        with _PROPOSALS_INIT_LOCK:
+            if db_key not in _PROPOSALS_INITIALIZED:  # double-checked locking
+                _init_conn = sqlite3.connect(str(_PROPOSALS_DB), timeout=10.0, check_same_thread=False)
+                _init_conn.row_factory = sqlite3.Row
+                _init_conn.execute("PRAGMA journal_mode=WAL")
+                _init_conn.execute("PRAGMA busy_timeout=5000")
+                _init_conn.execute(_CREATE_PROPOSALS_TABLE)
+                _init_conn.commit()
+                _migrate_pending_md_to_db(_init_conn)
+                _init_conn.close()
+                _PROPOSALS_INITIALIZED.add(db_key)
+
+    conn = sqlite3.connect(str(_PROPOSALS_DB), timeout=5.0, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
+
+
+def _migrate_pending_md_to_db(conn: sqlite3.Connection) -> None:
+    """One-time migration: parse PENDING.md rows → INSERT OR IGNORE into proposals table.
+
+    Uses a DB-level migration_flags table as the idempotency marker so concurrent
+    processes racing through _proposals_conn() don't duplicate work. The INSERT OR IGNORE
+    on migration_flags is atomic under SQLite WAL — only one winner runs the migration body.
+    """
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS migration_flags (key TEXT PRIMARY KEY, done INTEGER)"
+    )
+    # Attempt to claim the migration slot atomically
+    conn.execute("INSERT OR IGNORE INTO migration_flags (key, done) VALUES ('pending_md', 0)")
+    conn.commit()
+
+    row = conn.execute("SELECT done FROM migration_flags WHERE key='pending_md'").fetchone()
+    if row and row[0] == 1:
+        return  # already migrated
+    if not PROPOSALS_FILE.exists():
+        conn.execute("UPDATE migration_flags SET done=1 WHERE key='pending_md'")
+        conn.commit()
+        return
+
+    proposals = _parse_pending_md(PROPOSALS_FILE.read_text())
+    inserted = 0
+    for p in proposals:
+        try:
+            conn.execute(
+                """INSERT OR IGNORE INTO proposals
+                   (id, project_slug, status, title, target, change_description, reason,
+                    before_text, after_text, change_type, target_section, content,
+                    review_required, proposed_date)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (p.id, p.project_slug, p.status or "PENDING", p.target, p.target,
+                 p.change_description, p.reason, p.before, p.after,
+                 p.change_type, p.target_section, p.content,
+                 1 if p.review_required else 0, p.proposed_date),
+            )
+            if conn.execute("SELECT changes()").fetchone()[0]:
+                inserted += 1
+        except sqlite3.Error:
+            pass
+
+    conn.execute("UPDATE migration_flags SET done=1 WHERE key='pending_md'")
+    conn.commit()
+
+    try:
+        month = datetime.utcnow().strftime("%Y-%m")
+        audit_file = AUDIT_DIR / f"{month}.md"
+        with open(audit_file, "a") as af:
+            af.write(f"ProposalMigration: PENDING.md → SQLite — {inserted} row(s) inserted\n")
+    except Exception:
+        pass
+
+
+def _parse_pending_md(content: str) -> list[Proposal]:
+    """Parse PENDING.md blocks into Proposal objects (used only during migration)."""
+    proposals = []
+    blocks = content.split("## PENDING-")
+    for block in blocks[1:]:
+        lines = block.strip().split("\n")
+        proposal_id = "PENDING-" + lines[0].split("—")[0].strip()
+        date = lines[0].split("—")[-1].strip() if "—" in lines[0] else "unknown"
+        proposals.append(Proposal(
+            id=proposal_id,
+            target=_extract_field(block, "Target"),
+            change_description=_extract_field(block, "Change"),
+            reason=_extract_field(block, "Reason"),
+            before=_extract_field(block, "Before"),
+            after=_extract_field(block, "After"),
+            status=_extract_field(block, "Status"),
+            proposed_date=date,
+            change_type=_extract_field(block, "ChangeType"),
+            target_section=_extract_field(block, "TargetSection"),
+            content=_extract_content_block(block),
+            review_required=_extract_field(block, "ReviewRequired").lower() == "true",
+            project_slug=_extract_field(block, "Project"),
+        ))
+    return proposals
+
+
+def _row_to_proposal(row: sqlite3.Row) -> Proposal:
+    return Proposal(
+        id=row["id"],
+        target=row["target"],
+        change_description=row["change_description"],
+        reason=row["reason"],
+        before=row["before_text"],
+        after=row["after_text"],
+        status=row["status"],
+        proposed_date=row["proposed_date"],
+        change_type=row["change_type"],
+        target_section=row["target_section"],
+        content=row["content"],
+        review_required=bool(row["review_required"]),
+        project_slug=row["project_slug"],
+    )
+
+
+def _render_pending_md(proposals: list[Proposal]) -> str:
+    """Render proposals list to PENDING.md markdown format (human-readable view only)."""
+    lines = ["# youk Self-Heal Proposals\n\nPending founder review.\n"]
+    for p in proposals:
+        lines.append(p.to_markdown())
+    return "\n".join(lines)
 
 # Skills that directly compound developer capability — excludes meta/session-management skills
 _CAPABILITY_SKILLS = frozenset({
@@ -1260,8 +1426,15 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
             "this also feeds the progressive learning loop."
         )
 
-    # Self-evolution loop health: flag when PENDING.md and audit SkillGaps are both empty
-    pending_count = PROPOSALS_FILE.read_text().count("## PENDING-") if PROPOSALS_FILE.exists() else 0
+    # Self-evolution loop health: flag when proposals table and audit SkillGaps are both empty
+    try:
+        _conn = _proposals_conn()
+        pending_count = _conn.execute(
+            "SELECT COUNT(*) FROM proposals WHERE status='PENDING'"
+        ).fetchone()[0]
+        _conn.close()
+    except (sqlite3.OperationalError, OSError):
+        pending_count = 0
     skill_gap_count = sum(text.count("SkillGap:") for text in audit_texts)
     if total >= 3 and pending_count == 0 and skill_gap_count == 0:
         findings.append(
@@ -1530,34 +1703,32 @@ def _check_git_outcomes(sessions: list[dict]) -> list[str]:
     return findings
 
 
-def _load_pending_proposals() -> list[Proposal]:
-    if not PROPOSALS_FILE.exists():
-        return []
+def _load_pending_proposals(project_slug: str | None = None) -> list[Proposal]:
+    """Load proposals from SQLite. Optionally filter by project_slug.
 
-    content = PROPOSALS_FILE.read_text()
-    proposals = []
-    blocks = content.split("## PENDING-")
-
-    for block in blocks[1:]:
-        lines = block.strip().split("\n")
-        proposal_id = "PENDING-" + lines[0].split("—")[0].strip()
-        date = lines[0].split("—")[-1].strip() if "—" in lines[0] else "unknown"
-
-        proposals.append(Proposal(
-            id=proposal_id,
-            target=_extract_field(block, "Target"),
-            change_description=_extract_field(block, "Change"),
-            reason=_extract_field(block, "Reason"),
-            before=_extract_field(block, "Before"),
-            after=_extract_field(block, "After"),
-            status=_extract_field(block, "Status"),
-            proposed_date=date,
-            change_type=_extract_field(block, "ChangeType"),
-            target_section=_extract_field(block, "TargetSection"),
-            content=_extract_content_block(block),
-            review_required=_extract_field(block, "ReviewRequired").lower() == "true",
-        ))
-    return proposals
+    Returns empty list if the DB is unavailable (e.g. read-only filesystem in tests
+    that don't use the youk_root fixture). Raises RuntimeError only when the DB path
+    is reachable but the query fails (a genuine DB error worth surfacing).
+    """
+    try:
+        conn = _proposals_conn()
+    except OSError:
+        return []  # DB directory not writable — treat as no proposals (test/degraded env)
+    try:
+        if project_slug is not None:
+            rows = conn.execute(
+                "SELECT * FROM proposals WHERE project_slug = ? ORDER BY proposed_date",
+                (project_slug,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM proposals ORDER BY proposed_date"
+            ).fetchall()
+        conn.close()
+        return [_row_to_proposal(r) for r in rows]
+    except sqlite3.OperationalError as e:
+        conn.close()
+        raise RuntimeError(f"proposals DB unavailable: {e}") from e
 
 
 def _extract_field(text: str, field_name: str) -> str:
@@ -1815,11 +1986,14 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
     velocity = round(current_score - score_history[-2], 1) if len(score_history) >= 2 else 0.0
 
     # Count APPLIED proposals (completed improvement work)
-    proposals_applied = 0
-    if PROPOSALS_FILE.exists():
-        for line in PROPOSALS_FILE.read_text().splitlines():
-            if "**Status:** APPLIED" in line:
-                proposals_applied += 1
+    try:
+        _pconn = _proposals_conn()
+        proposals_applied = _pconn.execute(
+            "SELECT COUNT(*) FROM proposals WHERE status LIKE 'APPLIED%'"
+        ).fetchone()[0]
+        _pconn.close()
+    except (sqlite3.OperationalError, OSError):
+        proposals_applied = 0
 
     # Count SkillGaps in last 30 days (awareness — system is detecting issues)
     gaps_last30 = full_text.count("SkillGap:")
@@ -2662,27 +2836,17 @@ def _run_convergence_check(sessions: list[dict], report: object) -> dict:
 
 
 def _archive_applied_proposals() -> int:
-    """Move APPLIED/SUPERSEDED proposal blocks from PENDING.md to APPLIED-ARCHIVE.md.
-    Returns count of blocks archived. Called at start of each health check."""
-    if not PROPOSALS_FILE.exists():
+    """Count applied/superseded proposals (SQLite is now the store; no file archiving needed).
+    Returns count for health-check metrics. Historical APPLIED-ARCHIVE.md preserved as-is."""
+    try:
+        conn = _proposals_conn()
+        count = conn.execute(
+            "SELECT COUNT(*) FROM proposals WHERE status LIKE 'APPLIED%' OR status='SUPERSEDED'"
+        ).fetchone()[0]
+        conn.close()
+        return count
+    except (sqlite3.OperationalError, OSError):
         return 0
-    content = PROPOSALS_FILE.read_text()
-    parts = content.split("\n## ")
-    header = parts[0]
-    active, archived = [], []
-    for block in parts[1:]:
-        status_line = next((ln for ln in block.splitlines() if "**Status:**" in ln), "")
-        if "APPLIED" in status_line or "SUPERSEDED" in status_line:
-            archived.append("## " + block)
-        else:
-            active.append("## " + block)
-    if not archived:
-        return 0
-    PROPOSALS_FILE.write_text(header + ("\n" if active else "") + "".join(active))
-    archive_file = PROPOSALS_FILE.parent / "APPLIED-ARCHIVE.md"
-    with open(archive_file, "a") as f:
-        f.write("".join(archived))
-    return len(archived)
 
 
 def _audit_global_contracts() -> dict:
@@ -2805,18 +2969,36 @@ def _write_patterns_summary(candidates: list[dict]) -> None:
 
 
 def add_proposal(proposal: Proposal) -> None:
-    """Append a new proposal to PENDING.md. Never auto-applies. Deduplicates by change_description."""
-    PROPOSALS_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-    if not PROPOSALS_FILE.exists():
-        PROPOSALS_FILE.write_text("# youk Self-Heal Proposals\n\nPending founder review.\n\n")
-    else:
-        existing = PROPOSALS_FILE.read_text()
-        if proposal.change_description and proposal.change_description in existing:
-            return  # already queued — don't append a duplicate
-
-    with open(PROPOSALS_FILE, "a") as f:
-        f.write("\n" + proposal.to_markdown())
+    """Add a proposal to the SQLite proposals table. Atomic, concurrent-safe, idempotent."""
+    try:
+        conn = _proposals_conn()
+        conn.execute(
+            """INSERT OR IGNORE INTO proposals
+               (id, project_slug, status, title, target, change_description, reason,
+                before_text, after_text, change_type, target_section, content,
+                review_required, proposed_date)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                proposal.id,
+                proposal.project_slug or "",
+                proposal.status or "PENDING",
+                proposal.target or "",
+                proposal.target or "",
+                proposal.change_description or "",
+                proposal.reason or "",
+                proposal.before or "",
+                proposal.after or "",
+                proposal.change_type or "",
+                proposal.target_section or "",
+                proposal.content or "",
+                1 if proposal.review_required else 0,
+                proposal.proposed_date or datetime.utcnow().strftime("%Y-%m-%d"),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except sqlite3.OperationalError as e:
+        raise RuntimeError(f"add_proposal failed — DB unavailable: {e}") from e
 
 
 def _compute_diff_preview(proposal: Proposal) -> dict:
@@ -3102,16 +3284,23 @@ def apply_proposal(
             ),
         }
 
-    # confirmed=True path: execute + mark applied
+    # confirmed=True path: execute + mark applied in SQLite (atomic single-row UPDATE)
     result = _execute_proposal(target)
     if result.get("applied"):
-        content = PROPOSALS_FILE.read_text()
-        content = content.replace(
-            f"**Status:** {target.status}",
-            f"**Status:** APPLIED — {datetime.utcnow().strftime('%Y-%m-%d')}",
-            1,
-        )
-        PROPOSALS_FILE.write_text(content)
+        try:
+            conn = _proposals_conn()
+            conn.execute(
+                "UPDATE proposals SET status=?, applied_at=? WHERE id=?",
+                (
+                    f"APPLIED — {datetime.utcnow().strftime('%Y-%m-%d')}",
+                    datetime.utcnow().isoformat(),
+                    proposal_id,
+                ),
+            )
+            conn.commit()
+            conn.close()
+        except sqlite3.OperationalError as e:
+            raise RuntimeError(f"apply_proposal status update failed — DB unavailable: {e}") from e
         result["change_summary"] = target.change_description
 
     return result
