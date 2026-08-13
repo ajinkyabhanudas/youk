@@ -131,10 +131,12 @@ class TestWriteRoutingContext:
         write_routing_context("task", _standard_result(), youk_root=tmp_path)
 
     def test_stamps_slug_from_session_open(self, tmp_path):
-        """write_routing_context must write slug itself — guard cannot rely on a hook."""
+        """write_routing_context must write slug from slug-scoped open.json."""
+        import time as _time
         state_dir = tmp_path / "state"
-        state_dir.mkdir()
-        (state_dir / "session-open.json").write_text('{"slug": "canopy"}')
+        slug_dir = state_dir / "sessions" / "canopy"
+        slug_dir.mkdir(parents=True)
+        (slug_dir / "open.json").write_text(json.dumps({"slug": "canopy", "written_at": _time.time()}))
         write_routing_context("Build eval pipeline", _standard_result(), youk_root=tmp_path)
         data = _read_active_task(state_dir)
         assert data.get("slug") == "canopy"

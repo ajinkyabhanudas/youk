@@ -162,3 +162,66 @@ class TestEndToEndSession:
         assert c2 > c1, (
             f"session_counter must increment: first={c1}, second={c2}"
         )
+
+
+class TestSlugCorrelationFullPath:
+    """Gate flags must land in sessions/{slug}/ not state/ root, across full sequence."""
+
+    def test_all_gate_flags_use_slug_dir_not_root(self, sandbox_state, require_docker):
+        """Full sequence: start → route_task(M) → nfr_check → session_end.
+
+        After this sequence:
+        - sessions/youk/open.json must exist (then deleted by session_end)
+        - nfr-check-ran.json must be under sessions/youk/
+        - route-task-ran.json must be under sessions/youk/
+        - No gate flag files at state/ root level
+        """
+        GATE_FLAG_NAMES = {
+            "challenge-ran.json", "nfr-check-ran.json", "route-task-ran.json",
+            "challenge-gate-passed.json", "intake-ran.json",
+        }
+
+        call_tool("youk-core:latest", "session_start",
+                  {"project_dir": YOUK_DIR_STR}, state_dir=sandbox_state)
+
+        r = call_tool("youk-core:latest", "route_task",
+                      {"task": "implement user notification system",
+                       "project_dir": YOUK_DIR_STR}, state_dir=sandbox_state)
+        assert r.get("blocked") is False
+
+        call_tool("youk-core:latest", "check_nfr_gate", {
+            "task": "implement user notification system",
+            "size": "M",
+            "nfr_decision_block": (
+                "CACHING: N/A — no external calls. "
+                "RETRY: DECIDED: max 3 retries, exponential backoff. "
+                "OBSERVABILITY: DECIDED: log task start/end."
+            ),
+        }, state_dir=sandbox_state)
+
+        call_tool("youk-core:latest", "session_end", {
+            "summary": "slug correlation test",
+            "commits_made": False,
+            "close_cluster": False,
+        }, state_dir=sandbox_state)
+
+        # Gate flags must NOT exist at root level
+        root_flags = [
+            f.name for f in sandbox_state.iterdir()
+            if f.is_file() and f.name in GATE_FLAG_NAMES
+        ]
+        assert root_flags == [], (
+            f"Gate flags must not be at state/ root. Found: {root_flags}"
+        )
+
+        # nfr-check-ran.json must have been written under sessions/youk/
+        slug_nfr = sandbox_state / "sessions" / "youk" / "nfr-check-ran.json"
+        assert slug_nfr.exists(), (
+            "nfr-check-ran.json must be slug-scoped under sessions/youk/"
+        )
+
+        # route-task-ran.json must be under sessions/youk/
+        slug_route = sandbox_state / "sessions" / "youk" / "route-task-ran.json"
+        assert slug_route.exists(), (
+            "route-task-ran.json must be slug-scoped under sessions/youk/"
+        )

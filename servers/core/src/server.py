@@ -23,6 +23,7 @@ from intent import optimize_intent as _optimize_intent
 from compaction import build_brief, write_contracts
 from tokens import init_token_tracker, record_checkpoint
 from session_slug import get_session_slug as _get_session_slug_impl
+import state_paths as _sp
 from graph import (
     create_task_graph as _create_task_graph,
     set_gate as _set_gate,
@@ -81,6 +82,7 @@ _TOOL_CALL_COUNT_FILE = YOUK_ROOT / "state" / "tool-call-count.json"
 
 
 def _get_session_slug() -> str:
+    _sp.YOUK_ROOT = YOUK_ROOT
     return _get_session_slug_impl(YOUK_ROOT)
 
 
@@ -310,10 +312,7 @@ def session_end(
     try:
         import json as _jc
         from datetime import datetime as _dtc
-        open_file_lc = YOUK_ROOT / "state" / "session-open.json"
-        slug_lc = ""
-        if open_file_lc.exists():
-            slug_lc = _jc.loads(open_file_lc.read_text()).get("slug", "")
+        slug_lc = _get_session_slug()
         correction_file = YOUK_ROOT / "state" / "loop-correction.json"
         correction_file.write_text(_jc.dumps({
             "slug": slug_lc,
@@ -465,14 +464,8 @@ def route_task(
         import hashlib as _hashlib
         import json as _json
         from datetime import datetime as _dt
-        flag_file = YOUK_ROOT / "state" / "route-task-ran.json"
-        open_file = YOUK_ROOT / "state" / "session-open.json"
-        slug = "unknown"
-        if open_file.exists():
-            try:
-                slug = _json.loads(open_file.read_text()).get("slug", "unknown")
-            except Exception:
-                pass
+        slug = _get_session_slug()
+        flag_file = _sp.slug_state_dir(slug) / "route-task-ran.json"
         task_hash = _hashlib.md5(task.encode()).hexdigest()[:8]
         new_entry = {
             "slug": slug,
@@ -489,9 +482,8 @@ def route_task(
                 existing = raw if isinstance(raw, list) else [raw]
             except Exception:
                 pass
-        existing = [e for e in existing if e.get("slug") == slug]
         existing.append(new_entry)
-        flag_file.write_text(_json.dumps(existing))
+        _sp.atomic_write(flag_file, _json.dumps(existing))
         # Write semantic routing context into active_task.json so context-clear loses nothing.
         _write_routing_context(task, result)
         # Seed task graph node for M+ tasks so gate tools can write to it immediately.
@@ -649,11 +641,8 @@ def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) 
         try:
             import json as _json
             from datetime import datetime as _dt
-            slug = "unknown"
-            open_file = YOUK_ROOT / "state" / "session-open.json"
-            if open_file.exists():
-                slug = _json.loads(open_file.read_text()).get("slug", "unknown")
-            flag_file = YOUK_ROOT / "state" / "nfr-check-ran.json"
+            slug = _get_session_slug()
+            flag_file = _sp.slug_state_dir(slug) / "nfr-check-ran.json"
             flag_file.write_text(_json.dumps({
                 "slug": slug,
                 "ts": _dt.utcnow().isoformat(),
@@ -941,13 +930,9 @@ def check_loop_dry(task: str = "") -> dict:
     """
     try:
         import json as _json
-        flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
-        open_file = YOUK_ROOT / "state" / "session-open.json"
-        correction_file = YOUK_ROOT / "state" / "loop-correction.json"
-
-        current_slug = ""
-        if open_file.exists():
-            current_slug = _json.loads(open_file.read_text()).get("slug", "")
+        current_slug = _get_session_slug()
+        flag_file = _sp.slug_state_dir(current_slug) / "challenge-ran.json"
+        correction_file = _sp.slug_state_dir(current_slug) / "loop-correction.json"
 
         rounds = 0
         challenge_ran = False

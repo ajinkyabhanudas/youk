@@ -10,6 +10,7 @@ sys.path.insert(0, "/shared")
 from models import SessionState
 from compaction import write_contracts, build_brief as _build_brief
 from tokens import read_and_clear as _read_and_clear_tokens
+import state_paths as _sp
 
 CLAUDE_ROOT = Path("/claude")
 YOUK_ROOT = Path("/youk")
@@ -18,33 +19,16 @@ STATE_FILE = YOUK_ROOT / "state" / "session.json"
 
 
 def _slug_state_dir(slug: str) -> Path:
-    """Per-session state directory — isolates concurrent sessions by project slug."""
-    d = YOUK_ROOT / "state" / "sessions" / slug
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    """Per-session state directory — delegates to state_paths canonical implementation."""
+    _sp.YOUK_ROOT = YOUK_ROOT
+    return _sp.slug_state_dir(slug)
 
 
 def _get_current_slug() -> str:
-    """Read the active session slug from per-slug dirs or legacy session-open.json."""
-    sopen = YOUK_ROOT / "state" / "session-open.json"
-    if sopen.exists():
-        try:
-            return json.loads(sopen.read_text()).get("slug", "")
-        except Exception:
-            pass
-    sessions_dir = YOUK_ROOT / "state" / "sessions"
-    if sessions_dir.exists():
-        candidates = sorted(
-            sessions_dir.glob("*/open.json"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        if candidates:
-            try:
-                return json.loads(candidates[0].read_text()).get("slug", "")
-            except Exception:
-                pass
-    return ""
+    """Read the active session slug — delegates to state_paths canonical implementation."""
+    _sp.YOUK_ROOT = YOUK_ROOT
+    slug = _sp.current_session_slug()
+    return slug if slug != "unknown" else ""
 
 _CONTRACT_PHRASES = [
     "always ", "never ", "from now on", "remember to", "make sure you",
@@ -2279,22 +2263,29 @@ def start_session(project_dir: str) -> SessionState:
     # leave a record, not just sessions that reach their first commit.
     _write_session_stub(slug, counter)
 
-    # Write session-open.json AFTER build_brief — build_brief deletes this file
-    # (because compact_context supersedes it), so we must write it last.
-    # Per-slug path isolates concurrent sessions; legacy flat path kept for
-    # _merge_stale_checkpoint backward-compat during transition.
+    # Write open.json AFTER build_brief — build_brief may delete session-open.json
+    # (compact_context supersedes it), so we write it last.
+    # Slug-scoped path under state/sessions/{slug}/open.json is now authoritative.
+    # written_at field enables staleness detection in state_paths.current_session_slug().
+    # Root-level session-open.json is written as a legacy redirect pointer only —
+    # it MUST NOT be used for slug resolution; use state_paths.current_session_slug().
     _open_payload = json.dumps({
         "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "slug": slug,
+        "written_at": __import__("time").time(),
         "session_counter": state["session_counter"],
         "plan_items": session_plan[:3],
     }, indent=2)
     try:
-        _slug_state_dir(slug).joinpath("open.json").write_text(_open_payload)
+        _sp.YOUK_ROOT = YOUK_ROOT
+        _sp.atomic_write(_slug_state_dir(slug) / "open.json", _open_payload)
     except Exception:
         pass
     try:
-        (YOUK_ROOT / "state" / "session-open.json").write_text(_open_payload)
+        # Legacy redirect pointer — only for _live_session_running() guard in tests.
+        # Contains active_slug, not slug details. Do not parse slug from this file.
+        _redirect = json.dumps({"active_slug": slug, "open_at": datetime.utcnow().isoformat()})
+        (YOUK_ROOT / "state" / "session-open.json").write_text(_redirect)
     except Exception:
         pass
 
@@ -3496,9 +3487,8 @@ def enrich_route_result(result: dict, task: str) -> None:
     _FILE_CONTEXT_THRESHOLD = -0.5
     try:
         from file_index import find_relevant as _find_relevant
-        import json as _jmod
-        _sopen = YOUK_ROOT / "state" / "session-open.json"
-        _fslug = _jmod.loads(_sopen.read_text()).get("slug", "unknown") if _sopen.exists() else "unknown"
+        _sp.YOUK_ROOT = YOUK_ROOT
+        _fslug = _sp.current_session_slug()
         # FTS5 AND-semantics: all terms must appear in the same row. Long prose task strings
         # hit words absent from symbols/imports/headings and yield 0 results.
         # Try full task first; fall back to longest word (most likely a symbol name).
@@ -3539,28 +3529,9 @@ _GATES_FOR_CEREMONY: dict[str, list[str]] = {
 
 def _active_task_file(root: Path) -> Path:
     """Return the per-slug active_task.json path, falling back to flat state/ path."""
-    sopen = root / "state" / "session-open.json"
-    slug = None
-    if sopen.exists():
-        try:
-            slug = json.loads(sopen.read_text()).get("slug", "")
-        except Exception:
-            pass
-    if not slug:
-        # Try per-slug dirs — find the most recently written open.json
-        sessions_dir = root / "state" / "sessions"
-        if sessions_dir.exists():
-            candidates = sorted(
-                sessions_dir.glob("*/open.json"),
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            )
-            if candidates:
-                try:
-                    slug = json.loads(candidates[0].read_text()).get("slug", "")
-                except Exception:
-                    pass
-    if slug:
+    _sp.YOUK_ROOT = root
+    slug = _sp.current_session_slug()
+    if slug and slug != "unknown":
         return root / "state" / "sessions" / slug / "active_task.json"
     return root / "state" / "active_task.json"
 
@@ -3594,14 +3565,12 @@ def write_routing_context(task: str, result: dict, youk_root: Path | None = None
     existing["routing_context"] = routing_ctx
     if not existing.get("task") or existing.get("task", "").startswith(("editing ", "running:")):
         existing["task"] = task[:200]
-    # Stamp slug from active_task_file's own dir name (per-slug) or session-open.json.
+    # Stamp slug using canonical resolver — never read from legacy session-open.json.
     if not existing.get("slug"):
-        sopen = root / "state" / "session-open.json"
-        if sopen.exists():
-            try:
-                existing["slug"] = json.loads(sopen.read_text()).get("slug", "")
-            except Exception:
-                pass
+        _sp.YOUK_ROOT = root
+        _resolved = _sp.current_session_slug()
+        if _resolved and _resolved != "unknown":
+            existing["slug"] = _resolved
     try:
         active_task_file.parent.mkdir(parents=True, exist_ok=True)
         active_task_file.write_text(json.dumps(existing, indent=2))

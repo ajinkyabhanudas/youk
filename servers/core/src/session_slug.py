@@ -3,30 +3,22 @@
 Both mark_challenge_ran and check_challenge_gate need to agree on the slug
 that identifies the current session. This module provides a single source
 of truth so both always resolve the same value.
+
+After the slug-scoped state isolation change, slug resolution uses
+state_paths.current_session_slug() which reads from state/sessions/*/open.json
+(per-slug, written_at-gated). The legacy session-open.json at root is a redirect
+pointer only and must not be parsed for the slug value.
 """
 from __future__ import annotations
-import json
 from pathlib import Path
+import state_paths as _sp
 
 
 def get_session_slug(youk_root: Path) -> str:
     """Return a stable session identifier for challenge-ran.json correlation.
 
-    Reads session-open.json first (legacy). Falls back to session_counter from
-    session.json as a string. Returns "unknown" only when both files are missing.
+    Reads from state/sessions/*/open.json (slug-scoped, most recent active entry).
+    Returns "unknown" only when no active session open.json exists.
     """
-    open_file = youk_root / "state" / "session-open.json"
-    if open_file.exists():
-        try:
-            return json.loads(open_file.read_text()).get("slug", "unknown")
-        except Exception:
-            pass
-    session_file = youk_root / "state" / "session.json"
-    if session_file.exists():
-        try:
-            counter = json.loads(session_file.read_text()).get("session_counter")
-            if counter is not None:
-                return f"session-{counter}"
-        except Exception:
-            pass
-    return "unknown"
+    _sp.YOUK_ROOT = youk_root
+    return _sp.current_session_slug()
