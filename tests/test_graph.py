@@ -334,3 +334,59 @@ class TestStaleColumn:
         assert len(tasks) == 1
         assert "stale" in tasks[0]
         assert tasks[0]["stale"] == 0
+
+
+# ---------------------------------------------------------------------------
+# session_id — stamped on in_flight=True, cleared on False and mark_done
+# ---------------------------------------------------------------------------
+
+class TestSessionId:
+
+    def test_session_id_none_by_default(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "T"}], db_path=db)
+        state = G.is_unblocked("t1", db_path=db)
+        assert state["gates"]["session_id"] is None
+
+    def test_session_id_stamped_on_in_flight_true(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "T"}], db_path=db)
+        G.set_gate("t1", "in_flight", True, session_id="youk-80", db_path=db)
+        state = G.is_unblocked("t1", db_path=db)
+        assert state["gates"]["in_flight"] is True
+        assert state["gates"]["session_id"] == "youk-80"
+
+    def test_session_id_cleared_on_in_flight_false(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "T"}], db_path=db)
+        G.set_gate("t1", "in_flight", True, session_id="youk-80", db_path=db)
+        G.set_gate("t1", "in_flight", False, db_path=db)
+        state = G.is_unblocked("t1", db_path=db)
+        assert state["gates"]["in_flight"] is False
+        assert state["gates"]["session_id"] is None
+
+    def test_session_id_cleared_on_mark_done(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "T"}], db_path=db)
+        G.set_gate("t1", "in_flight", True, session_id="youk-80", db_path=db)
+        G.mark_done("t1", db_path=db)
+        tasks = G.get_all_tasks(db_path=db)
+        t = tasks[0]
+        assert t["done"] == 1
+        assert t["session_id"] is None
+
+    def test_in_flight_without_session_id_leaves_session_id_none(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "T"}], db_path=db)
+        G.set_gate("t1", "in_flight", True, db_path=db)
+        state = G.is_unblocked("t1", db_path=db)
+        assert state["gates"]["in_flight"] is True
+        assert state["gates"]["session_id"] is None
+
+    def test_other_gates_do_not_affect_session_id(self, tmp_path):
+        db = tmp_path / "graph.db"
+        G.create_task_graph([{"id": "t1", "label": "T"}], db_path=db)
+        G.set_gate("t1", "in_flight", True, session_id="youk-80", db_path=db)
+        G.set_gate("t1", "unblocked", True, db_path=db)
+        state = G.is_unblocked("t1", db_path=db)
+        assert state["gates"]["session_id"] == "youk-80"

@@ -31,10 +31,46 @@ mcp_tools:
     - {tool: check_task_contract_gate, refs: [README.md, docs/claude-md-template.md]}
     - {tool: find_relations, refs: [README.md, docs/getting-started.md]}
     - {tool: find_related_docs, refs: [README.md, docs/getting-started.md]}
+    - {tool: find_stale_relations, refs: [README.md]}
     - {tool: index_project, refs: [README.md]}
     - {tool: find_relevant, refs: [README.md]}
     - {tool: find_affected, refs: [README.md]}
     - {tool: get_file_index_stats, refs: [README.md]}
+    - {tool: rebuild_knowledge_index, refs: [README.md]}
+    - {tool: get_concept_graph_stats, refs: [README.md]}
+    - {tool: query_concept_graph, refs: [README.md]}
+    # task-graph tools (shipped PR #33–#35)
+    - {tool: create_task_graph, refs: [README.md]}
+    - {tool: next_task, refs: [README.md]}
+    - {tool: mark_task_done, refs: [README.md]}
+    - {tool: is_unblocked, refs: [README.md]}
+    - {tool: set_gate, refs: [README.md]}
+    # challenge gate (shipped PR #35)
+    - {tool: check_challenge_gate, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: mark_challenge_ran, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: check_loop_dry, refs: [README.md]}
+    # intake gate (shipped PR #33)
+    - {tool: check_intake_gate, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: mark_intake_ran, refs: [README.md, docs/claude-md-template.md]}
+    # revisable sets (shipped PR #35–#36)
+    - {tool: apply_set_revision, refs: [README.md]}
+    - {tool: enroll_revisable_set, refs: [README.md]}
+    - {tool: get_revisable_sets, refs: [README.md]}
+    - {tool: propose_set_revisions, refs: [README.md]}
+    # proposal lifecycle
+    - {tool: mark_proposal_applied, refs: [README.md]}
+    - {tool: generate_skill_improvement_proposal, refs: [README.md]}
+    # skill signals / bandit routing
+    - {tool: get_skill_signals, refs: [README.md]}
+    - {tool: select_skill_arm, refs: [README.md]}
+    - {tool: record_arm_reward, refs: [README.md]}
+    # steering vocab
+    - {tool: get_steering_vocab, refs: [README.md]}
+    - {tool: record_steering_decomposition, refs: [README.md]}
+    - {tool: update_convergence_state, refs: [README.md]}
+    # outcome and external review
+    - {tool: record_outcome_followup, refs: [README.md]}
+    - {tool: request_external_review, refs: [README.md]}
 
   youk-code:
     - {tool: nfr_check, refs: [README.md, docs/claude-md-template.md]}
@@ -45,6 +81,10 @@ mcp_tools:
     - {tool: assess_skill, refs: [README.md]}
     - {tool: generate_stack_overlay, refs: [README.md, skills/stack-overlay-schema.md]}
     - {tool: detect_skill_gaps, refs: [README.md]}
+    - {tool: analyze_stack_for_skills, refs: [README.md]}
+    - {tool: mark_rationale_preempted, refs: [README.md]}
+    - {tool: verify_mcp_contracts, refs: [README.md]}
+    - {tool: write_skill_handoff, refs: [README.md]}
 
 src_files:
   - {file: servers/core/src/server.py, refs: [README.md]}

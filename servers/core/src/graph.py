@@ -2,7 +2,7 @@
 
 Schema
 ------
-tasks  : id, label, challenge_cleared, nfr_cleared, unblocked, in_flight, done, stale
+tasks  : id, label, challenge_cleared, nfr_cleared, unblocked, in_flight, session_id, done, stale
 edges  : parent_id → child_id (directed: parent must complete before child)
 
 Gate booleans (written by set_gate, read by is_unblocked):
@@ -15,6 +15,11 @@ Gate booleans (written by set_gate, read by is_unblocked):
                        on its parents' `done`, NOT `unblocked` — previously these were
                        the same bit, so a child unblocked when its parent was merely
                        ready, not finished. mark_done sets this; next_task excludes it.
+
+session_id: which session claimed this task (set when in_flight=1). Cleared when
+  mark_done or set_gate("in_flight", False) runs. Used to detect stale in-flight
+  claims (session crashed without clearing in_flight) — the session ID is
+  "{slug}-{session_counter}" so a new session can recognise its own claims.
 
 stale column is reserved for dirty-bit propagation (impact() tool — future build).
 It is written to 0 on insert and never mutated here.
@@ -42,6 +47,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     nfr_cleared         INTEGER NOT NULL DEFAULT 0,
     unblocked           INTEGER NOT NULL DEFAULT 0,
     in_flight           INTEGER NOT NULL DEFAULT 0,
+    session_id          TEXT,
     done                INTEGER NOT NULL DEFAULT 0,
     stale               INTEGER NOT NULL DEFAULT 0
 );
@@ -72,6 +78,12 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
         # re-marked via mark_done going forward. Conservative: never a false "done" that
         # would wrongly release a child. Idempotent.
         conn.execute("ALTER TABLE tasks ADD COLUMN done INTEGER NOT NULL DEFAULT 0")
+    if "session_id" not in cols:
+        # Which session claimed this task (set alongside in_flight=1). NULL = unclaimed
+        # or claim cleared. Format: "{slug}-{session_counter}". Existing rows backfill
+        # to NULL — backward-compatible; a NULL session_id with in_flight=0 is the
+        # normal state for any task that has never been started or has been completed.
+        conn.execute("ALTER TABLE tasks ADD COLUMN session_id TEXT")
 
 
 class _DB:
@@ -197,10 +209,14 @@ def _would_cycle(edges: list[tuple[str, str]]) -> bool:
 
 
 def set_gate(task_id: str, gate_name: str, value: bool,
+             session_id: str | None = None,
              db_path: Path = _DB_PATH) -> dict:
     """Set a gate boolean on a task node. Idempotent.
 
     gate_name: one of challenge_cleared, nfr_cleared, unblocked, in_flight
+    session_id: when setting in_flight=True, stamps which session claimed the task.
+      Format: "{slug}-{session_counter}" (e.g. "youk-80"). Cleared automatically
+      when in_flight is set to False (claim released) or mark_done runs.
     Returns {"ok": bool, "task_id": str, "gate": str, "value": bool}
     """
     if gate_name not in GATE_NAMES:
@@ -218,6 +234,13 @@ def set_gate(task_id: str, gate_name: str, value: bool,
             f"UPDATE tasks SET {gate_name} = ? WHERE id = ?",
             (int_val, task_id),
         )
+        # Stamp session_id when claiming in_flight; clear it when releasing.
+        if gate_name == "in_flight":
+            new_sid = session_id if value else None
+            conn.execute(
+                "UPDATE tasks SET session_id = ? WHERE id = ?",
+                (new_sid, task_id),
+            )
         conn.commit()
 
     return {"ok": True, "task_id": task_id, "gate": gate_name, "value": value}
@@ -239,6 +262,7 @@ def is_unblocked(task_id: str, db_path: Path = _DB_PATH) -> dict:
         "nfr_cleared": bool(row["nfr_cleared"]),
         "unblocked": bool(row["unblocked"]),
         "in_flight": bool(row["in_flight"]),
+        "session_id": row["session_id"] if "session_id" in row.keys() else None,
         # `done` must be readable here: mark_done sets it, and external gate logic asking
         # "is this task finished?" uses is_unblocked. Omitting it (the original API gap) left
         # completion invisible on the one public read-path a caller would reach for.
@@ -331,7 +355,7 @@ def mark_done(task_id: str, db_path: Path = _DB_PATH) -> dict:
     """
     with _connect(db_path) as conn:
         conn.execute(
-            "UPDATE tasks SET done = 1, in_flight = 0 WHERE id = ?",
+            "UPDATE tasks SET done = 1, in_flight = 0, session_id = NULL WHERE id = ?",
             (task_id,),
         )
         conn.commit()
