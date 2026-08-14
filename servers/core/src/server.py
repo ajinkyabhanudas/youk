@@ -93,7 +93,8 @@ try:
         ],
     )
 except Exception:
-    pass  # Registry path unavailable (e.g. test environments) — gate falls back to frozen literal.
+    # youk: silent enrollment failure → upgrade to structured warning when server gains logging.
+    pass
 
 
 def _get_session_slug() -> str:
