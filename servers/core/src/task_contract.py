@@ -437,11 +437,20 @@ def generate_task_contract(task: str, size: str | None = None) -> dict:
     filename = f"{date_str}-{slug}-{contract_id}.md"
     path = _CONTRACTS_DIR / filename
 
+    _project = ""
+    try:
+        _sopen = YOUK_ROOT / "state" / "session-open.json"
+        if _sopen.exists():
+            _project = json.loads(_sopen.read_text()).get("slug", "")
+    except Exception:
+        pass
+
     record = {
         "contract_id": contract_id,
         "task": task,
         "size": resolved_size.value,
         "date": date_str,
+        "project": _project,
         "as_presented": contract_text,
         "as_approved": None,  # filled when developer approves
     }
@@ -531,7 +540,7 @@ def approve_task_contract(
             except Exception:
                 pass
 
-    return {
+    result: dict = {
         "saved": True,
         "contract_id": contract_id,
         "fields_edited": edited,
@@ -539,6 +548,26 @@ def approve_task_contract(
         "unresolved_provocations": unresolved,
         "blocked": len(unresolved) > 0,
     }
+
+    # Wire approved contract → task graph node (the mechanical guarantee that no
+    # approved task dies silently). Only fires when not blocked — unresolved
+    # provocations mean the contract isn't actually approved yet.
+    if not result["blocked"]:
+        try:
+            import hashlib as _hl
+            from graph import create_task_graph as _add_to_graph
+            task_label = record.get("task", as_approved[:200])
+            project = record.get("project", "")
+            task_id = "tc-" + _hl.sha1(task_label.encode()).hexdigest()[:12]
+            _add_to_graph(
+                [{"id": task_id, "label": task_label, "project": project or None}]
+            )
+            result["graph_node_id"] = task_id
+        except Exception as _e:
+            # Graph write failure must not block approval — surface it as a warning.
+            result["graph_warning"] = f"task-graph write failed: {_e}"
+
+    return result
 
 
 def check_task_contract_gate(size: str) -> dict:
