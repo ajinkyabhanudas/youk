@@ -80,6 +80,21 @@ CLAUDE_ROOT = Path("/claude")
 
 _TOOL_CALL_COUNT_FILE = YOUK_ROOT / "state" / "tool-call-count.json"
 
+# Seed the first enrolled judgment-set at server startup (idempotent).
+# _SEVEN_CONVERGENCE is the proof-of-concept set for the self-revision meta-loop.
+# Other sets are enrolled only when a concrete revision is first proposed (ADR decision).
+try:
+    _rs_enroll(
+        "_SEVEN_CONVERGENCE",
+        policy="both",
+        initial_elements=[
+            "structural", "operational", "experiential",
+            "adversarial", "temporal", "outcome", "semantic",
+        ],
+    )
+except Exception:
+    pass  # Registry path unavailable (e.g. test environments) — gate falls back to frozen literal.
+
 
 def _get_session_slug() -> str:
     _sp.YOUK_ROOT = YOUK_ROOT
