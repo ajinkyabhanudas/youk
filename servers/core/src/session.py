@@ -1582,6 +1582,17 @@ def _check_doc_freshness() -> list[str]:
     except Exception:
         pass
 
+    # Part 5c: BEHAVIORAL PROFILE — surface active routing hints learned from this developer's
+    # session patterns. Hints are inferred from audit history (e.g. "humanize not fired when
+    # commits_made=yes") and become active after HINT_THRESHOLD sessions of evidence.
+    # Surfaced once here so the developer knows what youk learned — not emitted again mid-session.
+    try:
+        from behavioral_profile import load_active_hints, format_hint_warnings
+        hints = load_active_hints()
+        undocumented.extend(format_hint_warnings(hints))
+    except Exception:
+        pass
+
     # Part 6: PERSONAL-DATA PULSE — the backstop for identifier leaks in committed files.
     # The primary defense is the pre-commit gate (blocks the leak from entering history); this
     # catches anything already committed. Auto-seeds names from git author + attribution; also
@@ -3177,6 +3188,16 @@ def end_session(
     try:
         from knowledge_index import fold_usage_into_index
         fold_usage_into_index(YOUK_ROOT)
+    except Exception:
+        pass
+
+    # BEHAVIORAL PROFILE — observe skill-timing patterns and update the developer profile.
+    # Detects: skill that should fire at commit but wasn't in skills_used despite commits_made.
+    # After HINT_THRESHOLD sessions of evidence, the hint becomes active and surfaces at
+    # session_start so the developer knows what youk learned about their workflow.
+    try:
+        from behavioral_profile import record_session_patterns
+        record_session_patterns(skills_used=list(skills_used) if skills_used else [], commits_made=commits_made)
     except Exception:
         pass
 
