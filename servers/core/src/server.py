@@ -844,13 +844,18 @@ def create_task_graph(tasks: list[dict], edges: list[list] | None = None) -> dic
 
 
 @mcp.tool()
-def set_gate(task_id: str, gate_name: str, value: bool) -> dict:
+def set_gate(task_id: str, gate_name: str, value: bool,
+             session_id: str | None = None) -> dict:
     """
     Set a gate boolean on a task node in the task graph. Idempotent.
 
-    task_id:   Task node ID (created by create_task_graph, or auto-created as stub).
-    gate_name: One of: challenge_cleared, nfr_cleared, unblocked, in_flight
-    value:     True to set, False to clear.
+    task_id:    Task node ID (created by create_task_graph, or auto-created as stub).
+    gate_name:  One of: challenge_cleared, nfr_cleared, unblocked, in_flight
+    value:      True to set, False to clear.
+    session_id: When setting in_flight=True, pass "{slug}-{session_counter}" (e.g. "youk-80")
+                to record which session claimed this task. Cleared automatically when
+                in_flight is set False or mark_task_done runs. Enables stale-claim
+                detection across concurrent sessions.
 
     Called by CLAUDE.md routing after each gate passes — replaces writing individual
     JSON gate files. Existing check_nfr_gate and check_challenge_gate tools are
@@ -859,8 +864,8 @@ def set_gate(task_id: str, gate_name: str, value: bool) -> dict:
     Returns {"ok": bool, "task_id": str, "gate": str, "value": bool}
     """
     import logging
-    logging.debug("set_gate: task=%s gate=%s value=%s", task_id, gate_name, value)
-    return _set_gate(task_id, gate_name, value)
+    logging.debug("set_gate: task=%s gate=%s value=%s session_id=%s", task_id, gate_name, value, session_id)
+    return _set_gate(task_id, gate_name, value, session_id=session_id)
 
 
 @mcp.tool()
