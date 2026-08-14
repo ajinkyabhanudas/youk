@@ -115,11 +115,36 @@ def write_skill_handoff(from_skill: str, content: str) -> dict:
         return {"saved": False, "error": str(e)}
 
 
-_ROUTE_TASK_RAN = Path("/youk/state/route-task-ran.json")
-_SESSION_OPEN = Path("/youk/state/session-open.json")
+_YOUK_ROOT = Path("/youk")
+_ROUTE_TASK_RAN = _YOUK_ROOT / "state" / "route-task-ran.json"
+_SESSION_OPEN = _YOUK_ROOT / "state" / "session-open.json"
 
 # Skills that require route_task to have run first (M+ gate)
 _GATED_SKILLS = {"dev-loop"}
+
+
+def _get_current_slug() -> str:
+    """Read active session slug — prefer per-slug open.json, fall back to root."""
+    sessions = _YOUK_ROOT / "state" / "sessions"
+    if sessions.exists():
+        candidates = sorted(
+            sessions.glob("*/open.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for c in candidates:
+            try:
+                slug = json.loads(c.read_text()).get("slug", "")
+                if slug:
+                    return slug
+            except Exception:
+                pass
+    if _SESSION_OPEN.exists():
+        try:
+            return json.loads(_SESSION_OPEN.read_text()).get("slug", "unknown")
+        except Exception:
+            pass
+    return "unknown"
 
 
 def _get_rationale_state() -> dict:
@@ -175,18 +200,29 @@ def mark_rationale_preempted(skill_name: str) -> dict:
 
 
 def _routing_ran_this_session() -> bool:
-    """Return True if route_task was called at any point this session for the current slug."""
-    if not _ROUTE_TASK_RAN.exists():
-        return False
+    """Return True if route_task was called this session for the current slug.
+
+    Checks per-slug path first (state/sessions/{slug}/route-task-ran.json),
+    falls back to legacy flat path for backward compat.
+    """
     try:
-        slug = "unknown"
-        if _SESSION_OPEN.exists():
-            slug = json.loads(_SESSION_OPEN.read_text()).get("slug", "unknown")
-        raw = json.loads(_ROUTE_TASK_RAN.read_text())
-        entries = raw if isinstance(raw, list) else [raw]
-        return any(e.get("slug") == slug for e in entries)
+        slug = _get_current_slug()
+        # Per-slug path (written by route_task after per-slug migration)
+        slug_file = _YOUK_ROOT / "state" / "sessions" / slug / "route-task-ran.json"
+        if slug_file.exists():
+            raw = json.loads(slug_file.read_text())
+            entries = raw if isinstance(raw, list) else [raw]
+            if any(e.get("slug") == slug for e in entries):
+                return True
+        # Legacy flat path fallback
+        if _ROUTE_TASK_RAN.exists():
+            raw = json.loads(_ROUTE_TASK_RAN.read_text())
+            entries = raw if isinstance(raw, list) else [raw]
+            if any(e.get("slug") == slug for e in entries):
+                return True
     except Exception:
-        return False
+        pass
+    return False
 
 
 def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> dict:
