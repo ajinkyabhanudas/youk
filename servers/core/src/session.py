@@ -1572,6 +1572,16 @@ def _check_doc_freshness() -> list[str]:
     except Exception:
         pass
 
+    # Part 5b: PIPELINE PULSE — verifies cross-tool data flow contracts. Wiring pulse checks
+    # reachability (tool is mentioned); pipeline pulse checks correctness (data flows end-to-end).
+    # The two checks are complementary: a tool can be wired but its handoff semantics broken.
+    try:
+        from pipeline_pulse import check_pipeline_contracts, format_pipeline_warnings
+        pipeline = check_pipeline_contracts()
+        undocumented.extend(format_pipeline_warnings(pipeline))
+    except Exception:
+        pass
+
     # Part 6: PERSONAL-DATA PULSE — the backstop for identifier leaks in committed files.
     # The primary defense is the pre-commit gate (blocks the leak from entering history); this
     # catches anything already committed. Auto-seeds names from git author + attribution; also
