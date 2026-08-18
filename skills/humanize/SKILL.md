@@ -26,8 +26,8 @@ same thoughtful engineer, because it did.
 
 | Invocation | Behaviour |
 |------------|-----------|
-| *(no directive)* | Classify → Draft → Voice → Check → Output |
-| `commit: [draft]` | Apply voice to a commit message specifically |
+| *(no directive)* | Classify → Draft → Voice → Check → Output (+ Quantify, recursive, for long-form content) |
+| `commit: [draft]` | Apply voice to a commit message specifically, checked against recent commit history (Phase 4b, corpus-level) before finalizing |
 | `doc: [draft]` | Apply voice to a documentation section |
 | `decision: [draft]` | Apply voice to a DECISIONS.md rationale |
 | `comment: [draft]` | Apply voice to an inline code comment |
@@ -177,6 +177,127 @@ Violations: {list — or "none"}
 
 ---
 
+### Phase 4b — QUANTIFY (recursive, single-document or corpus-level)
+
+Run this for doc sections, briefs, reports, and any content where Phase 4's qualitative CHECK isn't
+enough on its own, because a draft can pass every qualitative rule individually and still read as
+AI-generated in aggregate (this is not hypothetical — it happened three times in a row on a real report
+before this phase existed). For content under ~300 words (commits, code comments), the single-document
+version below doesn't apply — a 2-3 sentence commit has no meaningful sentence-length variance to
+measure — but the underlying tell still shows up, just at corpus scale instead of document scale: the
+same opening verb, connector, or structural template reused commit after commit. **Don't skip
+short-form content, check it differently.** See "Commit-specific check (corpus-level)" below.
+
+This is a **recursive improvement loop**, not a one-shot check: measure, compare against a benchmark,
+fix what's flagged, re-measure, repeat. **Exit condition is convergence, not a round count**: stop when
+a full measurement pass finds nothing new to fix, or after 4 rounds if it hasn't converged (flag that
+explicitly rather than looping forever — a document that won't converge after 4 rounds usually needs a
+structural rewrite of the flagged section, not another patch). This mirrors the project's general
+reasoning-loop discipline (exit on zero new findings, not on a fixed number of passes) applied to
+prose quality specifically.
+
+**Persona for this phase: the careful technical editor who trusts the reader and never pays for
+rhythm with information.** Confirmed by a blind A/B score on a real document (round 4 of this skill's
+development) — a second editing pass that chased word-frequency numbers down further scored *lower*
+(73/100) than the version it started from (86/100), because the fixes traded prose quality for
+statistics. Before finalizing any FIX in this phase, apply this checklist:
+
+1. **Prefer in-place word/phrase swaps over sentence restructuring.** A synonym swap that preserves the
+   sentence's existing shape is lower-risk than rewriting the sentence, because restructuring is what
+   introduces new, unchecked patterns.
+2. **Never split a sentence unless every resulting piece states a new fact.** A short sentence that
+   only restates the previous one for punch ("A blank spinner says nothing.") is the aphoristic
+   over-correction tell, not a fix — merge it back or cut it.
+3. **A word only gets cut if removing it is provably lossless** (a grammatical or logical reason it was
+   redundant — e.g. "already run" after "had," where the past perfect already carries the meaning), not
+   because its frequency count alone is elevated. High frequency is a prompt to *look*, not a mandate
+   to cut.
+4. **Re-check every replacement against the full taxonomy before finalizing it, not just the one metric
+   it was written to fix.** The round-4 regression happened because a fix for word-frequency was never
+   re-checked against the antithesis rule, and introduced a fresh antithesis in the same sentence.
+   Fixing one axis and not checking the others is the single most repeated failure across every round
+   of this skill's development — check the whole list every time, not just the flagged item.
+5. **Precision beats idiom.** Don't trade semantic accuracy for a punchier or more natural-sounding
+   phrase — "know how to make without thinking" reads more human than "already know how to make," but
+   it also subtly implies carelessness that wasn't intended. If a more natural phrase changes the
+   meaning, it's not a fix.
+
+Run `scripts/quantify.py <file>` (all eleven checks, fixed order). Fix every FLAG, re-run until clean
+or each remaining flag is judged legitimate. If a flag is missed, fix the script and
+`ai-tell-taxonomy.md` in the same sitting, not just the instance.
+
+**Round structure:**
+
+1. **MEASURE.** Compute, over the full draft:
+   - Sentence-length mean and standard deviation (burstiness). Method and genre-adjusted targets in
+     `references/distributional-realism.md` §1 — formal/graded writing runs lower burstiness than
+     creative writing; don't target novel-level variance.
+   - Word-frequency rate per 1,000 words for any word appearing suspiciously often, compared against
+     the general-English baseline table in `references/distributional-realism.md` §3. A multiplier of
+     5-10x+ baseline is worth a look; judge it against what the genre plausibly explains before cutting.
+   - Punctuation frequency: colons (revised target, corrected 2026-08-17 after a developer rejected
+     the original "~1 per 250-300 words" estimate three times as still too many — that number was my
+     own guess, never verified against real usage. Real target: a colon is justified only for a genuine
+     three-or-more-item parallel list where commas alone would be clumsy, or a very short, unavoidable
+     "label: single word" tag. Every other use — attaching an explanation, a single-item elaboration, a
+     definition, a two-item pair — gets a period or a comma instead. On a 4,000-word document this
+     converged at 2 colons, not 10-15. Don't trust a self-set numeric threshold for this; when a
+     developer says a count still feels high, believe the ear over the arithmetic and keep cutting.),
+     em dash count (target zero in long-form output from this skill, regardless of any personal sample
+     that seems to permit it — see the contamination note below).
+2. **COMPARE.** For each metric outside its target band, is this a real tell or genre-explained
+   variation? Not every elevated number is a problem — forcing a rate down to a generic baseline when
+   the genre genuinely warrants elevation (e.g., comparative connectives in a document about comparing
+   decisions) produces awkward, over-corrected prose, which is its own failure mode. Judge the
+   multiplier against plausible genre explanation before touching anything.
+3. **FIX.** For metrics that are genuinely outliers: rewrite with genuinely varied replacements, not
+   a single substitute phrase (swapping one crutch word for one replacement word just relocates the
+   tell — this is the single most common failure in this phase, confirmed repeatedly). Prefer full
+   restructuring or dropping the clause over finding a synonym.
+4. **RE-MEASURE.** Run MEASURE again on the fixed draft. If new outliers appear (this happens — a fix
+   for one word routinely becomes the next round's crutch), that's not a failed round, it's the loop
+   working as designed. Continue to another FIX round.
+5. **Exit** when a MEASURE pass finds nothing new, and report the final metrics alongside the
+   qualitative `[VOICE CHECK]` block from Phase 4.
+
+**Source contamination warning**: don't treat any writing sample as ground truth for a person's voice
+without confirming it's actually human-authored. A commit message, doc section, or anything this
+skill (or any AI) has touched is contaminated unless independently verified otherwise. This project
+learned this the hard way — an apparent conflict between a "no em dash" rule and em-dash use in commit
+samples turned out to be because the commits were mostly AI-authored, not a real voice signal. Prefer
+sources that can't have been AI-touched: live chat messages typed in the moment, dictated corrections,
+handwritten notes.
+
+Emit:
+```
+[QUANTIFY: round N]
+Sentence length: mean {X}, stdev {Y} (target: stdev roughly 5-9 for formal long-form)
+Colons/1000 words: {X} (target: ~3-4)
+Em dashes: {X} (target: 0)
+Outlier words: {word (Nx baseline), ...} or "none"
+Converged: {yes | no, round N of 4}
+```
+
+**Commit-specific check (corpus-level).** Before finalizing any commit message:
+
+1. **Glance at recent history first.** Pull the last ~15-20 commits (`git log --oneline -20` or similar)
+   before finalizing wording. Note the opening verb/structure each one used (Fix, Add, Wire, Cut, Move,
+   Refactor...) and any connector phrase already leaning on repetition. If the draft repeats an opening
+   verb or connector used in 3+ of the last 20, that's the corpus-scale version of the "rather than 30
+   times in one document" problem — vary it, don't default to the same safe template every time.
+2. **Batch-audit periodically, not just live.** Every ~30-50 commits (or on request), concatenate the
+   last N commit messages into one corpus and run the same word-frequency-vs-baseline method from §3 of
+   `references/distributional-realism.md` against that corpus, not a single message. A phrase or
+   sentence-opening pattern that's fine once is a tell at high frequency across 30 commits, exactly like
+   within one long document, just measured over time instead of over word count. Report findings the
+   same way as the `[QUANTIFY]` block above, with "corpus of N commits" in place of a single document's
+   word count.
+3. This is what makes the discipline apply to the actual commits this project writes going forward, not
+   just to long-form deliverables — a commit message is drafted by this skill, so it's in scope for the
+   same recursive-improvement standard, adapted to its shorter, higher-frequency form.
+
+---
+
 ### Phase 5 — OUTPUT
 
 The final text, ready to use. No "here's the rewrite" preamble — just the text.
@@ -207,6 +328,7 @@ This skill passes the hiring committee if it can:
 3. **Filler test**: Given a paragraph with "In order to leverage the existing infrastructure...", it produces a paragraph starting with the actual decision or action.
 4. **Audience test**: The same technical decision expressed for a non-technical stakeholder (plain English) and for GitHub (technical) should read noticeably differently, and both should feel natural for their audience.
 5. **Brevity test**: A commit message never exceeds 3 sentences unless it's documenting a breaking change. If it's getting long, the change should be split.
+6. **Corpus-repetition test**: given the last 20 commit messages, no single opening verb or connector phrase accounts for more than a small handful of them, and a batch frequency audit every ~30-50 commits finds no word or phrase running 5-10x+ above baseline across the corpus (Phase 4b, commit-specific check).
 
 ---
 
@@ -218,6 +340,9 @@ This skill passes the hiring committee if it can:
 | `references/by-content-type.md` | CLASSIFY phase — rules per content type |
 | `references/before-after.md` | VOICE phase — concrete transformation examples |
 | `references/signal-noise-framework.md` | CHECK phase (`check:`/`chat:`) — SUBTRACT + REVEAL passes |
+| `references/distributional-realism.md` | QUANTIFY phase — burstiness/perplexity method, genre-adjusted targets, lexical-frequency method |
+| `references/ai-tell-taxonomy.md` | QUANTIFY + CHECK phases — cumulative living catalogue of AI-writing patterns, extend on every new find |
+| `scripts/quantify.py` | QUANTIFY phase — run this, don't recreate its checks from memory. Extend it whenever a new pattern is caught. |
 
 ---
 
