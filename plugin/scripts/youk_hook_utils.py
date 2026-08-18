@@ -658,6 +658,43 @@ def capture_correction(
         pass  # never surface hook errors to the user
 
 
+_VOICE_CORPUS_FILE = "knowledge/voice-corpus.jsonl"
+# Minimum character length to bother capturing — skips "ok", slash-commands, one-word replies.
+_VOICE_MIN_LEN = 30
+# Slash-command prefix — skip these entirely.
+_SLASH_PREFIX = "/"
+
+
+def capture_voice_sample(
+    root: Path,
+    text: str,
+    slug: str,
+    register: str = "chat",
+) -> None:
+    """Append a voice sample to knowledge/voice-corpus.jsonl.
+
+    Skips texts below _VOICE_MIN_LEN or starting with a slash (commands).
+    Silent-fail: hook errors must never surface to the user.
+    Corpus file is gitignored (personal data, machine-local only).
+    """
+    import time
+    if len(text) < _VOICE_MIN_LEN or text.lstrip().startswith(_SLASH_PREFIX):
+        return
+    corpus_file = root / _VOICE_CORPUS_FILE
+    try:
+        corpus_file.parent.mkdir(parents=True, exist_ok=True)
+        entry = json.dumps({
+            "ts": time.time(),
+            "slug": slug,
+            "register": register,
+            "text": text[:2000],  # cap per entry; full text for short messages
+        })
+        with corpus_file.open("a", encoding="utf-8") as f:
+            f.write(entry + "\n")
+    except Exception:
+        pass  # never surface hook errors to the user
+
+
 def load_correction_patterns(root: Path, top_n: int = 3) -> list[dict]:
     """
     Read corrections.jsonl and return top N phrase patterns by frequency.
