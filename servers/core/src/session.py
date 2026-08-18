@@ -2638,10 +2638,10 @@ def task_checkpoint(
             except Exception:
                 pass
 
-    # Write mid-session resume point so tomorrow's card shows last known task
-    # even if the developer closed the tab without /done.
-    if _slug_val and size.upper() not in ("XS", "S"):
-        _update_resume_point(_slug_val, f"In progress: {task_label[:180]}")
+    # Update resume point at every task completion so the pointer is never more than
+    # one task stale, regardless of whether /done runs. Fires for all sizes.
+    if _slug_val:
+        _update_resume_point(_slug_val, f"Completed: {task_label[:180]}")
 
     # Routing breadcrumb gate: for M+ tasks, verify route_task was called before work started.
     # If the breadcrumb is absent, routing was bypassed — surface it so the model can correct now.
@@ -3491,6 +3491,21 @@ def end_session(
             if _concepts:
                 _result = _write_concepts(_concepts, slug or "unknown", _session_n)
                 concepts_written = _result.get("written", 0)
+        except Exception:
+            pass
+
+    # Resume pointer: on clean close, replace "Completed: X" with the next actionable task.
+    # Decoupled from task_checkpoint (which tracks in-progress state) — /done sets direction.
+    if close_cluster and slug:
+        try:
+            from graph import next_task as _get_next_task
+            _next = _get_next_task(project=slug)
+            if _next and _next.get("found") and _next.get("task", {}).get("label"):
+                _next_label = _next["task"]["label"][:180]
+                _update_resume_point(slug, f"NEXT (from task graph): {_next_label}")
+            else:
+                # No next task — session genuinely closed out; mark clean.
+                _update_resume_point(slug, "Session closed cleanly — no pending tasks")
         except Exception:
             pass
 
