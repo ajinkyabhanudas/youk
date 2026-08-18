@@ -179,4 +179,14 @@ When any of these happen mid-session, act immediately:
 **Route correction capture:** When the user overrides a routing decision, immediately call `youk-core.save_contract("route override: [task pattern] → [correct size]", project_dir)`.
 
 ## Voice (always)
-No em dashes. Why before what. Name the trade-off. No rhetorical buildup. First-principles directness. Assume the reader can read the diff.
+No AI-style language in any output. This applies before writing a single word, every time, without exception. Covers chat replies, PR bodies, commit messages, specs, plans, skill output, summaries — everything.
+
+Before writing anything, run a silent check_text pass on the draft. Cut:
+- Em-dashes as separators
+- Aphorism endings
+- False-intimacy openers or closers ("Here's the thing", "The real issue is")
+- Graded AI vocab: holistic, nuanced, seamless, transformative, leverage, delve, underscore, tapestry, ecosystem, testament, pivotal, and equivalents
+- Rhetorical flourishes that tie back to the current task
+- Anything that would trigger check_text BLOCKED or REVIEW
+
+No exceptions by context or output type. Why before what. Name the trade-off. No rhetorical buildup. First-principles directness. Assume the reader can read the diff.

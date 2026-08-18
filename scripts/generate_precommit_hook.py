@@ -82,13 +82,9 @@ def _default_commands() -> list[tuple[str, str]]:
             "sys.exit(1 if r['blocked'] else 0)\"",
             "never commit personal data (names/emails) into shipped files — keep it local",
         ),
-        # Voice gate: block commit messages with hard AI-tells (em-dash, chatbot artifacts,
-        # wh-clefts, false-intimacy openers, etc.). Reads COMMIT_EDITMSG via standalone script.
-        # Silent-skips if voice_fingerprint is not importable.
-        (
-            "python scripts/voice_gate_precommit.py",
-            "never ship commit messages with hard AI-tells — voice gate enforced at pre-commit",
-        ),
+        # Note: voice gate (check_text on commit messages) runs in the commit-msg hook,
+        # not here. commit-msg fires after COMMIT_EDITMSG is written; pre-commit fires before.
+        # See generate_commitmsg_hook.py or the commit-msg hook for that gate.
     ]
 
 
