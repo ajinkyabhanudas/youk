@@ -46,6 +46,7 @@ from youk_hook_utils import (
     # Generation frame + correction capture
     _is_correction,
     capture_correction,
+    capture_voice_sample,
     build_generation_frame,
     should_inject_frame,
     # Session-10 experiment
@@ -137,6 +138,11 @@ def main() -> None:
     if len(user_prompt) >= MIN_PROMPT_LEN and _is_correction(user_prompt):
         session_id = _load_session_id(root)
         capture_correction(root, user_prompt, transcript_path, session_id)
+
+    # ── Voice corpus capture — append substantive user messages for profiling ──
+    # Register: "chat" for all hook-captured messages (per-register tagging added later).
+    # Silent-fail: capture_voice_sample handles errors internally.
+    capture_voice_sample(root, user_prompt, slug, register="chat")
 
     # Extract intent from the incoming prompt
     keywords = (
