@@ -16,6 +16,13 @@ from health import (
     _build_review_bundle,
 )
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
+from schemas import (
+    OptimizeIntentResult,
+    RouteTaskResult,
+    TaskContractResult,
+    CheckNfrGateResult,
+    CheckChallengeGateResult,
+)
 from nfr_gate import check_nfr_gate as _check_nfr_gate
 from challenge_gate import check_challenge_gate as _check_challenge_gate
 from intake_gate import check_intake_gate as _check_intake_gate
@@ -400,7 +407,7 @@ def record_outcome_followup(session_slug: str, outcome_result: str) -> dict:
 
 
 @mcp.tool()
-def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dict:
+def optimize_intent(raw_input: str, clarified_context: str | None = None) -> OptimizeIntentResult:
     """
     Compress a vague or multi-part user request into a structured intent brief.
 
@@ -449,7 +456,7 @@ def route_task(
     task: str,
     skills_already_invoked: list[str] | None = None,
     intent_brief: dict | None = None,
-) -> dict:
+) -> RouteTaskResult:
     """
     Determine the size and skill routing for a task. Read this before acting —
     apply the returned ceremony level silently without announcing the routing.
@@ -557,7 +564,7 @@ def check_command(command: str) -> dict:
 
 
 @mcp.tool()
-def task_contract(task: str, size: str | None = None) -> dict:
+def task_contract(task: str, size: str | None = None) -> TaskContractResult:
     """
     Generate a task intake contract before heavy work starts.
 
@@ -652,7 +659,7 @@ def rebuild_knowledge_index() -> dict:
 
 
 @mcp.tool()
-def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) -> dict:
+def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) -> CheckNfrGateResult:
     """
     Gate that blocks M+ implementation when no NFR Decision Block is present.
     Call this after route_task returns size M/L/XL, before invoking dev-loop.
@@ -755,7 +762,7 @@ def mark_challenge_ran(task: str, angles_checked: list[str], mode: str = "full")
 
 
 @mcp.tool()
-def check_challenge_gate(task: str, size: str) -> dict:
+def check_challenge_gate(task: str, size: str) -> CheckChallengeGateResult:
     """
     Gate that blocks M+ implementation when challenge skill has not run for this task.
     Call this after nfr_check passes and before invoking dev-loop on M+ tasks.
