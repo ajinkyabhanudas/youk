@@ -3494,6 +3494,21 @@ def end_session(
         except Exception:
             pass
 
+    # Resume pointer: on clean close, replace "Completed: X" with the next actionable task.
+    # Decoupled from task_checkpoint (which tracks in-progress state) — /done sets direction.
+    if close_cluster and slug:
+        try:
+            from graph import next_task as _get_next_task
+            _next = _get_next_task(project=slug)
+            if _next and _next.get("found") and _next.get("task", {}).get("label"):
+                _next_label = _next["task"]["label"][:180]
+                _update_resume_point(slug, f"NEXT (from task graph): {_next_label}")
+            else:
+                # No next task — session genuinely closed out; mark clean.
+                _update_resume_point(slug, "Session closed cleanly — no pending tasks")
+        except Exception:
+            pass
+
     # /learn enforcement — /learn is non-optional at /done.
     # Separate key so the capability-skill gate and the /learn gate are independently checkable.
     learn_ran = "learn" in (skills_used or [])
