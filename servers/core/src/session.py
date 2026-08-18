@@ -3446,6 +3446,15 @@ def end_session(
     except Exception:
         pass
 
+    # 3B2 — Voice profile rebuild: regenerate per-register profiles from corpus.
+    # Silent-fail, never blocks session_end. Writes knowledge/global/voice-{slug}-{register}.md.
+    voice_profile_result: dict = {}
+    try:
+        from voice_profile import rebuild_voice_profiles as _rebuild_voice_profiles
+        voice_profile_result = _rebuild_voice_profiles(YOUK_ROOT, slug or "unknown")
+    except Exception:
+        pass
+
     # 3C — Concept graph population: parse domain .md files into structured concepts.
     # Uses extract_concepts_from_domain_dir which reads ## headings + "What it is:" summaries
     # instead of line-splitting (which produced meaningless one-per-prose-line garbage).
@@ -3496,6 +3505,7 @@ def end_session(
     return {
         "knowledge_extracted": summary.count("##"),
         "concepts_written": concepts_written,
+        "voice_profiles_written": voice_profile_result.get("registers_written", []),
         "global_contracts_promoted": global_contracts_promoted,
         "audit_written": True,
         "skill_signals": skill_signals_result,
