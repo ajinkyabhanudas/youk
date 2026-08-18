@@ -41,6 +41,8 @@ S+: call route_task. M+ and ambiguous: optimize_intent first, then route_task.
 
 **Self-check before any implementation task (M+):** If you are about to write code, create files, or make substantive changes and you cannot see a `route_task()` call in recent context for this task, stop and call it now. Skipping route_task on M+ is the single highest-impact compounding miss — it blocks nfr_check and prevents capability skill invocation, flooring skill_invocation_rate for the entire session.
 
+**Before any `git commit`:** run `check_text` on the draft message. If BLOCKED, rewrite before committing. Then call `route_to_skill("humanize", draft_message)` and apply the rewrite. This fires on every commit, not hint-gated. The commit-msg hook is the last line of defense; this step is the first.
+
 ## Session plan (every session — present before anything else)
 
 After `session_start`, present the returned `session_plan` as a proposal:

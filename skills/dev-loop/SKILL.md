@@ -492,3 +492,21 @@ This is a distinct gate from the existing-dependency scan
 duplicates something already available; this one prevents a *correction*
 from becoming a patch bolted onto a design that no longer fits, once new
 code has already started to accumulate on top of it.
+
+---
+
+## Phase 6 — COMMIT
+
+Fires after REFACTOR is clean and the loop has stopped. Non-optional when code changed.
+
+1. Draft the commit message: one subject line (≤72 chars, imperative mood), blank line,
+   body (what changed and why — not a restatement of the subject).
+2. Run `check_text` on the draft. If BLOCKED: rewrite and recheck before proceeding.
+   If REVIEW: fix the soft tells, then recheck. Do not commit a BLOCKED or REVIEW message.
+3. Call `route_to_skill("humanize", draft_message)`. Apply the returned rewrite if it
+   changes anything. If humanize is unavailable, proceed with the check_text-cleared draft.
+4. Commit with the cleared message.
+5. Call `compact_context(project_dir)` after the commit.
+
+No exceptions: every commit that exits dev-loop goes through steps 1-5. The voice gate
+in the commit-msg hook is the last line of defense; this step is the first.
