@@ -38,7 +38,18 @@ GRADED: dict[str, float] = {
     "streamline": 0.4, "empower": 0.4, "multifaceted": 0.2, "palpable": 0.2,
     "align": 1.0, "additionally": 0.8, "moreover": 0.6, "furthermore": 0.6,
     "highlight": 1.0, "valuable": 0.8, "actually": 1.5, "unprecedented": 0.3,
+    # decorative intensifiers — low budget because they add nothing
+    "quietly": 0.4, "directly": 0.4, "entirely": 0.6, "exactly": 0.8,
+    # self-certifying adjectives — trust-certification, not distinction
+    "honest": 0.5, "honestly": 0.4, "genuine": 0.5, "authentic": 0.4,
 }
+
+# Words that require count >= 2 before the rate gate fires.
+# A single use of these in short text is normal; repetition is the tell.
+_GRADED_MIN2: frozenset[str] = frozenset({
+    "quietly", "directly", "entirely", "exactly",
+    "honest", "honestly", "genuine", "authentic",
+})
 
 # ── Structural tells — document-level, frequency-dependent ────────────────────
 # Budget: short_decl_pair > 1 per 2000w is a tell; appositive_definition > 3 per doc.
@@ -64,6 +75,26 @@ _COPULA_DODGE = re.compile(
     re.I,
 )
 _RULE_OF_THREE = re.compile(r"\b\w+, \w+,? and \w+\b", re.I)
+
+_WH_CLEFT = re.compile(
+    r"\bWhat [a-zA-Z' ]{3,40}?(?:was|is) .{0,60}"
+    r"|\b(?:a (?:rule|thing|pattern|detail) I (?:hadn't|had not) (?:thought to|considered|realized|known to))\b"
+    r"|\bI (?:hadn't|had not) (?:thought to|considered|realized|known to)\b",
+    re.I,
+)
+_FALSE_INTIMACY = re.compile(
+    r"\b(here's the part|but here's the truth|i'm going to (be honest|state this)|"
+    r"nobody'?s saying|it's important to remember that|at its core|"
+    r"the real truth is|here is the part|what most people miss|"
+    r"let me be (honest|clear|direct) about this)\b",
+    re.I,
+)
+_PROOF_BEAT = re.compile(r"[A-Z][a-z]+\. [A-Z][a-z]+:")
+_UNIFORM_CAUSAL = re.compile(r",\s+because\b[^.!?]{5,80}[.!?]")
+_CONNECTIVE_STARTS = re.compile(
+    r"^(?:but|and|so|because|while|though|since|when|if|after|before|once|yet|still|then)\b",
+    re.I,
+)
 
 _SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _CONTRACTIONS = re.compile(r"\b\w+['’](?:s|t|re|ve|ll|d|m)\b")
@@ -144,7 +175,8 @@ def _tells(text: str) -> tuple[list[str], list[str]]:
     for word, thresh in GRADED.items():
         count = len(re.findall(r"\b" + word + r"\w{0,3}\b", text, re.I))
         rate = 1000 * count / words
-        if count and rate > thresh:
+        min_count = 2 if word in _GRADED_MIN2 else 1
+        if count >= min_count and rate > thresh:
             soft.append(f"{word}: {count}x ({rate:.1f}/1k, limit {thresh})")
 
     for label, pattern, limit in (
@@ -172,6 +204,57 @@ def _tells(text: str) -> tuple[list[str], list[str]]:
     appositive_count = len(_APPOSITIVE.findall(text))
     if appositive_count > 3:
         soft.append(f"appositive_definition: {appositive_count}x (limit 3 per doc)")
+
+    # Bullet fusion: ≥3 consecutive short (≤12w), atomic, unconnected declarative sentences.
+    # Rate budget: >1 run per 2000w triggers. A single isolated run is borderline; two is a tell.
+    bullet_runs = 0
+    run: list[str] = []
+    for s in sents:
+        sw = s.split()
+        is_atomic = (
+            1 <= len(sw) <= 12
+            and not _CONNECTIVE_STARTS.match(s)
+            and "," not in s
+            and ";" not in s
+        )
+        if is_atomic:
+            run.append(s)
+        else:
+            if len(run) >= 3:
+                bullet_runs += 1
+            run = []
+    if len(run) >= 3:
+        bullet_runs += 1
+    bullet_rate = 1000 * bullet_runs / words
+    if bullet_runs >= 2 and bullet_rate > 0.5:
+        soft.append(f"bullet_fusion: {bullet_runs} run(s) ({bullet_rate:.1f}/1k, limit 0.5)")
+
+    # Colon scaffolding: >4/1k AND at least 3 colons (1-2 in short text is legitimate).
+    colon_count = text.count(":")
+    colon_rate = 1000 * colon_count / words
+    if colon_count >= 3 and colon_rate > 4.0:
+        soft.append(f"colon_scaffolding: {colon_count}x ({colon_rate:.1f}/1k, limit 4.0)")
+
+    # Wh-cleft / hindsight admission: "What X was Y" or "I hadn't thought to/considered".
+    wh_hits = _WH_CLEFT.findall(text)
+    if wh_hits:
+        hard.append(f"wh_cleft: {len(wh_hits)}")
+
+    # False intimacy openers: "here's the part", "the real truth is", etc.
+    fi_hits = _FALSE_INTIMACY.findall(text)
+    if fi_hits:
+        hard.append(f"false_intimacy: {len(fi_hits)}")
+
+    # Proof beat: short declarative sentence immediately followed by "Word:" (colon-introduced stat).
+    pb_hits = _PROOF_BEAT.findall(text)
+    if len(pb_hits) > 1:
+        soft.append(f"proof_beat: {len(pb_hits)}x (limit 1 per doc)")
+
+    # Uniform causal: ", because [clause]." repeated — template-style argumentation.
+    uc_count = len(_UNIFORM_CAUSAL.findall(text))
+    uc_rate = 1000 * uc_count / words
+    if uc_rate > 2.0:
+        soft.append(f"uniform_causal: {uc_count}x ({uc_rate:.1f}/1k, limit 2.0)")
 
     return hard, soft
 
