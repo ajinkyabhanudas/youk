@@ -468,13 +468,30 @@ def route_task(
     intent_brief: Optional — the full dict returned by optimize_intent.
 
     Returns: size, ceremony, skills, nfr_mode, warnings, plan_hook, blocked, collapsing_question,
-             file_context, graph_state.
+             file_context, graph_state, steering_context.
     When blocked=true: stop. Surface collapsing_question. Do not invoke any skill.
     If file_context is non-empty, pass it as leading context to the first route_to_skill call.
+    If steering_context is non-empty, steer using the listed behaviors instead of the raw quality
+    label. After work completes, call record_steering_decomposition with confidence="verified" if
+    tests passed or "approved" if the user accepted the result.
     """
     slug = _get_session_slug()
     decision = _route_task(task, skills_already_invoked or [], intent_brief, slug=slug)
     result = decision.to_dict()
+    # Steering vocab: detect quality labels in the task and attach learned decompositions.
+    # Only labels with learned=True are included — cold labels surface as absent, not guessed.
+    _QUALITY_LABELS = {
+        "rigorous", "thorough", "careful", "elite", "principal", "l9", "l10",
+        "exhaustive", "skeptical", "adversarial", "precise",
+    }
+    task_words = set(task.lower().split())
+    steering_context: list[dict] = []
+    for label in _QUALITY_LABELS & task_words:
+        sv = _get_steering(label)
+        if sv.get("learned"):
+            steering_context.append(sv)
+    if steering_context:
+        result["steering_context"] = steering_context
     # Write routing flag so session_start can detect when routing ran this session.
     # Analogous to nfr-check-ran.json — enables "routing was missed" recovery at next open.
     if not result.get("blocked"):
