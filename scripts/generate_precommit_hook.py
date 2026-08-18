@@ -41,7 +41,7 @@ echo "[youk] Pre-commit contracts satisfied."
 
 _COMMAND_BLOCK = """\
 {command} || {{
-    echo "[youk BLOCKED] Failed: {command} — contract: {contract_text}"
+    echo '[youk BLOCKED] contract violated: {contract_text}'
     exit 1
 }}
 """
@@ -82,19 +82,25 @@ def _default_commands() -> list[tuple[str, str]]:
             "sys.exit(1 if r['blocked'] else 0)\"",
             "never commit personal data (names/emails) into shipped files — keep it local",
         ),
+        # Voice gate: block commit messages with hard AI-tells (em-dash, chatbot artifacts,
+        # wh-clefts, false-intimacy openers, etc.). Reads COMMIT_EDITMSG via standalone script.
+        # Silent-skips if voice_fingerprint is not importable.
+        (
+            "python scripts/voice_gate_precommit.py",
+            "never ship commit messages with hard AI-tells — voice gate enforced at pre-commit",
+        ),
     ]
 
 
 def generate_hook(contracts_path: Path) -> str:
     extracted = extract_action_contracts(contracts_path)
 
-    # Deduplicate by command prefix (first token)
+    # Deduplicate by full command string
     seen: set[str] = set()
     commands: list[tuple[str, str]] = []
     for cmd, text in (extracted or _default_commands()):
-        key = cmd.split()[0]
-        if key not in seen:
-            seen.add(key)
+        if cmd not in seen:
+            seen.add(cmd)
             commands.append((cmd, text))
 
     blocks = [_HOOK_HEADER]
