@@ -40,6 +40,19 @@ GRADED: dict[str, float] = {
     "highlight": 1.0, "valuable": 0.8, "actually": 1.5, "unprecedented": 0.3,
 }
 
+# ── Structural tells — document-level, frequency-dependent ────────────────────
+# Budget: short_decl_pair > 1 per 2000w is a tell; appositive_definition > 3 per doc.
+
+# Short declarative pair: sentence ≤8 words following another sentence ≤8 words.
+# Measured by splitting into sentences and counting adjacent short-short pairs.
+_SHORT_SENT = re.compile(r"[A-Z][^.!?]{3,45}[.!?]")
+
+# Appositive definition: ", the X [that/which] Y" or ", how X Y" — same construction repeated.
+_APPOSITIVE = re.compile(
+    r",\s+(?:the\s+\w+(?:\s+\w+){1,8}|which\s+\w+(?:\s+\w+){1,8}|how\s+\w+(?:\s+\w+){1,8})",
+    re.I,
+)
+
 _PARTICIPLE = re.compile(
     r"[,;]\s+(highlighting|underscoring|emphasizing|ensuring|reflecting|"
     r"symbolizing|contributing|cultivating|fostering|encompassing|showcasing|"
@@ -143,6 +156,22 @@ def _tells(text: str) -> tuple[list[str], list[str]]:
         rate = 1000 * count / words
         if rate > limit:
             soft.append(f"{label}: {count}x ({rate:.1f}/1k, limit {limit})")
+
+    # ── Structural tells (document-level) ─────────────────────────────────────
+    # Short declarative pair: adjacent sentences both ≤8 words. Budget: ≤1 per 2000w.
+    sents = _sentences(text)
+    short_pair_count = 0
+    for i in range(len(sents) - 1):
+        if len(sents[i].split()) <= 8 and len(sents[i + 1].split()) <= 8:
+            short_pair_count += 1
+    pair_rate = 1000 * short_pair_count / words
+    if pair_rate > 0.5:  # >1 per 2000w
+        soft.append(f"short_decl_pair: {short_pair_count}x ({pair_rate:.1f}/1k, limit 0.5)")
+
+    # Appositive definition repetition: same ", the/which/how X" shape used >3 times.
+    appositive_count = len(_APPOSITIVE.findall(text))
+    if appositive_count > 3:
+        soft.append(f"appositive_definition: {appositive_count}x (limit 3 per doc)")
 
     return hard, soft
 

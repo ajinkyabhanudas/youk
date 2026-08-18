@@ -36,6 +36,18 @@ from memory.
 - Rule of three: triadic lists used for rhythm, not because three was the right count.
 - Uniform causal template: "[claim], because [reason]" repeated as the closing sentence shape. Vary:
   lead with cause, split sentences, use "since," or drop the connector.
+- Short declarative pair: two clipped sentences used for emphasis, second reversing or completing first
+  ("A guideline can be missed. A boundary built into the code can't."). Budget: one per ~2000 words.
+  More than that and it stops being a choice and becomes a default closing device. Diagnostic: count
+  pairs across the full document, not just check each locally.
+- Repeated appositive definition: "X, the thing that does Y" applied to every technical term with
+  identical construction ("an LLM, the kind of AI system that...", "the schema, how the database...").
+  Fix: vary the delivery — parenthesis, relative clause, footnote, or trust the reader. Five identical
+  shapes is a template being applied, not explanation.
+- Redundant restatement: same point made two or three times in consecutive sentences, each version
+  slightly reworded. Models optimise for the reader having understood; human writers under a word limit
+  say it once. Fix: for every paragraph, find the sentence stating its point most concretely. Delete
+  the ones circling it.
 
 ## 3. Punctuation tells
 
@@ -57,6 +69,19 @@ from memory.
 - Over-correction into aphoristic one-liners: fixing choppy prose by making every sentence short
   produces a different wrong register (blog-punchy), not a correct one. The fix is genuine
   sentence-length variation, not uniform brevity.
+
+## 4b. Section-ending tells
+
+- Every section landing on an aphorism: the closing sentence of each section reaches for a
+  transferable lesson rather than stopping on a fact ("Getting the scope right on the first attempt
+  was never the point." / "Trust is the currency that actually matters here."). Each is defensible
+  alone; in aggregate the writing sounds like it is closing every scene with a line for the trailer.
+  Diagnostic: read only the last sentence of every section in sequence. If they work as a standalone
+  list of maxims, the problem is present. Fix: let at least a third of sections end flat — a concrete
+  detail or a plain statement of what happened.
+- Duplication across distant sections: the same content appearing in two places far enough apart that
+  neither reads as repetitive in isolation. Each section gets written to be self-sufficient. Fix: search
+  for duplicated arguments/lists before finalising — it is the cheapest source of cuts when over limit.
 
 ## 5. Narrative-architecture tells
 
@@ -101,6 +126,19 @@ from memory.
 4. Any new pattern a human or agent catches that isn't listed: add it here and to `quantify.py` before
    moving on. The list compounds; it doesn't reset.
 
+## 6b. Voice-change tells (when prose switches hands)
+
+- Smoothness where roughness belongs: passages drafted by the model read more smoothly than
+  surrounding human prose — grammatically clean and rhythmically even where genuine feeling would
+  produce something more uneven. Contrast: "I had to develop my work and communication to get a yes
+  from three different angles." — slightly awkward, unmistakably human. Fix: when pasting in drafted
+  text, degrade it slightly. Break a parallel structure. Let one sentence run too long. Keep a
+  preposition a copy editor would move.
+- Specificity is the protection: nothing reads as human as "Grallaria gigantia, 1.6 seconds, five
+  representative queries, six tables." Models generate structure convincingly and detail poorly. Every
+  structural tell above can be edited out; concrete particulars from having been there cannot be edited
+  in.
+
 ## Sources
 
 - [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)
@@ -110,3 +148,7 @@ from memory.
 - [contentbeta: 300+ AI Words and Phrases to Avoid](https://www.contentbeta.com/blog/list-of-words-overused-by-ai/)
 - Project-specific findings (colon-scaffolding, aphoristic over-correction, narrative-accuracy drift,
   hindsight-admission clause) are original to this project, not yet cross-checked externally.
+- Ajinkya Dessai, "AI writing patterns — what showed up in this report" (2026) — structural tells
+  section (short declarative pair, aphorism endings, repeated appositive definition, redundant
+  restatement, duplication across sections, smoothness/roughness contrast) derived from real drafts
+  of the Jocotoco internship report.
