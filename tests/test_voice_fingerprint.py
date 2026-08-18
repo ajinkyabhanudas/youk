@@ -271,3 +271,156 @@ class TestCaptureVoiceSample:
         corpus = tmp_path / "knowledge" / "voice-corpus.jsonl"
         entry = json.loads(corpus.read_text().strip())
         assert len(entry["text"]) == 2000
+
+
+# ── New pattern detectors ──────────────────────────────────────────────────────
+
+class TestBulletFusion:
+    """≥3 consecutive short, atomic, unconnected declarative sentences, ≥2 runs."""
+
+    def test_two_runs_flagged(self):
+        # Two separate runs of 3 atomic short sentences in ~120 words
+        filler = (
+            "The schema migration ran without errors, completing the first phase of the "
+            "deployment. All downstream services resumed normal operation afterward. "
+        )
+        run = "It worked. Tests passed. Deployed. "
+        text = run + filler + run + filler
+        result = check_text(text)
+        assert any("bullet_fusion" in t for t in result["tells_soft"]), result["tells_soft"]
+
+    def test_single_run_not_flagged(self):
+        # One run of 3 short sentences — within the ≥2 threshold
+        text = (
+            "It worked. Tests passed. Deployed. "
+            "The migration completed successfully after the schema change was verified against "
+            "the staging environment, confirming that all indexes were rebuilt correctly."
+        )
+        result = check_text(text)
+        assert not any("bullet_fusion" in t for t in result["tells_soft"])
+
+    def test_connected_sentences_not_counted(self):
+        # Sentences with connectives or commas should not be counted as atomic
+        text = (
+            "But it worked. Although tests passed, we ran them again. Deployed after review. "
+            "The system ran stably for 24 hours before the full rollout was approved. "
+            "But it worked. Although tests passed, we ran them again. Deployed after review. "
+        )
+        result = check_text(text)
+        assert not any("bullet_fusion" in t for t in result["tells_soft"])
+
+
+class TestColonScaffolding:
+    """≥3 colons AND >4/1k words triggers soft tell."""
+
+    def test_high_colon_rate_flagged(self):
+        # 5 colons in ~80 words = 62.5/1k → over the 4.0 limit
+        text = (
+            "Step one: plan the migration. Step two: run the backup. Step three: apply the patch. "
+            "Step four: verify the indexes. Step five: resume traffic. "
+            "The deployment window started at midnight and completed before 2am."
+        )
+        result = check_text(text)
+        assert any("colon_scaffolding" in t for t in result["tells_soft"]), result["tells_soft"]
+
+    def test_two_colons_not_flagged(self):
+        # 2 colons — below the absolute minimum of 3 needed to trigger
+        text = (
+            "The config has two keys: host and port. "
+            "Set them before starting: export HOST=localhost. "
+            "The server binds to whatever address is configured in the environment variable."
+        )
+        result = check_text(text)
+        assert not any("colon_scaffolding" in t for t in result["tells_soft"])
+
+
+class TestWhCleft:
+    """Wh-cleft and hindsight admission patterns."""
+
+    def test_wh_cleft_is_hard_tell(self):
+        text = "What I underestimated was the sheer complexity of the legacy system."
+        result = check_text(text)
+        assert result["gate"] == "BLOCKED"
+        assert any("wh_cleft" in t for t in result["tells_hard"])
+
+    def test_hindsight_admission_is_hard_tell(self):
+        text = "There was a constraint I hadn't thought to validate against the production data."
+        result = check_text(text)
+        assert result["gate"] == "BLOCKED"
+        assert any("wh_cleft" in t for t in result["tells_hard"])
+
+    def test_plain_past_tense_not_flagged(self):
+        # Normal past-tense analysis without epiphany framing
+        text = (
+            "We checked the production logs and found no errors. The query ran in under 100ms "
+            "on average across all five endpoints we measured during the audit window."
+        )
+        result = check_text(text)
+        assert not any("wh_cleft" in t for t in result["tells_hard"])
+
+
+class TestFalseIntimacy:
+    """False intimacy openers."""
+
+    def test_heres_the_part_is_hard_tell(self):
+        text = "Here's the part most engineers miss: the timeout fires before the retry budget."
+        result = check_text(text)
+        assert result["gate"] == "BLOCKED"
+        assert any("false_intimacy" in t for t in result["tells_hard"])
+
+    def test_but_heres_the_truth_is_hard_tell(self):
+        text = "But here's the truth: the benchmark was never measuring what we cared about."
+        result = check_text(text)
+        assert result["gate"] == "BLOCKED"
+        assert any("false_intimacy" in t for t in result["tells_hard"])
+
+    def test_clean_direct_statement_not_flagged(self):
+        text = (
+            "The benchmark measured latency under ideal conditions. "
+            "It did not capture tail latency under concurrent load, which is what matters in production."
+        )
+        result = check_text(text)
+        assert not any("false_intimacy" in t for t in result["tells_hard"])
+
+
+class TestDecorativeIntensifiers:
+    """quietly, directly, entirely, exactly — graded, exceed threshold to trigger."""
+
+    def test_entirely_overuse_flagged(self):
+        # 5 uses in ~50 words = 100/1k >> 0.6 limit
+        text = (
+            "The system was entirely rebuilt. The approach was entirely different. "
+            "The outcome was entirely predictable. The team was entirely on board. "
+            "The result was entirely expected. We shipped it on schedule."
+        )
+        result = check_text(text)
+        assert any("entirely" in t for t in result["tells_soft"]), result["tells_soft"]
+
+    def test_single_use_not_flagged(self):
+        text = (
+            "The configuration was entirely replaced during the migration. "
+            "All downstream services verified the new endpoints before traffic was re-enabled."
+        )
+        result = check_text(text)
+        assert not any("entirely" in t for t in result["tells_soft"])
+
+
+class TestSelfCertifyingAdjectives:
+    """honest/honestly/genuine/authentic — graded, frequency-based."""
+
+    def test_honest_overuse_flagged(self):
+        # 4 uses in ~40 words = 100/1k >> 0.5 limit
+        text = (
+            "Honestly, the results were disappointing. Honestly, we knew the approach had limits. "
+            "Honestly, the benchmark was not representative. Honestly, we should have caught it earlier."
+        )
+        result = check_text(text)
+        assert any("honest" in t for t in result["tells_soft"]), result["tells_soft"]
+
+    def test_single_authentic_not_flagged(self):
+        text = (
+            "The commit history provides an authentic record of what changed and when, "
+            "making it straightforward to audit the deployment sequence."
+        )
+        result = check_text(text)
+        assert not any("authentic" in t for t in result["tells_soft"])
