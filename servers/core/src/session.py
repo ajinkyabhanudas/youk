@@ -2437,6 +2437,19 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass
 
+    # Voice audit: surface prior-session commit tell findings in the brief.
+    # Reads state/voice-audit.json written by end_session. Silent-fail.
+    _voice_audit_warning = ""
+    try:
+        from voice_audit import load_voice_audit, format_voice_audit_warning
+        _va = load_voice_audit(YOUK_ROOT)
+        _voice_audit_warning = format_voice_audit_warning(_va)
+    except Exception:
+        pass
+
+    if _voice_audit_warning and brief:
+        brief = brief.rstrip() + "\n" + _voice_audit_warning + "\n"
+
     # Append cross-project signals to brief so they appear at session open without a separate call.
     if _cross_project_concepts and brief:
         _cpc_lines = "\nCross-project patterns (from concept graph):"
@@ -3455,6 +3468,15 @@ def end_session(
     except Exception:
         pass
 
+    # 3B3 — Voice audit: scan recent commit messages for AI-tells.
+    # Silent-fail. Writes state/voice-audit.json for session_start to surface next session.
+    voice_audit_result: dict = {}
+    try:
+        from voice_audit import audit_recent_commits as _audit_recent_commits
+        voice_audit_result = _audit_recent_commits(YOUK_ROOT)
+    except Exception:
+        pass
+
     # 3C — Concept graph population: parse domain .md files into structured concepts.
     # Uses extract_concepts_from_domain_dir which reads ## headings + "What it is:" summaries
     # instead of line-splitting (which produced meaningless one-per-prose-line garbage).
@@ -3506,6 +3528,7 @@ def end_session(
         "knowledge_extracted": summary.count("##"),
         "concepts_written": concepts_written,
         "voice_profiles_written": voice_profile_result.get("registers_written", []),
+        "voice_audit_commits_with_tells": voice_audit_result.get("commits_with_tells", 0),
         "global_contracts_promoted": global_contracts_promoted,
         "audit_written": True,
         "skill_signals": skill_signals_result,
