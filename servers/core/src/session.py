@@ -2638,10 +2638,10 @@ def task_checkpoint(
             except Exception:
                 pass
 
-    # Write mid-session resume point so tomorrow's card shows last known task
-    # even if the developer closed the tab without /done.
-    if _slug_val and size.upper() not in ("XS", "S"):
-        _update_resume_point(_slug_val, f"In progress: {task_label[:180]}")
+    # Update resume point at every task completion so the pointer is never more than
+    # one task stale, regardless of whether /done runs. Fires for all sizes.
+    if _slug_val:
+        _update_resume_point(_slug_val, f"Completed: {task_label[:180]}")
 
     # Routing breadcrumb gate: for M+ tasks, verify route_task was called before work started.
     # If the breadcrumb is absent, routing was bypassed — surface it so the model can correct now.
