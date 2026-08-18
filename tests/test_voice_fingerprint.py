@@ -40,7 +40,7 @@ _CLEAN_CORPUS = (
     "or not. The fix is boring: evaluate on data no one touched during training, with criteria "
     "set before the results are visible. "
     "One more thing. We run the same evaluation every quarter on the production model, not "
-    "just at release. Models drift. Distributions shift. A score from six months ago tells you "
+    "just at release. Models and distributions drift, so a score from six months ago tells you "
     "nothing about what the model does today. Continuous evaluation is the only kind that "
     "matters for systems that stay deployed. "
 )
@@ -170,6 +170,46 @@ class TestCheckTextWithProfile:
         result = check_text(_CLEAN_SHORT)
         for key in ("tells_hard", "tells_soft", "target_pass", "gate", "metrics"):
             assert key in result
+
+
+# ── Structural tells ──────────────────────────────────────────────────────────
+
+class TestStructuralTells:
+    """Short declarative pair and repeated appositive definition detectors."""
+
+    def test_short_decl_pair_flagged_when_over_budget(self):
+        # 6 pairs of short sentences in ~100 words is over the 0.5/1k budget
+        pair = "It worked. The fix held. "
+        filler = (
+            "This longer sentence provides context and explanation for what preceded it, "
+            "adding detail and reasoning to balance the surrounding short declarative pairs. "
+        )
+        text = (pair * 3) + filler + (pair * 3)
+        result = check_text(text)
+        assert any("short_decl_pair" in t for t in result["tells_soft"])
+
+    def test_short_decl_pair_clear_within_budget(self):
+        # One pair in ~5000w corpus gives rate ~0.19/1k — within the 0.5 limit
+        text = _CORPUS_HIGH + " It worked. It held."
+        result = check_text(text)
+        assert not any("short_decl_pair" in t for t in result["tells_soft"])
+
+    def test_appositive_definition_flagged_over_limit(self):
+        text = (
+            "The schema, the structure that defines table columns, was updated. "
+            "The cache, the layer that stores recent results, was cleared. "
+            "The index, the structure that speeds up lookups, was rebuilt. "
+            "The queue, the system that holds pending jobs, was drained. "
+        )
+        result = check_text(text)
+        assert any("appositive_definition" in t for t in result["tells_soft"])
+
+    def test_appositive_definition_clear_within_limit(self):
+        text = (
+            "The index, the structure that speeds up lookups, was rebuilt. "
+        ) + _CLEAN_CORPUS
+        result = check_text(text)
+        assert not any("appositive_definition" in t for t in result["tells_soft"])
 
 
 # ── capture_voice_sample ───────────────────────────────────────────────────────
