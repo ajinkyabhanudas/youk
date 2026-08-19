@@ -201,6 +201,29 @@ def _load_routing_gate_state() -> str:
     )
 
 
+def _load_session_goal() -> str:
+    """
+    Read state/session-goal.json and return a DECISION-tier block with
+    success_criteria and optional observable_outcome.
+    Returns empty string when no active goal exists.
+    """
+    goal_file = YOUK_ROOT / "state" / "session-goal.json"
+    if not goal_file.exists():
+        return ""
+    try:
+        data = json.loads(goal_file.read_text())
+        criteria = data.get("success_criteria", "").strip()
+        outcome = data.get("observable_outcome", "").strip()
+        if not criteria:
+            return ""
+        lines = [f"Success criteria: {criteria}"]
+        if outcome:
+            lines.append(f"Observable outcome: {outcome}")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
 def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
     """
     Build a structured context brief from youk's knowledge store.
@@ -310,6 +333,12 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
             f"## Session state {TIER_DECISION}\n"
             f"Project: {slug} | Session #{session_n} | Dir: {project}"
         )
+
+        # Session goal — DECISION tier so success_criteria survives compaction.
+        # Allows the loop to re-evaluate goal_met after context compression.
+        goal_block = _load_session_goal()
+        if goal_block:
+            sections.append(f"## Session goal {TIER_DECISION}\n{goal_block}")
 
         if session_plan:
             plan_lines = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(session_plan))
