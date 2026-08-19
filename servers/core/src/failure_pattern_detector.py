@@ -88,9 +88,11 @@ def scan_failure_patterns(
         return []
 
     # Collect sessions across all files, newest first.
+    # Files are sorted newest-first by filename; sessions within each file are
+    # in write order (oldest at top, newest at bottom), so reverse per-file.
     all_sessions: list[str] = []
     for content in contents:
-        all_sessions.extend(_split_into_sessions(content))
+        all_sessions.extend(reversed(_split_into_sessions(content)))
 
     # Filter by slug if provided, then cap at lookback_sessions.
     if slug:

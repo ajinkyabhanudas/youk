@@ -120,18 +120,17 @@ class TestSlugFilter:
 
 class TestLookback:
     def test_lookback_limits_sessions_scanned(self, audit_dir):
+        # Oldest sessions written first (top of file), newest last.
+        # After reversal, lookback=3 takes the 3 newest (bottom of file).
         _write_month(audit_dir, "2026-08.md", [
-            {"project": "youk", "categories": ["auth"]},
-            {"project": "youk", "categories": ["auth"]},
-            {"project": "youk", "categories": ["auth"]},
             {"project": "youk", "categories": []},
             {"project": "youk", "categories": []},
             {"project": "youk", "categories": []},
+            {"project": "youk", "categories": ["auth"]},
+            {"project": "youk", "categories": ["auth"]},
+            {"project": "youk", "categories": ["auth"]},
         ])
-        # With lookback=3 (newest 3 sessions), auth only appears 3 times in 6 total.
-        # But sessions are read newest-first from file: last 3 in file → lookback=3.
-        # The file is read top-to-bottom, so "newest first" here means file order is latest first.
-        # Since all blocks are in one file and order in file = order written, lookback=3 → first 3.
+        # lookback=3 reads the 3 newest sessions (last in file) which all have auth.
         result = fpd.scan_failure_patterns(audit_dir=audit_dir, lookback_sessions=3, threshold=3)
         assert len(result) == 1
         assert result[0]["sessions_scanned"] == 3
