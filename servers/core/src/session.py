@@ -2069,6 +2069,23 @@ def start_session(project_dir: str) -> SessionState:
     if pulse_line:
         session_plan = [pulse_line, *session_plan][:8]
 
+    # Cross-session failure pattern alerts: prepend to session plan so recurring HIGH
+    # finding domains are visible before the developer starts coding again.
+    try:
+        from failure_pattern_detector import scan_failure_patterns as _scan_patterns
+        _fpd_audit_dir = HOST_HOME / ".claude" / "audit"
+        _fp_alerts = _scan_patterns(
+            audit_dir=_fpd_audit_dir if _fpd_audit_dir.exists() else None,
+            slug=slug,
+            lookback_sessions=5,
+            threshold=3,
+        )
+        if _fp_alerts:
+            _alert_items = [f"⚠ PATTERN: {a['message']}" for a in _fp_alerts[:3]]
+            session_plan = (_alert_items + session_plan)[:20]
+    except Exception:
+        pass
+
     # Staleness awareness — surface when returning after a significant gap.
     # For gaps ≥30 days, fetch commits-since-gap from git so the plan answers
     # "what changed while you were gone" with real data, not just a count.
