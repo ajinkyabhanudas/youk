@@ -953,6 +953,44 @@ def mark_intake_ran(task: str) -> dict:
 
 
 @mcp.tool()
+def mark_medium_risk_surfaced(task: str) -> dict:
+    """
+    Record that the medium-translation-risk question was surfaced to the user.
+    Call immediately after displaying the collapsing question from route_task warnings
+    (rule_id="medium-translation-risk"). Clears the pending flag so task_checkpoint
+    does not surface medium_risk_unsurfaced.
+
+    task: The task being worked on (for audit context).
+
+    Returns: {"recorded": bool}
+    """
+    try:
+        import json as _json
+        from datetime import datetime as _dt
+        slug = _get_session_slug()
+        target = (
+            _sp.slug_state_dir(slug) / "medium-risk-question.json"
+            if slug
+            else YOUK_ROOT / "state" / "medium-risk-question.json"
+        )
+        if target.exists():
+            data = _json.loads(target.read_text())
+            data["surfaced"] = True
+            data["surfaced_at"] = _dt.utcnow().isoformat()
+            target.write_text(_json.dumps(data))
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(_json.dumps({
+                "question": "",
+                "surfaced": True,
+                "surfaced_at": _dt.utcnow().isoformat(),
+            }))
+        return {"recorded": True}
+    except Exception:
+        return {"recorded": False}
+
+
+@mcp.tool()
 def check_loop_dry(task: str = "") -> dict:
     """
     Structural sensor for whether the last challenge loop was dry.

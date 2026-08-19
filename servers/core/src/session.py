@@ -2706,6 +2706,22 @@ def task_checkpoint(
         except Exception:
             pass
 
+    # Medium-risk translation gate: if route_task surfaced a medium-risk question
+    # and it hasn't been acknowledged (mark_medium_risk_surfaced not called), flag it.
+    # Non-blocking — but visible to Claude so the question isn't silently skipped.
+    if size.upper() not in ("XS", "S") and _slug_val:
+        _mrq_file = _slug_state_dir(_slug_val) / "medium-risk-question.json"
+        if not _mrq_file.exists():
+            _mrq_file = YOUK_ROOT / "state" / "medium-risk-question.json"
+        if _mrq_file.exists():
+            try:
+                _mrq = json.loads(_mrq_file.read_text())
+                if not _mrq.get("surfaced"):
+                    result["medium_risk_unsurfaced"] = True
+                    result["medium_risk_question"] = _mrq.get("question", "")
+            except Exception:
+                pass
+
     return result
 
 

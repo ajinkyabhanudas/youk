@@ -36,6 +36,24 @@ def _write_routing_breadcrumb(task: str, size: str, slug: str = "") -> None:
         pass
 
 
+def _write_medium_risk_question(question: str, slug: str = "") -> None:
+    """Persist medium-risk translation question so task_checkpoint can verify it was surfaced."""
+    target = (
+        _breadcrumb_file(slug).parent / "medium-risk-question.json"
+        if slug
+        else YOUK_ROOT / "state" / "medium-risk-question.json"
+    )
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({
+            "question": question,
+            "surfaced": False,
+            "written_at": datetime.utcnow().isoformat(),
+        }))
+    except Exception:
+        pass
+
+
 def _load_routes() -> dict:
     if not ROUTES_FILE.exists():
         return {}
@@ -132,6 +150,14 @@ def route_task(
             collapsing_question=question,
         )
 
+    _medium_risk_question: str = ""
+    if gt.get("translation_risk") == "medium":
+        _medium_risk_question = (
+            gt.get("translation_question")
+            or "What would a successful outcome look like from your perspective — not the system's output?"
+        )
+        _write_medium_risk_question(_medium_risk_question, slug=slug)
+
     routes = _load_routes()
     # If a resolved intent brief was provided, prefer its estimated size over
     # keyword scoring — the brief has already reasoned about the problem.
@@ -169,6 +195,14 @@ def route_task(
             rule_id="spec-before-l-tasks",
             name="write-spec before L/XL tasks",
             message=f"Sized as {size.value} — write-spec recommended before dev-loop.",
+            violation_type=ViolationType.SURFACE,
+        ))
+
+    if _medium_risk_question and size in (TaskSize.M, TaskSize.L, TaskSize.XL):
+        warnings.append(SoftRuleWarning(
+            rule_id="medium-translation-risk",
+            name="Medium translation risk",
+            message=f"Translation risk is medium. Surface this before coding: {_medium_risk_question}",
             violation_type=ViolationType.SURFACE,
         ))
 
