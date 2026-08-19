@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.insert(0, "/shared")
 
 import yaml
+from ceremony_sequencer import record_gate as _record_gate
 from skill_loader import (
     load_skill, load_skill_with_context, list_skills, load_skill_fast_path,
     extract_frontmatter_field,
@@ -287,6 +288,13 @@ def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> d
     handoff = _read_and_clear_pending_handoff(skill_name)
     if handoff:
         skill_content = handoff + "\n\n---\n\n" + skill_content
+
+    # Register dev-loop in ceremony sequence so task_checkpoint can verify it ran.
+    if resolved_name == "dev-loop":
+        try:
+            _record_gate("dev-loop", _get_current_slug())
+        except Exception:
+            pass
 
     # Clear force_learn pending action when /learn fires — the gate is satisfied.
     if skill_name == "learn":
