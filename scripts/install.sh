@@ -414,6 +414,23 @@ else
   warn "No scheduler available — stale containers cleaned on each 'make build'. Run 'bash $YOUK_DIR/scripts/cleanup.sh' for a manual sweep."
 fi
 
+# ── Step 8c: Git hooks ────────────────────────────────────────────────────────
+step "Git hooks"
+
+PYTHON_BIN="$(command -v python3 || command -v python)"
+if [[ -z "$PYTHON_BIN" ]]; then
+  warn "python3 not found — skipping git hook generation"
+elif [[ ! -d "$YOUK_DIR/.git" ]]; then
+  warn "No .git directory found — skipping git hook generation"
+else
+  "$PYTHON_BIN" "$YOUK_DIR/scripts/generate_precommit_hook.py" \
+    && ok "pre-commit hook written (.git/hooks/pre-commit)" \
+    || warn "generate_precommit_hook.py failed — run manually: python3 scripts/generate_precommit_hook.py"
+  "$PYTHON_BIN" "$YOUK_DIR/scripts/generate_commitmsg_hook.py" \
+    && ok "commit-msg hook written (.git/hooks/commit-msg)" \
+    || warn "generate_commitmsg_hook.py failed — run manually: python3 scripts/generate_commitmsg_hook.py"
+fi
+
 # ── Step 9: Validate ─────────────────────────────────────────────────────────
 step "Validation"
 bash "$YOUK_DIR/scripts/doctor.sh"
