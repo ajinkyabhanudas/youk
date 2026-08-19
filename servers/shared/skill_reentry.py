@@ -69,6 +69,7 @@ def check_reentry(
         caller_rank = _SEVERITY_RANK.get(findings_severity.upper(), 0)
         run_set = set(skills_run_this_session or [])
 
+        # Return first matching edge — graph ordering is priority order.
         for edge in skill_edges:
             threshold = edge.get("severity", "HIGH")
             if caller_rank >= _SEVERITY_RANK.get(threshold.upper(), 99):
