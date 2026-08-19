@@ -25,6 +25,7 @@ from schemas import (
 )
 from nfr_gate import check_nfr_gate as _check_nfr_gate
 from challenge_gate import check_challenge_gate as _check_challenge_gate
+from ceremony_sequencer import record_gate as _record_gate, check_order as _check_order
 from intake_gate import check_intake_gate as _check_intake_gate
 from intent import optimize_intent as _optimize_intent
 from compaction import build_brief, write_contracts
@@ -675,6 +676,16 @@ def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) 
     When blocked=False: proceed to dev-loop.
     """
     result = _check_nfr_gate(task, size, nfr_decision_block)
+    # Ceremony order check: warn if nfr fires before challenge on M+ tasks.
+    if size in {"M", "L", "XL"}:
+        try:
+            slug = _get_session_slug()
+            order = _check_order("nfr", slug, size)
+            if not order["ok"] and order.get("warning"):
+                result = dict(result)
+                result["ceremony_warning"] = order["warning"]
+        except Exception:
+            pass
     # Write NFR-ran flag so hook doesn't re-nudge this session.
     # Slug from session-open.json — task text is natural language, not a file path.
     if not result["blocked"] and size in {"M", "L", "XL"}:
@@ -756,6 +767,7 @@ def mark_challenge_ran(task: str, angles_checked: list[str], mode: str = "full")
             "mode": mode,
         }))
         _append_gate_to_active_task("challenge")
+        _record_gate("challenge", slug)
         return {"recorded": True, "challenge_rounds": new_rounds, "angles_validated": True}
     except Exception:
         return {"recorded": False, "challenge_rounds": 0, "angles_validated": False}
@@ -787,19 +799,29 @@ def check_challenge_gate(task: str, size: str) -> CheckChallengeGateResult:
         pass
 
     result = _check_challenge_gate(task, size, challenge_ran)
+    _cg_slug = _get_session_slug()
+    # Ceremony order check: warn if challenge_gate fires before nfr on M+ tasks.
+    if size in {"M", "L", "XL"}:
+        try:
+            order = _check_order("challenge_gate", _cg_slug, size)
+            if not order["ok"] and order.get("warning"):
+                result = dict(result)
+                result["ceremony_warning"] = order["warning"]
+        except Exception:
+            pass
     if not result["blocked"] and size in {"M", "L", "XL"}:
         try:
             import json as _json
             from datetime import datetime as _dt
-            slug = _get_session_slug()
             flag_file = YOUK_ROOT / "state" / "challenge-gate-passed.json"
             flag_file.write_text(_json.dumps({
-                "slug": slug,
+                "slug": _cg_slug,
                 "ts": _dt.utcnow().isoformat(),
             }))
         except Exception:
             pass
         _append_gate_to_active_task("challenge_gate")
+        _record_gate("challenge_gate", _cg_slug)
         # Mirror gate passage to task graph for cross-session recovery.
         # Also set unblocked=True when challenge clears — challenge is the final gate before dev-loop.
         try:

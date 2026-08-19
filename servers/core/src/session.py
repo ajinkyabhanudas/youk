@@ -11,6 +11,7 @@ from models import SessionState
 from compaction import write_contracts, build_brief as _build_brief
 from tokens import read_and_clear as _read_and_clear_tokens
 import state_paths as _sp
+from ceremony_sequencer import dev_loop_registered as _dev_loop_registered
 
 CLAUDE_ROOT = Path("/claude")
 YOUK_ROOT = Path("/youk")
@@ -2721,6 +2722,33 @@ def task_checkpoint(
                     result["medium_risk_question"] = _mrq.get("question", "")
             except Exception:
                 pass
+
+    # Dev-loop registration check: for M+ tasks, verify dev-loop fired before checkpoint.
+    # If missing, inject a session_learning so pattern_trigger can fire on second occurrence.
+    if size.upper() not in ("XS", "S") and _slug_val:
+        try:
+            if not _dev_loop_registered(_slug_val, YOUK_ROOT):
+                result["dev_loop_not_registered"] = (
+                    "dev-loop was not called before this M+ checkpoint. "
+                    "Route through dev-loop before next task."
+                )
+                # Inject into session_learnings so pattern accumulator counts it.
+                if checkpoint_written:
+                    cp_file = YOUK_ROOT / "state" / "task-checkpoints.jsonl"
+                    try:
+                        lines = [
+                            json.loads(ln)
+                            for ln in cp_file.read_text().splitlines()
+                            if ln.strip()
+                        ]
+                        if lines:
+                            last = lines[-1]
+                            last.setdefault("learnings", {})["dev_loop_skipped"] = "dev-loop not registered"
+                            cp_file.write_text("\n".join(json.dumps(entry) for entry in lines) + "\n")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     return result
 
