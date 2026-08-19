@@ -92,3 +92,12 @@ class CheckNfrGateResult(TypedDict):
 class CheckChallengeGateResult(TypedDict):
     blocked: bool
     reason: str
+
+
+# ── failure_pattern_detector ──────────────────────────────────────────────────
+
+class FailurePatternAlert(TypedDict):
+    domain: str
+    count: int
+    sessions_scanned: int
+    message: str
