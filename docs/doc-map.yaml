@@ -71,6 +71,8 @@ mcp_tools:
     # outcome and external review
     - {tool: record_outcome_followup, refs: [README.md]}
     - {tool: request_external_review, refs: [README.md]}
+    # medium-risk routing (PR-1 / L9 gap closure)
+    - {tool: mark_medium_risk_surfaced, refs: [README.md, docs/claude-md-template.md]}
 
   youk-code:
     - {tool: nfr_check, refs: [README.md, docs/claude-md-template.md]}
