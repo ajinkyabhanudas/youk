@@ -6,6 +6,7 @@ sys.path.insert(0, "/shared")
 
 import yaml
 from ceremony_sequencer import record_gate as _record_gate
+from skill_reentry import check_reentry as _check_reentry
 from skill_loader import (
     load_skill, load_skill_with_context, list_skills, load_skill_fast_path,
     extract_frontmatter_field,
@@ -105,13 +106,31 @@ def _read_and_clear_pending_handoff(skill_name: str) -> str | None:
         return None
 
 
+def _infer_severity(content: str) -> str:
+    """Infer highest severity from handoff content without an API call."""
+    upper = content.upper()
+    if "BLOCKING" in upper:
+        return "BLOCKING"
+    if "HIGH" in upper:
+        return "HIGH"
+    return "MEDIUM"
+
+
 def write_skill_handoff(from_skill: str, content: str) -> dict:
     """Write skill output to pending_handoff in session.json for consumption by successor skills."""
     try:
         state = json.loads(_SESSION_STATE.read_text()) if _SESSION_STATE.exists() else {}
         state.setdefault("pending_handoff", {})[from_skill] = content
         _SESSION_STATE.write_text(json.dumps(state, indent=2))
-        return {"saved": True, "from_skill": from_skill, "content_length": len(content)}
+        result: dict = {"saved": True, "from_skill": from_skill, "content_length": len(content)}
+        try:
+            severity = _infer_severity(content)
+            suggestion = _check_reentry(from_skill, severity)
+            if suggestion is not None:
+                result["reentry_suggestion"] = suggestion
+        except Exception:
+            pass
+        return result
     except Exception as e:
         return {"saved": False, "error": str(e)}
 
