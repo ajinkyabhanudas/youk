@@ -1609,19 +1609,36 @@ class TestGenerateFindingsExtended:
         ]
         assert not bad_findings, f"Healthy sessions should produce no critical findings. Got: {bad_findings}"
 
-    def test_token_efficiency_over_budget(self, youk_root, claude_root):
-        # 3 sessions each 3x over budget triggers the finding
-        audit = self._make_sessions(3, close=True, skills="code-review", token_line="Tokens: 30000/10000")
-        from health import _generate_findings
-        findings = _generate_findings([audit], score=7.0)
-        assert any("over budget" in f.lower() for f in findings)
+    def _make_session_with_reversal(self, reversal: bool = False) -> str:
+        block = (
+            "### Session — 2026-07-01 10:00 UTC\n"
+            "Skills: code-review\n"
+            "CloseCluster: yes\n"
+            "Commits: yes\n"
+        )
+        if reversal:
+            block += "DirectionReversal: yes\n"
+        return block
 
-    def test_token_efficiency_under_budget(self, youk_root, claude_root):
-        # 3 sessions all <50% of budget
-        audit = self._make_sessions(3, close=True, skills="code-review", token_line="Tokens: 2000/10000")
+    def test_rework_rate_finding_fires_above_threshold(self, youk_root, claude_root):
+        # 3 of 5 sessions with DirectionReversal → planning gate finding
         from health import _generate_findings
-        findings = _generate_findings([audit], score=7.0)
-        assert any("under budget" in f.lower() for f in findings)
+        blocks = (
+            [self._make_session_with_reversal(reversal=True)] * 3
+            + [self._make_session_with_reversal(reversal=False)] * 2
+        )
+        findings = _generate_findings(blocks, score=7.0)
+        assert any("direction corrections" in f.lower() for f in findings)
+
+    def test_rework_rate_finding_below_threshold(self, youk_root, claude_root):
+        # Only 2 of 5 sessions with reversals — below threshold of 3
+        from health import _generate_findings
+        blocks = (
+            [self._make_session_with_reversal(reversal=True)] * 2
+            + [self._make_session_with_reversal(reversal=False)] * 3
+        )
+        findings = _generate_findings(blocks, score=7.0)
+        assert not any("direction corrections" in f.lower() for f in findings)
 
     def test_consecutive_no_close_with_done_skill(self, youk_root, claude_root, tmp_path):
         import json
