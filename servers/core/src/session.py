@@ -3630,6 +3630,12 @@ def end_session(
         "add_to_contracts_prompt": len(detected_contracts) > 0 and contracts_saved == 0,
         "session_delta": session_delta,
         "compounding_verdict": session_delta["verdict"],
+        "compounding_gap": _gap,
+        **({"compounding_gap_warning": (
+            "⚠ This session: commits landed but no capability skill ran. "
+            "org_score cannot compound without at least one skill firing per commit. "
+            "Run /build at the start of the next task to restore the gate."
+        )} if _gap else {}),
         **({"skill_gate_warning": skill_gate_warning} if skill_gate_warning else {}),
         **({"learn_gate_warning": learn_gate_warning} if learn_gate_warning else {}),
         **({"session_autopsy_question": autopsy_question} if autopsy_question else {}),

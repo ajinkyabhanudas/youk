@@ -610,6 +610,47 @@ class TestCompoundingGap:
         assert "CompoundingGap: no" in self._read_audit(tmp_path)
 
 
+class TestCompoundingGapReturnValue:
+    """end_session return value includes compounding_gap bool and optional warning."""
+
+    def test_compounding_gap_true_in_return_when_commits_no_skills(self, youk_root, tmp_path, monkeypatch):
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        result = session.end_session(summary="work done", commits_made=True, skills_used=[])
+        assert result["compounding_gap"] is True
+
+    def test_compounding_gap_warning_present_when_gap_true(self, youk_root, tmp_path, monkeypatch):
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        result = session.end_session(summary="work done", commits_made=True, skills_used=[])
+        assert "compounding_gap_warning" in result
+        assert "capability skill" in result["compounding_gap_warning"]
+
+    def test_compounding_gap_false_in_return_when_skill_ran(self, youk_root, tmp_path, monkeypatch):
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        result = session.end_session(summary="work done", commits_made=True, skills_used=["code-review"])
+        assert result["compounding_gap"] is False
+
+    def test_compounding_gap_warning_absent_when_gap_false(self, youk_root, tmp_path, monkeypatch):
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        result = session.end_session(summary="work done", commits_made=True, skills_used=["code-review"])
+        assert "compounding_gap_warning" not in result
+
+    def test_compounding_gap_false_when_no_commits(self, youk_root, tmp_path, monkeypatch):
+        import session
+        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        (tmp_path / "claude" / "audit").mkdir(parents=True)
+        result = session.end_session(summary="planning only", commits_made=False, skills_used=[])
+        assert result["compounding_gap"] is False
+        assert "compounding_gap_warning" not in result
+
+
 class TestEndSessionCheckpointRollup:
     """end_session rolls up task-checkpoints.jsonl into the audit entry."""
 
