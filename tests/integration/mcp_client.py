@@ -14,8 +14,9 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-CLAUDE_DIR = Path.home() / ".claude"
-YOUK_DIR = CLAUDE_DIR / "youk"
+import os
+CLAUDE_DIR = Path(os.environ["CLAUDE_DIR"]) if "CLAUDE_DIR" in os.environ else Path.home() / ".claude"
+YOUK_DIR = Path(os.environ["YOUK_DIR"]) if "YOUK_DIR" in os.environ else CLAUDE_DIR / "youk"
 
 _MCP_INIT = json.dumps({
     "jsonrpc": "2.0", "id": 1, "method": "initialize",
