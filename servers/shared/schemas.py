@@ -62,7 +62,7 @@ class RouteTaskResult(TypedDict, total=False):
     plan_hook: str
     blocked: bool
     collapsing_question: str
-    file_context: str
+    file_context: list[dict[str, object]]
     graph_state: dict[str, object]  # present when blocked_count > 0
     calls_since_compact: int
     steering_context: list[SteeringBehavior]
