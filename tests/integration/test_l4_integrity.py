@@ -85,15 +85,30 @@ class TestStaticIntegrity:
 
     def test_doc_map_authority_files_exist(self):
         data = yaml.safe_load((DOCS_DIR / "doc-map.yaml").read_text())
-        missing = []
+        missing_repo = []
+        missing_external = []
         for concept in data.get("concepts", []):
             authority = concept.get("authority", "")
             if authority:
                 p = _resolve_path(authority)
                 if not p.exists():
-                    missing.append(f"concept '{concept['concept']}' authority missing: {authority}")
-        assert not missing, (
-            f"{len(missing)} authority file(s) missing:\n" + "\n".join(f"  {m}" for m in missing)
+                    # ~/.claude/ paths are outside the checkout — warn but don't fail CI
+                    if authority.startswith("~/.claude/"):
+                        missing_external.append(
+                            f"concept '{concept['concept']}' authority missing: {authority}"
+                        )
+                    else:
+                        missing_repo.append(
+                            f"concept '{concept['concept']}' authority missing: {authority}"
+                        )
+        if missing_external:
+            pytest.xfail(
+                f"{len(missing_external)} external authority file(s) not in checkout "
+                f"(expected on CI):\n" + "\n".join(f"  {m}" for m in missing_external)
+            )
+        assert not missing_repo, (
+            f"{len(missing_repo)} authority file(s) missing in repo:\n"
+            + "\n".join(f"  {m}" for m in missing_repo)
         )
 
     def test_doc_map_derived_files_exist(self):

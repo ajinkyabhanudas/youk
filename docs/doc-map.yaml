@@ -122,10 +122,9 @@ skills:
 concepts:
   - concept: north_star
     description: "What youk is fundamentally for — compounds user ability, not just tool context"
-    authority: knowledge/projects/youk/PRD.md
+    authority: PHILOSOPHY.md
     derived_in:
       - README.md
-      - PHILOSOPHY.md
       - ~/.claude/CLAUDE.md
 
   - concept: org_score_definition
@@ -137,7 +136,7 @@ concepts:
 
   - concept: compounding_mechanism
     description: "How sessions compound: capability skills + close_cluster + /learn"
-    authority: knowledge/projects/youk/PRD.md
+    authority: PHILOSOPHY.md
     derived_in:
       - README.md
       - ~/.claude/CLAUDE.md
