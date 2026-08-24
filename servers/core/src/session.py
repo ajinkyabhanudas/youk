@@ -131,24 +131,6 @@ def _scan_research_inbox(slug: str = "") -> list[str]:
     return deduped[:8]
 
 
-def _last_token_overhead() -> tuple[int | None, int | None]:
-    """Read the most recent Tokens: N/B (P%) line from the current month's audit.
-    Returns (pct, budget) or (None, None) if no token data yet."""
-    audit_dir = CLAUDE_ROOT / "audit"
-    month = datetime.utcnow().strftime("%Y-%m")
-    audit_file = audit_dir / f"{month}.md"
-    if not audit_file.exists():
-        return None, None
-    try:
-        for line in reversed(audit_file.read_text().splitlines()):
-            m = re.search(r"Tokens:\s*\d+/(\d+)\s*\((\d+)%\)", line)
-            if m:
-                return int(m.group(2)), int(m.group(1))  # (pct, budget)
-    except Exception:
-        pass
-    return None, None
-
-
 def _load_state() -> dict:
     if STATE_FILE.exists():
         try:
@@ -2233,19 +2215,6 @@ def start_session(project_dir: str) -> SessionState:
             session_plan.append(
                 "No recent stack briefing — run '/research stack' to generate "
                 "actionable findings for your stack (no API key required)."
-            )
-
-    # 3D — Token budget used last session (budget utilization, not youk overhead ratio)
-    budget_pct, _budget_limit = _last_token_overhead()
-    if budget_pct is not None:
-        if budget_pct > 90:
-            session_plan.append(
-                f"⚠ Last session used {budget_pct}% of token budget — "
-                "consider splitting large tasks or using /close earlier"
-            )
-        else:
-            session_plan.append(
-                f"Last session: {budget_pct}% of token budget used"
             )
 
     # Cross-project contract transfer: surface 1 contract from another project when

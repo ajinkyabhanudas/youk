@@ -947,11 +947,6 @@ def _score_org(audit_texts: list[str]) -> float:
     capability_skill_rate = capability_count / total
     gap_resolution_rate = _compute_gap_resolution_rate(sessions)
 
-    # Token efficiency: sessions consistently >2× budget lose 1 point
-    token_sessions = [s for s in sessions if s["tokens_ratio"] is not None]
-    over_budget_count = sum(1 for s in token_sessions if s["tokens_ratio"] > 2.0)
-    token_penalty = -1.0 if len(token_sessions) >= 2 and over_budget_count / max(len(token_sessions), 1) > 0.5 else 0.0
-
     # Outcome quality: prevented_cost_score rewards catching real findings, reversals, NFR gaps
     prevented_cost = _compute_prevented_cost(sessions, days=30)
     prevented_score = _compute_prevented_cost_score(prevented_cost) * 0.5
@@ -1050,7 +1045,6 @@ def _score_org(audit_texts: list[str]) -> float:
         + convergence_bonus
         + durability_bonus
         + compliance_penalty
-        + token_penalty
         + outcome_signal_bonus
         + outcome_quality_bonus
     )
@@ -1387,27 +1381,14 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     if score < 6.0:
         findings.append("Org score below 6.0 — review which skills are being skipped.")
 
-    # Token efficiency findings
-    token_sessions = [s for s in sessions if s["tokens_ratio"] is not None]
-    if token_sessions:
-        avg_ratio = sum(s["tokens_ratio"] for s in token_sessions) / len(token_sessions)
-        over_budget = [s for s in token_sessions if s["tokens_ratio"] > 2.0]
-        if len(over_budget) >= 2:
-            findings.append(
-                f"Token usage consistently {avg_ratio:.1f}× over budget "
-                f"({len(over_budget)}/{len(token_sessions)} sessions). "
-                "Consider adding headroom (github.com/headroomlabs-ai/headroom) "
-                "for 60-95% token cost reduction."
-            )
-        elif avg_ratio < 0.5 and len(token_sessions) >= 3:
-            findings.append(
-                f"Token usage consistently under budget ({avg_ratio:.1f}× avg). "
-                "Verify skills are running — under-ceremony on M+ tasks is a risk."
-            )
-    elif total >= 3:
+    # Rework rate: direction corrections signal planning gate gaps
+    recent = sessions[-20:]
+    rework_sessions = [s for s in recent if s.get("loop_correction") or s.get("direction_reversal")]
+    if len(recent) >= 5 and len(rework_sessions) >= 3:
         findings.append(
-            f"No token data in {total} sessions. "
-            "Call track_tokens(input, output, note) at session checkpoints to enable cost tracking."
+            f"Direction corrections in {len(rework_sessions)}/{len(recent)} recent sessions. "
+            "Planning gate (challenge + scope-collapse) may need tightening — "
+            "rework signals the wrong problem was started."
         )
 
     # Project-level skill override check — when close_cluster_rate is 0 for 3+
