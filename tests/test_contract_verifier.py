@@ -108,3 +108,20 @@ def test_verify_contracts_verify_mcp_contracts_registered_in_code_tools() -> Non
     result = verify_contracts()
     code_tools = result["tools_registered"].get("youk-code", [])
     assert "verify_mcp_contracts" in code_tools
+
+
+def test_extract_call_sites_finds_bare_reference_without_parens(tmp_path: Path) -> None:
+    # Bare backtick references (`youk-core.tool_name`) must be detected, not just paren form.
+    f = tmp_path / "CLAUDE.md"
+    f.write_text("Call `youk-core.session_start` to open a session.")
+    sites = _extract_call_sites(f)
+    assert ("youk-core", "session_start", "") in sites
+
+
+def test_extract_call_sites_bare_reference_does_not_crash_on_none_args(tmp_path: Path) -> None:
+    # Bare reference produces None for the optional group — must not AttributeError.
+    f = tmp_path / "SKILL.md"
+    f.write_text("Use `youk-code.route_to_skill` from skills.")
+    sites = _extract_call_sites(f)
+    # Third element is empty string, not None
+    assert all(isinstance(args, str) for _, _, args in sites)
