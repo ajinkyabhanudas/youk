@@ -71,6 +71,8 @@ mcp_tools:
     # outcome and external review
     - {tool: record_outcome_followup, refs: [README.md]}
     - {tool: request_external_review, refs: [README.md]}
+    # medium-risk routing (PR-1 / L9 gap closure)
+    - {tool: mark_medium_risk_surfaced, refs: [README.md, docs/claude-md-template.md]}
 
   youk-code:
     - {tool: nfr_check, refs: [README.md, docs/claude-md-template.md]}
@@ -120,10 +122,9 @@ skills:
 concepts:
   - concept: north_star
     description: "What youk is fundamentally for — compounds user ability, not just tool context"
-    authority: knowledge/projects/youk/PRD.md
+    authority: PHILOSOPHY.md
     derived_in:
       - README.md
-      - PHILOSOPHY.md
       - ~/.claude/CLAUDE.md
 
   - concept: org_score_definition
@@ -135,7 +136,7 @@ concepts:
 
   - concept: compounding_mechanism
     description: "How sessions compound: capability skills + close_cluster + /learn"
-    authority: knowledge/projects/youk/PRD.md
+    authority: PHILOSOPHY.md
     derived_in:
       - README.md
       - ~/.claude/CLAUDE.md

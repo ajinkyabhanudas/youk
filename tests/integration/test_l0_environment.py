@@ -1,10 +1,11 @@
 """L0 — Environment checks. No Docker, no MCP, pure toolchain."""
+import os
 import shutil
 import sys
 from pathlib import Path
 
 
-YOUK_DIR = Path.home() / ".claude" / "youk"
+YOUK_DIR = Path(os.environ["YOUK_DIR"]) if "YOUK_DIR" in os.environ else Path.home() / ".claude" / "youk"
 
 
 def test_python_version():

@@ -58,6 +58,26 @@ jobs:
           sys.exit(1 if failed else 0)
           EOF
 
+      - name: Capability floor tests (L0 + L4a + L5 gate logic)
+        # ADR-010 v1 requirement: each capability level has a labelled test that exits 1 on
+        # regression. L0/L4a/L5-gates run without Docker; L1-L3/L6-L7 stay in make checkup.
+        # YOUK_DIR points at the checkout so path-existence tests resolve correctly.
+        # test_docker_cli_present is skipped — Docker is not available in the lint job.
+        env:
+          YOUK_DIR: ${{ github.workspace }}
+          CLAUDE_DIR: ${{ github.workspace }}
+        run: |
+          pip install pyyaml
+          mkdir -p state config knowledge skills docs
+          pytest \
+            tests/integration/test_l0_environment.py \
+            tests/integration/test_l4_integrity.py::TestStaticIntegrity \
+            "tests/integration/test_l5_gates.py::TestNfrGate" \
+            "tests/integration/test_l5_gates.py::TestChallengeGate" \
+            "tests/integration/test_l5_gates.py::TestTaskContractGate" \
+            "tests/integration/test_l5_gates.py::TestDualGateState" \
+            -q --no-cov -m integration -k "not docker"
+
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest

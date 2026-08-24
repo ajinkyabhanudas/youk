@@ -2389,6 +2389,16 @@ def start_session(project_dir: str) -> SessionState:
         _human_precision_rate = _compute_human_precision_rate(_recent_sessions)
         _conv_velocity = _compute_convergence_velocity(_recent_sessions)
 
+        # ADR-010: developer_autonomy_rate is the v1 headline metric — surface it in the
+        # dashboard summary so it appears every session, not just in STATS.md.
+        if len(_recent_sessions) >= 6:
+            _autonomy_pct = round(_nfr_autonomy_rate * 100)
+            _autonomy_str = f"autonomy: {_autonomy_pct}%"
+            if dashboard_summary:
+                dashboard_summary = dashboard_summary + f"  ·  {_autonomy_str}"
+            else:
+                dashboard_summary = _autonomy_str
+
         # Human precision nudge: surface when rate is consistently low after enough sessions.
         # This is the "help the human learn to front-load context" feedback loop.
         # Only fires once per session (appended to plan, not inserted — lower priority than blockers).
