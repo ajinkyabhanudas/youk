@@ -44,6 +44,16 @@ Code-review and verify have no signal when there is no code to review.
 Otherwise: call `youk-code.route_to_skill("code-review", "end-of-session review")`.
 Follow the returned skill_content. Complete the review before proceeding.
 
+After code-review completes, collect:
+- `findings`: count of findings by severity — e.g. `{"CRITICAL": 0, "HIGH": 2, "MEDIUM": 1, "LOW": 3}`
+- `finding_categories`: list of domain labels for each finding — e.g. `["error_handling", "auth", "logic"]`
+  Use these labels: `auth`, `credentials`, `data_write`, `input_validation`, `error_handling`, `logic`,
+  `performance`, `testing`, `documentation`, `quality`, `security`, `injection`.
+  One label per finding; duplicates allowed (same category appearing twice = two entries).
+
+Pass both to `session_end` in Step 6. These feed the recurring-pattern detector in `self_heal` —
+when the same category appears 3+ sessions, `session_start` surfaces a `⚠ PATTERN:` alert.
+
 **Step 2 — Verify** *(skip if Step 1 was skipped)*
 
 Call `youk-code.route_to_skill("verify", "verify session work")`.
@@ -146,7 +156,7 @@ Scan the conversation to collect three growth signals (answered by reading conte
 
 Call `youk-core.track_tokens(approx_input, approx_output, "final")`
 Call `youk-core.compact_context(project_dir)`  — paste the returned `brief` verbatim
-Call `youk-core.session_end("done", commits_made=<bool>, explicit_contracts=explicit_contracts, close_cluster=True, loop_correction_detected=<bool>, loop_gap_detected=<bool>, challenge_rounds=<int>, decision_retrospectives=decision_retrospectives, autonomy_depth=autonomy_depth, contract_violations=contract_violations, outcome=outcome, outcome_result=outcome_result)`
+Call `youk-core.session_end("done", commits_made=<bool>, explicit_contracts=explicit_contracts, close_cluster=True, loop_correction_detected=<bool>, loop_gap_detected=<bool>, challenge_rounds=<int>, decision_retrospectives=decision_retrospectives, autonomy_depth=autonomy_depth, contract_violations=contract_violations, outcome=outcome, outcome_result=outcome_result, findings=findings, finding_categories=finding_categories)`
 
 ---
 
