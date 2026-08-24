@@ -3191,6 +3191,11 @@ def end_session(
     outcome_line = f"Outcome: {outcome}\n" if outcome != "NONE" else ""
     outcome_result_line = f"OutcomeResult: {outcome_result}\n" if outcome != "NONE" else ""
 
+    # CompoundingGap: written when commits landed but no capability skill ran.
+    # self_heal reads this field to surface the gap — non-blocking, audit-only.
+    _gap = commits_made and not _has_capability_skill(skills_used or [])
+    compounding_gap_line = f"CompoundingGap: {'yes' if _gap else 'no'}\n"
+
     # Cognitive assessment — structured growth signal from cog-psych skill.
     # Written as a single-line field so audit parsers can extract it.
     cog_line = ""
@@ -3263,6 +3268,7 @@ def end_session(
         f"{outcome_line}"
         f"{outcome_result_line}"
         f"{cog_line}"
+        f"{compounding_gap_line}"
     )
 
     with open(audit_file, "a") as f:
