@@ -29,9 +29,10 @@ _SERVER_FILES = {
     "youk-code": _REPO_ROOT / "servers" / "code" / "src" / "server.py",
 }
 
-# CLAUDE.md call sites use dot notation: youk-core.tool_name(...)
+# CLAUDE.md and SKILL.md call sites use backtick dot notation: `youk-core.tool_name(...)`
+# Parens are optional — bare references (`youk-core.tool_name`) also count.
 _CALL_SITE_PATTERN = re.compile(
-    r"`(youk-core|youk-code)\.([\w]+)\(([^`]*)\)`"
+    r"`(youk-core|youk-code)\.([\w]+)(?:\(([^`]*)\))?`"
 )
 
 
@@ -75,7 +76,7 @@ def _extract_call_sites(path: Path) -> list[tuple[str, str, str]]:
         return []
     text = path.read_text(errors="ignore")
     return [
-        (m.group(1), m.group(2), m.group(3).strip())
+        (m.group(1), m.group(2), (m.group(3) or "").strip())
         for m in _CALL_SITE_PATTERN.finditer(text)
     ]
 
