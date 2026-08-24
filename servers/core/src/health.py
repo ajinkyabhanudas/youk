@@ -409,6 +409,11 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
         compact_match = re.search(r"^Compactions:\s*(\d+)$", block, re.MULTILINE)
         s["compact_count"] = int(compact_match.group(1)) if compact_match else None
 
+        # CompoundingGap: yes/no — written by session_end when commits landed but no
+        # capability skill ran. self_heal reads this to surface repeated-gap patterns.
+        gap_match = re.search(r"^CompoundingGap:\s*(\w+)$", block, re.MULTILINE | re.IGNORECASE)
+        s["compounding_gap"] = bool(gap_match and gap_match.group(1).lower() == "yes")
+
         sessions.append(s)
     return sessions[-150:]  # cap: most recent 150 sessions regardless of window size
 
@@ -537,6 +542,38 @@ def _detect_recurring_findings(sessions: list[dict], min_sessions: int = 3, days
                 "sessions_pct": round(count / total_sessions * 100),
             })
     return patterns
+
+
+def _detect_compounding_gap_sessions(sessions: list[dict], min_sessions: int = 3, days: int = 30) -> dict | None:
+    """
+    Count sessions in the lookback window where CompoundingGap=yes.
+    Returns a result dict when count >= min_sessions, None otherwise.
+    """
+    from datetime import datetime, timedelta, UTC
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    count = 0
+    total = 0
+
+    for s in sessions:
+        date_match = re.search(r"### Session — (\d{4}-\d{2}-\d{2})", s.get("raw", ""))
+        if date_match:
+            try:
+                session_date = datetime.strptime(date_match.group(1), "%Y-%m-%d").replace(tzinfo=UTC)
+                if session_date < cutoff:
+                    continue
+            except ValueError:
+                pass
+        total += 1
+        if s.get("compounding_gap"):
+            count += 1
+
+    if total == 0 or count < min_sessions:
+        return None
+    return {
+        "count": count,
+        "sessions_scanned": total,
+        "sessions_pct": round(count / total * 100),
+    }
 
 
 def _compute_prevented_cost_score(prevented_cost: dict) -> float:
@@ -2335,6 +2372,7 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     sessions_parsed = _parse_audit_sessions(audit_texts)
     prevented_cost = _compute_prevented_cost(sessions_parsed, days=30)
     recurring_patterns = _detect_recurring_findings(sessions_parsed, min_sessions=3, days=30)
+    compounding_gap_alert = _detect_compounding_gap_sessions(sessions_parsed, min_sessions=3, days=30)
 
     autonomy_rate = _compute_autonomy_rate(sessions_parsed)
     autonomy_depth_score = _compute_autonomy_depth_score(sessions_parsed)
@@ -2537,6 +2575,17 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         base["recurring_patterns_warning"] = (
             f"RECURRING: {pattern_names} — same finding category in 3+ sessions. "
             "This is a systematic weakness, not an individual error."
+        )
+
+    if compounding_gap_alert:
+        base["compounding_gap_alert"] = compounding_gap_alert
+        pct = compounding_gap_alert["sessions_pct"]
+        n = compounding_gap_alert["count"]
+        base["compounding_gap_warning"] = (
+            f"⚠ PATTERN: {n} of last {compounding_gap_alert['sessions_scanned']} sessions "
+            f"({pct}%) had commits but no capability skill. "
+            "Skills: none is the most expensive session pattern — "
+            "org_score cannot compound without at least one skill firing per commit."
         )
 
     # Surface knowledge velocity warnings when stalled or empty

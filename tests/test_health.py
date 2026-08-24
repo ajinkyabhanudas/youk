@@ -2331,6 +2331,77 @@ class TestDetectRecurringFindings:
         assert patterns[1]["count"] == 3
 
 
+def _audit_block_with_compounding_gap(n: int, gap: bool = True, has_skills: bool = False) -> str:
+    from datetime import datetime, timedelta
+    date_str = (datetime.now(UTC) - timedelta(days=n)).strftime("%Y-%m-%d")
+    skills_line = "Skills: code-review\n" if has_skills else "Skills: \n"
+    gap_line = f"CompoundingGap: {'yes' if gap else 'no'}\n"
+    return (
+        f"### Session — {date_str} 10:00 UTC\n"
+        f"{skills_line}"
+        "CloseCluster: yes\n"
+        "Commits: yes\n"
+        f"{gap_line}"
+    )
+
+
+class TestDetectCompoundingGapSessions:
+    def test_no_alert_when_count_below_threshold(self):
+        from health import _parse_audit_sessions, _detect_compounding_gap_sessions
+        blocks = [
+            _audit_block_with_compounding_gap(n=1, gap=True),
+            _audit_block_with_compounding_gap(n=2, gap=True),
+            _audit_block_with_compounding_gap(n=3, gap=False),
+        ]
+        sessions = _parse_audit_sessions(blocks)
+        result = _detect_compounding_gap_sessions(sessions, min_sessions=3)
+        assert result is None
+
+    def test_alert_returned_at_threshold(self):
+        from health import _parse_audit_sessions, _detect_compounding_gap_sessions
+        blocks = [
+            _audit_block_with_compounding_gap(n=1, gap=True),
+            _audit_block_with_compounding_gap(n=2, gap=True),
+            _audit_block_with_compounding_gap(n=3, gap=True),
+        ]
+        sessions = _parse_audit_sessions(blocks)
+        result = _detect_compounding_gap_sessions(sessions, min_sessions=3)
+        assert result is not None
+        assert result["count"] == 3
+        assert result["sessions_scanned"] == 3
+
+    def test_alert_count_reflects_only_gap_sessions(self):
+        from health import _parse_audit_sessions, _detect_compounding_gap_sessions
+        blocks = [
+            _audit_block_with_compounding_gap(n=1, gap=True),
+            _audit_block_with_compounding_gap(n=2, gap=True),
+            _audit_block_with_compounding_gap(n=3, gap=True),
+            _audit_block_with_compounding_gap(n=4, gap=False),
+            _audit_block_with_compounding_gap(n=5, gap=False),
+        ]
+        sessions = _parse_audit_sessions(blocks)
+        result = _detect_compounding_gap_sessions(sessions, min_sessions=3)
+        assert result is not None
+        assert result["count"] == 3
+        assert result["sessions_scanned"] == 5
+        assert result["sessions_pct"] == 60
+
+    def test_gap_field_parsed_from_audit_block(self):
+        from health import _parse_audit_sessions
+        blocks = [_audit_block_with_compounding_gap(n=1, gap=True)]
+        sessions = _parse_audit_sessions(blocks)
+        assert sessions[0]["compounding_gap"] is True
+
+    def test_no_gap_field_defaults_to_false(self):
+        from health import _parse_audit_sessions
+        # Block with no CompoundingGap line at all
+        from datetime import datetime, timedelta
+        date_str = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
+        block = f"### Session — {date_str} 10:00 UTC\nSkills: code-review\nCloseCluster: yes\nCommits: yes\n"
+        sessions = _parse_audit_sessions([block])
+        assert sessions[0]["compounding_gap"] is False
+
+
 class TestComputePreventedCostScore:
     def test_zero_with_no_outcomes(self):
         from health import _compute_prevented_cost_score
