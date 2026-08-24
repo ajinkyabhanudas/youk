@@ -276,6 +276,10 @@ reentry_edges:
   # Re-entry NEVER bypasses check_nfr_gate or check_challenge_gate — those must be re-called.
 
   code-review:
+    - to: security-review
+      trigger: "code-review found HIGH or BLOCKING findings in any of: auth, credentials, data write, external API, input validation, injection risk"
+      severity: HIGH
+      label: "code-review-security-reentry"
     - to: nfr-check
       trigger: "NFR gap found in review (missing error handling, no retry policy, no logging, missing timeout)"
       severity: HIGH
