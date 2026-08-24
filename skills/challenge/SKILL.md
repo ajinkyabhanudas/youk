@@ -107,6 +107,10 @@ If CONVERGED: proceed to the four lenses with the converged definition as the fi
 
 Each lens is independent. They do not see each other's output within a round.
 
+**Constraint pre-load (before every lens, every round):**
+Before running a lens, emit: "Fixed constraints active: [FIXED_CONSTRAINTS list]. These are walls — do not generate objections that attack them."
+This is a one-line internal gate, not surfaced to the user. Its purpose: prevent rounds from being consumed resolving objections against things that cannot change.
+
 **Lens 1 — Problem Framing**
 Is this the right problem to solve right now?
 
@@ -144,8 +148,6 @@ What is NOT being done if we go this direction?
 - What would be lost by not taking an alternative path?
 - Is this the highest-leverage use of the next N exchanges?
 - Is there a direction that addresses this AND a prior open question simultaneously?
-
----
 
 ## Plan Coherence Phase (fires only in `plan:` mode)
 
@@ -278,11 +280,12 @@ A direction reversal = wrong-path sessions avoided. Pass `direction_reversal=Tru
 
 Only runs when verdict is NEEDS SHARPENING.
 
-1. Propose a revised direction that addresses the HIGH objections
-2. State what changes from the original direction and what stays the same
-3. Re-run lenses against the revised direction (one more round only)
-4. If the revised direction survives: call `youk-core.mark_challenge_ran(task, angles_checked=[<all angles run across both rounds>], mode=<mode>)`. On `recorded: true`, the verdict `[CHALLENGE PASSED — revised direction]` is confirmed. Emit non-goals artifact: `Non-goals (from Lens 2): {what was ruled out in arriving at this revised direction}`.
-5. If new BLOCKING/HIGH objections emerge: surface them and ask user — do not iterate a third time automatically
+1. **Minimum revision check (before proposing anything):** Apply Lens 2 to the proposed revision itself. The revision must not expand scope beyond what is strictly needed to address the blocking or HIGH objection. If the revision adds new capability, new components, or new surface area not required by the objection — trim it first. A revision that over-solves the objection creates a new Lens 2 target in round 2.
+2. Propose a revised direction that addresses the HIGH objections
+3. State what changes from the original direction and what stays the same
+4. Re-run lenses against the revised direction (one more round only)
+5. If the revised direction survives: call `youk-core.mark_challenge_ran(task, angles_checked=[<all angles run across both rounds>], mode=<mode>)`. On `recorded: true`, the verdict `[CHALLENGE PASSED — revised direction]` is confirmed. Emit non-goals artifact: `Non-goals (from Lens 2): {what was ruled out in arriving at this revised direction}`.
+6. If new BLOCKING/HIGH objections emerge: surface them and ask user — do not iterate a third time automatically
 
 **Exit rule:** The loop exits when two conditions are both true:
 1. The last round produced zero new objections from the lenses that ran.
@@ -304,8 +307,6 @@ unresolved: [state it]. User input needed before proceeding.") Do not exit silen
 - Round 10 cap: BLOCKED — surface tension, require user input
 
 > Compact summary: "Revised direction: [one sentence]. New challenge round result: [verdict]."
-
----
 
 ## Autonomy Depth Rubric
 
