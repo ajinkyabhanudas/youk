@@ -1,0 +1,58 @@
+# Canonical cluster names map to lists of raw label variants.
+# scan_failure_patterns normalizes raw labels to cluster names before counting.
+clusters:
+  auth:
+    - auth
+    - authentication
+    - authz
+    - authorization
+    - auth_bypass
+    - session
+    - jwt
+    - token_validation
+    - credentials
+  data_integrity:
+    - data_write
+    - data_corruption
+    - mutation
+    - consistency
+    - data_exposure
+  input_validation:
+    - injection
+    - input_validation
+    - sanitization
+    - xss
+    - sql_injection
+    - command_injection
+  error_handling:
+    - error_handling
+    - exception
+    - silent_failure
+    - uncaught
+    - error_path
+  logic:
+    - logic
+    - off_by_one
+    - boundary
+    - race_condition
+    - concurrency
+  security:
+    - security
+    - vulnerability
+    - cve
+    - exploit
+  quality:
+    - quality
+    - dead_code
+    - complexity
+    - maintainability
+  performance:
+    - performance
+    - latency
+    - n_plus_one
+    - memory_leak
+  testing:
+    - testing
+    - coverage
+    - missing_test
+    - test_quality

@@ -13,6 +13,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import yaml as _yaml
+
 import sys
 sys.path.insert(0, "/shared")
 from schemas import FailurePatternAlert
@@ -22,6 +24,29 @@ _PROJECT_LINE = re.compile(r"^Project:\s*(.+)$", re.MULTILINE)
 _CATEGORIES_LINE = re.compile(r"^FindingCategories:\s*(.+)$", re.MULTILINE)
 
 _DEFAULT_AUDIT_DIR = Path("/claude") / "audit"
+
+
+def _load_cluster_map(cluster_file: Path | None = None) -> dict[str, str]:
+    """Return {raw_label: canonical_cluster_name} for all entries in category_clusters.yaml."""
+    if cluster_file is None:
+        cluster_file = Path(__file__).parent / "category_clusters.yaml"
+    if not cluster_file.exists():
+        return {}
+    try:
+        data = _yaml.safe_load(cluster_file.read_text())
+        result = {}
+        for cluster_name, members in (data.get("clusters") or {}).items():
+            for member in (members or []):
+                result[member.strip().lower()] = cluster_name
+        return result
+    except Exception:
+        return {}
+
+
+def _normalize_category(raw: str, cluster_map: dict[str, str]) -> str:
+    """Map raw label to canonical cluster name. Returns raw (normalized) if no cluster match."""
+    normalized = raw.strip().lower().replace(" ", "_").replace("-", "_")
+    return cluster_map.get(normalized, normalized)
 
 
 def _read_audit_files(audit_dir: Path) -> list[str]:
@@ -106,14 +131,16 @@ def scan_failure_patterns(
     if sessions_scanned == 0:
         return []
 
+    cluster_map = _load_cluster_map()
     domain_count: dict[str, int] = {}
     for block in window:
         cats = _extract_categories(block)
         seen_this_session: set[str] = set()
         for cat in cats:
-            if cat not in seen_this_session:
-                domain_count[cat] = domain_count.get(cat, 0) + 1
-                seen_this_session.add(cat)
+            normalized = _normalize_category(cat, cluster_map)
+            if normalized not in seen_this_session:
+                domain_count[normalized] = domain_count.get(normalized, 0) + 1
+                seen_this_session.add(normalized)
 
     alerts: list[FailurePatternAlert] = []
     for domain, count in sorted(domain_count.items(), key=lambda x: -x[1]):
