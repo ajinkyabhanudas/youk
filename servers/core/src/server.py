@@ -717,10 +717,14 @@ def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) 
 
 
 @mcp.tool()
-def mark_challenge_ran(task: str, angles_checked: list[str], mode: str = "full") -> dict:
+def mark_challenge_ran(
+    task: str,
+    angles_checked: list[str],
+    mode: str = "full",
+    objections_this_round: int = 0,
+) -> dict:
     """
-    Record that the challenge skill has run and passed for the current M+ task.
-    Call this after the challenge loop is dry — when all required angles have been covered.
+    Record that the challenge skill has run for the current M+ task.
 
     angles_checked: List of angle names that were run (e.g. ["framing", "scope",
         "assumptions", "opportunity", "structural", "operational", "experiential",
@@ -729,11 +733,15 @@ def mark_challenge_ran(task: str, angles_checked: list[str], mode: str = "full")
     mode: Challenge mode — "full" (default), "quick", "silent", or "plan".
         Determines which angles are required. "full" requires all 11 angles;
         "quick"/"silent"/"plan" require the 4 lenses only.
+    objections_this_round: Count of NEW objections raised in this round. Pass 0 only
+        when the last pass produced zero new objections from ALL angles. A value > 0
+        means the loop is NOT dry — check_loop_dry will return not_converged=True.
 
     Each call increments the challenge_rounds counter — session_end reads this
     directly from state rather than trusting Claude's passed-in value.
 
-    Returns: {"recorded": bool, "challenge_rounds": int, "angles_validated": bool}
+    Returns: {"recorded": bool, "challenge_rounds": int, "angles_validated": bool,
+              "converged": bool}
     When blocked: {"blocked": True, "missing_angles": [...], "reason": str}
     """
     from challenge_gate import validate_angles
@@ -758,6 +766,7 @@ def mark_challenge_ran(task: str, angles_checked: list[str], mode: str = "full")
             except Exception:
                 pass
         new_rounds = existing_rounds + 1
+        converged = objections_this_round == 0
         flag_file.write_text(_json.dumps({
             "slug": slug,
             "task": task,
@@ -765,12 +774,20 @@ def mark_challenge_ran(task: str, angles_checked: list[str], mode: str = "full")
             "rounds": new_rounds,
             "angles_validated": True,
             "mode": mode,
+            "objections_last_round": objections_this_round,
+            "converged": converged,
         }))
         _append_gate_to_active_task("challenge")
         _record_gate("challenge", slug)
-        return {"recorded": True, "challenge_rounds": new_rounds, "angles_validated": True}
+        return {
+            "recorded": True,
+            "challenge_rounds": new_rounds,
+            "angles_validated": True,
+            "converged": converged,
+        }
     except Exception:
-        return {"recorded": False, "challenge_rounds": 0, "angles_validated": False}
+        return {"recorded": False, "challenge_rounds": 0, "angles_validated": False,
+                "converged": False}
 
 
 @mcp.tool()
@@ -1017,9 +1034,9 @@ def check_loop_dry(task: str = "") -> dict:
     """
     Structural sensor for whether the last challenge loop was dry.
 
-    Reads challenge-ran.json (rounds counter written by mark_challenge_ran) and
-    the loop_correction state derived from the summary scan in session_end. Returns
-    a per-session verdict without requiring Claude to reconstruct this from memory.
+    Reads challenge-ran.json (written by mark_challenge_ran) and the loop_correction
+    state derived from the summary scan in session_end. Returns a per-session verdict
+    without requiring Claude to reconstruct this from memory.
 
     Called automatically by session_end when close_cluster=True. Also exposed as an
     explicit MCP tool so the done skill can call it for transparency at /done.
@@ -1027,10 +1044,13 @@ def check_loop_dry(task: str = "") -> dict:
     task: optional — the task label to validate against the recorded challenge task.
 
     Returns: {
-        "dry": bool — True when challenge ran AND no correction detected this session,
+        "dry": bool — True when challenge ran, no correction detected, AND last round
+                     had zero new objections (objections_last_round == 0),
         "rounds": int — number of mark_challenge_ran calls this session,
         "challenge_ran": bool — whether challenge ran at all,
         "loop_correction_in_state": bool — whether a correction was written to state,
+        "not_converged": bool — True when last round still had objections (loop not dry),
+        "objections_last_round": int — objection count from the most recent round,
         "session_slug": str,
     }
     """
@@ -1042,11 +1062,16 @@ def check_loop_dry(task: str = "") -> dict:
 
         rounds = 0
         challenge_ran = False
+        converged = True
+        objections_last_round = 0
         if flag_file.exists():
             data = _json.loads(flag_file.read_text())
             if data.get("slug") == current_slug:
                 rounds = data.get("rounds", 0)
                 challenge_ran = rounds > 0
+                objections_last_round = data.get("objections_last_round", 0)
+                # Legacy records without the field are treated as converged.
+                converged = data.get("converged", True)
 
         # Read loop-correction state — written by session_end when correction language
         # detected in summary. This is the structural half of loop_gap detection.
@@ -1059,12 +1084,15 @@ def check_loop_dry(task: str = "") -> dict:
             except Exception:
                 pass
 
-        dry = challenge_ran and not correction_in_state
+        not_converged = challenge_ran and not converged
+        dry = challenge_ran and not correction_in_state and converged
         return {
             "dry": dry,
             "rounds": rounds,
             "challenge_ran": challenge_ran,
             "loop_correction_in_state": correction_in_state,
+            "not_converged": not_converged,
+            "objections_last_round": objections_last_round,
             "session_slug": current_slug,
         }
     except Exception:
@@ -1073,6 +1101,8 @@ def check_loop_dry(task: str = "") -> dict:
             "rounds": 0,
             "challenge_ran": False,
             "loop_correction_in_state": False,
+            "not_converged": False,
+            "objections_last_round": 0,
             "session_slug": "",
         }
 
