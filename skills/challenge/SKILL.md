@@ -257,12 +257,15 @@ Coherence:      ALIGNED — all lenses attacked the same problem |
 If DIVERGED: the divergence is a HIGH objection. Surface it before proceeding. The direction cannot be CLEAR while lenses disagree on what they were challenging. Do not call `mark_challenge_ran` until coherence is ALIGNED.
 
 After all lenses run and coherence is confirmed:
-- If zero objections: direction SURVIVES — call `youk-core.mark_challenge_ran(task, angles_checked=[<list of angles run>], mode=<mode>)`. If it returns `blocked: true`, run the missing angles and call again. On `recorded: true`, the verdict is confirmed — proceed. **For M+ tasks:** emit one-line non-goals artifact: `Non-goals (from Lens 2): {what was explicitly ruled out and why}` — this persists scope decisions as a standing reference.
-- If only LOW objections: direction SURVIVES WITH NOTES — emit findings inline, then call `mark_challenge_ran` as above and proceed. Emit non-goals artifact as above.
-- If any HIGH: direction NEEDS SHARPENING — emit findings, propose revised direction, go to Phase 3
+- If zero objections: direction SURVIVES — call `youk-core.mark_challenge_ran(task, angles_checked=[<list of angles run>], mode=<mode>, objections_this_round=0)`. If it returns `blocked: true`, run the missing angles and call again. On `recorded: true` with `converged: true`, the verdict is confirmed — proceed. **For M+ tasks:** emit one-line non-goals artifact: `Non-goals (from Lens 2): {what was explicitly ruled out and why}` — this persists scope decisions as a standing reference.
+- If only LOW objections: direction SURVIVES WITH NOTES — emit findings inline, then call `mark_challenge_ran` with `objections_this_round=<count of LOW objections>`, wait for the next round to produce zero. Emit non-goals artifact only after a zero-objection round.
+- If any HIGH: direction NEEDS SHARPENING — emit findings, propose revised direction, go to Phase 3. Call `mark_challenge_ran` with `objections_this_round=<count>` — `converged` will be `false`, signaling the loop is not yet dry.
 - If any BLOCKING: direction WRONG — stop, surface the blocking objection, ask user to redirect
 
-**Do not write `[CHALLENGE PASSED]` manually.** The verdict is only valid after `mark_challenge_ran` returns `recorded: true`. This is the dry-loop gate — it blocks if any required angle for the current mode is missing from `angles_checked`.
+**Exit condition: zero new objections from ALL angles in the same round — not round count.**
+Round count is an emergency brake only (cap at 6 rounds). Before calling `mark_challenge_ran` with `objections_this_round=0`, confirm: did the last pass produce zero new objections from every active lens? Both conditions must be true. A round that produced objections is NOT a dry round, even if those objections were resolved — the next round must be zero.
+
+**Do not write `[CHALLENGE PASSED]` manually.** The verdict is only valid after `mark_challenge_ran` returns `recorded: true` AND `converged: true`. If `converged: false`, the loop has objections outstanding — iterate.
 
 **Direction reversal audit field:** If the initial direction is rejected (WRONG verdict) or
 substantially revised via ITERATE (the revised direction differs from the original), emit:
