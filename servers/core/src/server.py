@@ -352,13 +352,15 @@ def session_end(
     # Use the state-file value when it exceeds the caller-passed value (take max).
     try:
         import json as _j
-        flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
+        open_file = YOUK_ROOT / "state" / "session-open.json"
+        current_slug = ""
+        if open_file.exists():
+            current_slug = _j.loads(open_file.read_text()).get("slug", "")
+        if not current_slug:
+            raise ValueError("no active session slug")
+        flag_file = _sp.slug_state_dir(current_slug) / "challenge-ran.json"
         if flag_file.exists():
             _flag_data = _j.loads(flag_file.read_text())
-            open_file = YOUK_ROOT / "state" / "session-open.json"
-            current_slug = ""
-            if open_file.exists():
-                current_slug = _j.loads(open_file.read_text()).get("slug", "")
             if _flag_data.get("slug") == current_slug:
                 state_rounds = _flag_data.get("rounds", 0)
                 challenge_rounds = max(challenge_rounds, state_rounds)
@@ -756,7 +758,7 @@ def mark_challenge_ran(
         import json as _json
         from datetime import datetime as _dt
         slug = _get_session_slug()
-        flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
+        flag_file = _sp.slug_state_dir(slug) / "challenge-ran.json"
         existing_rounds = 0
         if flag_file.exists():
             try:
@@ -807,10 +809,10 @@ def check_challenge_gate(task: str, size: str) -> CheckChallengeGateResult:
     challenge_ran = False
     try:
         import json as _json
-        flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
+        current_slug = _get_session_slug()
+        flag_file = _sp.slug_state_dir(current_slug) / "challenge-ran.json"
         if flag_file.exists():
             data = _json.loads(flag_file.read_text())
-            current_slug = _get_session_slug()
             challenge_ran = data.get("slug", "") == current_slug
     except Exception:
         pass
@@ -1916,10 +1918,11 @@ def apply_set_revision(name: str, action: str, element: str, driver: str) -> dic
     challenge_ran = False
     try:
         import json as _json
-        flag_file = YOUK_ROOT / "state" / "challenge-ran.json"
+        _rs_slug = _get_session_slug()
+        flag_file = _sp.slug_state_dir(_rs_slug) / "challenge-ran.json"
         if flag_file.exists():
             data = _json.loads(flag_file.read_text())
-            challenge_ran = data.get("slug", "") == _get_session_slug()
+            challenge_ran = data.get("slug", "") == _rs_slug
     except Exception:
         pass
     if not challenge_ran:
