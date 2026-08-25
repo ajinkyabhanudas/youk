@@ -150,3 +150,44 @@ class TestAlertFields:
         assert "3" in msg
         assert result[0]["sessions_scanned"] == 3
         assert result[0]["count"] == 3
+
+
+class TestClustering:
+    def test_auth_variants_cluster_together(self, audit_dir):
+        # "auth" and "authentication" should combine into one cluster count
+        _write_month(audit_dir, "2026-08.md", [
+            {"project": "youk", "categories": ["auth"]},
+            {"project": "youk", "categories": ["authentication"]},
+            {"project": "youk", "categories": ["authz"]},
+        ])
+        result = fpd.scan_failure_patterns(audit_dir=audit_dir, threshold=3)
+        assert len(result) == 1
+        assert result[0]["domain"] == "auth"
+        assert result[0]["count"] == 3
+
+    def test_authz_normalizes_to_auth_cluster(self, audit_dir):
+        _write_month(audit_dir, "2026-08.md", [
+            {"project": "youk", "categories": ["authz"]},
+            {"project": "youk", "categories": ["authz"]},
+            {"project": "youk", "categories": ["authz"]},
+        ])
+        result = fpd.scan_failure_patterns(audit_dir=audit_dir, threshold=3)
+        assert len(result) == 1
+        assert result[0]["domain"] == "auth"
+
+    def test_unknown_category_passes_through(self, audit_dir):
+        # A category not in any cluster still counts under its own normalized name
+        _write_month(audit_dir, "2026-08.md", [
+            {"project": "youk", "categories": ["unknown_domain"]},
+            {"project": "youk", "categories": ["unknown_domain"]},
+            {"project": "youk", "categories": ["unknown_domain"]},
+        ])
+        result = fpd.scan_failure_patterns(audit_dir=audit_dir, threshold=3)
+        assert len(result) == 1
+        assert result[0]["domain"] == "unknown_domain"
+
+    def test_cluster_map_loads_from_yaml(self):
+        cluster_map = fpd._load_cluster_map()
+        assert len(cluster_map) > 0
+        assert cluster_map.get("authentication") == "auth"
+        assert cluster_map.get("authz") == "auth"
