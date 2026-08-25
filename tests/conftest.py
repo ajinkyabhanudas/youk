@@ -4,9 +4,19 @@ Sets up sys.path so server modules can be imported directly without Docker,
 and provides fixtures that patch module-level path constants to tmp dirs.
 """
 from __future__ import annotations
+import os
 import sys
 from pathlib import Path
 import pytest
+
+_GIT_ENV_KEYS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY")
+
+
+@pytest.fixture(autouse=True)
+def _clear_git_env(monkeypatch):
+    """Remove git hook env vars so subprocess git calls in tests use the correct repo."""
+    for key in _GIT_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
 
 _REPO = Path(__file__).parent.parent
 for _p in [
