@@ -177,3 +177,66 @@ class TestSkillMdConvergenceRule:
         assert "converged: false" in content.lower() or (
             "not yet dry" in content.lower() or "iterate" in content.lower()
         )
+
+
+# ---------------------------------------------------------------------------
+# Path consistency: mark_challenge_ran writes to slug_state_dir, not YOUK_ROOT/state/
+# ---------------------------------------------------------------------------
+
+class TestChallengeRanPathConsistency:
+    """Verify mark_challenge_ran writes to slug_state_dir(slug)/challenge-ran.json.
+
+    Previously the write path was YOUK_ROOT/state/challenge-ran.json while
+    check_loop_dry read from slug_state_dir(slug)/challenge-ran.json — the
+    converged field was never reachable in production.
+    """
+
+    def _read_server(self) -> str:
+        server_path = Path(__file__).parent.parent / "servers" / "core" / "src" / "server.py"
+        return server_path.read_text()
+
+    def test_mark_challenge_ran_uses_slug_state_dir(self):
+        """mark_challenge_ran must write to slug_state_dir(slug), not YOUK_ROOT/state/."""
+        source = self._read_server()
+        # Find the mark_challenge_ran function body
+        func_start = source.find("def mark_challenge_ran(")
+        assert func_start != -1
+        # The next function starts after the first 'def ' after our function
+        next_func = source.find("\ndef ", func_start + 1)
+        func_body = source[func_start:next_func]
+        # Must use slug_state_dir, not the root state path
+        assert "slug_state_dir" in func_body, (
+            "mark_challenge_ran must write to slug_state_dir(slug)/challenge-ran.json"
+        )
+        assert 'YOUK_ROOT / "state" / "challenge-ran.json"' not in func_body, (
+            "mark_challenge_ran must not write to YOUK_ROOT/state/ (path mismatch with check_loop_dry)"
+        )
+
+    def test_check_loop_dry_uses_slug_state_dir(self):
+        """check_loop_dry must read from slug_state_dir(slug), not YOUK_ROOT/state/."""
+        source = self._read_server()
+        func_start = source.find("def check_loop_dry(")
+        assert func_start != -1
+        next_func = source.find("\ndef ", func_start + 1)
+        func_body = source[func_start:next_func]
+        assert "slug_state_dir" in func_body, (
+            "check_loop_dry must read from slug_state_dir(slug)/challenge-ran.json"
+        )
+        assert 'YOUK_ROOT / "state" / "challenge-ran.json"' not in func_body, (
+            "check_loop_dry must not read from YOUK_ROOT/state/ (was pre-fix path)"
+        )
+
+    def test_write_and_read_paths_both_use_slug_state_dir(self):
+        """Both write (mark_challenge_ran) and read (check_loop_dry) must use slug_state_dir.
+
+        This is the regression sentinel: if either side reverts to YOUK_ROOT/state/,
+        the converged field becomes unreachable and the gate silently stops enforcing
+        zero-objection exit conditions.
+        """
+        source = self._read_server()
+        # Count occurrences of the old broken path — must be zero
+        broken_path_count = source.count('YOUK_ROOT / "state" / "challenge-ran.json"')
+        assert broken_path_count == 0, (
+            f"Found {broken_path_count} use(s) of YOUK_ROOT/state/challenge-ran.json — "
+            "all sites must use slug_state_dir(slug)/challenge-ran.json"
+        )
