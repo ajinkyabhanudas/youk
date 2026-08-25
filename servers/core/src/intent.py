@@ -118,6 +118,55 @@ Rules:
 - Always recommend a concrete architecture pattern — never say "it depends" without a default recommendation.
 """
 
+_DOMAIN_ASSUMPTION_MAP: dict[str, tuple[list[str], str]] = {
+    # (keywords, assumption message)
+    "retry":     (["retry", "retries"], "failure mode is transient, not structural"),
+    "cache":     (["cache", "caching"], "responses are cacheable and TTL is known"),
+    "auth":      (["auth", "authentication"], "user identity source is defined"),
+    "ratelimit": (["rate limit", "rate-limit"], "rate limit policy and headers are known"),
+    "queue":     (["queue", "queuing"], "message ordering and delivery guarantees are defined"),
+    "webhook":   (["webhook"], "delivery is at-least-once and idempotency is required"),
+    "migration": (["migration", "migrate"], "rollback strategy and data preservation requirements are defined"),
+    "timeout":   (["timeout"], "acceptable latency threshold is defined"),
+    "sync":      (["sync", "synchronize"], "conflict resolution strategy is defined"),
+    "encrypt":   (["encrypt", "encryption"], "key management and rotation policy are defined"),
+}
+
+# Clause prefixes that signal the assumption is already explicitly stated.
+_EXPLICIT_PREFIXES = ["if ", "whether ", "which ", "when "]
+
+
+def _extract_implicit_assumptions(goal: str) -> list[str]:
+    """
+    Detect implicit domain assumptions in a goal string.
+
+    Uses deterministic pattern matching — no API calls. Returns a list of
+    assumption strings. Returns [] when no domain keywords are found or when
+    the keyword is preceded by an explicit conditional clause.
+    """
+    lower = goal.lower()
+    assumptions: list[str] = []
+
+    for _key, (keywords, assumption) in _DOMAIN_ASSUMPTION_MAP.items():
+        for kw in keywords:
+            idx = lower.find(kw)
+            if idx == -1:
+                continue
+            # Check whether an explicit conditional clause appears in the
+            # 40-character window around the keyword — not the whole goal.
+            # This avoids suppressing unrelated assumptions when one clause
+            # uses "if" but another keyword has no conditional qualifier.
+            window_start = max(0, idx - 40)
+            window_end = min(len(lower), idx + len(kw) + 40)
+            window = lower[window_start:window_end]
+            if any(p in window for p in _EXPLICIT_PREFIXES):
+                continue
+            assumptions.append(assumption)
+            break  # Only one assumption per domain group
+
+    return assumptions
+
+
 _SOLUTION_LANGUAGE_SIGNALS = [
     "i want to build", "i want to add", "i want to create", "i want to implement",
     "let's build", "let's add", "let's create", "let's implement",
@@ -337,6 +386,7 @@ def _heuristic_brief(raw_input: str, mode: str, error: str | None = None) -> dic
         # True whenever the brief came from heuristics rather than the model.
         # Callers that would otherwise trust ambiguity_detected must check this.
         "degraded": True,
+        "implicit_assumptions": _extract_implicit_assumptions(raw_input),
     }
     if error is not None:
         brief["error"] = error
@@ -375,6 +425,7 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
                 "translation_question": None,
             },
             "intake_required": _intake_required,
+            "implicit_assumptions": _extract_implicit_assumptions(raw_input),
         }
 
     # Check interpretation patterns from knowledge base
@@ -411,6 +462,7 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
                 and _detect_solution_language(raw_input)
                 and not _intake_has_run()
             )
+            result["implicit_assumptions"] = _extract_implicit_assumptions(raw_input)
             return result
         else:
             raise ValueError("No JSON in response")

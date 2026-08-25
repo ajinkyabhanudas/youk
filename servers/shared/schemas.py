@@ -34,6 +34,7 @@ class OptimizeIntentResult(TypedDict, total=False):
     raw_input: str
     goal_translation: GoalTranslation
     intake_required: bool
+    implicit_assumptions: list[str]
 
 
 # ── route_task ───────────────────────────────────────────────────────────────
