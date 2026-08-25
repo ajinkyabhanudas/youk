@@ -2456,6 +2456,24 @@ def start_session(project_dir: str) -> SessionState:
                 _cpc_lines += f" — {_c['summary'][:100]}"
         brief = brief.rstrip() + _cpc_lines + "\n"
 
+    # Pending build task detection: if recent commits exist but no routing breadcrumb for
+    # this session, the previous task landed without /build gates. Set as machine signal
+    # so CLAUDE.md auto-/build rule fires without the developer needing to remember.
+    _pending_build_task: str | None = None
+    try:
+        _session_breadcrumb = _slug_state_dir(slug) / "routing-breadcrumb.json"
+        _breadcrumb_present = _session_breadcrumb.exists()
+        if not _breadcrumb_present:
+            _recent_commit_count, _recent_subjects = _read_git_log_since_days(project_dir, 1)
+            if _recent_commit_count > 0:
+                _subj = _recent_subjects[0] if _recent_subjects else "recent commit"
+                _pending_build_task = (
+                    f"commits landed without routing — run /build before next code task "
+                    f"(last: {_subj})"
+                )
+    except Exception:
+        pass
+
     return SessionState(
         project=slug,
         resume_point=resume_point,
@@ -2484,6 +2502,7 @@ def start_session(project_dir: str) -> SessionState:
         falsifier_alerts=_falsifier_alerts,
         audit_patterns=_audit_patterns,
         cross_project_concepts=_cross_project_concepts,
+        pending_build_task=_pending_build_task,
     )
 
 
