@@ -2309,6 +2309,20 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     so the caller can invoke youk-research with targeted queries. Does not perform
     web research itself — keeps this function on the zero-API hot path.
     """
+    try:
+        from observability import get_obs
+        import json as _json
+        from pathlib import Path as _Path
+        _state = _Path(str(YOUK_ROOT)).parent / "state" / "session.json"
+        _trace_id = _json.loads(_state.read_text()).get("_obs_trace_id") if _state.exists() else None
+        _obs = get_obs() if _trace_id and _trace_id != "noop" else None
+    except Exception:
+        _obs = None
+        _trace_id = None
+
+    import time as _time
+    _t0 = _time.monotonic()
+
     _archive_applied_proposals()
     report = run_health_check()
     audit_texts = _read_recent_audit_logs(days=30)
@@ -2741,6 +2755,19 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
             base["generation_frame_experiment"] = exp
         except Exception:
             pass
+
+    # Attach a health-check span to the active Langfuse trace.
+    try:
+        if _obs and _trace_id:
+            _elapsed = round(_time.monotonic() - _t0, 3)
+            _obs.attach_score(
+                type("_T", (), {"id": _trace_id})(),
+                "health_check_latency_s",
+                _elapsed,
+                comment=f"org_score={base.get('org_score', 0):.2f}",
+            )
+    except Exception:
+        pass
 
     return base
 
