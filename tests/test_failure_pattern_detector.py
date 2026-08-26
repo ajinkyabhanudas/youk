@@ -152,6 +152,7 @@ class TestAlertFields:
         assert result[0]["count"] == 3
 
 
+
 class TestClustering:
     def test_auth_variants_cluster_together(self, audit_dir):
         # "auth" and "authentication" should combine into one cluster count

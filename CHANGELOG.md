@@ -10,6 +10,33 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ## [unreleased]
 
+### Added
+
+**L9 programmatic enforcement (#78)**
+
+Three gaps that were prompt-only are now Python-enforced:
+
+- `ceremony_sequencer.py` (shared): tracks gate order per session slug. `check_nfr_gate` warns if `challenge` hasn't fired yet; `task_checkpoint` flags `dev_loop_not_registered` if dev-loop was skipped on M+ tasks. State written to `state/{slug}/ceremony-sequence.json`.
+- `failure_pattern_detector.py`: scans `~/.claude/audit/` for recurring `FindingCategories` across sessions. When a domain hits threshold (default 3) in the lookback window, `session_start` prepends `⚠ PATTERN:` alerts to the session plan — before the developer starts a 4th attempt in a failing domain. Category clustering via `category_clusters.yaml` normalizes variants (`authentication`, `authz` → `auth`).
+- `skill_reentry.py` (shared): `check_reentry()` reads `reentry_edges` from `skill-graph.yaml`. `write_skill_handoff` infers severity from handoff content (`BLOCKING` / `HIGH` / `MEDIUM`) and returns `reentry_suggestion` when the severity meets an edge's threshold.
+- `translation_risk=medium` soft block: `route_task` now produces `SoftRuleWarning(rule_id="medium-translation-risk")` and writes `state/{slug}/medium-risk-question.json`. New tool `mark_medium_risk_surfaced()` sets `surfaced=True`. `task_checkpoint` returns `medium_risk_unsurfaced=True` if the question was never shown to the user.
+- Session goal in compaction brief: `write_session_goal()` stores `success_criteria` and `observable_outcome` in `state/session-goal.json`. `build_brief()` includes them under `TIER:DECISION` so they survive compaction and `task_checkpoint` can re-evaluate `goal_met` after each task.
+
+**Doc graph structural integrity (#78)**
+
+`check_doc_graph()` runs four checks (previously only one):
+1. Timestamp drift — authority file newer than derived (existing)
+2. Broken links — derived file listed in `doc-map.yaml` no longer exists
+3. Orphaned concepts — authority file listed but not on disk
+4. Untracked docs — `docs/*.md` files not referenced anywhere in the map
+5. Invariant match — optional per-concept string must appear in all derived files
+
+Return shape gains `broken_links`, `orphaned_concepts`, `semantic_drift`, `untracked_docs` fields. Verdict: `COHERENT` / `DRIFT DETECTED` / `BROKEN`. `doc-map.yaml` now has `invariant` fields on 12 of 17 concepts.
+
+### Changed
+
+- `check_doc_graph()` return shape: `stale_concepts` is now inside the result alongside new fields. Callers reading only `stale_concepts` are unaffected (field name unchanged).
+
 ---
 
 ## [0.6.0-alpha] — 2026-08-07

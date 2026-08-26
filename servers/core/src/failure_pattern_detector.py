@@ -49,6 +49,7 @@ def _normalize_category(raw: str, cluster_map: dict[str, str]) -> str:
     return cluster_map.get(normalized, normalized)
 
 
+
 def _read_audit_files(audit_dir: Path) -> list[str]:
     """Return file contents of all YYYY-MM.md audit files, newest first."""
     if not audit_dir.exists():
