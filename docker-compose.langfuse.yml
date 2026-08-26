@@ -1,0 +1,36 @@
+# Langfuse self-hosted — youk observability stack
+# Start: docker compose -f docker-compose.langfuse.yml up -d
+# UI:    http://localhost:3000
+# Stop:  docker compose -f docker-compose.langfuse.yml down
+#
+# After first start, create a project in the UI and copy the keys into .env.langfuse:
+#   LANGFUSE_HOST=http://localhost:3000
+#   LANGFUSE_PUBLIC_KEY=pk-lf-...
+#   LANGFUSE_SECRET_KEY=sk-lf-...
+# Then source it before running youk: source .env.langfuse
+
+services:
+  langfuse-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_db:/var/lib/postgresql/data
+
+  langfuse:
+    image: langfuse/langfuse:latest
+    depends_on:
+      - langfuse-db
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: local-dev-secret-change-in-prod
+      NEXTAUTH_URL: http://localhost:3000
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+
+volumes:
+  langfuse_db:

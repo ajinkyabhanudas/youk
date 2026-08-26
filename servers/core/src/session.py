@@ -2031,6 +2031,61 @@ def start_session(project_dir: str) -> SessionState:
         cross_project_concepts=_cross_project_concepts,
         pending_build_task=_pending_build_task,
     )
+    _obs_start(project_dir, slug)
+
+
+def _obs_start(project_dir: str, slug: str) -> None:
+    """Start a Langfuse trace for this run. Silent-fail always."""
+    try:
+        from observability import get_obs
+        obs = get_obs()
+        trace = obs.start_run(slug, project_dir)
+        # Persist trace id in session state so end_session can attach the score.
+        try:
+            _st = _load_state()
+            _st["_obs_trace_id"] = trace.id
+            STATE_FILE.write_text(json.dumps(_st, indent=2))
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
+def _obs_end(outcome: str, commits_made: bool) -> None:
+    """End the Langfuse trace and attach the patch_cycle_rate proxy score. Silent-fail."""
+    try:
+        from observability import get_obs, compute_patch_cycle_rate
+        from health import _analyze_promotion_candidates, _read_recent_audit_logs
+        obs = get_obs()
+
+        # Reconstruct the trace object from the stored trace id.
+        trace_id = _load_state().get("_obs_trace_id")
+        if not trace_id or trace_id == "noop":
+            return
+
+        # Compute proxy score from current audit data.
+        try:
+            audit_texts = _read_recent_audit_logs(days=30)
+            candidates = _analyze_promotion_candidates(audit_texts)
+            rate = compute_patch_cycle_rate(candidates)
+            if rate is not None:
+                obs.attach_score(
+                    type("_T", (), {"id": trace_id})(),
+                    "patch_cycle_rate",
+                    rate,
+                    comment=f"{sum(1 for c in candidates if c.get('patch_cycle'))}/{len(candidates)} repairs cycling",
+                )
+        except Exception:
+            pass
+
+        obs.end_run(
+            type("_T", (), {"id": trace_id})(),
+            outcome=outcome,
+            commits_made=commits_made,
+        )
+        obs.flush()
+    except Exception:
+        pass
 
 
 def _write_session_stub(slug: str, session_counter: int) -> None:
@@ -3140,6 +3195,8 @@ def end_session(
             "(One line — it becomes item 1 in next session's plan.)"
             + (f" Session plan had {len(plan_items)} items." if plan_items else "")
         )
+
+    _obs_end(outcome=outcome, commits_made=commits_made)
 
     return {
         "knowledge_extracted": summary.count("##"),
