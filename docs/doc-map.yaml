@@ -257,3 +257,10 @@ concepts:
     invariant: "medium-translation-risk"
     derived_in:
       - docs/well-architected.md
+
+  - concept: release_version
+    description: "Current release version — README status line must match CHANGELOG latest version and git tag"
+    authority: CHANGELOG.md
+    invariant: "1.1.0"
+    derived_in:
+      - README.md
