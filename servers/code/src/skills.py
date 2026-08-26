@@ -17,6 +17,19 @@ _SKILL_GRAPH = Path("/youk/knowledge/skill-graph.yaml")
 _RATIONALE_STATE = Path("/youk/state/skill-rationale-state.json")
 _RATIONALE_SUPPRESS_AFTER = 3  # suppress teaching after developer pre-empts N times
 
+# Detect at load time whether this container can write to the state directory.
+# youk-code mounts /youk read-only by design — writes to state/ must degrade gracefully.
+def _state_is_writable() -> bool:
+    try:
+        probe = _SESSION_STATE.parent / ".write-probe"
+        probe.touch()
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+_STATE_WRITABLE = _state_is_writable()
+
 # Sections that are reference-only (not needed for in-session execution).
 # Quality Bars and all phases above them are preserved — these sections are below.
 _STRIP_SECTIONS = (
@@ -100,7 +113,8 @@ def _read_and_clear_pending_handoff(skill_name: str) -> str | None:
         if not chunks:
             return None
         state["pending_handoff"] = pending
-        _SESSION_STATE.write_text(json.dumps(state, indent=2))
+        if _STATE_WRITABLE:
+            _SESSION_STATE.write_text(json.dumps(state, indent=2))
         return "\n\n".join(chunks)
     except Exception:
         return None
@@ -118,21 +132,29 @@ def _infer_severity(content: str) -> str:
 
 def write_skill_handoff(from_skill: str, content: str) -> dict:
     """Write skill output to pending_handoff in session.json for consumption by successor skills."""
-    try:
-        state = json.loads(_SESSION_STATE.read_text()) if _SESSION_STATE.exists() else {}
-        state.setdefault("pending_handoff", {})[from_skill] = content
-        _SESSION_STATE.write_text(json.dumps(state, indent=2))
-        result: dict = {"saved": True, "from_skill": from_skill, "content_length": len(content)}
+    result: dict = {"from_skill": from_skill, "content_length": len(content)}
+    if not _STATE_WRITABLE:
+        result["saved"] = False
+        result["error_type"] = "BUSINESS_RULE"
+        result["note"] = "state/ is read-only in this container — handoff content is available in session context only"
+    else:
         try:
-            severity = _infer_severity(content)
-            suggestion = _check_reentry(from_skill, severity)
-            if suggestion is not None:
-                result["reentry_suggestion"] = suggestion
-        except Exception:
-            pass
-        return result
-    except Exception as e:
-        return {"saved": False, "error": str(e)}
+            state = json.loads(_SESSION_STATE.read_text()) if _SESSION_STATE.exists() else {}
+            state.setdefault("pending_handoff", {})[from_skill] = content
+            _SESSION_STATE.write_text(json.dumps(state, indent=2))
+            result["saved"] = True
+        except Exception as e:
+            result["saved"] = False
+            result["error_type"] = "SYSTEM"
+            result["error"] = str(e)
+    try:
+        severity = _infer_severity(content)
+        suggestion = _check_reentry(from_skill, severity)
+        if suggestion is not None:
+            result["reentry_suggestion"] = suggestion
+    except Exception:
+        pass
+    return result
 
 
 _YOUK_ROOT = Path("/youk")
@@ -185,11 +207,12 @@ def _increment_rationale_shown(skill_name: str) -> int:
     if entry["shown_count"] >= _RATIONALE_SUPPRESS_AFTER:
         entry["suppressed"] = True
     state[skill_name] = entry
-    try:
-        _RATIONALE_STATE.parent.mkdir(parents=True, exist_ok=True)
-        _RATIONALE_STATE.write_text(json.dumps(state, indent=2))
-    except Exception:
-        pass
+    if _STATE_WRITABLE:
+        try:
+            _RATIONALE_STATE.parent.mkdir(parents=True, exist_ok=True)
+            _RATIONALE_STATE.write_text(json.dumps(state, indent=2))
+        except Exception:
+            pass
     return entry["shown_count"]
 
 

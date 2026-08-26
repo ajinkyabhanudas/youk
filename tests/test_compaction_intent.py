@@ -119,6 +119,7 @@ class TestSkillHandoffFlow:
         graph_file = self._make_graph(tmp_path)
 
         monkeypatch.setattr(skills, "_SESSION_STATE", session_file)
+        monkeypatch.setattr(skills, "_STATE_WRITABLE", True)
         monkeypatch.setattr(skills, "_SKILL_GRAPH", graph_file)
 
         # Write handoff from nfr-check
@@ -138,6 +139,7 @@ class TestSkillHandoffFlow:
         graph_file = self._make_graph(tmp_path)
 
         monkeypatch.setattr(skills, "_SESSION_STATE", session_file)
+        monkeypatch.setattr(skills, "_STATE_WRITABLE", True)
         monkeypatch.setattr(skills, "_SKILL_GRAPH", graph_file)
 
         skills.write_skill_handoff("nfr-check", "NFR block content")
@@ -154,6 +156,7 @@ class TestSkillHandoffFlow:
         graph_file = self._make_graph(tmp_path)
 
         monkeypatch.setattr(skills, "_SESSION_STATE", session_file)
+        monkeypatch.setattr(skills, "_STATE_WRITABLE", True)
         monkeypatch.setattr(skills, "_SKILL_GRAPH", graph_file)
 
         skills.write_skill_handoff("nfr-check", "NFR block content")

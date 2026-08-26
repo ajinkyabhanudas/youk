@@ -143,6 +143,7 @@ class TestWriteSkillHandoff:
         import skills
         session_file = tmp_path / "session.json"
         monkeypatch.setattr(skills, "_SESSION_STATE", session_file)
+        monkeypatch.setattr(skills, "_STATE_WRITABLE", True)
 
         graph = tmp_path / "skill-graph.yaml"
         graph.write_text(yaml.dump({
@@ -166,6 +167,7 @@ class TestWriteSkillHandoff:
         import skills
         session_file = tmp_path / "session.json"
         monkeypatch.setattr(skills, "_SESSION_STATE", session_file)
+        monkeypatch.setattr(skills, "_STATE_WRITABLE", True)
 
         graph = tmp_path / "skill-graph.yaml"
         graph.write_text(yaml.dump({
@@ -188,6 +190,7 @@ class TestWriteSkillHandoff:
         import skills
         session_file = tmp_path / "session.json"
         monkeypatch.setattr(skills, "_SESSION_STATE", session_file)
+        monkeypatch.setattr(skills, "_STATE_WRITABLE", True)
         monkeypatch.setattr(sr, "_DEFAULT_GRAPH", tmp_path / "nonexistent.yaml")
 
         result = skills.write_skill_handoff("code-review", "HIGH finding")
