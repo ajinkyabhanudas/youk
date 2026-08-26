@@ -178,23 +178,17 @@ If install fails, run `make checkup-fast` (or the direct equivalent from the tab
 `install.sh` handles both of these automatically. If you need to run them manually:
 
 ```bash
-# MCP server registration
-claude mcp add --scope user youk-core --transport stdio -- \
-  docker run -i --rm \
-  -v "$HOME/.claude:/claude" \
-  -v "$HOME/.claude/youk:/youk" \
-  -v "$HOME/.claude/youk/servers/shared:/shared" \
-  youk-core:latest
+# Start the HTTP servers (if not already running via launchd)
+make -C ~/.claude/youk up
 
-claude mcp add --scope user youk-code --transport stdio -- \
-  docker run -i --rm \
-  -v "$HOME/.claude:/claude:ro" \
-  -v "$HOME/.claude/youk:/youk:ro" \
-  -v "$HOME/.claude/youk/servers/shared:/shared" \
-  youk-code:latest
+# MCP server registration
+claude mcp remove youk-core 2>/dev/null || true
+claude mcp remove youk-code 2>/dev/null || true
+claude mcp add --scope user youk-core --transport http http://127.0.0.1:8001/mcp
+claude mcp add --scope user youk-code --transport http http://127.0.0.1:8002/mcp
 ```
 
-Verify with `claude mcp list` — both should show `✔ Connected`.
+Verify with `claude mcp list` — both should show `✔ Connected`. The servers run as persistent HTTP daemons (launchd on macOS, cron on Linux) at ports 8001 and 8002.
 
 `install.sh` also patches `~/.claude/CLAUDE.md` with the youk identity block. If you already have a CLAUDE.md, it appends without overwriting existing content.
 
