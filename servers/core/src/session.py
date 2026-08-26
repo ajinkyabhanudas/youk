@@ -243,63 +243,6 @@ def _slug(project_dir: str) -> str:
     return name
 
 
-def _resolve_project_path(host_path: str) -> Path:
-    """Translate a host-absolute project path to a path accessible inside this container.
-
-    The container has fixed mount points:
-      /youk  = host YOUK_DIR  (e.g. ~/.claude/youk)
-      /claude = host CLAUDE_DIR (e.g. ~/.claude)
-
-    Two fallback mechanisms (tried in order):
-    1. state/path-map.env — written by install.sh; maps YOUK_HOST_DIR and CLAUDE_HOST_DIR
-    2. /host-home         — host $HOME mounted :ro (requires updated install.sh re-run)
-    """
-    p = Path(host_path)
-    if p.exists():
-        return p  # already accessible (local dev, or running outside Docker)
-
-    # Mechanism 1: path-map.env written by install.sh
-    path_map_file = YOUK_ROOT / "state" / "path-map.env"
-    if path_map_file.exists():
-        try:
-            mapping: dict[str, str] = {}
-            for line in path_map_file.read_text().splitlines():
-                if "=" in line and not line.startswith("#"):
-                    key, _, val = line.partition("=")
-                    mapping[key.strip()] = val.strip()
-
-            youk_host = mapping.get("YOUK_HOST_DIR", "")
-            claude_host = mapping.get("CLAUDE_HOST_DIR", "")
-
-            if youk_host and host_path.startswith(youk_host):
-                relative = host_path[len(youk_host):].lstrip("/")
-                candidate = YOUK_ROOT / relative if relative else YOUK_ROOT
-                if candidate.exists():
-                    return candidate
-
-            if claude_host and host_path.startswith(claude_host):
-                relative = host_path[len(claude_host):].lstrip("/")
-                candidate = CLAUDE_ROOT / relative if relative else CLAUDE_ROOT
-                if candidate.exists():
-                    return candidate
-        except Exception:
-            pass
-
-    # Mechanism 2: /host-home mount (added by install.sh -v $HOME:/host-home:ro)
-    if HOST_HOME.exists():
-        for prefix in ("/Users/", "/home/"):
-            if host_path.startswith(prefix):
-                rest = host_path[len(prefix):]
-                rest_parts = Path(rest).parts  # ("username", "subdir", ...)
-                if len(rest_parts) > 1:
-                    relative = Path(*rest_parts[1:])  # strip the username segment
-                    candidate = HOST_HOME / relative
-                    if candidate.exists():
-                        return candidate
-
-    return p  # return as-is; callers check .exists() and degrade gracefully
-
-
 def _load_project_context(slug: str) -> str | None:
     ctx_file = YOUK_ROOT / "knowledge" / "projects" / slug / "context.md"
     if not ctx_file.exists():
