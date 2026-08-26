@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 
 import sys
@@ -507,6 +507,20 @@ def _read_git_log_since_days(project_dir: str, days: int) -> tuple[int, list[str
         return len(lines), subjects
     except Exception:
         return 0, []
+
+
+def _latest_commit_iso(project_dir: str) -> str | None:
+    """Return the ISO 8601 author-date of the most recent commit, or None on failure."""
+    resolved = str(_resolve_project_path(project_dir))
+    try:
+        result = subprocess.run(
+            ["git", "-C", resolved, "log", "-1", "--format=%aI"],
+            capture_output=True, text=True, timeout=5
+        )
+        ts = result.stdout.strip()
+        return ts if ts else None
+    except Exception:
+        return None
 
 
 def _current_project_head(project_dir: str) -> str | None:
@@ -2456,17 +2470,41 @@ def start_session(project_dir: str) -> SessionState:
                 _cpc_lines += f" — {_c['summary'][:100]}"
         brief = brief.rstrip() + _cpc_lines + "\n"
 
-    # Pending build task detection: if recent commits exist but no routing breadcrumb for
-    # this session, the previous task landed without /build gates. Set as machine signal
-    # so CLAUDE.md auto-/build rule fires without the developer needing to remember.
+    # Pending build task detection: compare the latest commit timestamp against the most
+    # recent route-task-ran.json entry. If the latest commit is newer than the last
+    # route_task call (or route-task-ran.json doesn't exist), commits landed without
+    # routing. Uses a durable timestamp file so a clean-closed session (breadcrumb
+    # consumed by task_checkpoint) does not produce a false positive.
     _pending_build_task: str | None = None
     try:
-        _session_breadcrumb = _slug_state_dir(slug) / "routing-breadcrumb.json"
-        _breadcrumb_present = _session_breadcrumb.exists()
-        if not _breadcrumb_present:
-            _recent_commit_count, _recent_subjects = _read_git_log_since_days(project_dir, 1)
-            if _recent_commit_count > 0:
-                _subj = _recent_subjects[0] if _recent_subjects else "recent commit"
+        _rtr_file = _slug_state_dir(slug) / "route-task-ran.json"
+        _latest_routed_at: str | None = None
+        if _rtr_file.exists():
+            _rtr_raw = json.loads(_rtr_file.read_text())
+            _rtr_entries = _rtr_raw if isinstance(_rtr_raw, list) else [_rtr_raw]
+            if _rtr_entries:
+                _latest_routed_at = max(
+                    (e.get("ts", "") for e in _rtr_entries if e.get("ts")),
+                    default=None,
+                )
+        _latest_commit = _latest_commit_iso(project_dir)
+        if _latest_commit:
+            # Normalize both to UTC naive for comparison.
+            def _parse_iso(s: str) -> datetime:
+                dt = datetime.fromisoformat(s)
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone(UTC).replace(tzinfo=None)
+                return dt
+            _commit_dt = _parse_iso(_latest_commit)
+            if _latest_routed_at:
+                _routed_dt = _parse_iso(_latest_routed_at)
+                _commits_after_route = _commit_dt > _routed_dt
+            else:
+                # No routing record at all — any commit means unrouted work.
+                _commits_after_route = True
+            if _commits_after_route:
+                _, _recent_subjects = _read_git_log_since_days(project_dir, 1)
+                _subj = (_recent_subjects[0][:80] if _recent_subjects else "recent commit")
                 _pending_build_task = (
                     f"commits landed without routing — run /build before next code task "
                     f"(last: {_subj})"
