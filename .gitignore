@@ -43,6 +43,7 @@ knowledge/domain/*
 !knowledge/domain/self-revision-meta-loop.md
 !knowledge/domain/angle-basis-self-revision.md
 !knowledge/domain/skill-trust-artifact.md
+!knowledge/domain/operational-resilience.md
 knowledge/user-profile.md
 
 # Accumulated /learn domain knowledge — grows per-user, never shared across installs

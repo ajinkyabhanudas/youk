@@ -97,6 +97,8 @@ src_files:
   - {file: servers/core/src/compaction.py, refs: [README.md]}
   - {file: servers/core/src/tokens.py, refs: [README.md]}
   - {file: servers/shared/models.py, refs: [README.md]}
+  - {file: servers/shared/schemas.py, refs: [README.md, knowledge/domain/operational-resilience.md]}
+  - {file: servers/shared/guardrails.py, refs: [README.md, knowledge/domain/operational-resilience.md]}
   - {file: servers/code/src/server.py, refs: [README.md]}
   - {file: servers/code/src/nfr.py, refs: [README.md]}
   - {file: servers/code/src/skills.py, refs: [README.md]}

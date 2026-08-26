@@ -4,6 +4,7 @@ import yaml
 from pathlib import Path
 
 from models import ViolationType, SoftRuleWarning
+from schemas import ErrorType, RetryDecision
 
 
 YOUK_ROOT = Path("/youk")
@@ -88,6 +89,21 @@ def check_knowledge_write(content: str) -> None:
                 f"Content appears to be a raw transcript (contains '{signal}'). "
                 "knowledge/ stores structured insights only, never raw sessions.",
             )
+
+
+_RETRY_TABLE: dict[ErrorType, RetryDecision] = {
+    ErrorType.TRANSIENT:     {"retryable": True,  "strategy": "backoff",    "reason": "Temporary failure — retry with exponential back-off."},
+    ErrorType.RATE_LIMIT:    {"retryable": True,  "strategy": "backoff",    "reason": "Rate limit hit — retry after back-off."},
+    ErrorType.INPUT:         {"retryable": False, "strategy": "none",       "reason": "Invalid input — fix arguments before retrying."},
+    ErrorType.AUTH:          {"retryable": False, "strategy": "none",       "reason": "Unauthorized — surface to operator; do not retry."},
+    ErrorType.BUSINESS_RULE: {"retryable": False, "strategy": "none",       "reason": "Gate or contract blocked the call — surface to developer."},
+    ErrorType.SYSTEM:        {"retryable": False, "strategy": "none",       "reason": "Unexpected internal error — surface to operator."},
+}
+
+
+def classify_error(error_type: ErrorType) -> RetryDecision:
+    """Map an ErrorType to a RetryDecision with strategy and reason."""
+    return _RETRY_TABLE[error_type]
 
 
 def get_soft_rule_warnings(task_size: str, skills_invoked: list[str]) -> list[SoftRuleWarning]:

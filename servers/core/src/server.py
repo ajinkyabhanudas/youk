@@ -17,6 +17,7 @@ from health import (
 )
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
 from schemas import (
+    ErrorType,
     OptimizeIntentResult,
     RouteTaskResult,
     TaskContractResult,
@@ -540,6 +541,7 @@ def route_task(
                 pass
     _enrich_route_result(result, task)
     result["calls_since_compact"] = _increment_tool_call_count()
+    result["state_written"] = ["state/{slug}/route-task-ran.json", "state/active_task.json"]
     return result
 
 
@@ -639,7 +641,6 @@ def check_task_contract_gate(size: str) -> dict:
     """
     from task_contract import check_task_contract_gate as _gate
     result = _gate(size)
-    result["calls_since_compact"] = _increment_tool_call_count()
     return result
 
 
@@ -657,7 +658,6 @@ def rebuild_knowledge_index() -> dict:
     """
     from knowledge_index import rebuild_knowledge_index as _rebuild
     result = _rebuild(YOUK_ROOT)
-    result["calls_since_compact"] = _increment_tool_call_count()
     return result
 
 
@@ -678,6 +678,8 @@ def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) 
     When blocked=False: proceed to dev-loop.
     """
     result = _check_nfr_gate(task, size, nfr_decision_block)
+    if result["blocked"]:
+        result["error_type"] = ErrorType.BUSINESS_RULE
     # Ceremony order check: warn if nfr fires before challenge on M+ tasks.
     if size in {"M", "L", "XL"}:
         try:
@@ -703,6 +705,7 @@ def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) 
         except Exception:
             pass
         _append_gate_to_active_task("nfr")
+        result["state_written"] = ["state/{slug}/nfr-check-ran.json", "state/active_task.json"]
         # Mirror gate passage to task graph for cross-session recovery.
         # Fails silently — JSON flag file is the authoritative gate; graph is the durable record.
         try:
@@ -818,6 +821,8 @@ def check_challenge_gate(task: str, size: str) -> CheckChallengeGateResult:
         pass
 
     result = _check_challenge_gate(task, size, challenge_ran)
+    if result["blocked"]:
+        result["error_type"] = ErrorType.BUSINESS_RULE
     _cg_slug = _get_session_slug()
     # Ceremony order check: warn if challenge_gate fires before nfr on M+ tasks.
     if size in {"M", "L", "XL"}:
@@ -840,6 +845,7 @@ def check_challenge_gate(task: str, size: str) -> CheckChallengeGateResult:
         except Exception:
             pass
         _append_gate_to_active_task("challenge_gate")
+        result["state_written"] = ["state/{slug}/challenge-gate-passed.json", "state/active_task.json"]
         _record_gate("challenge_gate", _cg_slug)
         # Mirror gate passage to task graph for cross-session recovery.
         # Also set unblocked=True when challenge clears — challenge is the final gate before dev-loop.
@@ -1297,6 +1303,7 @@ def save_contract(contract: str, project_dir: str) -> dict:
     if len(stripped) < 20 or len(words) < 3:
         return {
             "saved": False,
+            "error_type": ErrorType.INPUT,
             "contract": contract,
             "slug": "",
             "contracts_file": "",
@@ -1310,6 +1317,8 @@ def save_contract(contract: str, project_dir: str) -> dict:
     conflicts = result.get("conflicts", [])
     return {
         "saved": added > 0,
+        "error_type": ErrorType.INPUT if conflicts else None,
+        "state_written": [f"knowledge/projects/{slug}/contracts.md"] if added > 0 else [],
         "contract": contract,
         "slug": slug,
         "contracts_file": f"knowledge/projects/{slug}/contracts.md",
@@ -1353,6 +1362,7 @@ def task_checkpoint(
     """
     result = _task_checkpoint(project_dir, task_label, size, session_learnings)
     result["calls_since_compact"] = _increment_tool_call_count()
+    result["state_written"] = ["state/task-checkpoints.jsonl"]
     return result
 
 
