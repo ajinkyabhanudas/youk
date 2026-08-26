@@ -1315,9 +1315,8 @@ def save_contract(contract: str, project_dir: str) -> dict:
     result = write_contracts(slug, [contract])
     added = result["added"]
     conflicts = result.get("conflicts", [])
-    return {
+    base: dict = {
         "saved": added > 0,
-        "error_type": ErrorType.INPUT if conflicts else None,
         "state_written": [f"knowledge/projects/{slug}/contracts.md"] if added > 0 else [],
         "contract": contract,
         "slug": slug,
@@ -1325,6 +1324,9 @@ def save_contract(contract: str, project_dir: str) -> dict:
         "conflicts": conflicts,
         "note": "already in contracts.md" if added == 0 else "written — will survive compaction",
     }
+    if conflicts:
+        base["error_type"] = ErrorType.BUSINESS_RULE
+    return base
 
 
 @mcp.tool()

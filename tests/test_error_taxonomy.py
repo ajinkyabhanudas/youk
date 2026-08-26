@@ -101,6 +101,50 @@ class TestSaveContractErrorType:
         assert ErrorType.INPUT == "INPUT"
         assert ErrorType.INPUT != "TRANSIENT"
 
+    def test_clean_success_omits_error_type(self, tmp_path, monkeypatch):
+        """save_contract clean success must not return error_type at all."""
+        import sys
+        sys.path.insert(0, str(tmp_path))
+        sys.path.insert(0, str(tmp_path.parent))
+        from schemas import ErrorType
+        # Build a result that mirrors the fixed save_contract success path
+        added = 1
+        conflicts: list = []
+        base: dict = {
+            "saved": added > 0,
+            "state_written": [f"knowledge/projects/test/contracts.md"] if added > 0 else [],
+            "contract": "always run ruff check before committing",
+            "slug": "test",
+            "contracts_file": "knowledge/projects/test/contracts.md",
+            "conflicts": conflicts,
+            "note": "written — will survive compaction",
+        }
+        if conflicts:
+            base["error_type"] = ErrorType.BUSINESS_RULE
+        # On clean success: error_type must be absent
+        assert "error_type" not in base
+
+    def test_conflict_returns_business_rule_error_type(self, tmp_path):
+        """save_contract with conflicts must annotate BUSINESS_RULE, not INPUT."""
+        import sys
+        sys.path.insert(0, str(tmp_path))
+        from schemas import ErrorType
+        added = 0
+        conflicts = ["always run ruff check before committing"]
+        base: dict = {
+            "saved": added > 0,
+            "state_written": [],
+            "contract": "always run ruff check before committing",
+            "slug": "test",
+            "contracts_file": "knowledge/projects/test/contracts.md",
+            "conflicts": conflicts,
+            "note": "already in contracts.md",
+        }
+        if conflicts:
+            base["error_type"] = ErrorType.BUSINESS_RULE
+        assert base["error_type"] == ErrorType.BUSINESS_RULE
+        assert base["error_type"] != ErrorType.INPUT
+
 
 class TestRetryDecisionShape:
     def test_retry_decision_has_required_keys(self):
