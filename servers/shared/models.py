@@ -55,6 +55,13 @@ class RoutingDecision:
     # then re-call optimize_intent with clarified_context, then re-call route_task.
     blocked: bool = False
     collapsing_question: str = ""
+    # Inline overengineering signal: set when the routing scorer detects the task
+    # description uses scope-expanding language (e.g. "extensible", "pluggable",
+    # "for all future cases"). Replaces the separate route_to_skill("overengineering-auditor")
+    # call — the signal arrives in the route_task return so CLAUDE.md can act on it
+    # without a second tool call.
+    overengineering_flag: bool = False
+    overengineering_note: str | None = None
 
     def to_dict(self) -> dict:
         d = {
@@ -70,9 +77,12 @@ class RoutingDecision:
             ],
             "plan_hook": self.plan_hook,
             "blocked": self.blocked,
+            "overengineering_flag": self.overengineering_flag,
         }
         if self.collapsing_question:
             d["collapsing_question"] = self.collapsing_question
+        if self.overengineering_note:
+            d["overengineering_note"] = self.overengineering_note
         return d
 
 
