@@ -20,7 +20,7 @@ services:
       - langfuse_db:/var/lib/postgresql/data
 
   langfuse:
-    image: langfuse/langfuse:latest
+    image: langfuse/langfuse:2
     depends_on:
       - langfuse-db
     ports:
