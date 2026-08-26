@@ -112,7 +112,8 @@ def write_skill_handoff(from_skill: str, content: str) -> dict:
     result = _write_skill_handoff(from_skill, content)
     if result.get("saved"):
         result["state_written"] = ["state/session.json"]
-    else:
+    elif "error_type" not in result:
+        # Inner function failed without classifying — unexpected
         result["error_type"] = ErrorType.SYSTEM
     return result
 

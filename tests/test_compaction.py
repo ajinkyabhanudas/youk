@@ -350,6 +350,8 @@ class TestSkillHandoff:
     def _patch(monkeypatch, youk_root: Path):
         import skills
         monkeypatch.setattr(skills, "_SESSION_STATE", youk_root / "state" / "session.json")
+        # _STATE_WRITABLE is computed at module load; override so tests use the tmp path
+        monkeypatch.setattr(skills, "_STATE_WRITABLE", True)
         # skill-graph.yaml also referenced — point to real repo graph
         graph_path = Path(__file__).parent.parent / "knowledge" / "skill-graph.yaml"
         monkeypatch.setattr(skills, "_SKILL_GRAPH", graph_path)
@@ -406,6 +408,86 @@ class TestSkillHandoff:
         assert result["saved"] is True
         state = _json.loads((youk_root / "state" / "session.json").read_text())
         assert "code-review" in state["pending_handoff"]
+
+
+class TestHandoffReadOnly:
+    """
+    Prove write_skill_handoff degrades correctly when state/ is read-only.
+
+    These tests use a real read-only directory — NOT a monkeypatch that
+    redirects to a writable path. The existing TestHandoffChain tests already
+    cover the writable path; these cover the container-mount constraint that
+    was silently failing with Errno 30 in production.
+    """
+
+    def test_write_handoff_read_only_returns_business_rule(self, tmp_path, monkeypatch):
+        """write_skill_handoff on a read-only state dir returns BUSINESS_RULE, not SYSTEM."""
+        import stat
+        import skills
+
+        ro_dir = tmp_path / "state"
+        ro_dir.mkdir()
+        ro_state = ro_dir / "session.json"
+        # Make the directory read-only so writes to session.json fail
+        ro_dir.chmod(stat.S_IRUSR | stat.S_IXUSR)
+        try:
+            monkeypatch.setattr(skills, "_SESSION_STATE", ro_state)
+            monkeypatch.setattr(skills, "_STATE_WRITABLE", False)
+            result = skills.write_skill_handoff("code-review", "HIGH: missing error handling")
+            assert result["saved"] is False
+            assert result["error_type"] == "BUSINESS_RULE"
+            assert "read-only" in result.get("note", "").lower()
+        finally:
+            ro_dir.chmod(stat.S_IRWXU)  # restore so tmp_path cleanup works
+
+    def test_write_handoff_read_only_does_not_raise(self, tmp_path, monkeypatch):
+        """write_skill_handoff on read-only state must never raise — always return a dict."""
+        import skills
+
+        ro_state = tmp_path / "state" / "session.json"
+        monkeypatch.setattr(skills, "_SESSION_STATE", ro_state)
+        monkeypatch.setattr(skills, "_STATE_WRITABLE", False)
+        result = skills.write_skill_handoff("code-review", "HIGH: missing error handling")
+        # Must return a dict with the standard fields — not raise
+        assert isinstance(result, dict)
+        assert "saved" in result
+        assert "from_skill" in result
+        assert "content_length" in result
+
+    def test_state_writable_probe_detects_readonly(self, tmp_path):
+        """_state_is_writable() returns False for a read-only directory."""
+        import stat
+        import skills
+
+        ro_dir = tmp_path / "state"
+        ro_dir.mkdir()
+        ro_state = ro_dir / "session.json"
+        ro_dir.chmod(stat.S_IRUSR | stat.S_IXUSR)
+        try:
+            original = skills._SESSION_STATE
+            skills._SESSION_STATE = ro_state
+            result = skills._state_is_writable()
+            assert result is False
+        finally:
+            skills._SESSION_STATE = original
+            ro_dir.chmod(stat.S_IRWXU)
+
+    def test_read_and_clear_does_not_crash_on_readonly(self, tmp_path, monkeypatch):
+        """_read_and_clear_pending_handoff with read-only state must return None, not raise."""
+        import stat
+        import skills
+
+        ro_dir = tmp_path / "state"
+        ro_dir.mkdir()
+        ro_dir.chmod(stat.S_IRUSR | stat.S_IXUSR)
+        ro_state = ro_dir / "session.json"
+        try:
+            monkeypatch.setattr(skills, "_SESSION_STATE", ro_state)
+            monkeypatch.setattr(skills, "_STATE_WRITABLE", False)
+            result = skills._read_and_clear_pending_handoff("dev-loop")
+            assert result is None
+        finally:
+            ro_dir.chmod(stat.S_IRWXU)
 
 
 class TestSkillGraph:
