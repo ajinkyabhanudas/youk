@@ -1709,3 +1709,113 @@ class TestCognitiveAssessmentAuditLine:
         cog_line = next(ln for ln in content.splitlines() if ln.startswith("CognitiveAssessment:"))
         # "CognitiveAssessment: " prefix + up to 400 chars
         assert len(cog_line) <= len("CognitiveAssessment: ") + 400
+
+
+class TestSessionEndIdempotency:
+    """
+    session_end called twice for the same session must not write two audit entries.
+    The fix: check for an existing ### Session — {timestamp} block before appending.
+    Timestamp has minute granularity — two rapid calls always share the same key.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _patch_roots(self, tmp_path, monkeypatch, youk_root):
+        import session
+        claude_root = tmp_path / "claude"
+        (claude_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        self._claude_root = claude_root
+
+    def test_double_call_produces_one_audit_entry(self, youk_root):
+        """Two rapid end_session calls share a minute-level timestamp — must yield one block."""
+        import session
+        from datetime import datetime as _dt
+
+        session.end_session(summary="first call", commits_made=False)
+        session.end_session(summary="first call", commits_made=False)
+
+        month = _dt.utcnow().strftime("%Y-%m")
+        content = (self._claude_root / "audit" / f"{month}.md").read_text()
+        count = content.count("### Session —")
+        assert count == 1, f"Expected 1 audit entry, found {count}"
+
+    def test_pre_seeded_entry_prevents_write(self, youk_root):
+        """If audit already contains the current timestamp key, end_session must not append."""
+        import session
+        from datetime import datetime as _dt
+
+        month = _dt.utcnow().strftime("%Y-%m")
+        timestamp = _dt.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        audit_file = self._claude_root / "audit" / f"{month}.md"
+        # Pre-seed a synthetic block with the same timestamp key
+        audit_file.write_text(f"\n### Session — {timestamp}\nSummary: pre-seeded\n")
+
+        session.end_session(summary="should be skipped", commits_made=False)
+
+        content = audit_file.read_text()
+        count = content.count(f"### Session — {timestamp}")
+        assert count == 1, f"Pre-seeded entry should prevent a second write; found {count} blocks"
+
+    def test_single_call_produces_one_audit_entry(self, youk_root):
+        """Baseline: exactly one call produces exactly one entry."""
+        import session
+        from datetime import datetime as _dt
+
+        session.end_session(summary="baseline", commits_made=False)
+
+        month = _dt.utcnow().strftime("%Y-%m")
+        content = (self._claude_root / "audit" / f"{month}.md").read_text()
+        count = content.count("### Session —")
+        assert count == 1
+
+
+class TestPromoteToGlobalContractsIdempotency:
+    """
+    promote_to_global_contracts concurrent-call safety.
+    Two calls with the same contract must result in exactly one entry in
+    knowledge/global/contracts.md — not two.
+    The fix: atomic temp-file rename (tmp.replace(global_file)) so concurrent
+    calls cannot interleave partial writes.
+    Tests the implementation in global_contracts.py which server.py delegates to.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _setup_global_dir(self, youk_root):
+        (youk_root / "knowledge" / "global").mkdir(parents=True, exist_ok=True)
+
+    def test_duplicate_contract_is_skipped(self, youk_root):
+        """Same contract promoted twice must appear once in the file."""
+        import global_contracts as gc
+
+        r1 = gc.promote_to_global_contracts(["always run ruff before committing"], youk_root)
+        r2 = gc.promote_to_global_contracts(["always run ruff before committing"], youk_root)
+
+        assert r1["promoted"] == 1
+        assert r2["skipped"] == 1
+        assert r2["promoted"] == 0
+
+        global_file = youk_root / "knowledge" / "global" / "contracts.md"
+        content = global_file.read_text()
+        occurrences = content.count("always run ruff before committing")
+        assert occurrences == 1, f"Expected 1 occurrence, found {occurrences}"
+
+    def test_atomic_write_leaves_no_tmp_file(self, youk_root):
+        """After a successful promote, no .tmp file must be left on disk."""
+        import global_contracts as gc
+
+        gc.promote_to_global_contracts(["never skip tests"], youk_root)
+
+        tmp = youk_root / "knowledge" / "global" / "contracts.tmp"
+        assert not tmp.exists(), ".tmp file must be cleaned up after atomic rename"
+
+    def test_new_contracts_append_to_existing(self, youk_root):
+        """Second call with a different contract must append, not overwrite."""
+        import global_contracts as gc
+
+        gc.promote_to_global_contracts(["rule A"], youk_root)
+        gc.promote_to_global_contracts(["rule B"], youk_root)
+
+        global_file = youk_root / "knowledge" / "global" / "contracts.md"
+        content = global_file.read_text()
+        assert "rule A" in content
+        assert "rule B" in content

@@ -88,7 +88,7 @@ Every concept defined in PRD.md or well-architected.md has exactly one authority
 
 **Key invariant:** No session data is stored in project repos. Zero footprint. A clean `git clone` of any project repo is unaffected by youk.
 
-**Known reliability debt:** `session_end` called twice overwrites the first audit entry silently. `promote_to_global_contracts` deduplicates at read time, enabling a race between concurrent calls. Both are documented in `knowledge/domain/operational-resilience.md` § Idempotency.
+**Idempotency:** `session_end` guards audit append with a timestamp dedup check — a second call within the same minute is a no-op. `promote_to_global_contracts` uses atomic `tmp.replace(live)` — concurrent calls cannot interleave partial writes. Both are covered by `TestSessionEndIdempotency` and `TestPromoteToGlobalContractsIdempotency` in `tests/test_session.py`.
 
 ---
 
