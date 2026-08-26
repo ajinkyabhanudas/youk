@@ -8,7 +8,7 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ---
 
-## [unreleased]
+## [1.1.0] — 2026-08-26
 
 ### Added
 
@@ -33,9 +33,24 @@ Three gaps that were prompt-only are now Python-enforced:
 
 Return shape gains `broken_links`, `orphaned_concepts`, `semantic_drift`, `untracked_docs` fields. Verdict: `COHERENT` / `DRIFT DETECTED` / `BROKEN`. `doc-map.yaml` now has `invariant` fields on 12 of 17 concepts.
 
+**Operational resilience (#79)**
+
+Architecture principles encoded in Python — not just in docs:
+
+- `ErrorType` StrEnum + `RetryDecision` TypedDict in `schemas.py` — six machine-readable error categories: `TRANSIENT` and `RATE_LIMIT` are retryable with backoff; `INPUT`, `AUTH`, `BUSINESS_RULE`, `SYSTEM` are not retryable.
+- `classify_error(error_type) → RetryDecision` in `guardrails.py` — pure function, no side effects. Retry strategy and reason without string parsing.
+- `error_type` + `state_written` wired into 7 key tools: `route_task`, `check_nfr_gate`, `check_challenge_gate`, `save_contract`, `task_checkpoint`, `write_skill_handoff`, `check_commit_quality`.
+- `_increment_tool_call_count` removed from read-only gate tools — counter now fires only on state-mutating calls.
+- `knowledge/domain/operational-resilience.md` — 7 architecture principles with enforcement points and documented known debt.
+- dev-loop SKILL.md Phase 3 AUDIT — 6-point operational resilience checklist catches future violations at implementation time.
+
 ### Changed
 
 - `check_doc_graph()` return shape: `stale_concepts` is now inside the result alongside new fields. Callers reading only `stale_concepts` are unaffected (field name unchanged).
+
+### Upgrade notes
+
+`git pull --rebase && make update`. No breaking changes to audit format or MCP tool signatures.
 
 ---
 

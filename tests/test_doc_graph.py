@@ -206,6 +206,114 @@ class TestInvariantMatch:
         assert result["semantic"] == []
 
 
+class TestScanScope:
+    """Tests for Check 4 via scan_scope glob expansion — no explicit derived_in needed."""
+
+    def test_scan_scope_catches_file_missing_invariant(self, tmp_youk, tmp_claude):
+        _touch(tmp_youk / "auth.md")
+        (tmp_youk / "docs").mkdir(exist_ok=True)
+        (tmp_youk / "docs" / "a.md").write_text("no token here")
+        (tmp_youk / "docs" / "b.md").write_text("also missing")
+
+        from doc_graph import check_concept_staleness
+        concepts = [{
+            "concept": "c",
+            "authority": "auth.md",
+            "derived_in": [],
+            "scan_scope": ["docs/*.md"],
+            "invariant": "required_token",
+            "description": "",
+        }]
+        result = check_concept_staleness(concepts, tmp_youk, tmp_claude)
+        missing = result["semantic"][0]["missing_in"]
+        assert "docs/a.md" in missing
+        assert "docs/b.md" in missing
+
+    def test_scan_scope_ignores_files_with_invariant(self, tmp_youk, tmp_claude):
+        _touch(tmp_youk / "auth.md")
+        (tmp_youk / "docs").mkdir(exist_ok=True)
+        (tmp_youk / "docs" / "good.md").write_text("has required_token here")
+
+        from doc_graph import check_concept_staleness
+        concepts = [{
+            "concept": "c",
+            "authority": "auth.md",
+            "derived_in": [],
+            "scan_scope": ["docs/*.md"],
+            "invariant": "required_token",
+            "description": "",
+        }]
+        result = check_concept_staleness(concepts, tmp_youk, tmp_claude)
+        assert result["semantic"] == []
+
+    def test_scan_scope_does_not_double_flag_derived_in_files(self, tmp_youk, tmp_claude):
+        _touch(tmp_youk / "auth.md")
+        (tmp_youk / "docs").mkdir(exist_ok=True)
+        (tmp_youk / "docs" / "guide.md").write_text("no token")
+
+        from doc_graph import check_concept_staleness
+        concepts = [{
+            "concept": "c",
+            "authority": "auth.md",
+            "derived_in": ["docs/guide.md"],
+            "scan_scope": ["docs/*.md"],
+            "invariant": "required_token",
+            "description": "",
+        }]
+        result = check_concept_staleness(concepts, tmp_youk, tmp_claude)
+        missing = result["semantic"][0]["missing_in"]
+        assert missing.count("docs/guide.md") == 1  # not duplicated
+
+    def test_scan_scope_new_file_caught_without_registration(self, tmp_youk, tmp_claude):
+        """New file matching glob is flagged automatically — no doc-map edit needed."""
+        _touch(tmp_youk / "auth.md")
+        (tmp_youk / "docs").mkdir(exist_ok=True)
+        (tmp_youk / "docs" / "existing.md").write_text("has required_token")
+        (tmp_youk / "docs" / "new-unregistered.md").write_text("nothing")
+
+        from doc_graph import check_concept_staleness
+        concepts = [{
+            "concept": "c",
+            "authority": "auth.md",
+            "derived_in": ["docs/existing.md"],
+            "scan_scope": ["docs/*.md"],
+            "invariant": "required_token",
+            "description": "",
+        }]
+        result = check_concept_staleness(concepts, tmp_youk, tmp_claude)
+        assert any("new-unregistered.md" in m for m in result["semantic"][0]["missing_in"])
+
+    def test_empty_scan_scope_no_effect(self, tmp_youk, tmp_claude):
+        _touch(tmp_youk / "auth.md")
+        from doc_graph import check_concept_staleness
+        concepts = [{
+            "concept": "c",
+            "authority": "auth.md",
+            "derived_in": [],
+            "scan_scope": [],
+            "invariant": "required_token",
+            "description": "",
+        }]
+        result = check_concept_staleness(concepts, tmp_youk, tmp_claude)
+        assert result["semantic"] == []
+
+    def test_scan_scope_no_invariant_no_semantic_check(self, tmp_youk, tmp_claude):
+        _touch(tmp_youk / "auth.md")
+        (tmp_youk / "docs").mkdir(exist_ok=True)
+        (tmp_youk / "docs" / "x.md").write_text("anything")
+        from doc_graph import check_concept_staleness
+        concepts = [{
+            "concept": "c",
+            "authority": "auth.md",
+            "derived_in": [],
+            "scan_scope": ["docs/*.md"],
+            "invariant": "",
+            "description": "",
+        }]
+        result = check_concept_staleness(concepts, tmp_youk, tmp_claude)
+        assert result["semantic"] == []
+
+
 class TestFindUntrackedDocs:
     """Tests for untracked docs scanner."""
 

@@ -83,10 +83,12 @@ Every concept defined in PRD.md or well-architected.md has exactly one authority
 | Read-time verification | A stored claim about system state ("X is broken", "gap open") is re-checked against current code before session_start surfaces it as live — a fixed issue never resurfaces as a to-do, and a claim that cannot be verified surfaces tagged, never as a clean item |
 | Project-scoped next task | "What's next" is computed at session_end from the project's own validated task graph and written automatically — scoped to the project youk is in, never a generic cross-project list, never a manual pointer edit |
 | Wiring pulse | Every session_start checks whether each capability youk built is actually invoked in the live loop (CLAUDE.md routing, session code, another tool, or a skill) — not merely defined and tested. A tool referenced nowhere is orphaned and surfaced loudly. Unit tests verify a part works; the pulse verifies it is reached. Autoruns unconditionally, so built-but-not-wired fails fast instead of becoming late tech debt |
+| `ErrorType` + `classify_error()` | Six machine-readable error categories (`TRANSIENT`, `RATE_LIMIT`, `INPUT`, `AUTH`, `BUSINESS_RULE`, `SYSTEM`). Retryable = TRANSIENT/RATE_LIMIT only. `classify_error()` maps any type to `{retryable, strategy, reason}` without string parsing. Tools annotate `error_type` on all error paths. |
+| `state_written` declarations | Write-path tools return `state_written: list[str]` — the manifest of files mutated. Callers verify side effects without reading implementation. Read-only and gate-check tools do not increment the call counter or write any state. |
 
 **Key invariant:** No session data is stored in project repos. Zero footprint. A clean `git clone` of any project repo is unaffected by youk.
 
-**Reliability requirement (not yet fully built — see `knowledge/domain/self-evolution-build-plan.md`):** persisted state must be validated, single-sourced, self-verifying at read, and project-scoped. State stored as unschematized loose files with no read-time verification is how a compounding system quietly stops compounding — fixed issues resurface and queued work evaporates. The compounding-context loop above is only as trustworthy as the store underneath it.
+**Known reliability debt:** `session_end` called twice overwrites the first audit entry silently. `promote_to_global_contracts` deduplicates at read time, enabling a race between concurrent calls. Both are documented in `knowledge/domain/operational-resilience.md` § Idempotency.
 
 ---
 

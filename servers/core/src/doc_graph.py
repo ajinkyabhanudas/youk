@@ -144,6 +144,22 @@ def find_untracked_docs(youk_root: Path, doc_map: dict) -> list[str]:
     return untracked
 
 
+def _expand_scan_scope(scope: list[str], youk_root: Path) -> list[str]:
+    """
+    Expand a list of glob patterns relative to youk_root.
+    Returns relative path strings (from youk_root). Deduplicates.
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    for pattern in scope:
+        for match in sorted(youk_root.glob(pattern)):
+            rel = str(match.relative_to(youk_root))
+            if rel not in seen:
+                seen.add(rel)
+                result.append(rel)
+    return result
+
+
 def check_concept_staleness(
     concepts: list[dict],
     youk_root: Path,
@@ -162,6 +178,11 @@ def check_concept_staleness(
       semantic — list of {concept, authority, invariant, missing_in}
                  (invariant string absent from derived file)
 
+    Concepts with `scan_scope` (list of glob patterns) run the invariant check
+    against all matching files without requiring explicit derived_in registration.
+    New files matching the glob are caught automatically. No timestamp drift check
+    for scan_scope files — only invariant presence.
+
     Callers that previously expected a list[dict] for stale concepts
     should use result["stale"]. The format_staleness_warnings() function
     accepts the full dict and formats all four check types.
@@ -174,6 +195,7 @@ def check_concept_staleness(
     for c in concepts:
         authority_raw = c.get("authority", "")
         derived_raw = c.get("derived_in", []) or []
+        scan_scope = c.get("scan_scope", []) or []
         concept_name = c.get("concept", "")
         description = c.get("description", "")
         invariant = c.get("invariant", "")
@@ -195,6 +217,7 @@ def check_concept_staleness(
         missing_derived: list[str] = []
         semantic_missing: list[str] = []
 
+        # Checks 1 + 2 + 4 on explicitly listed derived_in files
         for d_raw in derived_raw:
             derived_path = _resolve(d_raw, youk_root, claude_root)
 
@@ -216,6 +239,23 @@ def check_concept_staleness(
                     content = derived_path.read_text(encoding="utf-8", errors="replace")
                     if invariant not in content:
                         semantic_missing.append(d_raw)
+                except Exception:
+                    pass
+
+        # Check 4 only on scan_scope files (glob-expanded, no explicit registration needed)
+        if invariant and scan_scope:
+            expanded = _expand_scan_scope(scan_scope, youk_root)
+            explicit = set(derived_raw)
+            for rel_path in expanded:
+                if rel_path in explicit:
+                    continue  # already handled above
+                file_path = youk_root / rel_path
+                if not file_path.exists():
+                    continue
+                try:
+                    content = file_path.read_text(encoding="utf-8", errors="replace")
+                    if invariant not in content:
+                        semantic_missing.append(rel_path)
                 except Exception:
                     pass
 
