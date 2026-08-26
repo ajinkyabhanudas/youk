@@ -27,19 +27,25 @@ youk's design maps directly to the six AWS Well-Architected Framework pillars. T
 | `session_end` → audit log | Structured log entry per session (skills used, close cluster, token usage) — machine-readable, not narrative |
 | `self_heal()` | Reads 30 days of audit logs, generates improvement proposals — never auto-applies |
 | `compact_context` | Proactive context management; fires on events (new analysis, commit, plan shift) not exchange count |
-| `doc-map.yaml` + session_plan doc-freshness | Surfaces documentation drift at session start before it accumulates |
+| `doc-map.yaml` + session_plan doc-freshness | Surfaces documentation drift at session start before it accumulates. Four checks: timestamp drift, broken links, orphaned concepts, invariant match. |
 | `task_checkpoint(session_learnings)` | Per-task learning accumulator — pattern_trigger fires when same gap appears 2+ times in session, enabling immediate mid-session adaptation rather than deferring to session end |
 | `end_session` M+ skill gate | Returns skill_gate_warning when close_cluster=True but no capability skill was invoked — surfaces the gap at the moment it can still be corrected |
 | Org_score discipline gate | Caps org_score at 6.5 when 3+ consecutive sessions invoke zero capability skills — forces skill engagement before 7.0+ is reachable |
 | Org_score formula (derived from `servers/core/src/health.py`) | 5.0 base + capability_skill_rate×2.0 + close_rate×0.5 + gap_resolution×0.5 + prevented_cost×0.5 + framing_accuracy×0.5 + autonomy_depth×1.0 + loop_dry_rate×1.0 + human_precision×0.5 + convergence_bonus(0.5 max) + durability_bonus(±0.25) + outcome_signal×0.5 + outcome_quality×0.5 − compliance_penalty(0.5 max); multiplied by depth_multiplier; ceiling 10.0 |
+| `ceremony_sequencer.py` | Tracks gate order per session slug (`ceremony_sequencer`). Warns if `check_nfr_gate` fires before `mark_challenge_ran`, or `task_checkpoint` fires without dev-loop registration. Python-enforced, not prompt-only. |
+| `scan_failure_patterns()` | Scans `~/.claude/audit/` for recurring `FindingCategories` entries across sessions. When a domain hits threshold (default 3), surfaces `⚠ PATTERN:` alert in `session_plan` before the developer starts a 4th attempt in a failing domain. |
+| `reentry_suggestion` in `write_skill_handoff` | `check_reentry()` reads `skill-graph.yaml` reentry edges. If handoff severity meets edge threshold (e.g. code-review finds HIGH → suggest re-entering nfr-check), returns `reentry_suggestion` in the handoff result. |
+| `translation_risk=medium` soft block | `route_task` produces `SoftRuleWarning(rule_id="medium-translation-risk")` and writes `medium-risk-question.json`. `mark_medium_risk_surfaced()` confirms the question reached the user. `task_checkpoint` flags `medium_risk_unsurfaced=True` if it didn't. |
 
 **Key invariant:** `session_end` is the only path through which improvement proposals are generated. No implicit side-effects.
 
 ### Knowledge Coherence
 
-Every concept defined in PRD.md or well-architected.md has exactly one authority file. Derived files (README, PHILOSOPHY, CLAUDE.md) reference and align to the authority — they do not redefine it. When the authority file changes, the drift surfaces within one session via `_check_doc_freshness()`.
+Every concept defined in PRD.md or well-architected.md has exactly one authority file. Derived files (README, PHILOSOPHY, CLAUDE.md) reference and align to the authority — they do not redefine it. When the authority file changes, drift surfaces within one session via `_check_doc_freshness()`.
 
-**Key invariant:** No concept diverges silently across more than one session. Planned: `check_doc_graph()` MCP tool (see ADR-007) will make this queryable and enforce it automatically.
+`check_doc_graph()` runs four checks: timestamp drift (authority newer than derived), broken links (derived file deleted), orphaned concepts (authority deleted), and invariant match (per-concept string must appear in all derived files). New docs in `docs/` that are not referenced anywhere in `doc-map.yaml` surface as untracked. Verdict: `COHERENT` / `DRIFT` / `BROKEN`.
+
+**Key invariant:** No concept diverges silently across more than one session. `check_doc_graph()` is queryable as an MCP tool and runs automatically in `/done`.
 
 ---
 
