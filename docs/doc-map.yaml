@@ -101,6 +101,11 @@ src_files:
   - {file: servers/code/src/nfr.py, refs: [README.md]}
   - {file: servers/code/src/skills.py, refs: [README.md]}
   - {file: scripts/dashboard.py, refs: [README.md, Makefile]}
+  # L9 gap closure modules
+  - {file: servers/shared/ceremony_sequencer.py, refs: [README.md, docs/well-architected.md]}
+  - {file: servers/core/src/failure_pattern_detector.py, refs: [README.md, docs/well-architected.md]}
+  - {file: servers/shared/skill_reentry.py, refs: [README.md, docs/well-architected.md]}
+  - {file: servers/core/src/doc_graph.py, refs: [README.md, docs/doc-map.yaml]}
 
 skills:
   - {skill: start, refs: [README.md, docs/claude-md-template.md]}
@@ -123,6 +128,7 @@ concepts:
   - concept: north_star
     description: "What youk is fundamentally for — compounds user ability, not just tool context"
     authority: PHILOSOPHY.md
+    invariant: "compounds"
     derived_in:
       - README.md
       - ~/.claude/CLAUDE.md
@@ -130,6 +136,7 @@ concepts:
   - concept: org_score_definition
     description: "org_score formula: 5.0 base + capability_skill_rate (2.0) + close_rate (0.5) + gap_resolution + prevented_cost + framing_accuracy + autonomy_depth + loop_dry_rate + human_precision + convergence/durability bonuses; ceiling 10.0"
     authority: servers/core/src/health.py
+    invariant: "capability_skill_rate"
     derived_in:
       - README.md
       - docs/well-architected.md
@@ -137,6 +144,7 @@ concepts:
   - concept: compounding_mechanism
     description: "How sessions compound: capability skills + close_cluster + /learn"
     authority: PHILOSOPHY.md
+    invariant: "close_cluster"
     derived_in:
       - README.md
       - ~/.claude/CLAUDE.md
@@ -160,14 +168,16 @@ concepts:
   - concept: session_close_contract
     description: "What /done does and which phrases trigger it"
     authority: ~/.claude/CLAUDE.md
+    invariant: "/done"
     derived_in:
       - docs/claude-md-template.md
       - docs/getting-started.md
       - skills/done/SKILL.md
 
   - concept: mcp_registration_command
-    description: "Exact docker run command used to register MCP servers"
+    description: "Exact MCP server registration command"
     authority: scripts/install.sh
+    invariant: "--transport http"
     derived_in:
       - docs/getting-started.md
       - README.md
@@ -175,6 +185,7 @@ concepts:
   - concept: context_hook_architecture
     description: "Three hooks (PreCompact, UserPromptSubmit, PostToolUse) that manage context automatically"
     authority: plugin/hooks/hooks.json
+    invariant: "PreCompact"
     derived_in:
       - docs/getting-started.md
       - docs/well-architected.md
@@ -189,20 +200,22 @@ concepts:
   - concept: active_task_state
     description: "PostToolUse hook writes state/active_task.json for post-compact resume accuracy"
     authority: plugin/scripts/post_tool_use.py
+    invariant: "active_task"
     derived_in:
       - docs/getting-started.md
 
   - concept: scope_collapse_gate
     description: "optimize_intent models solution fork before asking; ambiguity_detected=true blocks route_task until resolved"
     authority: servers/core/src/intent.py
+    invariant: "ambiguity_detected"
     derived_in:
       - ~/.claude/CLAUDE.md
       - skills/dev-loop/SKILL.md
-      - knowledge/projects/youk/decisions.md
 
   - concept: nfr_gate
     description: "check_nfr_gate blocks M+ dev-loop until an NFR Decision Block is supplied; XS/S always pass"
     authority: servers/core/src/nfr_gate.py
+    invariant: "check_nfr_gate"
     derived_in:
       - ~/.claude/CLAUDE.md
       - skills/dev-loop/SKILL.md
@@ -210,6 +223,35 @@ concepts:
   - concept: health_checkup_suite
     description: "Hierarchical integration test suite (L0–L6): make checkup / checkup-fast / checkup-static. Each layer gates the next. L3 exercises all capability skills via real MCP, L5 tests proposal lifecycle, L6 runs full session round-trip."
     authority: Makefile
+    invariant: "checkup-fast"
     derived_in:
       - docs/getting-started.md
+      - docs/well-architected.md
+
+  - concept: ceremony_sequencer
+    description: "ceremony_sequencer.py tracks gate order per slug; warns if challenge fires before nfr, or dev-loop is skipped"
+    authority: servers/shared/ceremony_sequencer.py
+    invariant: "ceremony_sequencer"
+    derived_in:
+      - docs/well-architected.md
+
+  - concept: failure_pattern_detector
+    description: "scan_failure_patterns() surfaces recurring failure domains at session_start when a category hits threshold in lookback window"
+    authority: servers/core/src/failure_pattern_detector.py
+    invariant: "scan_failure_patterns"
+    derived_in:
+      - docs/well-architected.md
+
+  - concept: skill_reentry
+    description: "check_reentry() suggests routing back to an earlier skill phase when write_skill_handoff severity meets edge threshold in skill-graph.yaml"
+    authority: servers/shared/skill_reentry.py
+    invariant: "reentry_suggestion"
+    derived_in:
+      - docs/well-architected.md
+
+  - concept: medium_risk_soft_block
+    description: "translation_risk=medium produces SoftRuleWarning instead of blocking; mark_medium_risk_surfaced() confirms question was shown"
+    authority: servers/core/src/routing.py
+    invariant: "medium-translation-risk"
+    derived_in:
       - docs/well-architected.md

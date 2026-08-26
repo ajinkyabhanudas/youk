@@ -1478,28 +1478,52 @@ def check_doc_graph() -> dict:
     """
     Audit the concept coherence graph declared in docs/doc-map.yaml.
 
-    For each concept in the `concepts:` block, checks whether the authority
-    file has been updated more recently than its derived files. Uses git commit
-    timestamps (stable across clones) with mtime fallback.
+    Runs four structural checks:
+    1. Timestamp drift   — authority newer than derived file
+    2. Broken links      — derived file listed but not on disk
+    3. Orphaned concepts — authority file listed but not on disk
+    4. Untracked docs    — docs/*.md not referenced anywhere in the map
+    Plus optional per-concept invariant string matching (semantic check).
 
-    Returns: concepts_checked, stale_concepts (list of {concept, authority,
-             stale_in}), clean_concepts, verdict.
+    Returns: concepts_checked, stale_concepts, broken_links, orphaned_concepts,
+             untracked_docs, clean_concepts, verdict (COHERENT/DRIFT/BROKEN).
 
     Call explicitly for a full audit. session_start also consults this
     automatically (capped at 2 warnings to avoid flooding session_plan).
     """
-    from doc_graph import load_concept_graph, check_concept_staleness
+    from doc_graph import load_concept_graph, load_doc_map, check_concept_staleness, find_untracked_docs
     concepts = load_concept_graph(YOUK_ROOT)
-    stale = check_concept_staleness(concepts, YOUK_ROOT, CLAUDE_ROOT)
+    doc_map = load_doc_map(YOUK_ROOT)
+    result = check_concept_staleness(concepts, YOUK_ROOT, CLAUDE_ROOT)
+    untracked = find_untracked_docs(YOUK_ROOT, doc_map)
+
+    stale = result["stale"]
+    broken = result["broken"]
+    orphaned = result["orphaned"]
+    semantic = result["semantic"]
+
+    has_errors = bool(broken or orphaned)
+    has_drift = bool(stale or semantic or untracked)
+
+    if has_errors:
+        verdict = f"BROKEN — {len(broken)} broken link(s), {len(orphaned)} orphaned concept(s)"
+    elif has_drift:
+        total = len(stale) + len(semantic) + len(untracked)
+        verdict = f"DRIFT DETECTED — {total} concept(s) need review"
+    else:
+        verdict = "COHERENT — all derived files are up-to-date with their authorities"
+
+    clean = len(concepts) - len(stale) - len(broken) - len(orphaned) - len(semantic)
+
     return {
         "concepts_checked": len(concepts),
         "stale_concepts": stale,
-        "clean_concepts": len(concepts) - len(stale),
-        "verdict": (
-            "COHERENT — all derived files are up-to-date with their authorities"
-            if not stale
-            else f"DRIFT DETECTED — {len(stale)} concept(s) need review"
-        ),
+        "broken_links": broken,
+        "orphaned_concepts": orphaned,
+        "semantic_drift": semantic,
+        "untracked_docs": untracked,
+        "clean_concepts": max(clean, 0),
+        "verdict": verdict,
     }
 
 
