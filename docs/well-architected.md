@@ -41,9 +41,9 @@ youk's design maps directly to the six AWS Well-Architected Framework pillars. T
 
 ### Knowledge Coherence
 
-Every concept defined in PRD.md or well-architected.md has exactly one authority file. Derived files (README, PHILOSOPHY, CLAUDE.md) reference and align to the authority — they do not redefine it. When the authority file changes, drift surfaces within one session via `_check_doc_freshness()`.
+Every concept defined in PRD.md or well-architected.md has exactly one authority file. Derived files (README, PHILOSOPHY, CLAUDE.md) reference and align to the authority — they do not redefine it. When the authority file changes, drift surfaces within one session via `check_doc_graph()`.
 
-`check_doc_graph()` runs four checks: timestamp drift (authority newer than derived), broken links (derived file deleted), orphaned concepts (authority deleted), and invariant match (per-concept string must appear in all derived files). New docs in `docs/` that are not referenced anywhere in `doc-map.yaml` surface as untracked. Verdict: `COHERENT` / `DRIFT` / `BROKEN`.
+`check_doc_graph()` runs five checks: timestamp drift (authority newer than derived), broken links (derived file deleted), orphaned concepts (authority deleted), invariant match (per-concept string must appear in all derived files), and untracked docs (`docs/*.md` not referenced anywhere in the map). Verdict: `COHERENT` / `DRIFT DETECTED` / `BROKEN`.
 
 **Key invariant:** No concept diverges silently across more than one session. `check_doc_graph()` is queryable as an MCP tool and runs automatically in `/done`.
 
@@ -77,7 +77,7 @@ Every concept defined in PRD.md or well-architected.md has exactly one authority
 | stdio transport | No network socket, no port binding — no connection-level failures |
 | `make checkup` (L0–L6) | Hierarchical integration test suite — each layer gates the next; L3 exercises all 53 capability skills via real MCP, L5 tests gate contracts and proposal lifecycle, L6 runs a full session round-trip |
 | `make checkup-fast` | L0+L1 only — environment + Docker + MCP handshake; replaces `make doctor` for quick infra checks |
-| `_check_doc_freshness()` at session_start | Catches documentation drift before it causes confusion in later sessions |
+| `check_doc_graph()` at session_start | Catches documentation drift before it causes confusion in later sessions |
 | Compounding context loop | `session_end` writes `resume-from:` externally; `session_start` reads it — sessions compound without relying on Claude's context window surviving |
 | Validated state store | Mutable-claim state (plan, active task, queue, gate flags) is schema-validated on read and write in a single store — a malformed write raises rather than silently corrupting. Append-only logs and monotonic counters stay out; they cannot lie, only grow |
 | Read-time verification | A stored claim about system state ("X is broken", "gap open") is re-checked against current code before session_start surfaces it as live — a fixed issue never resurfaces as a to-do, and a claim that cannot be verified surfaces tagged, never as a clean item |
