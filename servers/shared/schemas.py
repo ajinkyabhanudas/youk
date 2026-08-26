@@ -6,7 +6,38 @@ Functions return dict; callers can cast via TypedDict for static analysis.
 """
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import TypedDict
+
+
+# ── Error taxonomy ────────────────────────────────────────────────────────────
+
+class ErrorType(StrEnum):
+    """Machine-readable error category. Determines retry and escalation behaviour.
+
+    Retryable:
+        TRANSIENT  — temporary network failure, service unavailable, transient timeout
+        RATE_LIMIT — rate limit hit; retry after back-off
+
+    Not retryable:
+        INPUT         — invalid argument, missing required field, schema violation
+        AUTH          — unauthorized or forbidden
+        BUSINESS_RULE — gate blocked, contract violated, hard rule triggered
+        SYSTEM        — unexpected internal error; surface to operator
+    """
+    TRANSIENT = "TRANSIENT"
+    RATE_LIMIT = "RATE_LIMIT"
+    INPUT = "INPUT"
+    AUTH = "AUTH"
+    BUSINESS_RULE = "BUSINESS_RULE"
+    SYSTEM = "SYSTEM"
+
+
+class RetryDecision(TypedDict):
+    """Returned by classify_error() in guardrails.py."""
+    retryable: bool
+    strategy: str    # "immediate" | "backoff" | "none"
+    reason: str      # human-readable guidance for the agent
 
 
 # ── optimize_intent ──────────────────────────────────────────────────────────

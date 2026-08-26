@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 sys.path.insert(0, "/shared")
 
+from schemas import ErrorType
+
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
@@ -105,9 +107,14 @@ def write_skill_handoff(from_skill: str, content: str) -> dict:
     from_skill: Name of the skill that just completed (e.g. "nfr-check", "code-review").
     content: Summary or key findings to pass forward (markdown OK).
 
-    Returns: {saved, from_skill, content_length} or {saved: false, error}.
+    Returns: {saved, from_skill, content_length, state_written} or {saved: false, error_type, error}.
     """
-    return _write_skill_handoff(from_skill, content)
+    result = _write_skill_handoff(from_skill, content)
+    if result.get("saved"):
+        result["state_written"] = ["state/session.json"]
+    else:
+        result["error_type"] = ErrorType.SYSTEM
+    return result
 
 
 @mcp.tool()
@@ -125,7 +132,10 @@ def check_commit_quality(message: str, file_paths: list[str] | None = None) -> d
     Returns: score (0-100), violations, suggested_rewrite, blocked, block_reason.
     """
     result = _check_commit_quality(message, file_paths or [])
-    return result.to_dict()
+    out = result.to_dict()
+    if out.get("blocked"):
+        out["error_type"] = ErrorType.BUSINESS_RULE
+    return out
 
 
 @mcp.tool()

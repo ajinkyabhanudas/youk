@@ -177,6 +177,19 @@ After all findings:
 
 > If zero findings: say so explicitly. Do not invent issues to seem thorough.
 
+**Operational resilience check (mandatory for youk repo changes; apply to any tool/server code):**
+
+For every tool or server function added or modified this pass, verify:
+
+1. **Error taxonomy**: does the error path return `error_type` (ErrorType enum)? If not: `HIGH` finding.
+2. **Side effect declaration**: does the write path return `state_written: list[str]`? If not: `MEDIUM` finding.
+3. **Read/write separation**: does a read-only or gate-check function write side effects (increment counters, write files)? If yes: `HIGH` finding.
+4. **Retry safety**: is the error_type correct for the failure mode? `TRANSIENT`/`RATE_LIMIT` → retryable. `INPUT`/`AUTH`/`BUSINESS_RULE`/`SYSTEM` → not retryable. Misclassification is a `HIGH` finding.
+5. **Idempotency**: can this tool be called twice safely? If a double-call would corrupt state or produce a conflicting result: `HIGH` finding.
+6. **Separation of concerns**: does this tool combine policy check + state write + graph mutation in a way that makes the policy untestable in isolation? If yes: `MEDIUM` finding — note as known debt with a comment.
+
+Reference: `knowledge/domain/operational-resilience.md`
+
 **Emit the examination surface block at the end of every AUDIT phase:**
 
 ```
