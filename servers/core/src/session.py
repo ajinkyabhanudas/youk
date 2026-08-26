@@ -2786,8 +2786,18 @@ def end_session(
         f"{compounding_gap_line}"
     )
 
-    with open(audit_file, "a") as f:
-        f.write(entry)
+    # Idempotency guard: skip if an entry for this exact timestamp already exists.
+    # Prevents double-call from appending a duplicate session block.
+    try:
+        existing = audit_file.read_text() if audit_file.exists() else ""
+        if f"### Session — {timestamp}" in existing:
+            pass  # already written — do not append again
+        else:
+            with open(audit_file, "a") as f:
+                f.write(entry)
+    except Exception:
+        with open(audit_file, "a") as f:
+            f.write(entry)
 
     # Fold knowledge usage events into INDEX.md — updates last-used/use-count.
     try:
