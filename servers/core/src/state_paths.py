@@ -21,6 +21,8 @@ from pathlib import Path
 # YOUK_ROOT is set by the caller module (session.py / server.py) via module-level
 # assignment. Tests patch it via monkeypatch. We default to the container path.
 YOUK_ROOT: Path = Path("/youk")
+CLAUDE_ROOT: Path = Path("/claude")
+HOST_HOME: Path = Path("/host-home")
 
 # open.json entries older than this are considered stale (prior session, crashed, etc.)
 _SLUG_OPEN_MAX_AGE_SECONDS = 4 * 60 * 60  # 4 hours
@@ -107,3 +109,58 @@ def open_json_payload(slug: str) -> str:
         "slug": slug,
         "written_at": time.time(),
     })
+
+
+def resolve_project_path(host_path: str) -> Path:
+    """Translate a host-absolute project path to a path accessible inside this container.
+
+    The container has fixed mount points:
+      /youk  = host YOUK_DIR  (e.g. ~/.claude/youk)
+      /claude = host CLAUDE_DIR (e.g. ~/.claude)
+
+    Two fallback mechanisms (tried in order):
+    1. state/path-map.env — written by install.sh; maps YOUK_HOST_DIR and CLAUDE_HOST_DIR
+    2. /host-home         — host $HOME mounted :ro (requires updated install.sh re-run)
+    """
+    p = Path(host_path)
+    if p.exists():
+        return p  # already accessible (local dev, or running outside Docker)
+
+    path_map_file = YOUK_ROOT / "state" / "path-map.env"
+    if path_map_file.exists():
+        try:
+            mapping: dict[str, str] = {}
+            for line in path_map_file.read_text().splitlines():
+                if "=" in line and not line.startswith("#"):
+                    key, _, val = line.partition("=")
+                    mapping[key.strip()] = val.strip()
+
+            youk_host = mapping.get("YOUK_HOST_DIR", "")
+            claude_host = mapping.get("CLAUDE_HOST_DIR", "")
+
+            if youk_host and host_path.startswith(youk_host):
+                relative = host_path[len(youk_host):].lstrip("/")
+                candidate = YOUK_ROOT / relative if relative else YOUK_ROOT
+                if candidate.exists():
+                    return candidate
+
+            if claude_host and host_path.startswith(claude_host):
+                relative = host_path[len(claude_host):].lstrip("/")
+                candidate = CLAUDE_ROOT / relative if relative else CLAUDE_ROOT
+                if candidate.exists():
+                    return candidate
+        except Exception:
+            pass
+
+    if HOST_HOME.exists():
+        for prefix in ("/Users/", "/home/"):
+            if host_path.startswith(prefix):
+                rest = host_path[len(prefix):]
+                rest_parts = Path(rest).parts
+                if len(rest_parts) > 1:
+                    relative = Path(*rest_parts[1:])
+                    candidate = HOST_HOME / relative
+                    if candidate.exists():
+                        return candidate
+
+    return p  # return as-is; callers check .exists() and degrade gracefully
