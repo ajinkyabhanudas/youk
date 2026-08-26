@@ -215,6 +215,26 @@ def route_task(
             f"Redirect with one line if wrong, otherwise proceeding."
         )
 
+    # Overengineering detection: scope-expanding language in the task description.
+    # Fires inline so route_task callers get the signal without a separate tool call.
+    _OVERENG_TERMS = {
+        "extensible", "pluggable", "generic", "flexible", "reusable", "for all",
+        "future-proof", "future proof", "scalable", "modular", "configurable",
+        "abstraction", "framework", "platform", "general-purpose",
+    }
+    task_lower = task.lower()
+    _overeng_flag = size in (TaskSize.M, TaskSize.L, TaskSize.XL) and any(
+        t in task_lower for t in _OVERENG_TERMS
+    )
+    _overeng_note: str | None = None
+    if _overeng_flag:
+        matched = [t for t in _OVERENG_TERMS if t in task_lower]
+        _overeng_note = (
+            f"Task uses scope-expanding language ({', '.join(matched[:3])}). "
+            "Consider the simplest implementation that satisfies the current need. "
+            "Approve current scope (A), choose a simpler path (B), or defer scope discussion (C)."
+        )
+
     decision = RoutingDecision(
         task=task,
         size=size,
@@ -224,6 +244,8 @@ def route_task(
         token_budget=token_budget,
         warnings=warnings,
         plan_hook=plan_hook,
+        overengineering_flag=_overeng_flag,
+        overengineering_note=_overeng_note,
     )
     # Write breadcrumb so task_checkpoint can verify routing ran before M+ work.
     # Only write for non-blocked M+ decisions — XS/S bypass is intentional.
