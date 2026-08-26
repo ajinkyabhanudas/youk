@@ -125,6 +125,11 @@ class SessionState:
     # Non-empty list = a proposal was applied N sessions ago and the targeted signal is still firing.
     # CLAUDE.md: surface one-line alert per entry, suggest revert or deeper redesign.
     falsifier_alerts: list[dict] = field(default_factory=list)
+    # pending_build_task: set when recent commits exist but no routing breadcrumb for this session.
+    # Machine signal for the CLAUDE.md auto-/build rule — eliminates the "user forgot to call /build"
+    # failure mode. None = no unrouted commits detected. Non-None = run /build on this description
+    # before starting new code work.
+    pending_build_task: str | None = None
     # Recurring domain audit patterns from audit-signals.jsonl (cross-session).
     # Non-empty = domain flagged HIGH in ≥40% of last 5 sessions on this project.
     # Surface as: "Recurring audit signal: {domain} flagged HIGH in {count}/{total} sessions on {project}"
@@ -178,6 +183,7 @@ class SessionState:
             "audit_patterns": self.audit_patterns,
             "cross_project_concepts": self.cross_project_concepts,
             "convergence_state": self.convergence_state,
+            "pending_build_task": self.pending_build_task,
         }
 
 
