@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, UTC
 from pathlib import Path
 
 
-from session import _latest_commit_iso
+from git_context import _latest_commit_iso
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -28,20 +28,20 @@ def _utc_now() -> datetime:
 
 class TestLatestCommitIso:
     def test_returns_none_on_subprocess_error(self, monkeypatch):
-        monkeypatch.setattr("session.subprocess.run", lambda *a, **k: (_ for _ in ()).throw(OSError("no git")))
+        monkeypatch.setattr("git_context.subprocess.run",lambda *a, **k: (_ for _ in ()).throw(OSError("no git")))
         assert _latest_commit_iso("/nonexistent") is None
 
     def test_returns_none_on_empty_output(self, tmp_path, monkeypatch):
         import subprocess as _sp
         result = _sp.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-        monkeypatch.setattr("session.subprocess.run", lambda *a, **k: result)
+        monkeypatch.setattr("git_context.subprocess.run",lambda *a, **k: result)
         assert _latest_commit_iso(str(tmp_path)) is None
 
     def test_returns_stripped_timestamp(self, tmp_path, monkeypatch):
         import subprocess as _sp
         ts = "2026-08-26T10:00:00+00:00"
         result = _sp.CompletedProcess(args=[], returncode=0, stdout=f"  {ts}  \n", stderr="")
-        monkeypatch.setattr("session.subprocess.run", lambda *a, **k: result)
+        monkeypatch.setattr("git_context.subprocess.run",lambda *a, **k: result)
         assert _latest_commit_iso(str(tmp_path)) == ts
 
 

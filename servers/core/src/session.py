@@ -1,7 +1,6 @@
 from __future__ import annotations
 import json
 import re
-import subprocess
 from datetime import datetime, UTC
 from pathlib import Path
 
@@ -12,6 +11,25 @@ from compaction import write_contracts, build_brief as _build_brief
 from tokens import read_and_clear as _read_and_clear_tokens
 import state_paths as _sp
 from ceremony_sequencer import dev_loop_registered as _dev_loop_registered
+from project_detection import (
+    _detect_project_type,
+    _detect_project_purpose,
+    _detect_stack_context,
+    PROJECT_PURPOSE_EXPECTED_SKILLS,  # noqa: F401 — re-exported for health.py
+    _PURPOSE_DESCRIPTIONS,            # noqa: F401 — re-exported for health.py
+)
+from git_context import (
+    _read_git_log,
+    _read_git_log_since_days,
+    _latest_commit_iso,
+    _current_project_head,
+    _check_deploy_freshness,
+    _count_commits_since,
+)
+from knowledge_loader import (
+    _load_l2_context,
+    _scan_project_context_files,
+)
 
 CLAUDE_ROOT = Path("/claude")
 YOUK_ROOT = Path("/youk")
@@ -19,17 +37,30 @@ HOST_HOME = Path("/host-home")   # $HOME mounted :ro when install.sh adds -v $HO
 STATE_FILE = YOUK_ROOT / "state" / "session.json"
 
 
+def _sync_sp() -> None:
+    """Sync mount-point constants to state_paths and submodules that read YOUK_ROOT."""
+    _sp.YOUK_ROOT = YOUK_ROOT
+    _sp.CLAUDE_ROOT = CLAUDE_ROOT
+    _sp.HOST_HOME = HOST_HOME
+
+
 def _slug_state_dir(slug: str) -> Path:
     """Per-session state directory — delegates to state_paths canonical implementation."""
-    _sp.YOUK_ROOT = YOUK_ROOT
+    _sync_sp()
     return _sp.slug_state_dir(slug)
 
 
 def _get_current_slug() -> str:
     """Read the active session slug — delegates to state_paths canonical implementation."""
-    _sp.YOUK_ROOT = YOUK_ROOT
+    _sync_sp()
     slug = _sp.current_session_slug()
     return slug if slug != "unknown" else ""
+
+
+def _resolve_project_path(host_path: str) -> Path:
+    """Translate host path to container path — delegates to state_paths."""
+    _sync_sp()
+    return _sp.resolve_project_path(host_path)
 
 _CONTRACT_PHRASES = [
     "always ", "never ", "from now on", "remember to", "make sure you",
@@ -269,294 +300,6 @@ def _resolve_project_path(host_path: str) -> Path:
     return p  # return as-is; callers check .exists() and degrade gracefully
 
 
-def _detect_project_type(project_dir: str) -> str:
-    p = _resolve_project_path(project_dir)
-    if not p.exists():
-        return "unknown"
-
-    if (p / "go.mod").exists():
-        return "go"
-    if (p / "Cargo.toml").exists():
-        return "rust"
-
-    def _check_python(base: Path) -> str | None:
-        if not any((base / f).exists() for f in ["requirements.txt", "pyproject.toml", "setup.py"]):
-            return None
-        for candidate in [base / "requirements.txt", base / "pyproject.toml"]:
-            if candidate.exists():
-                try:
-                    content = candidate.read_text().lower()
-                    if "psycopg" in content or "sqlalchemy" in content or "asyncpg" in content:
-                        return "python_postgresql"
-                except Exception:
-                    pass
-        return "python"
-
-    py_type = _check_python(p)
-    if py_type:
-        return py_type
-
-    has_docker_orchestration = (
-        (p / "Makefile").exists()
-        and any(
-            (p / f).exists()
-            for f in ["Dockerfile", "docker-compose.yml", "docker-compose.yaml"]
-        )
-    )
-
-    for sub in ["servers", "src", "app", "backend", "api"]:
-        sub_path = p / sub
-        if sub_path.is_dir():
-            py_type = _check_python(sub_path)
-            if py_type:
-                return "python/docker" if has_docker_orchestration else py_type
-            for nested in sorted(sub_path.iterdir()):
-                if nested.is_dir():
-                    py_type = _check_python(nested)
-                    if py_type:
-                        return "python/docker" if has_docker_orchestration else py_type
-
-    for df in sorted(p.glob("**/Dockerfile"))[:10]:
-        try:
-            if "FROM python:" in df.read_text():
-                return "python"
-        except Exception:
-            pass
-
-    if (p / "package.json").exists():
-        try:
-            pkg = json.loads((p / "package.json").read_text())
-            deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
-            if "react" in deps or "next" in deps:
-                return "js_react"
-        except Exception:
-            pass
-        return "js_node"
-
-    return "unknown"
-
-
-# Maps project purpose → list of skills expected for that project type.
-# Used by health._check_project_type_coverage to surface missing coverage.
-# Keep this in sync with _PROJECT_TYPE_EXPECTED_SKILLS in health.py.
-PROJECT_PURPOSE_EXPECTED_SKILLS: dict[str, list[dict]] = {
-    "ai_engineering_system": [
-        {"name": "install-experience", "purpose": "Simulate install and first-run for a new developer"},
-        {"name": "namespace-safety", "purpose": "Detect collision risks in skills, MCP servers, config keys"},
-    ],
-    "mcp_server": [
-        {"name": "install-experience", "purpose": "Review the install flow for a developer new to this tool"},
-        {"name": "namespace-safety", "purpose": "Check for naming conflicts in MCP tools and skills"},
-    ],
-    "installable_cli": [
-        {"name": "install-experience", "purpose": "Review the install flow and first-run experience"},
-    ],
-    "docker_multi_service": [
-        {"name": "docker-ops", "purpose": "Troubleshoot container issues, volume mounts, service networking"},
-    ],
-}
-
-_PURPOSE_DESCRIPTIONS: dict[str, str] = {
-    "ai_engineering_system": "AI engineering system with skill infrastructure",
-    "mcp_server": "MCP server exposing tools to Claude Code",
-    "installable_cli": "CLI tool with an installer",
-    "docker_multi_service": "Multi-service Docker application",
-    "general": "General software project",
-}
-
-
-def _detect_project_purpose(project_dir: str) -> str:
-    """
-    Detect the purpose/domain of the project beyond just its stack/language.
-    Returns a key from PROJECT_PURPOSE_EXPECTED_SKILLS or 'general'.
-    Used to surface skill coverage gaps for the specific project type.
-    """
-    p = _resolve_project_path(project_dir)
-    if not p.exists():
-        return "general"
-
-    # AI engineering system: has a skills/ directory containing SKILL.md files
-    skills_dir = p / "skills"
-    if skills_dir.is_dir() and any(skills_dir.glob("*/SKILL.md")):
-        return "ai_engineering_system"
-
-    # MCP server tool: has server.py files that import the MCP framework
-    for server_file in sorted(p.glob("**/server.py"))[:10]:
-        try:
-            content = server_file.read_text()
-            if "fastmcp" in content or "from mcp" in content or "mcp.server" in content:
-                return "mcp_server"
-        except Exception:
-            pass
-
-    # Multi-service Docker: multiple Dockerfile files in subdirectories
-    dockerfiles = [f for f in p.glob("*/Dockerfile")] + [f for f in p.glob("*/*/Dockerfile")]
-    if len(set(str(f) for f in dockerfiles)) > 1:
-        return "docker_multi_service"
-
-    # Installable CLI: has an install.sh script
-    if (p / "scripts" / "install.sh").exists() or (p / "install.sh").exists():
-        return "installable_cli"
-
-    return "general"
-
-
-def _detect_stack_context(project_dir: str) -> dict:
-    """
-    Detect stack, framework, and domain from project files.
-    Pure file I/O — zero tokens, zero API calls.
-
-    Returns: {stack, framework, domain} — any field may be None if undetected.
-    """
-    p = _resolve_project_path(project_dir)
-    if not p.exists():
-        return {"stack": None, "framework": None, "domain": None}
-
-    stack: str | None = None
-    framework: str | None = None
-    domain: str | None = None
-
-    # --- Stack detection ---
-    if (p / "go.mod").exists():
-        stack = "go"
-    elif (p / "Cargo.toml").exists():
-        stack = "rust"
-    else:
-        # Collect all requirements/dependency files, checking nested dirs too
-        req_files: list[Path] = []
-        for fname in ["requirements.txt", "pyproject.toml", "setup.py"]:
-            candidates = [p / fname] + [
-                p / sub / fname
-                for sub in ["servers", "src", "app", "backend", "api"]
-            ]
-            req_files.extend(c for c in candidates if c.exists())
-
-        if req_files:
-            stack = "python"
-            all_deps = ""
-            for f in req_files[:6]:
-                try:
-                    all_deps += f.read_text().lower()
-                except Exception:
-                    pass
-
-            # Framework detection (Python)
-            if "django" in all_deps:
-                framework = "django"
-            elif "fastapi" in all_deps:
-                framework = "fastapi"
-            elif "flask" in all_deps:
-                framework = "flask"
-            elif "tornado" in all_deps:
-                framework = "tornado"
-
-            # Domain detection (Python deps)
-            if any(k in all_deps for k in ("stripe", "billing", "subscription", "paddle", "chargebee")):
-                domain = "saas"
-            elif any(k in all_deps for k in ("sklearn", "torch", "tensorflow", "pandas", "numpy", "xgboost")):
-                domain = "data"
-            elif any(k in all_deps for k in ("boto3", "kubernetes", "terraform", "pulumi", "ansible")):
-                domain = "infra"
-
-        elif (p / "package.json").exists():
-            stack = "javascript"
-            try:
-                pkg = json.loads((p / "package.json").read_text())
-                deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
-                if "next" in deps:
-                    framework = "nextjs"
-                elif "react" in deps:
-                    framework = "react"
-                elif "vue" in deps:
-                    framework = "vue"
-                elif "svelte" in deps:
-                    framework = "svelte"
-                if "typescript" in deps:
-                    stack = "typescript"
-                if any(k in deps for k in ("stripe", "@stripe/stripe-js")):
-                    domain = "saas"
-            except Exception:
-                pass
-
-    return {"stack": stack, "framework": framework, "domain": domain}
-
-
-def _read_git_log(project_dir: str, n: int = 5) -> str:
-    resolved = str(_resolve_project_path(project_dir))
-    try:
-        result = subprocess.run(
-            ["git", "-C", resolved, "log", "--oneline", f"-{n}"],
-            capture_output=True, text=True, timeout=5
-        )
-        return result.stdout.strip()
-    except Exception:
-        return ""
-
-
-def _read_git_log_since_days(project_dir: str, days: int) -> tuple[int, list[str]]:
-    """Return (commit_count, [subject_lines]) for commits in the last `days` days.
-    Used to give returning developers a factual "what changed while you were gone" summary."""
-    resolved = str(_resolve_project_path(project_dir))
-    try:
-        result = subprocess.run(
-            ["git", "-C", resolved, "log", "--oneline", f"--since={days} days ago"],
-            capture_output=True, text=True, timeout=5
-        )
-        lines = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
-        subjects = [ln.split(" ", 1)[1] if " " in ln else ln for ln in lines[:5]]
-        return len(lines), subjects
-    except Exception:
-        return 0, []
-
-
-def _latest_commit_iso(project_dir: str) -> str | None:
-    """Return the ISO 8601 author-date of the most recent commit, or None on failure."""
-    resolved = str(_resolve_project_path(project_dir))
-    try:
-        result = subprocess.run(
-            ["git", "-C", resolved, "log", "-1", "--format=%aI"],
-            capture_output=True, text=True, timeout=5
-        )
-        ts = result.stdout.strip()
-        return ts if ts else None
-    except Exception:
-        return None
-
-
-def _current_project_head(project_dir: str) -> str | None:
-    """Current HEAD sha of the project, for the deployment-freshness baseline."""
-    try:
-        import deploy_freshness
-        return deploy_freshness.current_head(str(_resolve_project_path(project_dir)))
-    except Exception:
-        return None
-
-
-def _check_deploy_freshness(project_dir: str, last_head):
-    """Run the deployment-freshness gate. Returns a FreshnessVerdict (or None on error).
-    Never raises into session_start — a freshness-check failure must not block a session."""
-    try:
-        import deploy_freshness
-        return deploy_freshness.check_freshness(
-            str(_resolve_project_path(project_dir)), last_head
-        )
-    except Exception:
-        return None
-
-
-def _count_commits_since(project_dir: str, since_hash: str) -> int:
-    """Count commits in project_dir that came after since_hash."""
-    resolved = str(_resolve_project_path(project_dir))
-    try:
-        result = subprocess.run(
-            ["git", "-C", resolved, "rev-list", "--count", f"{since_hash}..HEAD"],
-            capture_output=True, text=True, timeout=5
-        )
-        return int(result.stdout.strip()) if result.stdout.strip().isdigit() else 0
-    except Exception:
-        return 0
-
-
 def _load_project_context(slug: str) -> str | None:
     ctx_file = YOUK_ROOT / "knowledge" / "projects" / slug / "context.md"
     if not ctx_file.exists():
@@ -752,203 +495,6 @@ def _load_global_contracts(cap: int = 50) -> list[str]:
     personal = _read(global_file)
     combined = defaults + personal
     return combined[-cap:]  # most recently added personal contracts take priority at cap
-
-
-def _load_l2_context(project_dir: str) -> tuple[str, str]:
-    """Returns (resume_point, context_health) from project's .claude/ dir."""
-    p = _resolve_project_path(project_dir)
-    claude_dir = p / ".claude"
-    resume_point = ""
-    context_health = "NONE"
-
-    if not claude_dir.exists():
-        return resume_point, context_health
-
-    prd_status = claude_dir / "prd-status.md"
-    if prd_status.exists():
-        content = prd_status.read_text()
-        for line in content.split("\n"):
-            if "Resume from" in line or "resume from" in line:
-                lines = content.split("\n")
-                idx = lines.index(line)
-                for next_line in lines[idx + 1:]:
-                    if next_line.strip():
-                        resume_point = next_line.strip()
-                        break
-                break
-        context_health = "L3"
-
-    for f in claude_dir.iterdir():
-        if f.suffix == ".md" and "context" in f.name.lower():
-            context_health = "L2+L3" if context_health == "L3" else "L2"
-            break
-
-    return resume_point, context_health
-
-
-def _scan_project_context_files(project_dir: str) -> dict:
-    """
-    Scan the project directory for standard context files that can inform
-    session_start without requiring any youk-specific setup in the project repo.
-
-    Reads — but caps aggressively to avoid overloading initial context:
-    - CLAUDE.md (root) — full, max 1200 chars (project system instructions)
-    - README.md — first description paragraph only (max 400 chars)
-    - docs/ — filenames only, no content (surface availability, not dump content)
-    - .claude/CLAUDE.md — project-local youk instructions (max 1200 chars)
-
-    Returns a dict with keys: claude_md, readme_snippet, docs_available, context_level
-    """
-    p = _resolve_project_path(project_dir)
-    result: dict = {
-        "claude_md": "",
-        "readme_snippet": "",
-        "docs_available": [],
-        "context_level": "L1",  # upgraded as each source is found
-    }
-
-    # Root CLAUDE.md — highest priority, project system instructions
-    for candidate in [p / "CLAUDE.md", p / ".claude" / "CLAUDE.md"]:
-        if candidate.exists():
-            try:
-                text = candidate.read_text()[:1200]
-                result["claude_md"] = text
-                result["context_level"] = "L5"
-            except Exception:
-                pass
-            break
-
-    # README.md — first prose paragraph (skip HTML, badges, dividers)
-    readme = p / "README.md"
-    if readme.exists():
-        try:
-            lines = readme.read_text().splitlines()
-            snippet_lines = []
-            for ln in lines[:80]:
-                stripped = ln.strip()
-                if not stripped or stripped == "---":
-                    if snippet_lines:
-                        break  # end of first prose paragraph
-                    continue
-                # skip HTML blocks, badges, and markdown headers/image tags
-                if (stripped.startswith("<")
-                        or stripped.startswith("[![")
-                        or stripped.startswith("![")
-                        or stripped.startswith("#")
-                        or stripped.startswith("|")
-                        or stripped.startswith(">")):
-                    if snippet_lines:
-                        break
-                    continue
-                snippet_lines.append(stripped)
-                if len(" ".join(snippet_lines)) > 400:
-                    break
-            if snippet_lines:
-                result["readme_snippet"] = " ".join(snippet_lines)[:400]
-                if result["context_level"] == "L1":
-                    result["context_level"] = "L4"
-        except Exception:
-            pass
-
-    # readme_snippet is extracted heuristically above. No API fallback — all skill
-    # execution is in_session (Claude Code answers, not the container). Zero double-billing.
-
-    # docs/ directory — scan for spec/PRD/architecture files (names only)
-    docs_dir = p / "docs"
-    if docs_dir.exists():
-        try:
-            spec_keywords = {"spec", "prd", "arch", "design", "requirements", "rfc", "adr"}
-            result["docs_available"] = [
-                f.name for f in sorted(docs_dir.iterdir())
-                if f.suffix in {".md", ".txt", ".rst"}
-                and any(kw in f.name.lower() for kw in spec_keywords)
-            ][:8]  # cap at 8 filenames
-        except Exception:
-            pass
-
-    # Tooling detection — surface existing project mechanisms so youk adapts to the
-    # project's workflow rather than assuming generic commands or standards.
-    tooling: dict = {
-        "make_targets": [],   # Makefile target names + inline comments
-        "npm_scripts": [],    # package.json script names
-        "ci_providers": [],   # detected CI/CD providers
-        "pre_commit": False,  # .pre-commit-config.yaml present
-        "test_configs": [],   # detected test runner config files
-        "containers": [],     # Dockerfile / docker-compose files
-        "ai_context": [],     # AI instruction files from other tools (Cursor, Aider, etc.)
-    }
-
-    # Makefile — parse targets with ## comments; also detect bare common targets
-    makefile = p / "Makefile"
-    if makefile.exists():
-        try:
-            lines = makefile.read_text().splitlines()
-            for line in lines:
-                # Commented targets: "target: ## description"
-                m = re.match(r"^([a-zA-Z_-]+):.*?##\s*(.+)", line)
-                if m:
-                    tooling["make_targets"].append(f"make {m.group(1)}: {m.group(2).strip()[:60]}")
-                    continue
-                # Bare common targets without comments
-                m2 = re.match(r"^(test|build|run|dev|deploy|lint|install|clean|start|check)\s*:", line)
-                if m2 and f"make {m2.group(1)}" not in " ".join(tooling["make_targets"]):
-                    tooling["make_targets"].append(f"make {m2.group(1)}")
-            tooling["make_targets"] = tooling["make_targets"][:12]
-        except Exception:
-            pass
-
-    # package.json scripts
-    pkg_json = p / "package.json"
-    if pkg_json.exists():
-        try:
-            pkg = json.loads(pkg_json.read_text())
-            scripts = pkg.get("scripts", {})
-            tooling["npm_scripts"] = [f"npm run {k}" for k in list(scripts)[:10]]
-        except Exception:
-            pass
-
-    # CI providers
-    for ci_path, ci_name in [
-        (".github/workflows", "github-actions"),
-        (".circleci", "circleci"),
-        (".gitlab-ci.yml", "gitlab-ci"),
-        ("Jenkinsfile", "jenkins"),
-        (".buildkite", "buildkite"),
-    ]:
-        if (p / ci_path).exists():
-            tooling["ci_providers"].append(ci_name)
-
-    # Pre-commit hooks
-    if (p / ".pre-commit-config.yaml").exists():
-        tooling["pre_commit"] = True
-
-    # Test runner config files
-    for test_file in [
-        "pytest.ini", "pyproject.toml", "setup.cfg",
-        "jest.config.js", "jest.config.ts", "vitest.config.ts",
-        ".rspec", "karma.conf.js",
-    ]:
-        if (p / test_file).exists():
-            tooling["test_configs"].append(test_file)
-
-    # Container setup
-    for container_file in ["Dockerfile", "docker-compose.yml", "docker-compose.yaml"]:
-        if (p / container_file).exists():
-            tooling["containers"].append(container_file)
-
-    # AI instruction files from other tools — read a snippet so Claude can check for
-    # conflicts or complementary conventions with youk's own CLAUDE.md.
-    for ai_file in ["AGENTS.md", ".cursorrules", ".aider.conf.yml", "copilot-instructions.md"]:
-        candidate = p / ai_file
-        if candidate.exists():
-            try:
-                snippet = candidate.read_text()[:300].strip()
-                tooling["ai_context"].append({"file": ai_file, "snippet": snippet[:250]})
-            except Exception:
-                tooling["ai_context"].append({"file": ai_file, "snippet": ""})
-
-    result["tooling"] = tooling
-    return result
 
 
 _CAPABILITY_SKILLS = frozenset({
