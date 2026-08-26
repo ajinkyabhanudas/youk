@@ -59,7 +59,10 @@ def audit_recent_commits(youk_root: Path, n: int = _COMMIT_LOOKBACK) -> dict[str
             continue
 
         hard = r.get("tells_hard", [])
-        soft = r.get("tells_soft", [])
+        # Commit bodies are structurally colon-dense (change lists, file annotations,
+        # section headers). colon_scaffolding is calibrated for prose — exclude it here
+        # to avoid false positives on legitimate structured commit descriptions.
+        soft = [t for t in r.get("tells_soft", []) if not t.startswith("colon_scaffolding")]
         gate = r.get("gate", "UNKNOWN")
 
         if hard or soft:

@@ -207,3 +207,89 @@ class TestNoFalsePositives:
         )
         r = check_text(long_para)
         assert r["gate"] == "CLEAR", f"False positive: {r['tells_soft']}"
+
+    def test_commit_body_colon_scaffolding_filtered_in_audit(self):
+        # voice_audit strips colon_scaffolding from soft tells before reporting.
+        # Commit bodies are structurally colon-dense (change lists, section headers)
+        # and check_text is calibrated for prose. The filter lives in voice_audit, not here.
+        # This test verifies that colon_scaffolding is a known soft tell (not a hard block).
+        commit_body = (
+            "session.py crossed 3900 lines. This PR splits three cohesive function groups "
+            "into dedicated modules. No behaviour changes; all callers unchanged.\n\n"
+            "- project_detection.py: _detect_project_type/purpose/stack_context, PURPOSE maps\n"
+            "- git_context.py: all subprocess git-log helpers, deploy freshness, commit counting\n"
+            "- knowledge_loader.py: _load_l2_context, _scan_project_context_files\n"
+            "- state_paths.py: adds CLAUDE_ROOT, HOST_HOME constants and resolve_project_path()\n"
+            "- session.py: imports from new modules; adds _sync_sp() to keep constants in sync\n"
+            "- test_pending_build_task.py: import and monkeypatch targets updated for git_context"
+        )
+        r = check_text(commit_body)
+        # Must not be BLOCKED — colon_scaffolding is a soft tell, not a hard block.
+        assert r["gate"] != "BLOCKED", (
+            f"Commit body with file-annotation colons must not be BLOCKED: {r['tells_hard']}"
+        )
+
+
+# ── Voice audit colon filter ───────────────────────────────────────────────────
+
+class TestVoiceAuditColonFilter:
+    """voice_audit strips colon_scaffolding from soft tells before surfacing results.
+
+    Commit bodies are structurally colon-dense — change lists, section headers,
+    file annotations. check_text is calibrated for prose. The filter is in
+    voice_audit._audit_recent_commits, not in check_text.
+    """
+
+    def test_colon_scaffolding_filtered_from_audit_tells(self):
+        sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "core" / "src"))
+        from voice_audit import audit_recent_commits
+
+        # Patch git log to return a commit body with many colons but no hard tells.
+        import subprocess as _sp
+        import unittest.mock as _mock
+
+        colon_heavy_body = (
+            "- project_detection.py: purpose detection, stack context\n"
+            "- git_context.py: git-log helpers, deploy freshness\n"
+            "- knowledge_loader.py: L2 context, project file scan\n"
+            "- state_paths.py: CLAUDE_ROOT, HOST_HOME constants\n"
+            "- session.py: imports from new modules, _sync_sp() added\n"
+        )
+        fake_log = f"abc1234\x1frefactor: extract modules\x1f{colon_heavy_body}\x1f---END---"
+
+        with _mock.patch("voice_audit.subprocess.run") as mock_run:
+            mock_run.return_value = _sp.CompletedProcess(
+                args=[], returncode=0, stdout=fake_log, stderr=""
+            )
+            import tempfile, pathlib
+            with tempfile.TemporaryDirectory() as tmp:
+                result = audit_recent_commits(pathlib.Path(tmp), n=1)
+
+        # colon_scaffolding must not appear in any reported finding
+        for finding in result.get("findings", []):
+            soft = " ".join(finding.get("tells_soft", []))
+            assert "colon_scaffolding" not in soft, (
+                f"colon_scaffolding leaked into audit finding: {finding}"
+            )
+
+    def test_em_dash_still_reported_by_audit(self):
+        sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "core" / "src"))
+        from voice_audit import audit_recent_commits
+        import subprocess as _sp
+        import unittest.mock as _mock
+
+        em_dash_body = "session.py crossed 3900 lines — this PR splits three groups."
+        fake_log = f"abc1234\x1frefactor: extract modules\x1f{em_dash_body}\x1f---END---"
+
+        with _mock.patch("voice_audit.subprocess.run") as mock_run:
+            mock_run.return_value = _sp.CompletedProcess(
+                args=[], returncode=0, stdout=fake_log, stderr=""
+            )
+            import tempfile, pathlib
+            with tempfile.TemporaryDirectory() as tmp:
+                result = audit_recent_commits(pathlib.Path(tmp), n=1)
+
+        findings = result.get("findings", [])
+        assert len(findings) == 1, "em_dash commit must still be reported"
+        hard = " ".join(findings[0].get("tells_hard", []))
+        assert "em_dash" in hard, f"em_dash not in hard tells: {findings[0]}"
