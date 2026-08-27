@@ -49,6 +49,21 @@ Every concept defined in PRD.md or well-architected.md has exactly one authority
 
 ---
 
+## State file gates must track the full write/consume/delete lifecycle
+
+A gate implemented as `Path.exists()` on a state file that has a consumer is implicitly checking whether the consumer ran — not just whether the writer ran. When the consumer deletes the file, absence is ambiguous: it means either "writer never ran" OR "writer ran + consumer ran correctly." The gate cannot distinguish them.
+
+**Design rule:** Before shipping any `Path.exists()` gate, map the full lifecycle:
+1. Who writes the file, and when?
+2. Who consumes it, and what do they do with it after reading?
+3. If the consumer deletes the file: absence is now ambiguous. Choose one:
+   - **Tombstone**: consumer writes `{name}-closed.json` after deleting `{name}.json`. Absence of `{name}.json` + presence of tombstone = correctly consumed. Absence of both = never written.
+   - **Durable timestamp**: writer also stamps a separate `last-{name}-at.json` that survives consumption. Compare timestamps, not file presence.
+
+**Known instance (session #88):** `pending_build_task` detection in `session_start` reads `routing-breadcrumb.json` absence as "never routed." But `task_checkpoint` deletes the breadcrumb on clean session close. Fix: write `last-routed-at.json` on each `route_task` call; compare to latest commit timestamp.
+
+**When this matters most:** Gates that drive automation (not just advisory signals). A false-positive machine signal causes spurious work; a false-negative silently skips a gate.
+
 ## Security
 
 **Goal:** Protect data, systems, and assets. Detect security events.
