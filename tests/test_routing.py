@@ -121,11 +121,14 @@ class TestScopeCollapseGate:
         assert d["blocked"] is True
         assert "collapsing_question" in d
 
-    def test_to_dict_blocked_false_omits_collapsing_question(self):
+    def test_to_dict_blocked_false_gives_empty_collapsing_question(self):
+        """Key is always present. RouteTaskResult is total=False, so an omitted field is
+        default-filled with null by the output validator and fails its non-nullable
+        "type": "string" check. Empty string is the empty signal."""
         from routing import route_task
         d = route_task("fix the login bug").to_dict()
         assert d["blocked"] is False
-        assert "collapsing_question" not in d
+        assert d["collapsing_question"] == ""
 
 
 class TestIntentBriefSizeOverride:

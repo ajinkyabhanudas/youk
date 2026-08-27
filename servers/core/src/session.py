@@ -3335,7 +3335,11 @@ def enrich_route_result(result: dict, task: str) -> None:
         result["file_context"] = []
 
     # Task graph state: next unblocked task + blocked count.
-    # Only fires when graph has >1 node — single-task sessions incur zero overhead.
+    # Only populated when the graph has >1 node — single-task sessions incur zero overhead.
+    # The key is always set, though: RouteTaskResult is total=False, so an omitted field is
+    # default-filled with null by the output validator and then fails its own non-nullable
+    # "type": "object" check. Empty dict is the empty signal.
+    result["graph_state"] = {}
     try:
         from graph import get_all_tasks as _get_all_tasks, next_task as _next_task
         _tasks = _get_all_tasks()
@@ -3348,7 +3352,7 @@ def enrich_route_result(result: dict, task: str) -> None:
                 "next_task": _next.get("task"),
             }
     except Exception:
-        pass  # graph_state omitted on failure — not a required field
+        pass  # graph_state stays {} on failure — not a required field
 
 
 _GATES_FOR_CEREMONY: dict[str, list[str]] = {

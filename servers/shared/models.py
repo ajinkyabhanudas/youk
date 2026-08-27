@@ -78,9 +78,11 @@ class RoutingDecision:
             "plan_hook": self.plan_hook,
             "blocked": self.blocked,
             "overengineering_flag": self.overengineering_flag,
+            # Always present. RouteTaskResult is total=False, so an omitted field is
+            # default-filled with null by the output validator and then fails its own
+            # non-nullable "type": "string" check. Empty string is the empty signal.
+            "collapsing_question": self.collapsing_question,
         }
-        if self.collapsing_question:
-            d["collapsing_question"] = self.collapsing_question
         if self.overengineering_note:
             d["overengineering_note"] = self.overengineering_note
         return d
