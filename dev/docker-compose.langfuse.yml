@@ -29,6 +29,8 @@ services:
       DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
       NEXTAUTH_SECRET: local-dev-secret-change-in-prod
       NEXTAUTH_URL: http://localhost:3000
+      SALT: local-dev-salt-change-in-prod
+      ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
       TELEMETRY_ENABLED: "false"
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
 

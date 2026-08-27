@@ -111,6 +111,33 @@ Follows the same SCOPE → ANALYZE → VERDICT pattern as code-review.
 
 Avoid: "fixed stuff", "WIP", "misc changes", multi-concept commits.
 
+## Observability (optional, maintainer tooling)
+
+youk emits Langfuse traces for drift and repair-quality work. This is **not** part of
+using youk. It no-ops unless `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY` and
+`LANGFUSE_SECRET_KEY` are all set, so a normal install never touches it and never
+needs the stack. You only want this if you are working on repair quality or
+release-over-release drift.
+
+```bash
+docker compose -f dev/docker-compose.langfuse.yml up -d   # UI on http://localhost:3000
+```
+
+Create an account and project in the UI, then put the keys in `.env.langfuse` at the
+repo root. It is gitignored via `.env.*`. Source it before running youk:
+
+```bash
+set -a && source .env.langfuse && set +a
+```
+
+**Before adding anything to a trace, read `docs/adr-011-trace-content-invariant.md`.**
+Traces carry derived scalars, enums and hashed identifiers only, never free text from
+a session. `_ALLOWED_METADATA_KEYS` in `servers/core/src/observability.py` enforces it
+and `tests/test_observability_privacy.py` will fail if the surface widens. The
+constraint exists so that pointing `LANGFUSE_HOST` at a shared team instance stays a
+config change rather than a privacy incident, and telemetry privacy cannot be
+retrofitted once data has left the machine.
+
 ## PR expectations
 
 - Small and focused — one skill, one feature, one fix
