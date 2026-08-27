@@ -330,3 +330,12 @@ No manual compaction needed. Context stays lean; auto-compaction rarely fires.
 - [Guard rails guide](guardrails.md) — how hard and soft rules work
 - [Building a variant](variants.md) — how to add youk-pm or youk-research
 - [PHILOSOPHY.md](../PHILOSOPHY.md) — the design principles behind youk
+
+## Recovering an interrupted session
+
+`route_task` writes the current task into `state/active_task.json`, and a post-tool hook
+keeps it current as work proceeds. If the terminal closes mid-task, the next
+`session_start` reads `active_task` back and resumes from it rather than starting cold.
+
+This is why routing matters even for work you could do without it: the routing call is
+what leaves the breadcrumb.

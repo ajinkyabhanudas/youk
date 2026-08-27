@@ -1530,11 +1530,28 @@ def check_doc_graph() -> dict:
     has_errors = bool(broken or orphaned)
     has_drift = bool(stale or semantic or untracked)
 
+    # Semantic drift and timestamp staleness are not the same claim and must not be
+    # summed into one number. Semantic drift is falsifiable: the invariant string is
+    # either present in the derived file or it is not. Timestamp staleness only says the
+    # authority was touched more recently, which fires when a file is reformatted and
+    # says nothing about whether any claim actually diverged.
+    #
+    # Reporting them together produced "23 concepts need review" for weeks. Six of those
+    # were real and went unfixed because they were buried in mtime noise nobody could act
+    # on. The verdict now leads with the actionable count.
     if has_errors:
         verdict = f"BROKEN — {len(broken)} broken link(s), {len(orphaned)} orphaned concept(s)"
+    elif semantic:
+        verdict = (
+            f"DRIFT DETECTED — {len(semantic)} doc(s) contradict their authority "
+            f"(actionable). Plus {len(stale)} timestamp-stale and {len(untracked)} "
+            "untracked, both heuristic."
+        )
     elif has_drift:
-        total = len(stale) + len(semantic) + len(untracked)
-        verdict = f"DRIFT DETECTED — {total} concept(s) need review"
+        verdict = (
+            f"REVIEW — no contradictions found. {len(stale)} timestamp-stale, "
+            f"{len(untracked)} untracked. Both are heuristics, not confirmed drift."
+        )
     else:
         verdict = "COHERENT — all derived files are up-to-date with their authorities"
 
@@ -1548,7 +1565,11 @@ def check_doc_graph() -> dict:
         "semantic_drift": semantic,
         "untracked_docs": untracked,
         "clean_concepts": max(clean, 0),
+        # Callers gate on the falsifiable count, never on the summed total.
+        "actionable_drift": len(semantic),
+        "heuristic_findings": len(stale) + len(untracked),
         "verdict": verdict,
+        "state_written": [],
     }
 
 

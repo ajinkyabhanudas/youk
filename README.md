@@ -56,6 +56,13 @@ You don't need Docker or an install to try it. Pick your level:
 curl -sL https://raw.githubusercontent.com/ajinkyabhanudas/youk/main/scripts/install.sh | bash
 ```
 
+The installer registers both MCP servers over HTTP:
+
+```bash
+claude mcp add --scope user youk-core --transport http http://127.0.0.1:8001/mcp
+claude mcp add --scope user youk-code --transport http http://127.0.0.1:8002/mcp
+```
+
 **Windows PowerShell** (`curl | bash` won't work here):
 ```powershell
 git clone https://github.com/ajinkyabhanudas/youk "$HOME\.claude\youk"
@@ -73,11 +80,17 @@ Full platform-by-platform walkthrough: **[docs/getting-started.md](docs/getting-
 
 ## What youk does, in four ideas
 
+youk exists so your ability **compounds** rather than resetting each session. A session
+that invokes no capability skill and never closes teaches it nothing, which is why the
+close ritual is tracked: `close_cluster` marks a session that ran review, encoded what
+it learned, and closed properly. Sessions that close this way are what the score rewards.
+
+
 1. **It builds skills from your work.** No skill for what you're doing? youk writes one, shaped by your task and your stack. A skill that fails gets fixed in the session it failed. Repeated gaps turn into proposals you approve once.
 
 2. **It sizes the work.** A one-liner and a new subsystem don't get the same handling. Anything substantial runs through gates — scope, non-functional requirements, review — before code.
 
-3. **It checks itself.** Every session, youk reports an `org_score` (0–10) you can watch over time. The score is driven primarily by capability skill invocation (weight 2.0) and session close rate (0.5), with bonuses for autonomy, challenge loop quality, and outcomes. Those are behavioural rates, so they are capped by a structural check: if a skill youk routes to will not load, or a repo skill is unreachable at runtime, the score is held at 6.5 or 8.0 and the reason is the first finding. That ceiling exists because behavioural rates cannot see a broken capability — a skill that never loads is simply never invoked, which looks like developer choice. Three consecutive sessions with no capability skills also cap the score at 6.5. Full formula: [docs/well-architected.md](docs/well-architected.md). That check is what stops youk from quietly turning into the tech debt it's meant to save you from.
+3. **It checks itself.** Every session, youk reports an `org_score` (0–10) you can watch over time. The score is driven primarily by `capability_skill_rate` (weight 2.0) and session close rate (0.5), with bonuses for autonomy, challenge loop quality, and outcomes. Those are behavioural rates, so they are capped by a structural check: if a skill youk routes to will not load, or a repo skill is unreachable at runtime, the score is held at 6.5 or 8.0 and the reason is the first finding. That ceiling exists because behavioural rates cannot see a broken capability — a skill that never loads is simply never invoked, which looks like developer choice. Three consecutive sessions with no capability skills also cap the score at 6.5. Full formula: [docs/well-architected.md](docs/well-architected.md). That check is what stops youk from quietly turning into the tech debt it's meant to save you from.
 
 4. **It remembers.** Your agreements, decisions, and resume point live in files that reload each session and survive a `git clone`. Groundwork for the three above.
 
@@ -97,6 +110,10 @@ Once installed, you mostly just work. A few commands are worth knowing:
 | `/learn` | Extract and save what today taught you (included in `/done`) |
 
 The single most important habit: **type `/done` at the end of a session.** That's what closes the compounding loop — without it, the work happened but youk didn't learn from it.
+
+A `PreCompact` hook fires before Claude Code compacts the conversation, so contracts
+and decisions are written to disk rather than surviving only in context that is about
+to be summarised away.
 
 Full command list and routing detail: **[docs/getting-started.md](docs/getting-started.md)**.
 
