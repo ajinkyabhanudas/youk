@@ -2094,6 +2094,45 @@ def render_coverage_view(
     }
 
 
+@mcp.tool()
+def check_voice(text: str) -> dict:
+    """
+    Check text for hard AI-tells before it is surfaced or committed.
+
+    Returns the same verdict the commit-msg hook enforces, so prose written for a chat
+    reply is held to the gate that already covers commit messages. Commits have a hook;
+    conversational output has no enforcement point, and CLAUDE.md's "no AI-style language
+    in any output, ever" is a rule that has to be remembered. It was not: em dashes
+    reached chat replies repeatedly in a single session while that rule was in force.
+
+    Making it a tool call does not guarantee it runs, but it removes the excuse that
+    running it is expensive, and it is the same move that fixed the coverage view.
+
+    Returns: {gate, tells_hard, tells_soft, metrics}.
+    gate is BLOCKED (hard tells present, rewrite), REVIEW (soft tells, judgement call)
+    or CLEAN. Treat BLOCKED as blocking, exactly as the commit hook does.
+    """
+    try:
+        from voice_fingerprint import check_text
+    except Exception as exc:
+        return {
+            "gate": "UNAVAILABLE",
+            "error": f"voice_fingerprint not importable: {exc}",
+            "tells_hard": [],
+            "tells_soft": [],
+            "state_written": [],
+        }
+
+    result = check_text(text or "")
+    return {
+        "gate": result.get("gate", "CLEAN"),
+        "tells_hard": result.get("tells_hard", []),
+        "tells_soft": result.get("tells_soft", []),
+        "metrics": result.get("metrics", {}),
+        "state_written": [],
+    }
+
+
 if __name__ == "__main__":
     _seed_judgment_sets()
     mcp.run(transport=_server_args.transport)
