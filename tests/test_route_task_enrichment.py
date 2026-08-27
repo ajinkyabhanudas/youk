@@ -161,17 +161,20 @@ class TestFileContext:
 # ---------------------------------------------------------------------------
 
 class TestGraphState:
-    def test_absent_when_zero_tasks(self, monkeypatch, tmp_path):
+    def test_empty_when_zero_tasks(self, monkeypatch, tmp_path):
+        """Key is always present. RouteTaskResult is total=False, so an omitted field is
+        default-filled with null by the output validator and fails its non-nullable
+        "type": "object" check. Empty dict is the empty signal."""
         result = _enrich(monkeypatch, tmp_path,
                          find_relevant_return={"results": []}, get_all_tasks_return=[])
-        assert "graph_state" not in result
+        assert result["graph_state"] == {}
 
-    def test_absent_when_one_task(self, monkeypatch, tmp_path):
-        """Single-task sessions: no graph_state overhead."""
+    def test_empty_when_one_task(self, monkeypatch, tmp_path):
+        """Single-task sessions: no graph_state computation, but the key still exists."""
         result = _enrich(monkeypatch, tmp_path,
                          find_relevant_return={"results": []},
                          get_all_tasks_return=[{"id": "t1", "unblocked": True}])
-        assert "graph_state" not in result
+        assert result["graph_state"] == {}
 
     def test_present_when_multiple_tasks(self, monkeypatch, tmp_path):
         tasks = [
@@ -205,7 +208,7 @@ class TestGraphState:
         assert result["graph_state"]["blocked_count"] == 2
 
     def test_silent_fail_on_exception(self, monkeypatch, tmp_path):
-        """Exception in get_all_tasks → graph_state omitted, never raises."""
+        """Exception in get_all_tasks → graph_state stays {}, never raises."""
         import sys
         from unittest.mock import MagicMock
         fake_fi = MagicMock()
@@ -222,7 +225,7 @@ class TestGraphState:
         try:
             result: dict = {}
             _session_mod.enrich_route_result(result, "any task")
-            assert "graph_state" not in result
+            assert result["graph_state"] == {}
         finally:
             for m in ("file_index", "graph"):
                 sys.modules.pop(m, None)

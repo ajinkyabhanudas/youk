@@ -501,8 +501,11 @@ def route_task(
         sv = _get_steering(label)
         if sv.get("learned"):
             steering_context.append(sv)
-    if steering_context:
-        result["steering_context"] = steering_context
+    # Always set, even when empty. RouteTaskResult is total=False, so FastMCP gives every
+    # field default=None with a non-nullable type — an omitted array field is filled with
+    # null and then fails its own "type": "array" check. Empty list is the correct empty
+    # signal; CLAUDE.md already branches on "non-empty".
+    result["steering_context"] = steering_context
     # Write routing flag so session_start can detect when routing ran this session.
     # Analogous to nfr-check-ran.json — enables "routing was missed" recovery at next open.
     if not result.get("blocked"):
