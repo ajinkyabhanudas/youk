@@ -19,6 +19,8 @@ challenged, and it is the reason this is not an end-to-end harness.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 # server.py imports mcp.server.fastmcp specifically. Guarding on the top-level `mcp`
@@ -55,13 +57,72 @@ def _isolate_roots(tmp_path, monkeypatch):
     (claude_root / "skills").mkdir(parents=True, exist_ok=True)
     (claude_root / "audit").mkdir(parents=True, exist_ok=True)
 
-    import server  # noqa: F401  — ensure the module graph is loaded before scanning
+    # Import everything the tools reach for BEFORE scanning. Several modules are
+    # imported lazily inside functions, so they are absent from sys.modules when the
+    # fixture runs and their path constants escape redirection. challenge_gate did
+    # exactly that and kept writing revisable-sets.json into the real state dir.
+    import server  # noqa: F401
+    for _lazy in ("challenge_gate", "revisable_sets", "graph", "file_index",
+                  "steering_vocab", "knowledge_index", "state_paths", "session",
+                  "health", "intent", "observability"):
+        try:
+            __import__(_lazy)
+        except Exception:
+            pass
+
+    # Patching the roots alone is not enough. Modules also derive constants from them
+    # at import time, e.g. server._TOOL_CALL_COUNT_FILE = YOUK_ROOT / "state" / ...,
+    # which is already baked by the time a fixture runs. Rewrite every module-level
+    # Path that sits under a real root, not just the roots themselves.
+    real = ((Path("/youk"), youk_root), (Path("/claude"), claude_root))
+
+    def _redirect(value: Path) -> Path | None:
+        for original, replacement in real:
+            try:
+                return replacement / value.relative_to(original)
+            except ValueError:
+                continue
+        return None
+
     for mod in list(sys.modules.values()):
         if mod is None or not getattr(mod, "__name__", "").isidentifier():
             continue
-        for attr, value in (("YOUK_ROOT", youk_root), ("CLAUDE_ROOT", claude_root)):
-            if hasattr(mod, attr):
-                monkeypatch.setattr(mod, attr, value, raising=False)
+        for attr in list(vars(mod)) if hasattr(mod, "__dict__") else []:
+            try:
+                current = getattr(mod, attr)
+            except Exception:
+                continue
+            if not isinstance(current, Path):
+                continue
+            replacement = _redirect(current)
+            if replacement is not None:
+                replacement.parent.mkdir(parents=True, exist_ok=True)
+                monkeypatch.setattr(mod, attr, replacement, raising=False)
+
+    # Path defaults bound at def time, e.g. `def _save(reg, path=_REGISTRY_FILE)`.
+    # Patching the module attribute cannot reach these: the default was captured when
+    # the function was defined. 21 such bindings exist across revisable_sets,
+    # behavioral_profile, skill_signals and steering_vocab, so rewriting __defaults__
+    # is the only isolation that covers them without editing every signature.
+    import types
+    for mod in list(sys.modules.values()):
+        if mod is None or not getattr(mod, "__name__", "").isidentifier():
+            continue
+        for fn in list(vars(mod).values()) if hasattr(mod, "__dict__") else []:
+            if not isinstance(fn, types.FunctionType) or not fn.__defaults__:
+                continue
+            new_defaults = []
+            changed = False
+            for d in fn.__defaults__:
+                repl = _redirect(d) if isinstance(d, Path) else None
+                if repl is not None:
+                    repl.parent.mkdir(parents=True, exist_ok=True)
+                    new_defaults.append(repl)
+                    changed = True
+                else:
+                    new_defaults.append(d)
+            if changed:
+                monkeypatch.setattr(fn, "__defaults__", tuple(new_defaults), raising=False)
     yield
 
 
@@ -167,6 +228,29 @@ class TestIsolationActuallyHolds:
         import server
         assert str(server.YOUK_ROOT).startswith(str(tmp_path))
         assert str(server.CLAUDE_ROOT).startswith(str(tmp_path))
+
+    def test_derived_path_constants_are_redirected_too(self, tmp_path):
+        """The case that escaped the first fix.
+
+        _TOOL_CALL_COUNT_FILE is computed from YOUK_ROOT at import time, so patching
+        the root afterwards leaves it pointing at the real path. CI caught it as a
+        FileNotFoundError on /youk/state/tool-call-count.json.
+        """
+        import server
+        assert str(server._TOOL_CALL_COUNT_FILE).startswith(str(tmp_path))
+
+    def test_no_module_level_path_still_points_at_a_real_root(self, tmp_path):
+        """Sweeps for any Path constant the fixture missed."""
+        import sys
+        escaped = []
+        for mod in list(sys.modules.values()):
+            name = getattr(mod, "__name__", "")
+            if mod is None or not name.isidentifier() or not hasattr(mod, "__dict__"):
+                continue
+            for attr, value in list(vars(mod).items()):
+                if isinstance(value, Path) and str(value).startswith(("/youk", "/claude")):
+                    escaped.append(f"{name}.{attr} = {value}")
+        assert escaped == [], f"paths still resolving to real roots: {escaped}"
 
     def test_executing_a_tool_writes_only_under_tmp(self, tmp_path):
         """route_task has write side effects; they must all land in tmp."""

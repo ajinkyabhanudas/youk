@@ -23,7 +23,12 @@ REQUIRED_ANGLES: dict[str, set[str]] = {
     "plan": _FOUR_LENSES,
 }
 
-_REGISTRY_FILE = Path("/youk/state/revisable-sets.json")
+# Derived from YOUK_ROOT rather than hardcoded, so tests and alternate installs can
+# redirect it. Every other module in this package exposes YOUK_ROOT as a module-level
+# constant; this one baked the absolute path in and was the only state write that
+# could not be pointed anywhere else.
+YOUK_ROOT = Path("/youk")
+_REGISTRY_FILE = YOUK_ROOT / "state" / "revisable-sets.json"
 
 
 def get_convergence_angles(registry_path: Path | None = None) -> tuple[set[str], bool, bool]:
