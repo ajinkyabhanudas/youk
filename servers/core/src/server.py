@@ -2170,6 +2170,28 @@ def log_ab_exposure(session_slug: str, experiment: str, skill: str, variant: str
         }
 
 
+@mcp.tool()
+def check_ab_pilot_status(experiment: str = "rationale_terseness", threshold: int = 20) -> dict:
+    """
+    Report exposure counts against the pre-registered stop threshold. Not a readout.
+
+    Per the plan's own pre-registration (~/Desktop/AB-Tests/ab-test-plan.md): "analyze
+    once, no peeking." This reports counts and a boolean only — total exposures, split
+    by variant, and whether the threshold is reached. It never computes or implies a
+    comparison. A comparison built and checked before the threshold is exactly the peek
+    pre-registration exists to prevent: a stop condition decided after seeing partial
+    data is not a stop condition.
+
+    The comparison logic (joining exposures against autonomy_depth trend) does not
+    exist yet, deliberately — building it before there is data to compare is the same
+    premature-infrastructure trap this pilot's own plan already named once.
+
+    Returns: {experiment, threshold, total, by_variant, ready, remaining}.
+    """
+    from ab_experiments import pilot_status
+    return pilot_status(YOUK_ROOT, experiment, threshold)
+
+
 if __name__ == "__main__":
     _seed_judgment_sets()
     mcp.run(transport=_server_args.transport)

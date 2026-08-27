@@ -103,6 +103,41 @@ def log_exposure(
         pass
 
 
+def pilot_status(youk_root: Path, experiment: str, threshold: int = 20) -> dict:
+    """Count exposures per variant against the pre-registered stop threshold.
+
+    Does NOT compute a readout. Per the plan's pre-registration ("analyze once,
+    no peeking"), producing a comparison before the threshold is reached is exactly
+    the failure mode pre-registration exists to prevent: a peek changes what "once"
+    means, and a stop condition decided after seeing partial data is not a stop
+    condition. This function draws the line the readout logic must respect — it
+    reports counts and a boolean, nothing that could be read as a verdict.
+
+    The comparison itself (joining against autonomy_depth trend) is deliberately
+    not built here. It has no reason to exist before there is data to compare, and
+    building it early is the same premature-infrastructure trap the plan's own
+    reframing already named once for this project.
+
+    Returns: {experiment, threshold, total, by_variant, ready, remaining}.
+    ready=True only once total >= threshold. remaining is never negative.
+    """
+    exposures = read_exposures(youk_root, experiment)
+    total = len(exposures)
+    by_variant: dict[str, int] = {v: 0 for v in VARIANTS}
+    for e in exposures:
+        v = e.get("variant")
+        if v in by_variant:
+            by_variant[v] += 1
+    return {
+        "experiment": experiment,
+        "threshold": threshold,
+        "total": total,
+        "by_variant": by_variant,
+        "ready": total >= threshold,
+        "remaining": max(threshold - total, 0),
+    }
+
+
 def read_exposures(youk_root: Path, experiment: str | None = None) -> list[dict]:
     """Read logged exposures, optionally filtered to one experiment.
 
