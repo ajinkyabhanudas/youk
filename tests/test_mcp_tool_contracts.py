@@ -21,9 +21,14 @@ from __future__ import annotations
 
 import pytest
 
-# server.py needs the mcp package. Skip rather than error so a contributor without it
-# still gets a green local run; CI installs mcp so the tests actually execute there.
-pytest.importorskip("mcp", reason="mcp not installed — CI installs it")
+# server.py imports mcp.server.fastmcp specifically. Guarding on the top-level `mcp`
+# package is not enough: mcp 2.x installs cleanly, renames FastMCP to MCPServer, and
+# then every test here errors on import instead of skipping. Guard the exact module
+# the code under test uses, not its parent package.
+pytest.importorskip(
+    "mcp.server.fastmcp",
+    reason="mcp<2 with the FastMCP API not installed — CI installs it",
+)
 
 
 def _core_server():

@@ -86,6 +86,54 @@ class TestRealStartRunCallSite:
         assert set(captured["metadata"]).issubset(obs._ALLOWED_METADATA_KEYS)
 
 
+class TestGenerationCarriesNoPromptText:
+    """Langfuse generations normally carry prompt and completion.
+
+    Here the prompt is the user's raw task description, so recording it would break
+    ADR-011 at the single most tempting point. Only model name, token counts and
+    latency go on the wire.
+    """
+
+    @staticmethod
+    def _capture(**kwargs) -> dict:
+        captured: dict = {}
+
+        class _FakeLangfuse:
+            def generation(self, **kw):
+                captured.update(kw)
+
+        o = obs.LangfuseObs.__new__(obs.LangfuseObs)
+        o._lf = _FakeLangfuse()
+        o.record_generation(
+            "trace-1", "optimize_intent", "claude-haiku-4-5-20251001",
+            input_tokens=1200, output_tokens=340, duration_s=1.234, **kwargs
+        )
+        return captured
+
+    def test_records_model_tokens_and_latency(self):
+        c = self._capture()
+        assert c["model"] == "claude-haiku-4-5-20251001"
+        assert c["usage"]["input"] == 1200
+        assert c["usage"]["output"] == 340
+        assert c["metadata"]["duration_s"] == 1.234
+
+    def test_no_prompt_or_completion_field_is_sent(self):
+        c = self._capture()
+        for banned in ("input", "output", "prompt", "completion", "messages"):
+            assert banned not in c, f"generation carried {banned!r}, which can hold session text"
+
+    def test_payload_contains_no_free_text_beyond_literals(self):
+        """model and name are code literals; nothing else may be a string."""
+        c = self._capture()
+        assert set(c) == {"trace_id", "name", "model", "usage", "metadata"}
+
+    def test_cost_is_not_hardcoded(self):
+        """Langfuse derives cost from model + usage; a local price table would drift."""
+        c = self._capture()
+        assert "cost" not in c
+        assert not any("price" in str(k).lower() for k in c)
+
+
 class TestAllowlistIsDeliberate:
     def test_allowlist_contents_are_pinned(self):
         """Fails when the allowlist changes, forcing a re-read of ADR-011.

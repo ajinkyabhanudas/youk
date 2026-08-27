@@ -111,6 +111,10 @@ class NoOpObs:
     def span_by_id(self, trace_id: str, name: str, **metadata):
         yield None
 
+    def record_generation(self, trace_id: str, name: str, model: str,
+                          input_tokens: int, output_tokens: int, duration_s: float) -> None:
+        pass
+
     def end_run(self, trace: Any, **kw) -> None:
         pass
 
@@ -204,6 +208,31 @@ class LangfuseObs:
                 )
             except Exception:
                 pass
+
+    def record_generation(self, trace_id: str, name: str, model: str,
+                          input_tokens: int, output_tokens: int, duration_s: float) -> None:
+        """Record a model call: model name, token counts, latency. Cost is derived.
+
+        Cost is deliberately NOT computed here. Langfuse derives it from the model name
+        and usage against its own pricing table, so prices stay correct without a
+        hardcoded table in this repo drifting out of date.
+
+        Prompt and completion text are deliberately NOT recorded. Langfuse generations
+        normally carry both, and here the prompt contains the user's raw task
+        description. ADR-011 forbids free session text on a trace, and this is the most
+        tempting place to break it. Model name is a literal in the calling code, not
+        user data. Never raises.
+        """
+        try:
+            self._lf.generation(
+                trace_id=trace_id,
+                name=name,
+                model=model,
+                usage={"input": input_tokens, "output": output_tokens, "unit": "TOKENS"},
+                metadata={"duration_s": round(duration_s, 3)},
+            )
+        except Exception:
+            pass
 
     def end_run_by_id(self, trace_id: str, outcome: str = "NONE", commits_made: bool = False) -> None:
         self._lf.trace(
