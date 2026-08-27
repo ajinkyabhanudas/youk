@@ -2133,6 +2133,43 @@ def check_voice(text: str) -> dict:
     }
 
 
+@mcp.tool()
+def log_ab_exposure(session_slug: str, experiment: str, skill: str, variant: str) -> dict:
+    """
+    Persist an A/B experiment exposure record. Append-only, idempotent, ADR-011 compliant.
+
+    Exists because route_to_skill runs in youk-code, which mounts YOUK_ROOT read-only
+    by design (skill-execution logic should not mutate global state directly — only
+    youk-core does). route_to_skill computes the variant and returns it as ab_variant
+    in its result; this tool is the write-authorized half that actually persists the
+    exposure, called by the orchestrating session immediately after routing a pilot
+    skill (ab_variant is non-null in the result).
+
+    session_slug: current session slug (hashed before it touches disk, never stored raw).
+    experiment: the experiment name from route_to_skill's pilot registry.
+    skill: the skill that was routed.
+    variant: "control" or "treatment", from route_to_skill's ab_variant field.
+
+    Returns: {"logged": bool, "path": str}
+    """
+    from ab_experiments import log_exposure, _exposure_path
+
+    try:
+        log_exposure(YOUK_ROOT, session_slug, experiment, skill, variant)
+        return {
+            "logged": True,
+            "path": str(_exposure_path(YOUK_ROOT)),
+            "state_written": ["state/ab-exposures.json"],
+        }
+    except Exception as exc:
+        return {
+            "logged": False,
+            "error": str(exc),
+            "error_type": "SYSTEM",
+            "state_written": [],
+        }
+
+
 if __name__ == "__main__":
     _seed_judgment_sets()
     mcp.run(transport=_server_args.transport)

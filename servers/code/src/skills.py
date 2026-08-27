@@ -13,11 +13,20 @@ from skill_loader import (
     load_skill, load_skill_with_context, list_skills, load_skill_fast_path,
     extract_frontmatter_field,
 )
+from ab_experiments import assign_variant as _ab_assign_variant, log_exposure as _ab_log_exposure
 
 _SESSION_STATE = YOUK_ROOT / "state" / "session.json"
 _SKILL_GRAPH = YOUK_ROOT / "knowledge" / "skill-graph.yaml"
 _RATIONALE_STATE = YOUK_ROOT / "state" / "skill-rationale-state.json"
 _RATIONALE_SUPPRESS_AFTER = 3  # suppress teaching after developer pre-empts N times
+
+# A/B pilot registry: {skill_name: experiment_name}. Adding a skill to the pilot needs
+# no code change here — only a rationale_why_terse field on that skill's SKILL.md.
+# Per ~/Desktop/AB-Tests/ab-test-plan.md: starts with nfr-check, the skill with the
+# richest existing telemetry (autonomy_depth is already tracked per-skill).
+_AB_PILOT_SKILLS: dict[str, str] = {
+    "nfr-check": "rationale_terseness",
+}
 
 # Detect at load time whether this container can write to the state directory.
 # youk-code mounts /youk read-only by design — writes to state/ must degrade gracefully.
@@ -354,8 +363,26 @@ def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> d
     # Teaching rationale — shown until developer internalises it (suppressed after N pre-emptions)
     suppressed = _rationale_suppressed(resolved_name)
     rationale_why = None
+    ab_variant = None
     if not suppressed:
-        rationale_why = extract_frontmatter_field(resolved_name, "rationale_why")
+        experiment = _AB_PILOT_SKILLS.get(resolved_name)
+        if experiment:
+            # Pilot skill: pick control (rationale_why) or treatment
+            # (rationale_why_terse) deterministically per session, log the exposure,
+            # and fall back to control if the terse field is absent — a skill can be
+            # added to _AB_PILOT_SKILLS before its terse variant is authored without
+            # breaking routing.
+            slug = _get_current_slug()
+            ab_variant = _ab_assign_variant(slug, experiment)
+            if ab_variant == "treatment":
+                rationale_why = extract_frontmatter_field(resolved_name, "rationale_why_terse")
+            if not rationale_why:
+                rationale_why = extract_frontmatter_field(resolved_name, "rationale_why")
+                ab_variant = "control"  # fell back; log what was actually shown
+            if rationale_why:
+                _ab_log_exposure(YOUK_ROOT, slug, experiment, resolved_name, ab_variant)
+        else:
+            rationale_why = extract_frontmatter_field(resolved_name, "rationale_why")
         if rationale_why:
             _increment_rationale_shown(resolved_name)
 
@@ -367,6 +394,7 @@ def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> d
         "context": ctx,
         "rationale": rationale_why,
         "rationale_suppressed": suppressed,
+        "ab_variant": ab_variant,  # "control" | "treatment" | None (not a pilot skill)
         "instruction": (
             f"You have received the '{resolved_name}' skill. "
             + (
