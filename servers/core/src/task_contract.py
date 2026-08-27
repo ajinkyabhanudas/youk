@@ -14,6 +14,8 @@ import yaml
 from datetime import datetime, UTC
 from pathlib import Path
 
+CLAUDE_ROOT = Path("/claude")
+
 import sys
 sys.path.insert(0, "/shared")
 from models import TaskSize
@@ -23,7 +25,7 @@ _CONTRACTS_DIR = YOUK_ROOT / "state" / "task-contracts"
 _RISK_LEDGER = YOUK_ROOT / "state" / "risk-ledger.jsonl"
 _FRAMES_FILE = YOUK_ROOT / "skills" / "adversarial-planning" / "references" / "frames.md"
 _ROUTES_FILE = YOUK_ROOT / "config" / "routes.yaml"
-_AUDIT_DIR = Path("/claude") / "audit"
+_AUDIT_DIR = CLAUDE_ROOT / "audit"
 
 _FRAME_QUESTIONS: dict[str, str] = {
     "F1": "If this works perfectly, does the user actually feel the benefit?",

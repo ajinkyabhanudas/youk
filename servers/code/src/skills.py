@@ -2,6 +2,8 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+
+YOUK_ROOT = Path("/youk")
 sys.path.insert(0, "/shared")
 
 import yaml
@@ -12,9 +14,9 @@ from skill_loader import (
     extract_frontmatter_field,
 )
 
-_SESSION_STATE = Path("/youk/state/session.json")
-_SKILL_GRAPH = Path("/youk/knowledge/skill-graph.yaml")
-_RATIONALE_STATE = Path("/youk/state/skill-rationale-state.json")
+_SESSION_STATE = YOUK_ROOT / "state" / "session.json"
+_SKILL_GRAPH = YOUK_ROOT / "knowledge" / "skill-graph.yaml"
+_RATIONALE_STATE = YOUK_ROOT / "state" / "skill-rationale-state.json"
 _RATIONALE_SUPPRESS_AFTER = 3  # suppress teaching after developer pre-empts N times
 
 # Detect at load time whether this container can write to the state directory.
@@ -157,7 +159,7 @@ def write_skill_handoff(from_skill: str, content: str) -> dict:
     return result
 
 
-_YOUK_ROOT = Path("/youk")
+_YOUK_ROOT = YOUK_ROOT
 _ROUTE_TASK_RAN = _YOUK_ROOT / "state" / "route-task-ran.json"
 _SESSION_OPEN = _YOUK_ROOT / "state" / "session-open.json"
 
@@ -341,7 +343,7 @@ def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> d
     # Clear force_learn pending action when /learn fires — the gate is satisfied.
     if skill_name == "learn":
         try:
-            pending_action_file = Path("/youk/state/pending-action.json")
+            pending_action_file = YOUK_ROOT / "state" / "pending-action.json"
             if pending_action_file.exists():
                 data = json.loads(pending_action_file.read_text())
                 if data.get("action") == "learn":

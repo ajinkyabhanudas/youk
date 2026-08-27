@@ -89,21 +89,31 @@ CLAUDE_ROOT = Path("/claude")
 
 _TOOL_CALL_COUNT_FILE = YOUK_ROOT / "state" / "tool-call-count.json"
 
-# Seed the first enrolled judgment-set at server startup (idempotent).
-# _SEVEN_CONVERGENCE is the proof-of-concept set for the self-revision meta-loop.
-# Other sets are enrolled only when a concrete revision is first proposed (ADR decision).
-try:
-    _rs_enroll(
-        "_SEVEN_CONVERGENCE",
-        policy="both",
-        initial_elements=[
-            "structural", "operational", "experiential",
-            "adversarial", "temporal", "outcome", "semantic",
-        ],
-    )
-except Exception:
-    # youk: silent enrollment failure → upgrade to structured warning when server gains logging.
-    pass
+def _seed_judgment_sets() -> None:
+    """Seed the first enrolled judgment-set. Idempotent.
+
+    Called from the __main__ block, NOT at module scope. Module scope runs on every
+    import, so seeding there meant that merely importing server.py wrote to
+    state/revisable-sets.json. Tests, linters and doc tooling all import this module,
+    and a write on import is invisible until something runs where the state dir is
+    read-only or absent. It also defeats test isolation: the write happens during the
+    import that a fixture performs, before the fixture can redirect any path.
+
+    _SEVEN_CONVERGENCE is the proof-of-concept set for the self-revision meta-loop.
+    Other sets are enrolled only when a concrete revision is first proposed (ADR decision).
+    """
+    try:
+        _rs_enroll(
+            "_SEVEN_CONVERGENCE",
+            policy="both",
+            initial_elements=[
+                "structural", "operational", "experiential",
+                "adversarial", "temporal", "outcome", "semantic",
+            ],
+        )
+    except Exception:
+        # youk: silent enrollment failure → upgrade to structured warning when server gains logging.
+        pass
 
 
 def _get_session_slug() -> str:
@@ -1989,4 +1999,5 @@ def record_steering_decomposition(
 
 
 if __name__ == "__main__":
+    _seed_judgment_sets()
     mcp.run(transport=_server_args.transport)

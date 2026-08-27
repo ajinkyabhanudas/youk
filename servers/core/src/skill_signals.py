@@ -25,11 +25,15 @@ import json
 import re
 from datetime import datetime, UTC
 from pathlib import Path
+
+YOUK_ROOT = Path("/youk")
+
+CLAUDE_ROOT = Path("/claude")
 from typing import Literal
 
 # ── paths ────────────────────────────────────────────────────────────────────
 
-_YOUK_ROOT = Path("/youk")
+_YOUK_ROOT = YOUK_ROOT
 _STATE_DIR = _YOUK_ROOT / "state"
 _SIGNALS_FILE = _STATE_DIR / "skill-signals.jsonl"
 _POINTS_FILE = _STATE_DIR / "skill-points.json"
@@ -126,7 +130,7 @@ def _load_scope_matrix() -> dict:
     try:
         import yaml  # type: ignore[import]
         matrix_path = (
-            Path("/claude/skills/dev-loop/references/skill-scope-matrix.yaml")
+            CLAUDE_ROOT / "skills" / "dev-loop" / "references" / "skill-scope-matrix.yaml"
         )
         if not matrix_path.exists():
             return {}
@@ -313,7 +317,7 @@ def compute_signals_for_session(audit_block: str, session_n: int) -> list[dict]:
 
 # ── pattern detection ─────────────────────────────────────────────────────────
 
-def detect_patterns(signals_file: Path = _SIGNALS_FILE, window: int = 10) -> list[dict]:
+def detect_patterns(signals_file: Path | None = None, window: int = 10) -> list[dict]:
     """Detect improvement-ready patterns in skill-signals.jsonl.
 
     Returns list of patterns where same skill-dimension shows 3+ GAP or
@@ -321,6 +325,7 @@ def detect_patterns(signals_file: Path = _SIGNALS_FILE, window: int = 10) -> lis
 
     Each pattern: {skill, signal_type, dimension, count, sessions, evidence_samples}
     """
+    signals_file = signals_file if signals_file is not None else _SIGNALS_FILE
     if not signals_file.exists():
         return []
 
@@ -425,8 +430,9 @@ def update_points(signals: list[dict]) -> dict[str, float]:
     return touched
 
 
-def get_fork_candidates(points_file: Path = _POINTS_FILE) -> list[dict]:
+def get_fork_candidates(points_file: Path | None = None) -> list[dict]:
     """Return skills at or below the fork threshold."""
+    points_file = points_file if points_file is not None else _POINTS_FILE
     ledger = _load_points()
     candidates = []
     for skill, data in ledger.items():
@@ -439,8 +445,9 @@ def get_fork_candidates(points_file: Path = _POINTS_FILE) -> list[dict]:
     return sorted(candidates, key=lambda c: c["points"])
 
 
-def get_skill_health_summary(points_file: Path = _POINTS_FILE) -> dict:
+def get_skill_health_summary(points_file: Path | None = None) -> dict:
     """Return health summary for all tracked skills."""
+    points_file = points_file if points_file is not None else _POINTS_FILE
     ledger = _load_points()
     summary = {}
     for skill in _TRACKED_SKILLS:
@@ -544,7 +551,7 @@ def record_session_signals(audit_block: str, session_n: int) -> dict:
 
 # ── Phase 2: proposal generation ─────────────────────────────────────────────
 
-_SKILL_ROOT = Path("/claude/skills")
+_SKILL_ROOT = CLAUDE_ROOT / "skills"
 _IMPROVEMENT_QUEUE = _STATE_DIR / "skill-improvement-queue.json"
 _APPLIED_PROPOSALS = _STATE_DIR / "applied-proposals.json"
 

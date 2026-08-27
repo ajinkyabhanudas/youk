@@ -1,6 +1,8 @@
 from __future__ import annotations
 import sys
 from pathlib import Path
+
+YOUK_ROOT = Path("/youk")
 sys.path.insert(0, "/shared")
 
 from models import NFRBlock, TaskSize
@@ -88,7 +90,7 @@ def _load_current_slug() -> str:
     """Read the last project slug from youk state — used for WAF injection."""
     try:
         import json
-        state_file = Path("/youk/state/session.json")
+        state_file = YOUK_ROOT / "state" / "session.json"
         if state_file.exists():
             return json.loads(state_file.read_text()).get("last_project", "")
     except Exception:

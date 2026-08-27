@@ -13,7 +13,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-_DEFAULT_ROOT = Path("/youk")
+YOUK_ROOT = Path("/youk")
+
+_DEFAULT_ROOT = YOUK_ROOT
 
 _SMALL_SIZES = {"XS", "S"}
 

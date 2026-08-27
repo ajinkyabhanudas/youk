@@ -2,6 +2,8 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+
+YOUK_ROOT = Path("/youk")
 sys.path.insert(0, "/shared")
 
 import yaml  # type: ignore[import]
@@ -9,7 +11,7 @@ import yaml  # type: ignore[import]
 from models import CommitQualityResult
 from guardrails import check_credential_file, HardRuleViolation
 
-_DOC_MAP_PATH = Path("/youk/docs/doc-map.yaml")
+_DOC_MAP_PATH = YOUK_ROOT / "docs" / "doc-map.yaml"
 
 
 def _stale_doc_refs(file_paths: list[str]) -> list[str]:

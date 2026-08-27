@@ -52,7 +52,8 @@ _COMMIT_SKILLS = {"humanize"}
 _MAX_HINTS = 50
 
 
-def _load(path: Path = _PROFILE_FILE) -> dict:
+def _load(path: Path | None = None) -> dict:
+    path = path if path is not None else _PROFILE_FILE
     if not path.exists():
         return {"hints": {}, "version": 1}
     try:
@@ -61,7 +62,8 @@ def _load(path: Path = _PROFILE_FILE) -> dict:
         return {"hints": {}, "version": 1}
 
 
-def _save(profile: dict, path: Path = _PROFILE_FILE) -> None:
+def _save(profile: dict, path: Path | None = None) -> None:
+    path = path if path is not None else _PROFILE_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(profile, indent=2))
 
@@ -73,7 +75,7 @@ def _hint_key(skill: str, event: str) -> str:
 def record_session_patterns(
     skills_used: list[str] | None,
     commits_made: bool,
-    path: Path = _PROFILE_FILE,
+    path: Path | None = None,
 ) -> dict:
     """Observe session behavior and update the profile.
 
@@ -82,6 +84,7 @@ def record_session_patterns(
 
     Returns {"hints_updated": [key, ...], "hints_activated": [key, ...]}.
     """
+    path = path if path is not None else _PROFILE_FILE
     skills = set(skills_used or [])
     profile = _load(path)
     hints = profile.setdefault("hints", {})
@@ -114,12 +117,13 @@ def record_session_patterns(
     return {"hints_updated": updated, "hints_activated": activated}
 
 
-def load_active_hints(path: Path = _PROFILE_FILE) -> list[dict]:
+def load_active_hints(path: Path | None = None) -> list[dict]:
     """Return all active routing hints for this developer.
 
     Called at session_start. Each hint is {skill, event, count, last_seen}.
     Active hints have count >= HINT_THRESHOLD — enough evidence to influence routing.
     """
+    path = path if path is not None else _PROFILE_FILE
     profile = _load(path)
     active = []
     for key, entry in profile.get("hints", {}).items():
@@ -147,15 +151,16 @@ def format_hint_warnings(hints: list[dict]) -> list[str]:
     return lines
 
 
-def is_hint_active(skill: str, event: str, path: Path = _PROFILE_FILE) -> bool:
+def is_hint_active(skill: str, event: str, path: Path | None = None) -> bool:
     """Return True if this skill:event hint is active for this developer."""
+    path = path if path is not None else _PROFILE_FILE
     profile = _load(path)
     key = _hint_key(skill, event)
     entry = profile.get("hints", {}).get(key, {})
     return bool(entry.get("active"))
 
 
-def scan_audit_for_patterns(audit_path: Path, profile_path: Path = _PROFILE_FILE) -> dict:
+def scan_audit_for_patterns(audit_path: Path, profile_path: Path | None = None) -> dict:
     """Scan an existing audit markdown file and backfill the profile.
 
     Reads Sessions from the audit (Skills: ..., Commits: yes/no lines) and
@@ -164,6 +169,7 @@ def scan_audit_for_patterns(audit_path: Path, profile_path: Path = _PROFILE_FILE
 
     Returns {"sessions_scanned": int, "patterns_found": int}.
     """
+    profile_path = profile_path if profile_path is not None else _PROFILE_FILE
     if not audit_path.exists():
         return {"sessions_scanned": 0, "patterns_found": 0}
 
