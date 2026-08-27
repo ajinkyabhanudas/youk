@@ -1,9 +1,17 @@
-"""
-Drift sentinel: asserts that each of the 8 critical-path tools has a complete contract
-entry in docs/tool-contract-template.md.
+"""Documentation-completeness tests for docs/tool-contract-template.md.
 
-If a tool is renamed or the contract file is deleted, this test fails loudly.
-Zero-dependency — reads only the markdown file as text.
+Renamed from test_tool_contract_sentinel. The old name implied this verified tool
+behaviour; it does not, and never did. It imports no server module and calls no tool.
+It reads a markdown template and checks that the expected headings and fields are
+present, which is worth doing but is a documentation check.
+
+The name mattered. Three things named for contracts and verification — this file,
+verify_mcp_contracts, and _audit_skill_quality — were all green while route_task
+returned schema-invalid output and 14 routed skills could not load. Nobody looked for
+execution coverage because the names suggested it already existed.
+
+Execution coverage lives in tests/test_mcp_tool_contracts.py, which runs real tools and
+asserts on what FastMCP serializes.
 """
 from __future__ import annotations
 

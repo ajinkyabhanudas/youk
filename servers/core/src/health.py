@@ -1142,6 +1142,13 @@ def _audit_skill_quality(skills_dir: Path) -> list[str]:
         except Exception:
             continue
 
+        # Structural signals only. These do NOT measure whether a skill is good — a
+        # SKILL.md of three prose lines plus one empty code fence and the word "Quality"
+        # scores 2 of 4 and passes, which was verified empirically. Scoring quality is
+        # not something a substring check can do, and pretending otherwise is what made
+        # this audit read as a quality gate while catching only near-empty files.
+        # It is kept because a near-empty SKILL.md is a real failure worth catching, and
+        # the threshold stays at <=1 so it fires on that and nothing else.
         lower = content.lower()
         signals = {
             "phases": any(h in lower for h in ["## phase", "## step ", "## execution", "## how to", "## implement"]),
@@ -1155,7 +1162,7 @@ def _audit_skill_quality(skills_dir: Path) -> list[str]:
         score = sum(signals.values())
         if score <= 1:
             missing = ", ".join(k for k, v in signals.items() if not v)
-            weak.append(f"'{skill_name}' (missing: {missing})")
+            weak.append(f"'{skill_name}' is near-empty (missing: {missing})")
 
     if not weak:
         return []
@@ -1168,6 +1175,41 @@ def _audit_skill_quality(skills_dir: Path) -> list[str]:
         + ". Run assess_skill() on each to propose improvements."
     ]
 
+
+
+def _structural_skill_findings(youk_root: Path, claude_root: Path) -> list[str]:
+    """Structural skill checks: link drift and route resolution.
+
+    Extracted from the health body so the wiring is unit-testable. Both checks were
+    inline try/except blocks that no test reached, which is how adding the second one
+    pushed health.py under its coverage floor: the modules had dedicated tests, the
+    glue joining them to health had none.
+
+    Link drift catches a skill committed to the repo but never symlinked into the
+    runtime tree, which install.sh only does at install time. Route resolution catches
+    a skill CLAUDE.md explicitly routes to that will not load. Both are reported, never
+    repaired: the fix is a documented command, not something a health check should do
+    silently.
+
+    Each check is isolated so one failing cannot suppress the other, and neither can
+    raise: a health check must not be able to fail a session.
+    """
+    out: list[str] = []
+    try:
+        from skill_link_check import check_skill_links
+        msg = check_skill_links(youk_root, claude_root).get("message")
+        if msg:
+            out.append(msg)
+    except Exception:
+        pass
+    try:
+        from skill_route_check import check_skill_routes
+        msg = check_skill_routes(claude_root, youk_root).get("message")
+        if msg:
+            out.append(msg)
+    except Exception:
+        pass
+    return out
 
 def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     findings = []
@@ -1378,18 +1420,7 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     skill_quality_findings = _audit_skill_quality(CLAUDE_ROOT / "skills")
     findings.extend(skill_quality_findings[:2])
 
-    # Skill link drift: a skill committed to the repo but never symlinked into the
-    # runtime tree cannot be loaded, so routes to it fail while the repo looks correct.
-    # install.sh only links at install time, so every skill added afterwards is invisible
-    # until someone reinstalls. Surfaced as a finding because the repair is a documented
-    # command, not something a health check should perform silently.
-    try:
-        from skill_link_check import check_skill_links
-        _links = check_skill_links(YOUK_ROOT, CLAUDE_ROOT)
-        if _links.get("message"):
-            findings.append(_links["message"])
-    except Exception:
-        pass
+    findings.extend(_structural_skill_findings(YOUK_ROOT, CLAUDE_ROOT))
 
     if score < 6.0:
         findings.append("Org score below 6.0 — review which skills are being skipped.")
