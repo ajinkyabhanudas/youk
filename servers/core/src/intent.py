@@ -393,6 +393,34 @@ def _heuristic_brief(raw_input: str, mode: str, error: str | None = None) -> dic
     return brief
 
 
+def _record_generation(model: str, response: object, duration_s: float) -> None:
+    """Attach model name, token counts and latency to the active Langfuse trace.
+
+    This is youk's only LLM call, so it is the only place per-generation cost can be
+    observed. Silent-fail: instrumentation must never break intent resolution, which
+    already has its own no-API fallback path.
+    """
+    try:
+        import json as _json
+        from pathlib import Path as _Path
+
+        from observability import get_obs
+
+        state = _Path(str(YOUK_ROOT)) / "state" / "session.json"
+        trace_id = _json.loads(state.read_text()).get("_obs_trace_id") if state.exists() else None
+        if not trace_id or trace_id == "noop":
+            return
+        usage = getattr(response, "usage", None)
+        get_obs().record_generation(
+            trace_id, "optimize_intent", model,
+            input_tokens=getattr(usage, "input_tokens", 0) or 0,
+            output_tokens=getattr(usage, "output_tokens", 0) or 0,
+            duration_s=duration_s,
+        )
+    except Exception:
+        pass
+
+
 def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dict:
     """
     Compress raw user input into a structured intent brief.
@@ -441,13 +469,17 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
     if clarified_context:
         user_content += f"\n\nAdditional context from conversation: {clarified_context}"
 
+    _model = "claude-haiku-4-5-20251001"
     try:
+        import time as _time
+        _gen_t0 = _time.monotonic()
         response = _CLIENT.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=_model,
             max_tokens=800,
             system=_INTENT_SYSTEM_PROMPT + interpretation_context,
             messages=[{"role": "user", "content": user_content}],
         )
+        _record_generation(_model, response, _time.monotonic() - _gen_t0)
         text = response.content[0].text.strip()
         # Extract JSON from response (model may wrap in markdown)
         json_match = re.search(r'\{.*\}', text, re.DOTALL)

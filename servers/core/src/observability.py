@@ -107,6 +107,14 @@ class NoOpObs:
     def attach_score_by_id(self, trace_id: str, name: str, value: float, comment: str = "") -> None:
         pass
 
+    @contextmanager
+    def span_by_id(self, trace_id: str, name: str, **metadata):
+        yield None
+
+    def record_generation(self, trace_id: str, name: str, model: str,
+                          input_tokens: int, output_tokens: int, duration_s: float) -> None:
+        pass
+
     def end_run(self, trace: Any, **kw) -> None:
         pass
 
@@ -170,6 +178,62 @@ class LangfuseObs:
             output={"outcome": outcome, "commits_made": commits_made},
         )
 
+    @contextmanager
+    def span_by_id(self, trace_id: str, name: str, **metadata):
+        """Time one stage and attach it to an existing trace as a span.
+
+        Takes a trace_id rather than a trace object so callers can open a span from
+        anywhere in the run without threading the object through every signature,
+        which is what kept spans unimplemented until now.
+
+        Span metadata is trace content, so ADR-011 applies here exactly as it does to
+        trace metadata. Values are scrubbed to numbers only. `name` is a literal in
+        the calling code, never user data. Never raises: observability must not be
+        able to fail the stage it is measuring.
+        """
+        import time as _time
+        from datetime import datetime as _dt
+        start = _dt.now()
+        t0 = _time.monotonic()
+        try:
+            yield
+        finally:
+            try:
+                payload = _numeric_only(metadata)
+                payload["duration_s"] = round(_time.monotonic() - t0, 3)
+                self._lf.span(
+                    trace_id=trace_id, name=name,
+                    start_time=start, end_time=_dt.now(),
+                    metadata=payload,
+                )
+            except Exception:
+                pass
+
+    def record_generation(self, trace_id: str, name: str, model: str,
+                          input_tokens: int, output_tokens: int, duration_s: float) -> None:
+        """Record a model call: model name, token counts, latency. Cost is derived.
+
+        Cost is deliberately NOT computed here. Langfuse derives it from the model name
+        and usage against its own pricing table, so prices stay correct without a
+        hardcoded table in this repo drifting out of date.
+
+        Prompt and completion text are deliberately NOT recorded. Langfuse generations
+        normally carry both, and here the prompt contains the user's raw task
+        description. ADR-011 forbids free session text on a trace, and this is the most
+        tempting place to break it. Model name is a literal in the calling code, not
+        user data. Never raises.
+        """
+        try:
+            self._lf.generation(
+                trace_id=trace_id,
+                name=name,
+                model=model,
+                usage={"input": input_tokens, "output": output_tokens, "unit": "TOKENS"},
+                metadata={"duration_s": round(duration_s, 3)},
+            )
+        except Exception:
+            pass
+
     def end_run_by_id(self, trace_id: str, outcome: str = "NONE", commits_made: bool = False) -> None:
         self._lf.trace(
             id=trace_id,
@@ -202,6 +266,20 @@ def compute_patch_cycle_rate(candidates: list[dict]) -> float | None:
         return None
     cycling = sum(1 for c in candidates if c.get("patch_cycle"))
     return round(cycling / len(candidates), 3)
+
+
+def _numeric_only(metadata: dict) -> dict:
+    """Drop everything that is not a number.
+
+    Span metadata is trace content, so ADR-011 applies. Free text is the vector that
+    leaks session detail, and a stage measurement never legitimately needs it: counts,
+    sizes and durations are numbers. Booleans are excluded too, since bool is an int
+    subclass in Python and a stray flag reads as 0/1 noise rather than a measurement.
+    """
+    return {
+        k: v for k, v in metadata.items()
+        if isinstance(v, (int, float)) and not isinstance(v, bool)
+    }
 
 
 def build_trace_metadata(session_slug: str, youk_root: Path | None = None) -> dict:

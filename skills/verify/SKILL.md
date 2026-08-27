@@ -148,3 +148,15 @@ If COVERAGE GAP is emitted: add it to REPORT as a known gap with rationale for d
 4. No green-without-evidence. A test that "passed" with no captured output did not pass.
 5. Performance regression check is required when touching request paths, queries, or rendering.
 6. FAIL is better than untested. Document failures — they become the bug list.
+7. A sentinel or regression test that passes on both the broken and the fixed input has
+   verified nothing. For any test written to guard a specific known failure, run it
+   against that known-broken state and confirm it fails there before trusting that it
+   passes. Report both halves: "fails on pre-fix state, passes on fixed state". "8 passed"
+   alone is not evidence. Tests for genuinely new behaviour have no broken state to check
+   against and are exempt from this bar, though bar 4 still applies to them.
+8. When a check passes, confirm it exercised the real failure path rather than an adjacent
+   stage. Schema validation, type conversion, and serialization are distinct stages, and a
+   bug in one passes cleanly in the others. Reproduce the reported error before claiming a
+   root cause. If it cannot be reproduced in the current environment, say so explicitly,
+   label the conclusion "audited not run", and name the unverified boundary rather than
+   presenting the root cause as confirmed.

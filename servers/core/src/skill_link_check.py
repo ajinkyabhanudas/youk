@@ -9,8 +9,10 @@ reading the repo. Nothing surfaced this, and it is how CLAUDE.md ended up routin
 Two directions of drift, both worth reporting and only one worth alarming about:
 
 unlinked  - in the repo, absent from runtime. Routes to it fail. This is the real bug.
-orphaned  - a real directory in runtime with no repo counterpart. It works locally but
-            is not version controlled, does not ship, and is lost on reinstall.
+orphaned  - a real directory in runtime with no repo counterpart. install.sh skips real
+            directories rather than replacing them, so it survives reinstall. What it
+            does not survive is losing the machine: it is not version controlled and
+            does not ship to anyone else.
 
 Read-only. Reports drift, never repairs it, because creating symlinks is install.sh's
 job and doing it from a health check would hide the fact that install is stale.
@@ -74,7 +76,8 @@ def check_skill_links(youk_root: Path, claude_root: Path) -> dict:
         if orphaned:
             parts.append(
                 f"{len(orphaned)} runtime skill(s) not in the repo "
-                f"({', '.join(orphaned)}) — not version controlled, lost on reinstall."
+                f"({', '.join(orphaned)}) — not version controlled and not shipped; "
+                "they survive reinstall but not machine loss."
             )
 
         return {
