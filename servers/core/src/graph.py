@@ -118,7 +118,8 @@ class _DB:
             self._conn = None
 
 
-def _connect(db_path: Path = _DB_PATH) -> _DB:
+def _connect(db_path: Path | None = None) -> _DB:
+    db_path = db_path if db_path is not None else _DB_PATH
     return _DB(db_path)
 
 
@@ -127,7 +128,7 @@ def _connect(db_path: Path = _DB_PATH) -> _DB:
 # ---------------------------------------------------------------------------
 
 def create_task_graph(tasks: list[dict], edges: list[tuple[str, str]] | None = None,
-                      db_path: Path = _DB_PATH) -> dict:
+                      db_path: Path | None = None) -> dict:
     """Create or extend the task graph.
 
     tasks: list of {"id": str, "label": str}
@@ -140,6 +141,7 @@ def create_task_graph(tasks: list[dict], edges: list[tuple[str, str]] | None = N
     not silently inserted. Returns {"created", "edges_added", "total_tasks"}
     or {"ok": False, "error": ...} when an edge would break the DAG.
     """
+    db_path = db_path if db_path is not None else _DB_PATH
     edges = edges or []
     created = 0
     edges_added = 0
@@ -210,7 +212,7 @@ def _would_cycle(edges: list[tuple[str, str]]) -> bool:
 
 def set_gate(task_id: str, gate_name: str, value: bool,
              session_id: str | None = None,
-             db_path: Path = _DB_PATH) -> dict:
+             db_path: Path | None = None) -> dict:
     """Set a gate boolean on a task node. Idempotent.
 
     gate_name: one of challenge_cleared, nfr_cleared, unblocked, in_flight
@@ -219,6 +221,7 @@ def set_gate(task_id: str, gate_name: str, value: bool,
       when in_flight is set to False (claim released) or mark_done runs.
     Returns {"ok": bool, "task_id": str, "gate": str, "value": bool}
     """
+    db_path = db_path if db_path is not None else _DB_PATH
     if gate_name not in GATE_NAMES:
         return {"ok": False, "error": f"unknown gate '{gate_name}'; valid: {sorted(GATE_NAMES)}"}
 
@@ -246,11 +249,12 @@ def set_gate(task_id: str, gate_name: str, value: bool,
     return {"ok": True, "task_id": task_id, "gate": gate_name, "value": value}
 
 
-def is_unblocked(task_id: str, db_path: Path = _DB_PATH) -> dict:
+def is_unblocked(task_id: str, db_path: Path | None = None) -> dict:
     """Return gate state for a task.
 
     Returns {"found": bool, "task_id": str, "gates": dict, "unblocked": bool}
     """
+    db_path = db_path if db_path is not None else _DB_PATH
     with _connect(db_path) as conn:
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
 
@@ -277,7 +281,7 @@ def is_unblocked(task_id: str, db_path: Path = _DB_PATH) -> dict:
     }
 
 
-def next_task(project: str | None = None, db_path: Path = _DB_PATH) -> dict:
+def next_task(project: str | None = None, db_path: Path | None = None) -> dict:
     """Return the next actionable task: unblocked=True, in_flight=False, all parents done.
 
     project: when given, restrict to that project's tasks (plus untagged project=NULL
@@ -289,6 +293,7 @@ def next_task(project: str | None = None, db_path: Path = _DB_PATH) -> dict:
     Uses the edge DAG to find leaf-ready nodes.
     Returns {"found": bool, "task": dict | None}
     """
+    db_path = db_path if db_path is not None else _DB_PATH
     params: tuple = ()
     project_clause = ""
     if project is not None:
@@ -344,7 +349,7 @@ def next_task(project: str | None = None, db_path: Path = _DB_PATH) -> dict:
     }
 
 
-def mark_done(task_id: str, db_path: Path = _DB_PATH) -> dict:
+def mark_done(task_id: str, db_path: Path | None = None) -> dict:
     """Mark a task as FINISHED: set done=1 and clear in_flight.
 
     Sets the dedicated `done` bit — NOT `unblocked` (which means 'ready to start'). This
@@ -353,6 +358,7 @@ def mark_done(task_id: str, db_path: Path = _DB_PATH) -> dict:
 
     Returns {"ok": bool, "task_id": str}
     """
+    db_path = db_path if db_path is not None else _DB_PATH
     with _connect(db_path) as conn:
         conn.execute(
             "UPDATE tasks SET done = 1, in_flight = 0, session_id = NULL WHERE id = ?",
@@ -362,8 +368,9 @@ def mark_done(task_id: str, db_path: Path = _DB_PATH) -> dict:
     return {"ok": True, "task_id": task_id}
 
 
-def get_all_tasks(db_path: Path = _DB_PATH) -> list[dict[str, Any]]:
+def get_all_tasks(db_path: Path | None = None) -> list[dict[str, Any]]:
     """Return all tasks with their gate state. Used by health checks."""
+    db_path = db_path if db_path is not None else _DB_PATH
     with _connect(db_path) as conn:
         rows = conn.execute("SELECT * FROM tasks ORDER BY id").fetchall()
     return [dict(r) for r in rows]
@@ -373,7 +380,7 @@ def get_all_tasks(db_path: Path = _DB_PATH) -> list[dict[str, Any]]:
 # Health check
 # ---------------------------------------------------------------------------
 
-def check_graph_health(db_path: Path = _DB_PATH) -> dict:
+def check_graph_health(db_path: Path | None = None) -> dict:
     """Verify graph DB is present and readable.
 
     Returns {
@@ -383,6 +390,7 @@ def check_graph_health(db_path: Path = _DB_PATH) -> dict:
     }
     Used by session_start to detect corrupt DB before falling back to JSON gate files.
     """
+    db_path = db_path if db_path is not None else _DB_PATH
     if not db_path.exists():
         return {"status": "absent", "task_count": 0, "message": "task-graph.db not found"}
 

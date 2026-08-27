@@ -13,6 +13,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+CLAUDE_ROOT = Path("/claude")
+
 import yaml as _yaml
 
 import sys
@@ -23,7 +25,7 @@ _SESSION_BOUNDARY = re.compile(r"^### Session", re.MULTILINE)
 _PROJECT_LINE = re.compile(r"^Project:\s*(.+)$", re.MULTILINE)
 _CATEGORIES_LINE = re.compile(r"^FindingCategories:\s*(.+)$", re.MULTILINE)
 
-_DEFAULT_AUDIT_DIR = Path("/claude") / "audit"
+_DEFAULT_AUDIT_DIR = CLAUDE_ROOT / "audit"
 
 
 def _load_cluster_map(cluster_file: Path | None = None) -> dict[str, str]:

@@ -13,7 +13,8 @@ from __future__ import annotations
 import yaml
 from pathlib import Path
 
-_DEFAULT_GRAPH = Path("/youk") / "knowledge" / "skill-graph.yaml"
+YOUK_ROOT = Path("/youk")
+_DEFAULT_GRAPH = YOUK_ROOT / "knowledge" / "skill-graph.yaml"
 
 _SEVERITY_RANK: dict[str, int] = {
     "LOW": 1,

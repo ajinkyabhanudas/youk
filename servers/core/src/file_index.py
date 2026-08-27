@@ -128,7 +128,8 @@ class _DB:
             self._conn = None
 
 
-def _connect(db_path: Path = _INDEX_DB) -> _DB:
+def _connect(db_path: Path | None = None) -> _DB:
+    db_path = db_path if db_path is not None else _INDEX_DB
     return _DB(db_path)
 
 
@@ -385,7 +386,7 @@ def index_project(
     project_dir: str | Path,
     project_slug: str,
     force: bool = False,
-    db_path: Path = _INDEX_DB,
+    db_path: Path | None = None,
 ) -> dict[str, Any]:
     """Walk project_dir and upsert semantic units into the shared index.
 
@@ -395,6 +396,7 @@ def index_project(
 
     Returns {"indexed": int, "skipped": int, "total_files": int, "project_slug": str}
     """
+    db_path = db_path if db_path is not None else _INDEX_DB
     from datetime import datetime as _dt, UTC as _UTC
 
     project_path = Path(project_dir)
@@ -518,7 +520,7 @@ def find_relevant(
     query: str,
     project_slug: str | None = None,
     limit: int = 10,
-    db_path: Path = _INDEX_DB,
+    db_path: Path | None = None,
 ) -> dict[str, Any]:
     """BM25 search over indexed files.
 
@@ -527,6 +529,7 @@ def find_relevant(
 
     Results from the current project are boosted: returned first, then other projects.
     """
+    db_path = db_path if db_path is not None else _INDEX_DB
     if not query.strip():
         return {"results": [], "query": query, "total": 0}
 
@@ -594,7 +597,7 @@ def find_relevant(
 def find_affected(
     file_path: str,
     project_slug: str,
-    db_path: Path = _INDEX_DB,
+    db_path: Path | None = None,
 ) -> dict[str, Any]:
     """Return files that import or reference the given file.
 
@@ -603,6 +606,7 @@ def find_affected(
 
     Returns {"affected": list of {project_slug, file_path, summary}, "source_file": str}
     """
+    db_path = db_path if db_path is not None else _INDEX_DB
     stem = Path(file_path).stem  # e.g. "session" from "servers/core/src/session.py"
 
     with _connect(db_path) as conn:
@@ -634,7 +638,7 @@ def find_affected(
 
 def find_stale_relations(
     project_slug: str | None = None,
-    db_path: Path = _INDEX_DB,
+    db_path: Path | None = None,
     limit: int = 20,
 ) -> dict[str, Any]:
     """Graph-driven staleness: walk file_relations and flag derived files whose source
@@ -651,6 +655,7 @@ def find_stale_relations(
     Returns {"stale": [{from_path, to_path, rel_type, source_indexed, derived_indexed,
              project_slug}], "checked": int, "stale_count": int}
     """
+    db_path = db_path if db_path is not None else _INDEX_DB
     project_clause = ""
     params: tuple = ()
     if project_slug is not None:
@@ -708,7 +713,7 @@ def find_relations(
     file_path: str,
     project_slug: str,
     direction: str = "both",
-    db_path: Path = _INDEX_DB,
+    db_path: Path | None = None,
 ) -> dict[str, Any]:
     """Return explicit relation edges for a file from the file_relations table.
 
@@ -723,6 +728,7 @@ def find_relations(
     - "What does guardrails.md link to?" → direction="out"
     - "Full relation neighbourhood of this file?" → direction="both" (default)
     """
+    db_path = db_path if db_path is not None else _INDEX_DB
     if direction not in ("in", "out", "both"):
         return {"error": f"invalid direction '{direction}' — must be in/out/both", "relations": []}
 
@@ -777,7 +783,7 @@ def find_related_docs(
     query: str,
     project_slug: str | None = None,
     limit: int = 8,
-    db_path: Path = _INDEX_DB,
+    db_path: Path | None = None,
 ) -> dict[str, Any]:
     """BM25 search that bridges code files and non-code docs via the relation graph.
 
@@ -795,6 +801,7 @@ def find_related_docs(
     project_slug: if set, boosts current-project results first
     limit: max results per bucket (code and docs each capped separately)
     """
+    db_path = db_path if db_path is not None else _INDEX_DB
     if not query.strip():
         return {"related_code": [], "related_docs": [], "query": query, "total": 0}
 
@@ -897,8 +904,9 @@ def find_related_docs(
     }
 
 
-def get_index_stats(project_slug: str | None = None, db_path: Path = _INDEX_DB) -> dict[str, Any]:
+def get_index_stats(project_slug: str | None = None, db_path: Path | None = None) -> dict[str, Any]:
     """Return index health stats: file counts per project, last indexed timestamps."""
+    db_path = db_path if db_path is not None else _INDEX_DB
     if not db_path.exists():
         return {"status": "absent", "projects": [], "total_files": 0}
 

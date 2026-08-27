@@ -68,8 +68,9 @@ _TYPE_MAP: dict[str, str] = {
 }
 
 
-def _connect(db_path: Path = _INDEX_DB) -> sqlite3.Connection:
+def _connect(db_path: Path | None = None) -> sqlite3.Connection:
     """Open shared-index.db, ensure WAL + concept-graph DDL applied."""
+    db_path = db_path if db_path is not None else _INDEX_DB
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), timeout=5.0)
     conn.row_factory = sqlite3.Row
@@ -309,7 +310,7 @@ def write_concepts(
     concepts: list[dict[str, Any]],
     project_slug: str,
     session_n: int,
-    db_path: Path = _INDEX_DB,
+    db_path: Path | None = None,
 ) -> dict[str, Any]:
     """Upsert concepts into shared-index.db and emit co-occurrence edges.
 
@@ -318,6 +319,7 @@ def write_concepts(
 
     Returns {"written": int, "edges_written": int, "project_slug": str}.
     """
+    db_path = db_path if db_path is not None else _INDEX_DB
     if not concepts:
         return {"written": 0, "edges_written": 0, "project_slug": project_slug}
 
@@ -379,7 +381,7 @@ def query_concept_graph(
     query: str,
     project_slug: str | None = None,
     limit: int = 5,
-    db_path: Path = _INDEX_DB,
+    db_path: Path | None = None,
 ) -> dict[str, Any]:
     """Find concepts matching query label (substring) + their direct neighbors.
 
@@ -388,6 +390,7 @@ def query_concept_graph(
 
     Returns {"concepts": list[dict], "query": str, "total": int}.
     """
+    db_path = db_path if db_path is not None else _INDEX_DB
     if not query.strip():
         return {"concepts": [], "query": query, "total": 0}
 
@@ -474,9 +477,10 @@ def query_concept_graph(
 
 def get_concept_stats(
     project_slug: str | None = None,
-    db_path: Path = _INDEX_DB,
+    db_path: Path | None = None,
 ) -> dict[str, Any]:
     """Return concept graph health: concept counts per project, total edges."""
+    db_path = db_path if db_path is not None else _INDEX_DB
     if not db_path.exists():
         return {"status": "absent", "projects": [], "total_concepts": 0, "total_edges": 0}
 

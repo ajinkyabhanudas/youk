@@ -76,7 +76,8 @@ class RevisableSet:
         )
 
 
-def _load_registry(path: Path = _REGISTRY_FILE) -> dict[str, RevisableSet]:
+def _load_registry(path: Path | None = None) -> dict[str, RevisableSet]:
+    path = path if path is not None else _REGISTRY_FILE
     if not path.exists():
         return {}
     try:
@@ -86,7 +87,8 @@ def _load_registry(path: Path = _REGISTRY_FILE) -> dict[str, RevisableSet]:
         return {}
 
 
-def _save_registry(reg: dict[str, RevisableSet], path: Path = _REGISTRY_FILE) -> None:
+def _save_registry(reg: dict[str, RevisableSet], path: Path | None = None) -> None:
+    path = path if path is not None else _REGISTRY_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({k: v.to_dict() for k, v in reg.items()}, indent=1))
 
@@ -101,12 +103,13 @@ def _assert_enrollable(name: str) -> None:
 
 
 def enroll(name: str, policy: str, initial_elements: list[str],
-           path: Path = _REGISTRY_FILE) -> dict:
+           path: Path | None = None) -> dict:
     """Register a judgment-set as revisable. Opt-in; default is frozen (unregistered).
 
     Raises EnrollmentError if the set is hard-blocked (safety/fact). Idempotent per name:
     re-enrolling updates policy but preserves existing element provenance.
     """
+    path = path if path is not None else _REGISTRY_FILE
     _assert_enrollable(name)
     if policy not in _VALID_POLICIES:
         raise ValueError(f"policy must be one of {sorted(_VALID_POLICIES)}, got '{policy}'")
@@ -139,13 +142,14 @@ def _snapshot(rs: RevisableSet) -> None:
 
 
 def learn_add(name: str, element: str, driver: str,
-              path: Path = _REGISTRY_FILE) -> dict:
+              path: Path | None = None) -> dict:
     """LEARN (grow): add an element to an enrolled set. Requires policy grow|both.
 
     Returns {"ok": bool, "reason": str, "version": int}. Caller is responsible for having
     run the candidate through challenge first (challenge_cleared is asserted by the tool
     wrapper, not here — this is the storage primitive).
     """
+    path = path if path is not None else _REGISTRY_FILE
     reg = _load_registry(path)
     if name not in reg:
         return {"ok": False, "reason": f"'{name}' is not enrolled", "version": -1}
@@ -162,12 +166,13 @@ def learn_add(name: str, element: str, driver: str,
 
 
 def unlearn_prune(name: str, element: str, driver: str,
-                  path: Path = _REGISTRY_FILE) -> dict:
+                  path: Path | None = None) -> dict:
     """UNLEARN (prune): remove an element from an enrolled set. Requires policy prune|both.
 
     The anti-bloat mechanism — a set that only grows becomes rigid ceremony. Never removes
     the last element (a set pruned to empty is a bug, not learning).
     """
+    path = path if path is not None else _REGISTRY_FILE
     reg = _load_registry(path)
     if name not in reg:
         return {"ok": False, "reason": f"'{name}' is not enrolled", "version": -1}
@@ -185,8 +190,9 @@ def unlearn_prune(name: str, element: str, driver: str,
     return {"ok": True, "reason": f"pruned '{element}' (driver: {driver})", "version": rs.version}
 
 
-def revert(name: str, path: Path = _REGISTRY_FILE) -> dict:
+def revert(name: str, path: Path | None = None) -> dict:
     """Roll a set back to its previous snapshot (the human veto / revert floor)."""
+    path = path if path is not None else _REGISTRY_FILE
     reg = _load_registry(path)
     if name not in reg or not reg[name].history:
         return {"ok": False, "reason": "nothing to revert"}
@@ -203,10 +209,12 @@ def revert(name: str, path: Path = _REGISTRY_FILE) -> dict:
     return {"ok": True, "reason": f"reverted to version {rs.version}", "elements": list(restored)}
 
 
-def get_set(name: str, path: Path = _REGISTRY_FILE) -> dict | None:
+def get_set(name: str, path: Path | None = None) -> dict | None:
+    path = path if path is not None else _REGISTRY_FILE
     reg = _load_registry(path)
     return reg[name].to_dict() if name in reg else None
 
 
-def list_enrolled(path: Path = _REGISTRY_FILE) -> list[str]:
+def list_enrolled(path: Path | None = None) -> list[str]:
+    path = path if path is not None else _REGISTRY_FILE
     return sorted(_load_registry(path).keys())

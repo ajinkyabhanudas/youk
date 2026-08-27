@@ -11,12 +11,14 @@ import os
 import re
 from pathlib import Path
 
+CLAUDE_ROOT = Path("/claude")
+
 def _resolve_api_key() -> str:
     """Read API key from env var, then fall back to mounted file."""
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     if key:
         return key
-    fallback = Path("/claude/.anthropic/api_key")
+    fallback = CLAUDE_ROOT / ".anthropic" / "api_key"
     if fallback.exists():
         return fallback.read_text().strip()
     return ""

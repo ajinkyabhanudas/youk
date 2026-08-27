@@ -131,7 +131,7 @@ def _check_c1_task_contract_schema_stable(db_path: Path) -> dict:
         return {"contract": contract, "ok": False, "detail": f"exception: {e}"}
 
 
-def check_pipeline_contracts(db_path: Path = _DB_PATH) -> dict:
+def check_pipeline_contracts(db_path: Path | None = None) -> dict:
     """Run all pipeline data-flow contract checks.
 
     Returns {"contracts": [result, ...], "ok": bool, "failed": [contract names]}.
@@ -139,6 +139,7 @@ def check_pipeline_contracts(db_path: Path = _DB_PATH) -> dict:
     Exceptions inside each check are caught and reported as ok=False — never let
     a broken check suppress the others.
     """
+    db_path = db_path if db_path is not None else _DB_PATH
     results = [
         _check_c1_task_contract_schema_stable(db_path),
         _check_c2_in_flight_excluded_from_next_task(db_path),

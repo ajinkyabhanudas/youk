@@ -36,7 +36,8 @@ _CONFIDENCE_WEIGHT = {
 }
 
 
-def _load(path: Path = _VOCAB_FILE) -> dict:
+def _load(path: Path | None = None) -> dict:
+    path = path if path is not None else _VOCAB_FILE
     if not path.exists():
         return {}
     try:
@@ -45,7 +46,8 @@ def _load(path: Path = _VOCAB_FILE) -> dict:
         return {}
 
 
-def _save(vocab: dict, path: Path = _VOCAB_FILE) -> None:
+def _save(vocab: dict, path: Path | None = None) -> None:
+    path = path if path is not None else _VOCAB_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(vocab, indent=1))
 
@@ -55,7 +57,7 @@ def record_decomposition(
     behavior: str,
     task_context: str,
     confidence: str = "approved",
-    path: Path = _VOCAB_FILE,
+    path: Path | None = None,
 ) -> dict:
     """Record that `label` decomposed into `behavior` for a task like `task_context`.
 
@@ -64,6 +66,7 @@ def record_decomposition(
     A repeat of the same (label, behavior) UPGRADES confidence to the best seen and bumps
     its observation count (a decomposition seen verified twice is stronger evidence).
     """
+    path = path if path is not None else _VOCAB_FILE
     if confidence not in _CONFIDENCE_WEIGHT:
         return {"ok": False, "reason": f"confidence must be one of {list(_CONFIDENCE_WEIGHT)}"}
 
@@ -97,7 +100,7 @@ def record_decomposition(
             "confidence": label_entry[behavior]["confidence"]}
 
 
-def get_steering(label: str, path: Path = _VOCAB_FILE, min_weight: float = 0.1) -> dict:
+def get_steering(label: str, path: Path | None = None, min_weight: float = 0.1) -> dict:
     """Return the learned behavior decompositions for `label`, weighted by confidence and
     observation count, strongest first. Corrected (weight 0) and anything below min_weight
     are excluded — that is the read-time filter (the tunable strictness knob).
@@ -107,6 +110,7 @@ def get_steering(label: str, path: Path = _VOCAB_FILE, min_weight: float = 0.1) 
     elicits a fresh decomposition from the model (point-of-use) rather than steer with a
     stereotype.
     """
+    path = path if path is not None else _VOCAB_FILE
     vocab = _load(path)
     entries = vocab.get(label, {})
     scored = []

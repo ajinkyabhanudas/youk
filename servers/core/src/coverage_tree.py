@@ -135,8 +135,9 @@ def _load_overlay(path: Path) -> dict[str, list[str]]:
         return {}
 
 
-def _merged_templates(path: Path = _OVERLAY_PATH) -> dict[str, list[str]]:
+def _merged_templates(path: Path | None = None) -> dict[str, list[str]]:
     """Seed (code) + overlay (persisted human additions), de-duplicated, seed order first."""
+    path = path if path is not None else _OVERLAY_PATH
     merged = {domain: list(concepts) for domain, concepts in _SEED_TEMPLATES.items()}
     for domain, extra in _load_overlay(path).items():
         bucket = merged.setdefault(domain, [])
@@ -152,11 +153,12 @@ TEMPLATES: dict[str, list[str]] = _merged_templates()
 
 
 def add_concept_to_template(
-    domain: str, concept: str, path: Path = _OVERLAY_PATH
+    domain: str, concept: str, path: Path | None = None
 ) -> bool:
     """Self-revision entry point: a human-caught miss adds a concept so the class can't recur.
     Persists to the overlay so the addition survives restart (BUILD-SPEC W5). Returns True if
     newly added. Idempotent. This is the durable accumulator (BUILD-SPEC D7)."""
+    path = path if path is not None else _OVERLAY_PATH
     bucket = TEMPLATES.setdefault(domain, [])
     if concept in bucket:
         return False
