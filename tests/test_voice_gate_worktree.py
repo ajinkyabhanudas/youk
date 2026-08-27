@@ -100,8 +100,31 @@ class TestFallbackChain:
 
         Resolution order is argv[1], then `git rev-parse --git-path`, then the legacy
         guess. Only when all three fail does the gate block as unresolvable.
+
+        The real path is written here rather than relied on as ambient state: it only
+        exists locally after a real commit-msg invocation, and a fresh CI checkout has
+        no in-progress commit, so nothing is there. The test must not depend on a file
+        it did not create.
         """
-        r = _run(tmp_path / "does-not-exist")
-        assert "could not locate" not in r.stdout.lower(), (
-            "fallback did not run; the gate gave up at argv[1]"
-        )
+        import subprocess
+
+        real_path_str = subprocess.run(
+            ["git", "rev-parse", "--git-path", "COMMIT_EDITMSG"],
+            capture_output=True, text=True, cwd=str(_REPO), timeout=5,
+        ).stdout.strip()
+        real_path = Path(real_path_str)
+        if not real_path.is_absolute():
+            real_path = _REPO / real_path
+        real_path.parent.mkdir(parents=True, exist_ok=True)
+        original = real_path.read_text() if real_path.exists() else None
+        real_path.write_text("fix: message reachable only via git rev-parse fallback\n")
+        try:
+            r = _run(tmp_path / "does-not-exist")
+            assert "could not locate" not in r.stdout.lower(), (
+                "fallback did not run; the gate gave up at argv[1]"
+            )
+        finally:
+            if original is not None:
+                real_path.write_text(original)
+            else:
+                real_path.unlink(missing_ok=True)
