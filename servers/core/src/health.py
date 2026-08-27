@@ -1176,6 +1176,41 @@ def _audit_skill_quality(skills_dir: Path) -> list[str]:
     ]
 
 
+
+def _structural_skill_findings(youk_root: Path, claude_root: Path) -> list[str]:
+    """Structural skill checks: link drift and route resolution.
+
+    Extracted from the health body so the wiring is unit-testable. Both checks were
+    inline try/except blocks that no test reached, which is how adding the second one
+    pushed health.py under its coverage floor: the modules had dedicated tests, the
+    glue joining them to health had none.
+
+    Link drift catches a skill committed to the repo but never symlinked into the
+    runtime tree, which install.sh only does at install time. Route resolution catches
+    a skill CLAUDE.md explicitly routes to that will not load. Both are reported, never
+    repaired: the fix is a documented command, not something a health check should do
+    silently.
+
+    Each check is isolated so one failing cannot suppress the other, and neither can
+    raise: a health check must not be able to fail a session.
+    """
+    out: list[str] = []
+    try:
+        from skill_link_check import check_skill_links
+        msg = check_skill_links(youk_root, claude_root).get("message")
+        if msg:
+            out.append(msg)
+    except Exception:
+        pass
+    try:
+        from skill_route_check import check_skill_routes
+        msg = check_skill_routes(claude_root, youk_root).get("message")
+        if msg:
+            out.append(msg)
+    except Exception:
+        pass
+    return out
+
 def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     findings = []
     if not audit_texts:
@@ -1385,30 +1420,7 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     skill_quality_findings = _audit_skill_quality(CLAUDE_ROOT / "skills")
     findings.extend(skill_quality_findings[:2])
 
-    # Skill link drift: a skill committed to the repo but never symlinked into the
-    # runtime tree cannot be loaded, so routes to it fail while the repo looks correct.
-    # install.sh only links at install time, so every skill added afterwards is invisible
-    # until someone reinstalls. Surfaced as a finding because the repair is a documented
-    # command, not something a health check should perform silently.
-    try:
-        from skill_link_check import check_skill_links
-        _links = check_skill_links(YOUK_ROOT, CLAUDE_ROOT)
-        if _links.get("message"):
-            findings.append(_links["message"])
-    except Exception:
-        pass
-
-    # Route resolution: a skill CLAUDE.md explicitly routes to must load. This is the
-    # falsifiable half of skill health — _audit_skill_quality scores markdown structure
-    # and cannot tell a good skill from a bad one, but a route either resolves or it
-    # does not. 14 skills were routed to and unloadable for weeks without detection.
-    try:
-        from skill_route_check import check_skill_routes
-        _routes = check_skill_routes(CLAUDE_ROOT, YOUK_ROOT)
-        if _routes.get("message"):
-            findings.append(_routes["message"])
-    except Exception:
-        pass
+    findings.extend(_structural_skill_findings(YOUK_ROOT, CLAUDE_ROOT))
 
     if score < 6.0:
         findings.append("Org score below 6.0 — review which skills are being skipped.")

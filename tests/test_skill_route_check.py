@@ -111,3 +111,51 @@ def _referenced_skills_from(tmp_path: Path, md: str) -> set[str]:
     f = tmp_path / f"CLAUDE_{abs(hash(md))}.md"
     f.write_text(md)
     return _referenced_skills(f)
+
+
+class TestHealthWiring:
+    """Covers the glue joining both structural checks to the health report.
+
+    Both were inline try/except blocks no test reached. The modules had dedicated
+    tests; the wiring had none, which is how adding the second one pushed health.py
+    under its coverage floor without any behaviour being untested in isolation.
+    """
+
+    @staticmethod
+    def _roots(tmp_path, routed_skills: list[str], repo_skills: list[str]):
+        claude, youk = tmp_path / "claude", tmp_path / "youk"
+        _make(claude, _MD, routed_skills)
+        (youk / "skills").mkdir(parents=True)
+        for s in repo_skills:
+            (youk / "skills" / s).mkdir()
+        return youk, claude
+
+    def test_route_failure_surfaces_as_a_finding(self, tmp_path):
+        from health import _structural_skill_findings
+
+        youk, claude = self._roots(tmp_path, ["challenge"], ["challenge", "coverage-tree"])
+        findings = _structural_skill_findings(youk, claude)
+        assert any("coverage-tree" in f for f in findings)
+
+    def test_healthy_install_produces_no_findings(self, tmp_path):
+        from health import _structural_skill_findings
+
+        youk, claude = self._roots(
+            tmp_path, ["challenge", "coverage-tree"], ["challenge", "coverage-tree"]
+        )
+        assert _structural_skill_findings(youk, claude) == []
+
+    def test_link_drift_surfaces_as_a_finding(self, tmp_path):
+        """A repo skill with no runtime counterpart is reported even if no route names it."""
+        from health import _structural_skill_findings
+
+        youk, claude = self._roots(
+            tmp_path, ["challenge", "coverage-tree"], ["challenge", "coverage-tree", "orphan-x"]
+        )
+        assert any("orphan-x" in f for f in _structural_skill_findings(youk, claude))
+
+    def test_never_raises_on_missing_roots(self, tmp_path):
+        """A health check must not be able to fail a session."""
+        from health import _structural_skill_findings
+
+        assert _structural_skill_findings(tmp_path / "nope", tmp_path / "gone") == []
