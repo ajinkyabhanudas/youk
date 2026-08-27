@@ -11,7 +11,25 @@ import sys
 from pathlib import Path
 
 YOUK_ROOT = Path(__file__).parent.parent
-HOOK_FILE = YOUK_ROOT / ".git" / "hooks" / "commit-msg"
+# --git-common-dir so a worktree installs into the shared hooks directory rather
+# than a .git file path that cannot hold one.
+def _hooks_dir() -> Path:
+    import subprocess
+    try:
+        out = subprocess.run(["git", "rev-parse", "--git-common-dir"],
+                             capture_output=True, text=True, timeout=5,
+                             cwd=str(YOUK_ROOT))
+        if out.returncode == 0:
+            d = Path(out.stdout.strip())
+            if not d.is_absolute():
+                d = YOUK_ROOT / d
+            return d / "hooks"
+    except Exception:
+        pass
+    return YOUK_ROOT / ".git" / "hooks"
+
+
+HOOK_FILE = _hooks_dir() / "commit-msg"
 
 _HOOK = """\
 #!/bin/bash
@@ -21,7 +39,10 @@ _HOOK = """\
 
 YOUK_ROOT="$(git rev-parse --show-toplevel)"
 cd "$YOUK_ROOT"
-python scripts/voice_gate_precommit.py || exit 1
+# "$1" is the commit message file git passes to a commit-msg hook. Forwarding it is
+# what lets the gate work in a worktree, where .git is a file and the old guessed
+# path did not exist, so the gate exited 0 on every commit.
+python3 scripts/voice_gate_precommit.py "$1" || exit 1
 """
 
 
