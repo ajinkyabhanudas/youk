@@ -2078,8 +2078,68 @@ def _obs_end(outcome: str, commits_made: bool) -> None:
         except Exception:
             pass
 
+        _attach_structural_scores(obs, trace_id)
+
         obs.end_run_by_id(trace_id, outcome=outcome, commits_made=commits_made)
         obs.flush()
+    except Exception:
+        pass
+
+
+
+def _attach_structural_scores(obs, trace_id: str) -> None:
+    """Attach youk's own structural health to the run trace.
+
+    patch_cycle_rate alone describes repair churn and says nothing about whether youk
+    is intact. These are the signals that would have moved while org_score sat at 9.3
+    with a broken router: unloadable routes, repo skills unreachable at runtime, and
+    docs that contradict their authority.
+
+    Only counts and rates cross the boundary. ADR-011 applies here exactly as it does
+    to trace metadata, and a skill name or doc path is session content. Never raises:
+    observability must not be able to fail a session close.
+    """
+    # Both roots come from the module constants so tests and alternate installs can
+    # redirect them. test_path_redirectability caught a hardcoded Path("/claude") here.
+    _claude = CLAUDE_ROOT
+    _youk = YOUK_ROOT
+
+    try:
+        from skill_route_check import check_skill_routes
+        routes = check_skill_routes(_claude, _youk)
+        if routes.get("checked"):
+            broken = len(routes.get("unresolvable", [])) + len(routes.get("empty", []))
+            obs.attach_score_by_id(
+                trace_id, "routes_broken", float(broken),
+                comment=f"{broken} of {routes['checked']} routed skills will not load",
+            )
+    except Exception:
+        pass
+
+    try:
+        from skill_link_check import check_skill_links
+        links = check_skill_links(_youk, _claude)
+        if links.get("repo_count"):
+            obs.attach_score_by_id(
+                trace_id, "skills_unlinked", float(len(links.get("unlinked", []))),
+                comment=f"{links['repo_count']} repo skills, {links['runtime_count']} runtime",
+            )
+    except Exception:
+        pass
+
+    try:
+        import yaml as _yaml
+
+        from doc_graph import check_concept_staleness, load_concept_graph
+        concepts = load_concept_graph(_youk)
+        result = check_concept_staleness(concepts, _youk, _claude)
+        # Only the falsifiable half. Timestamp staleness fires on a reformat and would
+        # make this metric drift upward without anything actually being wrong.
+        obs.attach_score_by_id(
+            trace_id, "doc_contradictions", float(len(result.get("semantic", []))),
+            comment="derived docs missing their authority's invariant string",
+        )
+        del _yaml
     except Exception:
         pass
 
