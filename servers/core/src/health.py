@@ -2446,6 +2446,20 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     report = run_health_check()
     audit_texts = _read_recent_audit_logs(days=30)
     skill_gap_signals = _parse_skill_gap_signals(audit_texts)
+
+    # Re-verify before surfacing. Gaps are recorded from audit history and nothing has
+    # ever checked whether they are still real, so a gap fixed in July is re-reported in
+    # August and re-proposed on every run. Measured on live data: 10 of 20 recorded gaps
+    # were already addressed in current skill content. youk diagnosed this about itself
+    # in a CLOSED proposal from 2026-07-15 — "self_heal re-generates proposals without
+    # checking existing skill content first" — and had no mechanism to act on it.
+    _gap_resolution: dict = {}
+    try:
+        from gap_resolution import reverify_gap_signals
+        _gap_resolution = reverify_gap_signals(skill_gap_signals, CLAUDE_ROOT / "skills")
+        skill_gap_signals = _gap_resolution.get("open_signals", skill_gap_signals)
+    except Exception:
+        pass
     velocity = _compute_improvement_velocity(audit_texts, report.org_score)
 
     # Auto-queue proposals for skills that have crossed the promotion threshold.
@@ -2708,6 +2722,17 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
             f"Knowledge velocity: {knowledge_velocity['verdict']}. "
             "Run /learn at the end of each session to extract patterns into knowledge/domain/."
         )
+
+    # Reclassified gaps are reported, never dropped. A wrong RESOLVED call must stay
+    # visible and arguable; a deleted one cannot be disagreed with.
+    try:
+        from gap_resolution import resolution_summary
+        _resolved = _gap_resolution.get("resolved", [])
+        if _resolved:
+            base["gaps_already_addressed"] = _resolved
+            base["gap_resolution_note"] = resolution_summary(_gap_resolution)
+    except Exception:
+        pass
 
     if skill_gap_signals:
         base["skill_gap_signals"] = skill_gap_signals
@@ -3284,6 +3309,26 @@ def _execute_proposal(proposal: Proposal) -> dict:
     """Write the proposal to disk. Called only when confirmed=True."""
     ct = proposal.change_type
 
+    # An empty payload is destructive, not a no-op. SKILL_EDIT and CODE_EDIT both
+    # replace their target region, so applying empty content deletes it. 15 auto-promoted
+    # proposals sat in the store with content_len=0, across 3 families regenerated 5 times
+    # each; applying any one would have silently emptied a skill section.
+    #
+    # Checked before any change_type branch on purpose: the first version sat after the
+    # CODE_EDIT branch, so an empty CODE_EDIT returned "File not found" instead, and the
+    # guard never ran on the path it was written for.
+    if ct in ("SKILL_EDIT", "CODE_EDIT") and not (proposal.content or "").strip():
+        return {
+            "applied": False,
+            "error_type": _business_rule_error(),
+            "error": (
+                f"Proposal {proposal.id} has empty content. {ct} replaces its target "
+                f"region, so applying this would delete "
+                f"'{proposal.target_section or proposal.target}'. Close the proposal or "
+                "give it the full replacement text."
+            ),
+        }
+
     if ct == "FILE_CREATE":
         target_path = Path(proposal.target)
         allowed = any(
@@ -3402,6 +3447,21 @@ def _execute_proposal(proposal: Proposal) -> dict:
         "applied": False,
         "error": f"Unknown change_type '{ct}'. Set a valid change_type on the proposal.",
     }
+
+
+
+def _business_rule_error() -> str:
+    """ErrorType.BUSINESS_RULE, resolved lazily.
+
+    health.py does not import from schemas at module scope, and a guard that raises
+    NameError on the path where it is supposed to prevent damage is worse than no guard.
+    Falls back to the literal, which is the enum's own value.
+    """
+    try:
+        from schemas import ErrorType
+        return ErrorType.BUSINESS_RULE.value
+    except Exception:
+        return "BUSINESS_RULE"
 
 
 def _uncommitted_warning(written_path: Path) -> dict:

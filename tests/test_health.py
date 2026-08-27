@@ -2841,3 +2841,196 @@ class TestWritePatternsSummary:
             assert "## security" in out
         finally:
             health.YOUK_ROOT = orig
+
+
+class TestEmptyContentProposalIsRefused:
+    """apply_proposal must refuse an empty payload, on the real function.
+
+    SKILL_EDIT replaces the entire target section, so empty content deletes it. 15
+    auto-promoted proposals sat in the store with content_len=0, across 3 families
+    regenerated 5 times each; applying any one would have emptied a skill section.
+
+    This calls the real apply_proposal rather than replaying the replacement logic in
+    the test. An earlier version of this guard was only ever exercised by a re-implemented
+    copy, which is the adjacent-stage mistake verify bar 8 exists to prevent.
+    """
+
+    def _proposal(self, health_mod, pid, change_type, content, target):
+        from models import Proposal
+        health_mod.add_proposal(Proposal(
+            id=pid, target=target, change_description="d", reason="r",
+            before="", after="", status="PENDING", proposed_date="2026-08-27",
+            change_type=change_type, target_section="Quality bars", content=content,
+        ))
+
+    def test_empty_skill_edit_is_refused(self, youk_root, claude_root):
+        import health as h
+        skill = claude_root / "skills" / "dev-loop"
+        skill.mkdir(parents=True, exist_ok=True)
+        (skill / "SKILL.md").write_text("# s\n\n## Quality bars\n\n1. real bar\n")
+        self._proposal(h, "PENDING-EMPTY-1", "SKILL_EDIT", "", "dev-loop")
+
+        result = h.apply_proposal("PENDING-EMPTY-1", confirmed=True)
+        assert result["applied"] is False
+        assert "empty content" in result["error"].lower()
+        assert (skill / "SKILL.md").read_text().count("real bar") == 1, "section was damaged"
+
+    def test_whitespace_only_skill_edit_is_refused(self, youk_root, claude_root):
+        import health as h
+        skill = claude_root / "skills" / "dev-loop"
+        skill.mkdir(parents=True, exist_ok=True)
+        (skill / "SKILL.md").write_text("# s\n\n## Quality bars\n\n1. real bar\n")
+        self._proposal(h, "PENDING-EMPTY-2", "SKILL_EDIT", "   \n\t ", "dev-loop")
+        result = h.apply_proposal("PENDING-EMPTY-2", confirmed=True)
+        assert result["applied"] is False
+
+    def test_empty_code_edit_is_refused(self, youk_root, claude_root):
+        import health as h
+        self._proposal(h, "PENDING-EMPTY-3", "CODE_EDIT", "", "servers/core/src/session.py")
+        result = h.apply_proposal("PENDING-EMPTY-3", confirmed=True)
+        assert result["applied"] is False
+        assert "empty content" in result["error"].lower()
+
+    def test_real_content_still_applies(self, youk_root, claude_root):
+        """The guard must not block legitimate proposals."""
+        import health as h
+        skill = claude_root / "skills" / "dev-loop"
+        skill.mkdir(parents=True, exist_ok=True)
+        (skill / "SKILL.md").write_text("# s\n\n## Quality bars\n\n1. old bar\n")
+        self._proposal(h, "PENDING-REAL-1", "SKILL_EDIT", "1. new bar\n", "dev-loop")
+        result = h.apply_proposal("PENDING-REAL-1", confirmed=True)
+        assert result["applied"] is True
+        assert "new bar" in (skill / "SKILL.md").read_text()
+
+
+class TestGapReverificationWiring:
+    """Covers the glue joining gap re-verification to self_heal.
+
+    Gaps were parsed from audit history and surfaced without ever checking whether they
+    were still real, so a gap fixed in July was re-reported and re-proposed every run.
+    Measured on live data: 10 of 20 recorded gaps were already addressed, and 15 proposals
+    sat in the store with empty content as a result of that regeneration.
+
+    youk had diagnosed this itself in a CLOSED proposal from 2026-07-15 — "self_heal
+    re-generates proposals without checking existing skill content first" — and had no
+    mechanism to route the finding back into behaviour.
+    """
+
+    def _audit(self, claude_root, gap: str):
+        lines = []
+        for i in range(1, 4):
+            lines += [
+                f"### Session — 2026-07-0{i} 10:00 UTC",
+                "Skills: code-review",
+                "CloseCluster: yes",
+                "Commits: yes",
+                f"SkillGap: learn — {gap}",
+            ]
+        (claude_root / "audit" / "2026-07.md").write_text("\n".join(lines))
+
+    def _skill(self, claude_root, text: str):
+        d = claude_root / "skills" / "learn"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "SKILL.md").write_text(text)
+
+    def test_gap_already_in_skill_is_reclassified_not_reported(self, youk_root, claude_root):
+        gap = "retry backoff absent for transient upstream connection failures"
+        self._audit(claude_root, gap)
+        self._skill(claude_root, f"# learn\n\n## Retry\n{gap} — now handled.\n")
+        from health import run_health_check_with_skill_signals
+
+        result = run_health_check_with_skill_signals()
+        assert "gaps_already_addressed" in result
+        assert "skill_gap_signals" not in result
+
+    def test_live_gap_still_surfaces(self, youk_root, claude_root):
+        """The guard must not swallow a real gap."""
+        self._audit(claude_root, "retry backoff absent for transient upstream failures")
+        self._skill(claude_root, "# learn\n\n## Phases\nUnrelated content entirely.\n")
+        from health import run_health_check_with_skill_signals
+
+        result = run_health_check_with_skill_signals()
+        assert "skill_gap_signals" in result
+        assert result["skill_gap_signals"][0]["skill"] == "learn"
+
+    def test_reclassified_gaps_carry_a_readable_note(self, youk_root, claude_root):
+        gap = "retry backoff absent for transient upstream connection failures"
+        self._audit(claude_root, gap)
+        self._skill(claude_root, f"# learn\n\n## Retry\n{gap} — now handled.\n")
+        from health import run_health_check_with_skill_signals
+
+        result = run_health_check_with_skill_signals()
+        assert "re-open" in result["gap_resolution_note"].lower()
+
+
+class TestBusinessRuleErrorFallback:
+    """The guard's error path must survive a failed import.
+
+    health.py does not import from schemas at module scope. A guard that raises
+    NameError on the path where it prevents damage is worse than no guard, so the
+    lookup is lazy with a literal fallback. That fallback is the branch that runs when
+    something is wrong, which is exactly when it must not itself fail.
+    """
+
+    def test_returns_enum_value_normally(self):
+        from health import _business_rule_error
+        assert _business_rule_error() == "BUSINESS_RULE"
+
+    def test_falls_back_when_schemas_import_fails(self, monkeypatch):
+        import builtins
+
+        import health
+        real_import = builtins.__import__
+
+        def _boom(name, *a, **kw):
+            if name == "schemas":
+                raise ImportError("simulated missing schemas")
+            return real_import(name, *a, **kw)
+
+        monkeypatch.setattr(builtins, "__import__", _boom)
+        assert health._business_rule_error() == "BUSINESS_RULE"
+
+    def test_value_matches_the_real_enum(self):
+        """Guards the literal against enum drift."""
+        from schemas import ErrorType
+
+        from health import _business_rule_error
+        assert _business_rule_error() == ErrorType.BUSINESS_RULE.value
+
+
+class TestCappedScoreExplainsItself:
+    """A capped score must say why, through the real health report.
+
+    An unexplained low number reads as a metric glitch and gets ignored, which is the
+    failure mode the cap exists to prevent. org_score sat at 9.3 for 88 sessions while
+    route_task was broken; a silent 6.5 would be no more actionable than a false 9.3.
+    """
+
+    def _audit(self, claude_root):
+        lines = []
+        for i in range(1, 4):
+            lines += [
+                f"### Session — 2026-07-0{i} 10:00 UTC",
+                "Skills: code-review",
+                "CloseCluster: yes",
+                "Commits: yes",
+            ]
+        (claude_root / "audit" / "2026-07.md").write_text("\n".join(lines))
+
+    def test_broken_route_surfaces_a_cap_finding(self, youk_root, claude_root):
+        self._audit(claude_root)
+        (claude_root / "CLAUDE.md").write_text('route_to_skill("ghost-skill", task)')
+        from health import run_health_check_with_skill_signals
+
+        result = run_health_check_with_skill_signals()
+        cap_findings = [f for f in result["findings"] if "capped" in f.lower()]
+        assert cap_findings, "capped score did not explain itself"
+        assert "ghost-skill" in cap_findings[0]
+
+    def test_healthy_install_has_no_cap_finding(self, youk_root, claude_root):
+        self._audit(claude_root)
+        (claude_root / "CLAUDE.md").write_text("no routes declared here")
+        from health import run_health_check_with_skill_signals
+
+        result = run_health_check_with_skill_signals()
+        assert not [f for f in result["findings"] if "capped" in f.lower()]
