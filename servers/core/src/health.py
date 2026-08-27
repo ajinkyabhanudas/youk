@@ -2769,12 +2769,22 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
         except Exception:
             pass
 
-    # Attach a health-check span to the active Langfuse trace.
+    # Emit the health-check stage as a real span, plus the latency score.
+    # The span carries per-stage timing, which a score alone cannot express — that
+    # absence was the session 02 instrumentation gap. attach_score_by_id replaces the
+    # fake type("_T", ...) trace object: it happened to work here because attach_score
+    # only reads .id, but the same pattern raised AttributeError in end_run.
     try:
         if _obs and _trace_id:
             _elapsed = round(_time.monotonic() - _t0, 3)
-            _obs.attach_score(
-                type("_T", (), {"id": _trace_id})(),
+            with _obs.span_by_id(
+                _trace_id, "health-check",
+                findings=len(base.get("findings", []) or []),
+                sessions_analyzed=base.get("sessions_analyzed", 0),
+            ):
+                pass
+            _obs.attach_score_by_id(
+                _trace_id,
                 "health_check_latency_s",
                 _elapsed,
                 comment=f"org_score={base.get('org_score', 0):.2f}",
@@ -3199,12 +3209,17 @@ def _execute_proposal(proposal: Proposal) -> dict:
         # Lookahead stops at next ## heading (any depth) or EOF.
         pattern = rf"(## {re.escape(section)}\n)(.*?)(?=\n## |\Z)"
         match = re.search(pattern, current, flags=re.DOTALL)
+        # The contract tells proposal authors to pass the FULL section text, which
+        # naturally includes its own heading. Prepending unconditionally duplicated it,
+        # so every compliant proposal produced "## X\n## X". Accept either form.
+        heading = f"## {section}"
+        body = proposal.content.lstrip("\n")
+        new_section = body if body.startswith(heading) else f"{heading}\n{body}"
         if match:
-            new_section = f"## {section}\n{proposal.content}"
             new_content = current[: match.start()] + new_section + current[match.end() :]
             count = 1
         else:
-            new_content = current.rstrip() + f"\n\n## {section}\n{proposal.content}\n"
+            new_content = current.rstrip() + "\n\n" + new_section.rstrip() + "\n"
             count = 0
         # Compute unified diff before writing — full diff to audit, truncated preview to return.
         import difflib as _difflib
@@ -3240,6 +3255,7 @@ def _execute_proposal(proposal: Proposal) -> dict:
             "section": section,
             "diff_preview": preview_diff,
             "diff_lines_total": len(diff_lines),
+            **_uncommitted_warning(skill_path),
         }
 
     if ct == "CONFIG_EDIT":
@@ -3280,6 +3296,37 @@ def _execute_proposal(proposal: Proposal) -> dict:
         "applied": False,
         "error": f"Unknown change_type '{ct}'. Set a valid change_type on the proposal.",
     }
+
+
+def _uncommitted_warning(written_path: Path) -> dict:
+    """Flag that an applied edit landed on a git-tracked file and is not committed.
+
+    CLAUDE_ROOT/skills/<name> is a symlink into YOUK_ROOT/skills, so a SKILL_EDIT
+    writes to a tracked file in the repo working tree. Nothing committed it and
+    nothing said so, which means any branch switch silently discarded the applied
+    improvement. That is a data-loss path for every skill youk improves, and it
+    already destroyed one applied proposal.
+
+    Returns {} when the path is not tracked, so a non-git install is unaffected.
+    """
+    try:
+        import subprocess
+        real = written_path.resolve()
+        result = subprocess.run(
+            ["git", "-C", str(real.parent), "ls-files", "--error-unmatch", real.name],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return {}
+        return {
+            "uncommitted": True,
+            "commit_warning": (
+                f"{real} is git-tracked and this edit is not committed. "
+                "A branch switch or checkout will discard it. Commit it to keep it."
+            ),
+        }
+    except Exception:
+        return {}
 
 
 def apply_proposal(

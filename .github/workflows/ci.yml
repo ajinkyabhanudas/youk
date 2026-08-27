@@ -19,7 +19,10 @@ jobs:
           cache: pip
 
       - name: Install lint dependencies
-        run: pip install ruff pyyaml pytest pytest-cov
+        # mcp is required by tests/test_mcp_tool_contracts.py, which imports the real
+        # server modules and executes every registered tool. Without it those tests
+        # skip, and the route_task null-output class of bug ships again unnoticed.
+        run: pip install ruff pyyaml pytest pytest-cov "mcp>=1.0.0"
 
       - name: Ruff check
         run: ruff check servers/
