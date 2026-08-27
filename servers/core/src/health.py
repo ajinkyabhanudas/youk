@@ -1378,6 +1378,19 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     skill_quality_findings = _audit_skill_quality(CLAUDE_ROOT / "skills")
     findings.extend(skill_quality_findings[:2])
 
+    # Skill link drift: a skill committed to the repo but never symlinked into the
+    # runtime tree cannot be loaded, so routes to it fail while the repo looks correct.
+    # install.sh only links at install time, so every skill added afterwards is invisible
+    # until someone reinstalls. Surfaced as a finding because the repair is a documented
+    # command, not something a health check should perform silently.
+    try:
+        from skill_link_check import check_skill_links
+        _links = check_skill_links(YOUK_ROOT, CLAUDE_ROOT)
+        if _links.get("message"):
+            findings.append(_links["message"])
+    except Exception:
+        pass
+
     if score < 6.0:
         findings.append("Org score below 6.0 — review which skills are being skipped.")
 

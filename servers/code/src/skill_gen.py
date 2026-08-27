@@ -76,18 +76,49 @@ def _read_audit_for_skill(skill_name: str, months: int = 3) -> str:
     return header + "\n\n---\n".join(entries[:6])
 
 
+def _normalize_skill_name(name: str) -> str:
+    """Fold separator and case differences so nfr_check and nfr-check compare equal.
+
+    Audit lines are written by several call sites that disagree on separators, so an
+    exact match reports every underscore spelling of an existing skill as missing.
+    """
+    return name.strip().lower().replace("_", "-")
+
+
+# MCP tool names that appear in audit "Skills:" lines but are tools, not skills.
+# Without this, detect_skill_gaps recommends generate_skill() for capabilities that
+# already exist as tools, which is worse than staying silent: it invents a skill to
+# shadow a working tool. Compared after _normalize_skill_name, so list either spelling.
+_MCP_TOOL_NAMES = frozenset({
+    "route-task", "self-heal", "optimize-intent", "assess-skill", "task-checkpoint",
+    "session-start", "session-end", "compact-context", "save-contract",
+    "add-proposal", "apply-proposal", "check-nfr-gate", "check-challenge-gate",
+    "check-intake-gate", "mark-challenge-ran", "mark-intake-ran", "route-to-skill",
+    "write-skill-handoff", "detect-skill-gaps", "generate-skill", "track-tokens",
+    "next-task", "create-task-graph", "promote-to-global-contracts",
+    "check-doc-graph", "index-project", "find-relevant", "mark-task-done",
+})
+
+
 def _read_audit_for_missing_skills(months: int = 2) -> dict[str, int]:
     """
     Find skills that route_task references but have no SKILL.md.
     Reads 'skills' lines in audit to detect gaps from real sessions.
     Returns {skill_name: mention_count}.
+
+    Names are normalized before comparison and MCP tool names are excluded, so the
+    result is genuine demand for a skill that does not exist rather than spelling
+    noise. Counts are keyed by the name as written in the audit, since that is what
+    a human reading the report will search for.
     """
     if not AUDIT_DIR.exists():
         return {}
 
     from datetime import datetime, timedelta
     cutoff = datetime.now() - timedelta(days=months * 30)
-    known = {s["name"] for s in list_skills() if s["has_skill_md"]}
+    known = {
+        _normalize_skill_name(s["name"]) for s in list_skills() if s["has_skill_md"]
+    }
     missing_counts: dict[str, int] = {}
 
     for audit_file in sorted(AUDIT_DIR.glob("*.md")):
@@ -103,8 +134,12 @@ def _read_audit_for_missing_skills(months: int = 2) -> dict[str, int]:
             if line.startswith("Skills:"):
                 for skill in re.split(r"[,\s]+", line[len("Skills:"):].strip()):
                     skill = skill.strip()
-                    if skill and skill not in known and skill != "none":
-                        missing_counts[skill] = missing_counts.get(skill, 0) + 1
+                    if not skill or skill == "none":
+                        continue
+                    norm = _normalize_skill_name(skill)
+                    if norm in known or norm in _MCP_TOOL_NAMES:
+                        continue
+                    missing_counts[skill] = missing_counts.get(skill, 0) + 1
 
     return missing_counts
 
