@@ -31,6 +31,40 @@ pytest.importorskip(
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_roots(tmp_path, monkeypatch):
+    """Redirect every module-level YOUK_ROOT / CLAUDE_ROOT at a tmp directory.
+
+    Not optional. route_task writes route-task-ran.json, active_task.json and a task
+    graph node, so executing it against the real roots pollutes the audit and graph
+    data that youk's own health score reads from. That was the BLOCKING objection when
+    this work was challenged, and stating the constraint in an NFR block is not the
+    same as implementing it: the first version of this file asserted tmp isolation and
+    then ran against /youk, which is how CI caught it with a PermissionError.
+
+    Patched by scanning loaded modules rather than naming them, because the roots are
+    module-level constants duplicated across server, session, health, intent and
+    state_paths, and a hardcoded list silently misses whichever one is added next.
+    """
+    import sys
+
+    youk_root = tmp_path / "youk"
+    claude_root = tmp_path / "claude"
+    for sub in ("state", "knowledge/projects", "knowledge/proposals", "docs", "config"):
+        (youk_root / sub).mkdir(parents=True, exist_ok=True)
+    (claude_root / "skills").mkdir(parents=True, exist_ok=True)
+    (claude_root / "audit").mkdir(parents=True, exist_ok=True)
+
+    import server  # noqa: F401  — ensure the module graph is loaded before scanning
+    for mod in list(sys.modules.values()):
+        if mod is None or not getattr(mod, "__name__", "").isidentifier():
+            continue
+        for attr, value in (("YOUK_ROOT", youk_root), ("CLAUDE_ROOT", claude_root)):
+            if hasattr(mod, attr):
+                monkeypatch.setattr(mod, attr, value, raising=False)
+    yield
+
+
 def _core_server():
     import server as _s
     return _s
@@ -120,6 +154,28 @@ class TestOutputSchemaShape:
             "no read-only tool declares an output schema, so every null test skipped "
             "and this file proves nothing"
         )
+
+
+class TestIsolationActuallyHolds:
+    """Proves the tmp-root fixture works, rather than trusting the docstring.
+
+    The previous version of this file claimed tmp isolation in prose while executing
+    against the real roots. A claim in a comment is not isolation.
+    """
+
+    def test_roots_point_at_tmp(self, tmp_path):
+        import server
+        assert str(server.YOUK_ROOT).startswith(str(tmp_path))
+        assert str(server.CLAUDE_ROOT).startswith(str(tmp_path))
+
+    def test_executing_a_tool_writes_only_under_tmp(self, tmp_path):
+        """route_task has write side effects; they must all land in tmp."""
+        import server
+        _tool("route_task").fn("probe task for isolation check")
+        written = [p for p in tmp_path.rglob("*") if p.is_file()]
+        assert written, "route_task wrote nothing — the write path may not have run"
+        assert all(str(p).startswith(str(tmp_path)) for p in written)
+        assert str(server.YOUK_ROOT) != "/youk"
 
 
 class TestToolRegistration:
