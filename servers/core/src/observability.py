@@ -1,7 +1,24 @@
 """Langfuse instrumentation for youk-core.
 
-No-op when LANGFUSE_HOST / LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY are absent.
-One trace per run (session_start → session_end). Repairs and health checks are spans.
+Maintainer tooling, not a youk feature. No-op unless LANGFUSE_HOST /
+LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY are all set, so a normal install never
+reaches Langfuse and never needs the stack. Setup lives in CONTRIBUTING.md.
+
+One trace per run (session_start to session_end). Repairs and health checks are spans.
+
+TRACE CONTENT INVARIANT (see docs/adr-011-trace-content-invariant.md):
+
+    Traces carry derived scalars and enums. Never free text from the session.
+
+Counts, rates, durations, enum outcomes and hashed identifiers are allowed. Task
+descriptions, file paths, project names, finding text and prompts are not. This is
+what keeps a shared team instance a config change rather than a redesign: pointing
+LANGFUSE_HOST at a shared host must never start leaking session content. Adding
+identifying fields later would be a privacy regression that cannot be retrofitted
+away, because the data is already on the server.
+
+`_ALLOWED_METADATA_KEYS` enforces the invariant and is covered by a drift sentinel
+in tests/test_observability_privacy.py.
 
 Usage:
     obs = get_obs()          # singleton, returns NoOpObs if env absent
@@ -13,9 +30,21 @@ Usage:
 """
 from __future__ import annotations
 
+import hashlib
 import os
+import uuid
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
+
+# Every key a trace is permitted to carry. Adding one is a deliberate act: it must
+# be a derived scalar or enum, never free text from the session. See the module
+# docstring and ADR-011.
+_ALLOWED_METADATA_KEYS = frozenset({
+    "session_slug_hash",   # sha256[:16] of the project slug, not the slug
+    "install_id",          # anonymous, generated locally, never from user identity
+    "youk_version",        # release string, for per-version comparison
+})
 
 
 def _langfuse_available() -> bool:
@@ -23,6 +52,41 @@ def _langfuse_available() -> bool:
         os.environ.get(k)
         for k in ("LANGFUSE_HOST", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY")
     )
+
+
+def hash_identifier(value: str) -> str:
+    """Stable, non-reversible id for grouping. Keeps grouping power, drops identity.
+
+    Used for the project slug and anywhere else a raw name would otherwise reach a
+    trace. Truncated to 16 hex chars: collisions are irrelevant for grouping, and a
+    shorter value is less tempting to treat as a lookup key back to the original.
+    """
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+def get_install_id(youk_root: Path) -> str:
+    """Anonymous per-install id, generated once and cached in state/install-id.
+
+    Never derived from username, email, hostname or path. Without a stable grouping
+    key a shared instance cannot tell ten developers apart from one developer with
+    ten times the sessions, and that distinction cannot be reconstructed after the
+    fact. Generating it now is what keeps team aggregation a later config change.
+
+    Returns "unknown" rather than raising if state is unwritable. Observability must
+    never be able to fail a session.
+    """
+    id_file = youk_root / "state" / "install-id"
+    try:
+        if id_file.exists():
+            existing = id_file.read_text().strip()
+            if existing:
+                return existing
+        new_id = uuid.uuid4().hex
+        id_file.parent.mkdir(parents=True, exist_ok=True)
+        id_file.write_text(new_id)
+        return new_id
+    except Exception:
+        return "unknown"
 
 
 class _NoOpTrace:
@@ -63,9 +127,17 @@ class LangfuseObs:
         )
 
     def start_run(self, session_slug: str, project_dir: str) -> Any:
+        """Start the run trace.
+
+        project_dir is deliberately NOT sent. It is an absolute path containing the
+        user's home directory name, so it identifies both the person and their
+        filesystem layout. The slug is hashed for the same reason: it is a project
+        name. Both arguments are kept in the signature because callers pass them and
+        the hashing is this function's job, not the caller's.
+        """
         return self._lf.trace(
             name="youk-run",
-            metadata={"session_slug": session_slug, "project_dir": project_dir},
+            metadata=build_trace_metadata(session_slug),
             tags=["youk"],
         )
 
@@ -130,3 +202,20 @@ def compute_patch_cycle_rate(candidates: list[dict]) -> float | None:
         return None
     cycling = sum(1 for c in candidates if c.get("patch_cycle"))
     return round(cycling / len(candidates), 3)
+
+
+def build_trace_metadata(session_slug: str, youk_root: Path | None = None) -> dict:
+    """Build trace metadata carrying only derived, non-identifying values.
+
+    The single place trace metadata is constructed, so the allowlist has one thing to
+    guard. Anything not in _ALLOWED_METADATA_KEYS is dropped rather than sent, because
+    a leak here is unrecoverable once it reaches a shared server.
+    """
+    if youk_root is None:
+        youk_root = Path(os.environ.get("YOUK_ROOT", "/youk"))
+    meta = {
+        "session_slug_hash": hash_identifier(session_slug),
+        "install_id": get_install_id(youk_root),
+        "youk_version": os.environ.get("YOUK_VERSION", "unknown"),
+    }
+    return {k: v for k, v in meta.items() if k in _ALLOWED_METADATA_KEYS}
