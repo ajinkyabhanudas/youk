@@ -74,7 +74,7 @@ Cut always: openers, closers, meta-framing, em-dashes as separators, aphorism en
 - After 8+ tool-call exchanges with no capability skill → surface once: "/done and /build run automatically."
 
 ## Skill invocation
-Call `youk-code.route_to_skill(skill_name, task)`. Follow every phase in `skill_content`. If `rationale` non-null and not suppressed: surface one sentence before executing. Call `mark_rationale_preempted(skill_name)` after 3 pre-emptions. After any capability skill, call `write_skill_handoff(from_skill, content)`.
+Call `youk-code.route_to_skill(skill_name, task)`. Follow every phase in `skill_content`. If `rationale` non-null and not suppressed: surface one sentence before executing. Call `mark_rationale_preempted(skill_name)` after 3 pre-emptions. If `ab_variant` non-null: call `youk-core.log_ab_exposure(session_slug, experiment, skill_name, ab_variant)` — route_to_skill runs read-only, only youk-core can persist the exposure. After any capability skill, call `write_skill_handoff(from_skill, content)`.
 
 ## Context management
 
