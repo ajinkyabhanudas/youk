@@ -40,7 +40,13 @@ class NoOpObs:
     def attach_score(self, trace: Any, name: str, value: float, comment: str = "") -> None:
         pass
 
+    def attach_score_by_id(self, trace_id: str, name: str, value: float, comment: str = "") -> None:
+        pass
+
     def end_run(self, trace: Any, **kw) -> None:
+        pass
+
+    def end_run_by_id(self, trace_id: str, **kw) -> None:
         pass
 
     def flush(self) -> None:
@@ -79,8 +85,22 @@ class LangfuseObs:
             comment=comment or None,
         )
 
+    def attach_score_by_id(self, trace_id: str, name: str, value: float, comment: str = "") -> None:
+        self._lf.score(
+            trace_id=trace_id,
+            name=name,
+            value=value,
+            comment=comment or None,
+        )
+
     def end_run(self, trace: Any, outcome: str = "NONE", commits_made: bool = False) -> None:
         trace.update(
+            output={"outcome": outcome, "commits_made": commits_made},
+        )
+
+    def end_run_by_id(self, trace_id: str, outcome: str = "NONE", commits_made: bool = False) -> None:
+        self._lf.trace(
+            id=trace_id,
             output={"outcome": outcome, "commits_made": commits_made},
         )
 

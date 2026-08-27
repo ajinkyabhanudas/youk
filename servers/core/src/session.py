@@ -2001,6 +2001,7 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass
 
+    _obs_start(project_dir, slug)
     return SessionState(
         project=slug,
         resume_point=resume_point,
@@ -2031,7 +2032,6 @@ def start_session(project_dir: str) -> SessionState:
         cross_project_concepts=_cross_project_concepts,
         pending_build_task=_pending_build_task,
     )
-    _obs_start(project_dir, slug)
 
 
 def _obs_start(project_dir: str, slug: str) -> None:
@@ -2069,8 +2069,8 @@ def _obs_end(outcome: str, commits_made: bool) -> None:
             candidates = _analyze_promotion_candidates(audit_texts)
             rate = compute_patch_cycle_rate(candidates)
             if rate is not None:
-                obs.attach_score(
-                    type("_T", (), {"id": trace_id})(),
+                obs.attach_score_by_id(
+                    trace_id,
                     "patch_cycle_rate",
                     rate,
                     comment=f"{sum(1 for c in candidates if c.get('patch_cycle'))}/{len(candidates)} repairs cycling",
@@ -2078,11 +2078,7 @@ def _obs_end(outcome: str, commits_made: bool) -> None:
         except Exception:
             pass
 
-        obs.end_run(
-            type("_T", (), {"id": trace_id})(),
-            outcome=outcome,
-            commits_made=commits_made,
-        )
+        obs.end_run_by_id(trace_id, outcome=outcome, commits_made=commits_made)
         obs.flush()
     except Exception:
         pass
