@@ -136,10 +136,23 @@ def find_untracked_docs(youk_root: Path, doc_map: dict) -> list[str]:
         return []
 
     referenced = _all_referenced_paths(doc_map)
+
+    # Standalone docs are exempt by declaration. An ADR records a decision at a point in
+    # time; it derives from no authority and nothing derives from it, so listing it as
+    # untracked is noise. The map already says so in prose for scan_scope ("historical
+    # docs and ADRs are excluded"); this makes the checker honour the same intent instead
+    # of reporting 9 files nobody intends to track. Exempting by pattern, not by adding
+    # fake concepts, keeps the concept graph a record of real derivation.
+    exempt_patterns = doc_map.get("untracked_exempt", []) or []
+    exempt = set()
+    for pattern in exempt_patterns:
+        for match in youk_root.glob(pattern):
+            exempt.add(str(match.relative_to(youk_root)))
+
     untracked = []
     for md_file in sorted(docs_dir.glob("*.md")):
         rel = str(md_file.relative_to(youk_root))
-        if rel not in referenced:
+        if rel not in referenced and rel not in exempt:
             untracked.append(rel)
     return untracked
 

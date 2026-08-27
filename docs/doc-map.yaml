@@ -277,3 +277,17 @@ concepts:
     scan_scope:
       - "README.md"
       - "CHANGELOG.md"
+
+# Docs that are intentionally standalone: they derive from no authority and nothing
+# derives from them, so they are not concept-graph nodes. Listing them here is the
+# difference between a checker that reports real drift and one that reports 9 files
+# every run until people stop reading it.
+untracked_exempt:
+  - "docs/adr-*.md"              # decision records — historical, by definition not derived
+  - "docs/guardrails.md"         # reference material, no authority relationship
+  - "docs/system-flow.md"        # diagram/reference
+  - "docs/tool-contract-template.md"  # a template, not a claim about the system
+  - "docs/v1-definition.md"      # historical release definition
+  - "docs/variants.md"           # reference material
+  - "docs/voice-fingerprint-protocol.md"  # protocol spec, self-authoritative
+  - "docs/youk-lite.md"          # alternate packaging description

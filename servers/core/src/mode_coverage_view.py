@@ -17,7 +17,7 @@ Pure rendering. No API.
 """
 from __future__ import annotations
 
-from coverage_tree import Branch, Coverage, CoverageTree, Node
+from coverage_tree import Branch, Coverage, CoverageTree, Evidence, Node
 
 # The angle-sets each mode reasons over. These mirror the modes' own fixed lenses; they are
 # self-revising judgment-sets (grow at the frontier via the modes' challenge discipline), NOT
@@ -52,6 +52,7 @@ def view_from_outcomes(
     target: str,
     outcomes: dict[str, Coverage],
     details: dict[str, str] | None = None,
+    evidence: dict[str, Evidence] | None = None,
 ) -> CoverageTree:
     """Render a mode's pass as a coverage tree.
 
@@ -65,11 +66,17 @@ def view_from_outcomes(
     a mode self-verified its own completeness (false-green anti-pattern).
     """
     details = details or {}
+    evidence = evidence or {}
     angles = MODE_ANGLES.get(mode, list(outcomes.keys()))
     nodes: list[Node] = []
     for angle in angles:
         cov = outcomes.get(angle, Coverage.MISSING)
-        nodes.append(Node(concept=angle, covered=cov, detail=details.get(angle, "")))
+        nodes.append(Node(
+            concept=angle,
+            covered=cov,
+            detail=details.get(angle, ""),
+            evidence=evidence.get(angle, Evidence.NONE),
+        ))
     tree = CoverageTree(task=f"{mode}: {target}")
     tree.branches.append(Branch(domain=mode, nodes=nodes))
     return tree

@@ -43,6 +43,24 @@ class Coverage(StrEnum):
     NA = "n/a"                   # concept legitimately doesn't apply to this task
 
 
+class Evidence(StrEnum):
+    """How a covered node was actually established.
+
+    Deliberately NOT a confidence rating. Confidence is self-reported by the same model
+    that did the work, and self-rated confidence is the least reliable signal available:
+    across one session the author was highly confident and wrong three times. Evidence
+    class is a fact about what was done, not a feeling about it.
+
+    Every wrong claim in that session was INFERRED and every correction came from
+    MEASURED, which is why INFERRED sorts directly after GAP in review order — reached
+    but unverified is the second-cheapest place for a reader to catch an error.
+    """
+    MEASURED = "measured"    # ran something and read real output
+    READ = "read"            # read the code or doc directly
+    INFERRED = "inferred"    # reasoned about it without checking
+    NONE = "none"            # not applicable — nothing was established
+
+
 class AdversaryStatus(StrEnum):
     CLEAN = "clean"              # adversary ran, found nothing to add/contest
     FOUND_GAPS = "found_gaps"    # adversary added/contested nodes
@@ -57,6 +75,7 @@ class Node:
     concept: str
     covered: Coverage
     detail: str = ""
+    evidence: Evidence = Evidence.NONE
     contested_by_adversary: bool = False
     added_by_adversary: bool = False  # a concept the builder never listed at all
 
@@ -249,13 +268,28 @@ class CoverageTree:
 
         lines: list[str] = []
         for domain, node in sorted(self.all_gaps(), key=lambda x: rank(x[0])):
-            lines.append(f"GAP  [{domain}] {node.concept} — concept not considered")
+            # detail carries why, when the caller supplied one. Without it the reader
+            # gets a name and has to reconstruct the reason, which is the load this
+            # view exists to remove.
+            why = f" — {node.detail}" if node.detail else " — concept not considered"
+            lines.append(f"GAP  [{domain}] {node.concept}{why}")
+
+        # Reached but unverified. Sorts directly after gaps because it is the second
+        # cheapest place to catch an error: the node was considered, but nothing was run
+        # or read to establish it. A covered-and-inferred node renders identically to a
+        # covered-and-measured one without this line, which is the gap it closes.
+        for b in self.branches:
+            for n in b.nodes:
+                if n.covered == Coverage.COVERED and n.evidence == Evidence.INFERRED:
+                    why = f" — {n.detail}" if n.detail else " — reasoned, not verified"
+                    lines.append(f"INFER[{b.domain}] {n.concept}{why}")
         for domain, node in sorted(self.all_contested(), key=lambda x: rank(x[0])):
             tag = "adversary-added" if node.added_by_adversary else "adversary-contested"
             lines.append(f"?    [{domain}] {node.concept} — {tag}, you rule")
         for b in self.branches:
             for n in b.partials():
-                lines.append(f"~    [{b.domain}] {n.concept} — partial, ask")
+                why = f" — partial: {n.detail}" if n.detail else " — partial, ask"
+                lines.append(f"~    [{b.domain}] {n.concept}{why}")
         return lines
 
     def render(self) -> str:
@@ -282,7 +316,14 @@ class CoverageTree:
                     flag = "  ⚠ GAP"
                 elif n.contested_by_adversary:
                     flag = "  ? contested"
-                out.append(f"│  {mark[n.covered]} {n.concept}{flag}")
+                # Evidence class renders in the tree body, not only in review order.
+                # Without it every covered node is the same ● whether it was measured or
+                # assumed, which is the single state this view most needs to separate:
+                # a reader scanning the shape should see where nothing was actually run.
+                ev = ""
+                if n.evidence is not Evidence.NONE:
+                    ev = f"   [{n.evidence.value}]"
+                out.append(f"│  {mark[n.covered]} {n.concept}{ev}{flag}")
         order = self.review_order()
         if order:
             out.append("— review order (top = cheapest to check) —")

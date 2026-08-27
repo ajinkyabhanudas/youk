@@ -1056,8 +1056,73 @@ def _score_org(audit_texts: list[str]) -> float:
     if consecutive_skips >= 3:
         score = min(score, 6.5)
 
+    # Structural integrity gate. Every term above is a behavioural rate — how often
+    # skills fired, how often sessions closed. None of them observe whether youk works.
+    # That is how org_score read 9.3 while route_task returned schema-invalid output on
+    # nearly every call, 14 routed skills could not load, and importing server.py wrote
+    # to disk. The README claims youk "verifies the capabilities it built are actually
+    # running in the real loop"; without this gate that claim was false.
+    cap, _reasons = _structural_integrity_cap()
+    if cap is not None:
+        score = min(score, cap)
+
     return min(round(score, 1), 10.0)
 
+
+
+# Score ceilings for structural failure. A broken route means a documented capability
+# cannot run at all, which is the same severity as never invoking capabilities (6.5).
+# Link drift means a skill exists but is unreachable from the runtime — degraded rather
+# than broken, since other routes still work (8.0).
+_CAP_ROUTES_BROKEN = 6.5
+_CAP_LINK_DRIFT = 8.0
+
+
+def _structural_integrity_cap(
+    youk_root: Path | None = None, claude_root: Path | None = None
+) -> tuple[float | None, list[str]]:
+    """Cap org_score when youk's own structure is broken.
+
+    Returns (cap, reasons). cap is None when nothing structural is wrong.
+
+    Behavioural rates cannot detect this class of failure: a skill that never loads is
+    simply never invoked, which lowers the invocation rate slightly and looks like
+    developer choice rather than a broken install. Capping is deliberate rather than
+    subtracting a term, so a high invocation rate cannot mask a broken capability.
+
+    Never raises: a health check must not be able to fail a session.
+    """
+    youk_root = youk_root if youk_root is not None else YOUK_ROOT
+    claude_root = claude_root if claude_root is not None else CLAUDE_ROOT
+    cap: float | None = None
+    reasons: list[str] = []
+
+    try:
+        from skill_route_check import check_skill_routes
+        routes = check_skill_routes(claude_root, youk_root)
+        broken = list(routes.get("unresolvable", [])) + list(routes.get("empty", []))
+        if broken:
+            cap = _CAP_ROUTES_BROKEN
+            reasons.append(
+                f"{len(broken)} routed skill(s) will not load ({', '.join(broken[:3])})"
+            )
+    except Exception:
+        pass
+
+    try:
+        from skill_link_check import check_skill_links
+        links = check_skill_links(youk_root, claude_root)
+        if links.get("unlinked"):
+            unlinked = links["unlinked"]
+            cap = min(cap, _CAP_LINK_DRIFT) if cap is not None else _CAP_LINK_DRIFT
+            reasons.append(
+                f"{len(unlinked)} repo skill(s) unreachable at runtime "
+                f"({', '.join(unlinked[:3])})"
+            )
+    except Exception:
+        pass
+
+    return cap, reasons
 
 def _check_project_type_coverage() -> dict | None:
     """
@@ -1421,6 +1486,16 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     findings.extend(skill_quality_findings[:2])
 
     findings.extend(_structural_skill_findings(YOUK_ROOT, CLAUDE_ROOT))
+
+    # A capped score must say why. An unexplained low number reads as a metric glitch
+    # and gets ignored, which is the failure mode this whole gate exists to prevent.
+    _cap, _cap_reasons = _structural_integrity_cap()
+    if _cap is not None:
+        findings.insert(0, (
+            f"org_score capped at {_cap} — youk's own structure is broken: "
+            + "; ".join(_cap_reasons)
+            + ". Behavioural rates cannot see this; fix the structure before trusting the score."
+        ))
 
     if score < 6.0:
         findings.append("Org score below 6.0 — review which skills are being skipped.")

@@ -1998,6 +1998,81 @@ def record_steering_decomposition(
     return _record_decomposition(label, behavior, task_context, confidence=confidence)
 
 
+@mcp.tool()
+def render_coverage_view(
+    mode: str,
+    target: str,
+    outcomes: dict[str, str],
+    details: dict[str, str] | None = None,
+    evidence: dict[str, str] | None = None,
+) -> dict:
+    """
+    Render a reasoning pass as a coverage tree so completeness is glanceable.
+
+    challenge, stress-test and nfr-check all make completeness claims. A tree is a
+    better interface for a completeness claim than a paragraph read linearly: the
+    reader audits the SHAPE and descends only where a node is thin or absent.
+
+    This existed as a prose quality bar in three SKILL.md files and was skipped six
+    times in a single session, because a bar that depends on remembering to hand-render
+    a tree is not a mechanism. Exposing it as a tool makes emitting it a call.
+
+    mode: "challenge" | "stress-test" | "nfr-check". Unknown modes use the outcome keys
+        as the angle-set.
+    target: what was reasoned about — appears in the header.
+    outcomes: {angle: "covered" | "partial" | "missing" | "n/a"}. Any angle in the
+        mode's fixed set that is absent renders MISSING, which is the point: an angle
+        the pass never reached is the cheapest gap to find.
+    details: optional {angle: one-line note}, shown beside gap, inferred and partial
+        entries in the review order.
+    evidence: optional {angle: "measured" | "read" | "inferred"} — how the angle was
+        actually established. Deliberately not a confidence rating: confidence is
+        self-reported by the same model that did the work. Nodes marked inferred sort
+        directly after gaps, because reached-but-unverified is the second cheapest place
+        for a reader to catch an error.
+
+    Returns: {view, gaps, review_order, angles_total, angles_missing}.
+    `view` is pre-rendered text — surface it verbatim. Completeness is reported
+    UNVERIFIED unless an independent adversary ran; a pass never self-verifies.
+    """
+    from coverage_tree import Coverage, Evidence
+    from mode_coverage_view import view_from_outcomes
+
+    parsed: dict[str, Coverage] = {}
+    for angle, value in (outcomes or {}).items():
+        try:
+            parsed[angle] = Coverage(str(value).strip().lower())
+        except ValueError:
+            parsed[angle] = Coverage.MISSING
+
+    parsed_ev: dict[str, Evidence] = {}
+    for angle, value in (evidence or {}).items():
+        try:
+            parsed_ev[angle] = Evidence(str(value).strip().lower())
+        except ValueError:
+            parsed_ev[angle] = Evidence.NONE
+
+    tree = view_from_outcomes(
+        mode, target, parsed, details=details or {}, evidence=parsed_ev
+    )
+    order = tree.review_order()
+    gaps = [
+        n.concept
+        for b in tree.branches
+        for n in b.nodes
+        if n.covered == Coverage.MISSING
+    ]
+    total = sum(len(b.nodes) for b in tree.branches)
+    return {
+        "view": tree.render(),
+        "gaps": gaps,
+        "review_order": order,
+        "angles_total": total,
+        "angles_missing": len(gaps),
+        "state_written": [],
+    }
+
+
 if __name__ == "__main__":
     _seed_judgment_sets()
     mcp.run(transport=_server_args.transport)
