@@ -1142,6 +1142,13 @@ def _audit_skill_quality(skills_dir: Path) -> list[str]:
         except Exception:
             continue
 
+        # Structural signals only. These do NOT measure whether a skill is good — a
+        # SKILL.md of three prose lines plus one empty code fence and the word "Quality"
+        # scores 2 of 4 and passes, which was verified empirically. Scoring quality is
+        # not something a substring check can do, and pretending otherwise is what made
+        # this audit read as a quality gate while catching only near-empty files.
+        # It is kept because a near-empty SKILL.md is a real failure worth catching, and
+        # the threshold stays at <=1 so it fires on that and nothing else.
         lower = content.lower()
         signals = {
             "phases": any(h in lower for h in ["## phase", "## step ", "## execution", "## how to", "## implement"]),
@@ -1155,7 +1162,7 @@ def _audit_skill_quality(skills_dir: Path) -> list[str]:
         score = sum(signals.values())
         if score <= 1:
             missing = ", ".join(k for k, v in signals.items() if not v)
-            weak.append(f"'{skill_name}' (missing: {missing})")
+            weak.append(f"'{skill_name}' is near-empty (missing: {missing})")
 
     if not weak:
         return []
@@ -1388,6 +1395,18 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
         _links = check_skill_links(YOUK_ROOT, CLAUDE_ROOT)
         if _links.get("message"):
             findings.append(_links["message"])
+    except Exception:
+        pass
+
+    # Route resolution: a skill CLAUDE.md explicitly routes to must load. This is the
+    # falsifiable half of skill health — _audit_skill_quality scores markdown structure
+    # and cannot tell a good skill from a bad one, but a route either resolves or it
+    # does not. 14 skills were routed to and unloadable for weeks without detection.
+    try:
+        from skill_route_check import check_skill_routes
+        _routes = check_skill_routes(CLAUDE_ROOT, YOUK_ROOT)
+        if _routes.get("message"):
+            findings.append(_routes["message"])
     except Exception:
         pass
 

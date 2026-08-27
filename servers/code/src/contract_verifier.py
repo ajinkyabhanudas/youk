@@ -29,11 +29,26 @@ _SERVER_FILES = {
     "youk-code": _REPO_ROOT / "servers" / "code" / "src" / "server.py",
 }
 
-# CLAUDE.md and SKILL.md call sites use backtick dot notation: `youk-core.tool_name(...)`
-# Parens are optional — bare references (`youk-core.tool_name`) also count.
+# Server-prefixed call sites: `youk-core.tool_name(...)`. Parens optional.
 _CALL_SITE_PATTERN = re.compile(
     r"`(youk-core|youk-code)\.([\w]+)(?:\(([^`]*)\))?`"
 )
+
+# Unprefixed call sites: `route_task(...)`, which is how CLAUDE.md writes most of them.
+# The prefixed pattern alone covered 6 of 35 references across CLAUDE.md and the skills;
+# the other 29 named 18 real tools and were invisible, so renaming any of them reported
+# CLEAN. Matching on shape rather than syntax is deliberate: the registered tool list is
+# already extracted from the servers by AST and is ground truth, so a name only has to be
+# checked for membership. Widening the prefixed regex instead would just move the blind
+# spot to whatever spelling the next author uses.
+_BARE_CALL_SITE_PATTERN = re.compile(r"`([a-z_][a-z0-9_]{3,})\s*\(([^`]*)\)`")
+
+# Prose that looks like a call but is not a tool reference. Checked against the
+# registered-tool set first, so this only needs to catch names that collide.
+_NOT_TOOLS = frozenset({
+    "print", "len", "open", "range", "str", "int", "list", "dict", "set",
+    "make", "cd", "git", "run", "pytest", "ruff", "docker", "pip", "npm",
+})
 
 
 def _extract_tools(server_file: Path) -> dict[str, list[str]]:
@@ -70,15 +85,37 @@ def _extract_tools(server_file: Path) -> dict[str, list[str]]:
     return tools
 
 
-def _extract_call_sites(path: Path) -> list[tuple[str, str, str]]:
-    """Return [(server, tool_name, raw_args)] from dot-notation call sites in a file."""
+def _extract_call_sites(
+    path: Path, known_tools: frozenset[str] | None = None
+) -> list[tuple[str, str, str]]:
+    """Return [(server, tool_name, raw_args)] for tool references in a file.
+
+    Two forms are collected. Server-prefixed references carry their own server, so they
+    are attributed directly. Unprefixed references (`route_task(...)`) carry no server,
+    so they are only treated as tool references when the name is in known_tools, and are
+    attributed with an empty server string. That keeps ordinary prose and shell snippets
+    out of the results without needing to enumerate everything that is not a tool.
+
+    known_tools=None disables bare matching, which is what callers wanting the old
+    prefixed-only behaviour should pass.
+    """
     if not path.exists():
         return []
     text = path.read_text(errors="ignore")
-    return [
+    sites = [
         (m.group(1), m.group(2), (m.group(3) or "").strip())
         for m in _CALL_SITE_PATTERN.finditer(text)
     ]
+    if known_tools:
+        seen = {(s, t) for s, t, _ in sites}
+        for m in _BARE_CALL_SITE_PATTERN.finditer(text):
+            name = m.group(1)
+            if name in _NOT_TOOLS or name not in known_tools:
+                continue
+            if any(t == name for _, t in seen):
+                continue  # already counted in its prefixed form
+            sites.append(("", name, m.group(2).strip()))
+    return sites
 
 
 def _collect_skill_files() -> list[Path]:
@@ -110,9 +147,15 @@ def verify_contracts() -> dict:
         call_sources.append(claude_md)
     call_sources.extend(_collect_skill_files())
 
+    # Every registered name across both servers, so unprefixed references can be
+    # recognised by membership rather than by matching a particular prose syntax.
+    known_tools = frozenset(
+        name for tools in registered.values() for name in tools
+    )
+
     all_call_sites: list[tuple[str, str, str, Path]] = []
     for src in call_sources:
-        for server, tool, args in _extract_call_sites(src):
+        for server, tool, args in _extract_call_sites(src, known_tools):
             all_call_sites.append((server, tool, args, src))
 
     # 3 — cross-reference
@@ -121,6 +164,14 @@ def verify_contracts() -> dict:
 
     seen_tools: set[tuple[str, str]] = set()
     for server, tool, args, src in all_call_sites:
+        # An unprefixed reference names no server, so mark it seen on whichever server
+        # registers it. Without this, every bare reference would also count its tool as
+        # unreferenced, inverting the informational list.
+        if not server:
+            for s, tools in registered.items():
+                if tool in tools:
+                    seen_tools.add((s, tool))
+            continue  # membership was already proven when it was collected
         seen_tools.add((server, tool))
         server_tools = registered.get(server, {})
         if tool not in server_tools:
