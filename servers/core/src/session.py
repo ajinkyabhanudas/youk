@@ -2832,6 +2832,24 @@ def end_session(
         )[:400]
         cog_line = f"CognitiveAssessment: {cog_summary}\n"
 
+    # Session duration — read the written_at timestamp start_session already stamps
+    # into the per-slug open.json (state_paths.current_session_slug's own staleness
+    # source), so no new state file is needed. Feeds the replay-based youk-vs-no-youk
+    # comparison in health.py, which had no duration signal to compare against before.
+    duration_line = ""
+    try:
+        _sp.YOUK_ROOT = YOUK_ROOT
+        _dur_slug = _sp.current_session_slug()
+        if _dur_slug:
+            _open_data = json.loads((_slug_state_dir(_dur_slug) / "open.json").read_text())
+            _written_at = _open_data.get("written_at")
+            if isinstance(_written_at, (int, float)) and _written_at > 0:
+                _duration_min = round((__import__("time").time() - _written_at) / 60, 1)
+                if _duration_min >= 0:
+                    duration_line = f"Duration: {_duration_min} min\n"
+    except Exception:
+        pass
+
     token_data = _read_and_clear_tokens()
     total_tokens = token_data["total_input"] + token_data["total_output"]
     budget = token_data.get("token_budget", 0)
@@ -2873,6 +2891,7 @@ def end_session(
         f"{task_type_line}"
         f"CloseCluster: {close_line}\n"
         f"Commits: {'yes' if commits_made else 'no'}\n"
+        f"{duration_line}"
         f"{tokens_line}"
         f"{skill_tokens_line}"
         f"{compact_count_line}"
