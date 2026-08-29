@@ -1258,6 +1258,66 @@ def get_proposals(project_slug: str | None = None) -> dict:
 
 
 @mcp.tool()
+def scan_experiment_gaps() -> dict:
+    """
+    Scan youk's own routing code for decision points with real behavioral consequence
+    and zero instrumentation, and propose (never deploy) an experiment for each.
+
+    Walks a fixed, hand-identified list of 4 candidates (medium-translation-risk soft
+    block, ceremony_sequencer ordering, coverage_tree adversary-spawn threshold,
+    nfr_autonomy_mode branching) — see experiment_gap_detector.py for the full list and
+    rationale per candidate.
+
+    Every proposal this creates has change_type="EXPERIMENT_PROPOSAL" and
+    review_required=True, so apply_proposal blocks it without an explicit human
+    review_required_override=True — same governance Track A skill generation already
+    uses, applied to a new change type. This tool never applies anything itself.
+
+    Idempotent: re-running produces no duplicate proposals (stable id per candidate,
+    INSERT OR IGNORE at the storage layer).
+
+    Returns: {scanned, added, already_proposed, proposals: [{candidate_key, proposal_id, status}]}.
+    """
+    from experiment_gap_detector import detect_experiment_gaps
+    from models import Proposal
+
+    existing = _load_pending_proposals("youk")
+    existing_ids = {p.id for p in existing}
+
+    results = detect_experiment_gaps(existing_ids)
+
+    for r in results:
+        if r["status"] != "added":
+            continue
+        proposal = Proposal(
+            id=r["proposal_id"],
+            target=r["target"],
+            change_description=r["title"],
+            reason=r["rationale"],
+            before="",
+            after=r["content"][:300],
+            status="PENDING",
+            proposed_date=r["proposed_date"],
+            change_type="EXPERIMENT_PROPOSAL",
+            target_section="",
+            content=r["content"],
+            review_required=True,
+            project_slug="youk",
+        )
+        _add_proposal(proposal)
+
+    return {
+        "scanned": len(results),
+        "added": sum(1 for r in results if r["status"] == "added"),
+        "already_proposed": sum(1 for r in results if r["status"] == "already_proposed"),
+        "proposals": [
+            {"candidate_key": r["candidate_key"], "proposal_id": r["proposal_id"], "status": r["status"]}
+            for r in results
+        ],
+    }
+
+
+@mcp.tool()
 def apply_proposal(
     proposal_id: str,
     confirmed: bool = False,

@@ -17,6 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 _REPO = Path(__file__).parent.parent
 _GATE = _REPO / "scripts" / "voice_gate_precommit.py"
 
@@ -60,6 +62,38 @@ class TestGateReadsTheMessageItIsGiven:
 
 
 class TestCannotPassSilently:
+    """These tests require the legacy .git/COMMIT_EDITMSG fallback guess to miss.
+
+    That file is git's own post-commit artifact: every successful `git commit` in
+    this checkout's history leaves it populated with the last message and git never
+    clears it. Without isolating that, these tests pass only on a checkout that has
+    literally never had a commit made in it — which is not a real state any
+    contributor's machine is ever in, so they'd fail permanently everywhere except a
+    fresh clone. Hide the real file for the duration of the test, same save/restore
+    shape as test_bad_argv_falls_back_to_git_rev_parse below.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _hide_real_commit_editmsg(self):
+        import subprocess
+
+        real_path_str = subprocess.run(
+            ["git", "rev-parse", "--git-path", "COMMIT_EDITMSG"],
+            capture_output=True, text=True, cwd=str(_REPO), timeout=5,
+        ).stdout.strip()
+        real_path = Path(real_path_str)
+        if not real_path.is_absolute():
+            real_path = _REPO / real_path
+        backup = None
+        if real_path.exists():
+            backup = real_path.read_text()
+            real_path.unlink()
+        try:
+            yield
+        finally:
+            if backup is not None:
+                real_path.write_text(backup)
+
     def test_unresolvable_message_blocks(self, tmp_path):
         """The defect that let an entire session through.
 
