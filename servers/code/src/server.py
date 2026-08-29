@@ -33,7 +33,7 @@ mcp = FastMCP("youk-code", host=_server_args.host, port=_server_args.port)
 
 
 @mcp.tool()
-def nfr_check(task: str, size: str = "M") -> dict:
+def nfr_check(task: str, size: str = "M", nfr_autonomy_mode: str = "standard") -> dict:
     """
     Run an NFR (Non-Functional Requirements) check on a task.
 
@@ -43,11 +43,19 @@ def nfr_check(task: str, size: str = "M") -> dict:
 
     task: What you're about to build.
     size: XS, S, M, L, or XL. Defaults to M.
+    nfr_autonomy_mode: "standard" or "validate", from session_start's returned
+    nfr_autonomy_mode field. Only affects the M path — pass it through unchanged
+    from session_start; "validate" only ever fires for a session that has already
+    earned it. This tool runs read-only (youk-code mounts YOUK_ROOT read-only), so
+    it cannot log the exposure itself — when the result includes a non-null
+    autonomy_mode field, call youk-core.log_ab_exposure(session_slug,
+    "nfr_autonomy_mode", "nfr-check", result["autonomy_mode"]) same as route_to_skill's
+    ab_variant handling.
 
     XS/S returns: size, mode, decisions, connections, markdown.
-    M+ returns: mode="in_session", skill_content, questions, instruction.
+    M+ returns: mode="in_session", skill_content, questions, instruction, autonomy_mode.
     """
-    result = run_nfr_check(task, size)
+    result = run_nfr_check(task, size, nfr_autonomy_mode)
     if isinstance(result, dict):
         return result  # in_session — Claude Code executes with full context
     return {

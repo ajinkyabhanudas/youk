@@ -76,6 +76,8 @@ Cut always: openers, closers, meta-framing, em-dashes as separators, aphorism en
 ## Skill invocation
 Call `youk-code.route_to_skill(skill_name, task)`. Follow every phase in `skill_content`. If `rationale` non-null and not suppressed: surface one sentence before executing. Call `mark_rationale_preempted(skill_name)` after 3 pre-emptions. If `ab_variant` non-null: call `youk-core.log_ab_exposure(session_slug, experiment, skill_name, ab_variant)` — route_to_skill runs read-only, only youk-core can persist the exposure. After any capability skill, call `write_skill_handoff(from_skill, content)`.
 
+When calling `youk-code.nfr_check(task, size, nfr_autonomy_mode)` directly (not via route_to_skill): pass the `nfr_autonomy_mode` field from `session_start`'s result unchanged. The returned `autonomy_mode` field is non-null on the M path — call `youk-core.log_ab_exposure(session_slug, "nfr_autonomy_mode", "nfr-check", result["autonomy_mode"])` after, same read-only-tool-can't-persist reasoning as above.
+
 ## Context management
 
 Call `compact_context(project_dir)` when: after any commit; after task completion; when a new decision is verbalized; before session_end; when `calls_since_compact > 8`. Paste the returned `brief` VERBATIM.
