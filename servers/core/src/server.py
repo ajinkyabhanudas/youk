@@ -1151,6 +1151,32 @@ def self_heal(research_mode: bool = False) -> dict:
 
 
 @mcp.tool()
+def compare_youk_vs_no_youk(skill: str = "challenge", days: int = 60) -> dict:
+    """
+    Replay comparison: partition already-completed sessions by whether a capability
+    skill fired, and compare outcome metrics (rework rate, findings, duration) between
+    the two naturally-occurring cohorts. Self-measurement, not a live experiment — this
+    only reads history that already happened, never skips a gate on live work.
+
+    Observational, not causal: sessions that skipped `skill` may differ systematically
+    from ones that ran it (e.g. simpler tasks that genuinely didn't need it). A gap
+    between cohorts is suggestive, not proof. verdict="inconclusive" when either cohort
+    has fewer than 3 sessions — an honest label, not a forced comparison.
+
+    skill: capability skill to partition on (e.g. "challenge", "nfr-check", "dev-loop").
+    days: lookback window for audit log history. Defaults to 60.
+
+    Returns: {skill, ran_cohort: {n, rework_rate, avg_findings, avg_duration_min},
+              skipped_cohort: {...}, verdict: "compared" | "inconclusive"}.
+    """
+    from health import _read_recent_audit_logs, _parse_audit_sessions, compare_youk_vs_no_youk as _compare
+
+    audit_texts = _read_recent_audit_logs(days=days)
+    sessions = _parse_audit_sessions(audit_texts)
+    return _compare(sessions, skill)
+
+
+@mcp.tool()
 def add_proposal(
     title: str,
     rationale: str,

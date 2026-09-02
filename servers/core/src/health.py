@@ -299,6 +299,9 @@ def _parse_audit_sessions(audit_texts: list[str]) -> list[dict]:
             s["tokens_budget"] = 0
             s["tokens_ratio"] = None
 
+        duration_match = re.search(r"^Duration:\s*([\d.]+)\s*min$", block, re.MULTILINE)
+        s["duration_min"] = float(duration_match.group(1)) if duration_match else None
+
         # Outcome quality fields
         findings_match = re.search(r"^Findings:\s*(\d+)(.*)?$", block, re.MULTILINE)
         if findings_match:
@@ -627,6 +630,95 @@ def _compute_skill_autonomy_rate(sessions: list[dict], skill: str) -> float:
         if any(c.lower().replace("-", "_") == skill_lower for c in s["developer_caught"])
     )
     return caught_count / len(tracked)
+
+
+def compute_rework_rate(sessions: list[dict], lookback: int = 20, threshold: int = 5) -> dict:
+    """
+    Real scored rework-rate metric — direction corrections signal planning-gate gaps.
+
+    Previously this existed only as an inline ad-hoc list inside org_score's finding
+    generation (a warning message, never a reusable, queryable metric). Formalizes it
+    so the replay-based youk-vs-no-youk comparison (compare_youk_vs_no_youk) has a real
+    number to compute per cohort instead of duplicating this filter.
+
+    A session counts as rework when it has loop_correction_detected or
+    direction_reversal — both already-tracked signals that the initial direction had
+    to be corrected mid-session or after a challenge verdict.
+
+    Returns {"rate": float | None, "rework_sessions": int, "total_sessions": int}.
+    rate is None when fewer than `threshold` sessions exist in the window — too little
+    data to report a rate rather than noise.
+    """
+    recent = sessions[-lookback:]
+    if len(recent) < threshold:
+        return {"rate": None, "rework_sessions": 0, "total_sessions": len(recent)}
+    rework_sessions = [s for s in recent if s.get("loop_correction") or s.get("direction_reversal")]
+    return {
+        "rate": round(len(rework_sessions) / len(recent), 2),
+        "rework_sessions": len(rework_sessions),
+        "total_sessions": len(recent),
+    }
+
+
+def compare_youk_vs_no_youk(sessions: list[dict], skill: str, min_cohort: int = 3) -> dict:
+    """
+    Replay-based comparison: partition already-completed sessions by whether a given
+    capability skill fired, and compare outcome metrics between the two cohorts.
+
+    This is v1 from the reaction-classifier plan (~/.claude/plans/zany-squishing-crayon.md,
+    Phase 4). It is observational, not a randomized experiment — sessions that didn't
+    exercise `skill` may differ systematically from ones that did (e.g. simpler tasks
+    that genuinely didn't need it), so a gap between cohorts is suggestive, not causal.
+    Deliberately not a live "gates off" control arm: that would mean deliberately
+    shipping real work ungated, reversing the standing "never skip nfr_check" rule
+    injected into every session, which is out of scope here (see the plan's v2, not
+    scheduled without explicit sign-off). This only ever reads history that already
+    happened under whatever gating naturally occurred — zero new product risk.
+
+    skill: capability skill name to partition on (e.g. "challenge", "nfr-check").
+    Membership checked against both `skills` and `capability_skills` (developer-caught
+    counts as exercised — see _parse_audit_sessions's DeveloperCaught handling).
+
+    Returns {skill, ran_cohort: {...}, skipped_cohort: {...}, verdict}. Each cohort dict
+    has n, rework_rate, avg_findings, avg_duration_min (None if no duration data in that
+    cohort). verdict is "inconclusive" whenever either cohort is below min_cohort —
+    an honest label is the point, not a forced comparison from too little data.
+    """
+    skill_lower = skill.lower().replace("-", "_")
+
+    def _exercised(s: dict) -> bool:
+        names = (s.get("skills") or []) + (s.get("capability_skills") or [])
+        return any(n.lower().replace("-", "_") == skill_lower for n in names)
+
+    ran = [s for s in sessions if _exercised(s)]
+    skipped = [s for s in sessions if not _exercised(s)]
+
+    def _cohort_summary(cohort: list[dict]) -> dict:
+        n = len(cohort)
+        rework = compute_rework_rate(cohort, lookback=len(cohort) or 1, threshold=1) if n else {"rate": None}
+        findings = [s.get("findings_total", 0) for s in cohort]
+        durations = [s["duration_min"] for s in cohort if s.get("duration_min") is not None]
+        return {
+            "n": n,
+            "rework_rate": rework["rate"],
+            "avg_findings": round(sum(findings) / n, 2) if n else None,
+            "avg_duration_min": round(sum(durations) / len(durations), 1) if durations else None,
+        }
+
+    ran_summary = _cohort_summary(ran)
+    skipped_summary = _cohort_summary(skipped)
+    verdict = (
+        "inconclusive"
+        if ran_summary["n"] < min_cohort or skipped_summary["n"] < min_cohort
+        else "compared"
+    )
+
+    return {
+        "skill": skill,
+        "ran_cohort": ran_summary,
+        "skipped_cohort": skipped_summary,
+        "verdict": verdict,
+    }
 
 
 _AUTONOMY_DEPTH_WEIGHTS: dict[str, float] = {
@@ -1501,12 +1593,11 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
         findings.append("Org score below 6.0 — review which skills are being skipped.")
 
     # Rework rate: direction corrections signal planning gate gaps
-    recent = sessions[-20:]
-    rework_sessions = [s for s in recent if s.get("loop_correction") or s.get("direction_reversal")]
-    if len(recent) >= 5 and len(rework_sessions) >= 3:
+    _rework = compute_rework_rate(sessions, lookback=20, threshold=5)
+    if _rework["rate"] is not None and _rework["rework_sessions"] >= 3:
         findings.append(
-            f"Direction corrections in {len(rework_sessions)}/{len(recent)} recent sessions. "
-            "Planning gate (challenge + scope-collapse) may need tightening — "
+            f"Direction corrections in {_rework['rework_sessions']}/{_rework['total_sessions']} "
+            "recent sessions. Planning gate (challenge + scope-collapse) may need tightening — "
             "rework signals the wrong problem was started."
         )
 
