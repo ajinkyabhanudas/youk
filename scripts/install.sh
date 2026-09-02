@@ -223,9 +223,14 @@ for SERVER in core code; do
 done
 
 # Generate plists from templates (substitute real paths) and load them
-declare -A _YOUK_PORTS=([core]=8001 [code]=8002)
+# Not an associative array: /usr/bin/env bash resolves to macOS's stock /bin/bash
+# (3.2, frozen pre-GPLv3), which mishandles bareword keys in `declare -A` literals
+# under `set -u` — "core: unbound variable". A case statement is 3.2-safe.
 for SERVER in core code; do
-  PORT=${_YOUK_PORTS[$SERVER]}
+  case "$SERVER" in
+    core) PORT=8001 ;;
+    code) PORT=8002 ;;
+  esac
   sed \
     -e "s|{{CLAUDE_DIR}}|$CLAUDE_DIR|g" \
     -e "s|{{YOUK_DIR}}|$YOUK_DIR|g" \
@@ -241,8 +246,11 @@ ok "launchd agents loaded (core :8001, code :8002)"
 # Wait for servers to be reachable (max 30s — Docker cold-start)
 echo -n "  Waiting for servers to respond"
 for i in $(seq 1 30); do
-  CORE_STATUS=$(curl -o /dev/null -w "%{http_code}" -s http://127.0.0.1:8001/mcp 2>/dev/null)
-  CODE_STATUS=$(curl -o /dev/null -w "%{http_code}" -s http://127.0.0.1:8002/mcp 2>/dev/null)
+  # `|| true` matters here: under `set -e`, a plain VAR=$(cmd) assignment is NOT
+  # exempted — a cold-start connection-refused (curl exit 7) on the first attempt
+  # would otherwise kill the whole installer before the retry loop gets to retry.
+  CORE_STATUS=$(curl -o /dev/null -w "%{http_code}" -s http://127.0.0.1:8001/mcp 2>/dev/null || true)
+  CODE_STATUS=$(curl -o /dev/null -w "%{http_code}" -s http://127.0.0.1:8002/mcp 2>/dev/null || true)
   # 406 = server up but needs MCP headers (correct); 200 = also fine
   if [[ "$CORE_STATUS" =~ ^(200|406)$ ]] && [[ "$CODE_STATUS" =~ ^(200|406)$ ]]; then
     echo " done"
