@@ -216,17 +216,61 @@ if (-not (Test-Path $CLAUDE_MD)) {
     New-Item -ItemType File -Path $CLAUDE_MD -Force | Out-Null
 }
 
-# NOTE: parity gap with install.sh — the bash installer now wraps this block in
-# <!-- BEGIN youk (managed) --> / <!-- END youk --> fence markers and takes a
-# pre-install snapshot, so uninstall can remove it surgically. This PowerShell
-# path still appends unfenced. Until it is brought to parity, uninstall.ps1
-# correctly falls back to its manual-removal warning on Windows.
+# NOTE: pre-install snapshot (install.sh's Step 2b, uninstall.sh restore-to-exact-
+# prior-state) still has no Windows port — uninstall.ps1 correctly falls back to its
+# manual-removal warning. That gap is unchanged. The gap this closes: CLAUDE.md
+# content refresh. This block previously only ever appended once and skipped on
+# every later run ("if youk text found, skip") — a template change on this machine
+# (e.g. this session's check_voice / nfr_autonomy_mode wiring) would never reach a
+# Windows install on update. Ported from install.sh's three-case fence logic so
+# `.\install.ps1` re-run is now self-healing here too, matching macOS/Linux.
+$FENCE_BEGIN = "<!-- BEGIN youk (managed) -->"
+$FENCE_END   = "<!-- END youk -->"
 $existing = Get-Content $CLAUDE_MD -Raw -ErrorAction SilentlyContinue
-if ($existing -match "youk") {
-    ok "CLAUDE.md already contains youk block — skipping"
+$templateContent = Get-Content $TEMPLATE -Raw
+
+if ($existing -and $existing.Contains($FENCE_BEGIN)) {
+    # (1) Already fenced -> replace the fenced region with the current template.
+    # Plain IndexOf/Substring splicing, deliberately not [regex]::Replace: the
+    # template is prose and could contain a literal "$" followed by a digit
+    # (e.g. a dollar figure in an example), which .NET regex replacement-string
+    # syntax would silently misread as a capture-group backreference.
+    $beginIdx = $existing.IndexOf($FENCE_BEGIN)
+    $endIdx   = $existing.IndexOf($FENCE_END)
+    if ($endIdx -ge 0) {
+        $before = $existing.Substring(0, $beginIdx)
+        $after  = $existing.Substring($endIdx + $FENCE_END.Length)
+        $updated = "$before$FENCE_BEGIN`n$templateContent$FENCE_END$after"
+        Set-Content -Path $CLAUDE_MD -Value $updated -NoNewline
+        ok "CLAUDE.md youk block refreshed (fenced region replaced)"
+    } else {
+        warn "CLAUDE.md has a BEGIN fence but no matching END — leaving unchanged"
+    }
+} elseif ($existing -and $existing -match "youk-core\.session_start") {
+    # (2) Unfenced youk block (legacy install) -> wrap it in fences in place.
+    # Matches install.sh: insert BEGIN before the first "# youk" H1 heading found,
+    # append END at EOF. Content above the heading is untouched.
+    $lines = $existing -split "`r?`n"
+    $headingIndex = -1
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match "^# youk( |$|—)") { $headingIndex = $i; break }
+    }
+    if ($headingIndex -ge 0) {
+        # PowerShell range quirk: 0..-1 does NOT mean "empty" — it means the
+        # descending range [0, -1], grabbing element 0 and the last element.
+        # Guard the case where the youk heading is the very first line.
+        $before = if ($headingIndex -eq 0) { @() } else { $lines[0..($headingIndex - 1)] }
+        $after  = $lines[$headingIndex..($lines.Count - 1)]
+        $rebuilt = ($before + $FENCE_BEGIN + $after + $FENCE_END) -join "`n"
+        Set-Content -Path $CLAUDE_MD -Value $rebuilt
+        ok "CLAUDE.md legacy youk block wrapped in fence markers (content preserved)"
+    } else {
+        warn "Could not locate youk H1 heading to fence — leaving CLAUDE.md unchanged"
+    }
 } else {
-    Add-Content $CLAUDE_MD "`n`n$(Get-Content $TEMPLATE -Raw)"
-    ok "youk block appended to CLAUDE.md"
+    # (3) No youk block -> append the template, fenced.
+    Add-Content $CLAUDE_MD "`n`n$FENCE_BEGIN`n$templateContent$FENCE_END"
+    ok "youk block appended to CLAUDE.md (fenced)"
 }
 
 # ── Step 8: Seed audit log ───────────────────────────────────────────────────
