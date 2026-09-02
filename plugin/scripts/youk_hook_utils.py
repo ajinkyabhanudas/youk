@@ -860,6 +860,152 @@ def build_experiment_trigger_nudge(root: Path, current_session: int) -> str:
     )
 
 
+# ── Pre-destructive-command checkpoint ─────────────────────────────────────────
+# The problem this closes: a mid-merge `git checkout <ref> -- .` clobbered in-progress
+# conflict resolution this session, and `git stash` — the obvious recovery tool — failed
+# ("could not write index") specifically because a merge was active, the exact moment a
+# safety net matters most. Recovery took several manual diagnostic steps. This makes the
+# safety net automatic and independent of the operator noticing the risk in advance:
+# every Bash call is inspected BEFORE execution, and a restorable checkpoint is written
+# whenever the command matches a destructive pattern — silently, non-blocking, and using
+# `git diff` rather than `git stash` specifically because diff works correctly mid-merge
+# and mid-conflict, which is exactly when stash does not.
+
+_DESTRUCTIVE_COMMAND_PATTERNS = [
+    r"\brm\s+-[a-z]*r[a-z]*f",       # rm -rf, rm -fr, rm -r -f, etc.
+    r"\brm\s+-[a-z]*f[a-z]*r",
+    r"\bgit\s+reset\s+--hard",
+    r"\bgit\s+clean\s+-[a-z]*f",     # git clean -f, -fd, -fdx
+    r"\bgit\s+checkout\s+\S+\s+--\s+",  # git checkout <ref> -- <path...> (overwrites paths)
+    r"\bgit\s+checkout\s+\.\s*$",
+    r"\bgit\s+restore\s+",
+    r"\bgit\s+branch\s+-D\b",
+    r"\bgit\s+push\b.*--force(?!-with-lease)",
+    r"\bgit\s+stash\s+drop\b",
+    r"\bgit\s+stash\s+clear\b",
+    r"\bgit\s+merge\s+--abort\b",
+    r"\bgit\s+rebase\s+--abort\b",
+]
+
+
+def is_destructive_command(command: str) -> bool:
+    """True if `command` matches a pattern that can silently discard uncommitted work."""
+    return any(
+        __import__("re").search(p, command, __import__("re").IGNORECASE)
+        for p in _DESTRUCTIVE_COMMAND_PATTERNS
+    )
+
+
+def _run_git(args: list[str], cwd: str) -> tuple[int, str]:
+    """Run a git command, return (returncode, stdout). Never raises."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=10,
+        )
+        return result.returncode, result.stdout
+    except Exception:
+        return 1, ""
+
+
+def write_pre_destructive_checkpoint(cwd: str, command: str) -> str | None:
+    """Write a restorable checkpoint of the current git working tree before a
+    destructive command runs. Stored under <repo>/.git/youk-checkpoints/ — inside
+    .git so it is never committed, and repo-scoped so unrelated projects never collide.
+
+    Uses `git diff HEAD` (not `git stash`) because diff succeeds during an active
+    merge/conflict — stash does not, and that is precisely the moment this exists to
+    protect. Silent-fail throughout: a checkpoint that can't be written must never
+    block or alter the command it was trying to protect against.
+
+    Returns the checkpoint id (timestamp) on success, None if not in a git repo or
+    on any failure (nothing to protect, or protection itself failed — either way the
+    real command must still proceed unaffected).
+    """
+    try:
+        rc, git_dir = _run_git(["rev-parse", "--git-dir"], cwd)
+        if rc != 0:
+            return None  # not a git repo — nothing to checkpoint
+        # --git-dir is commonly relative ("./.git") — it is relative to `cwd` (the
+        # target repo), NOT to this hook process's own working directory, which may
+        # be anywhere. Anchoring it wrong means the checkpoint silently lands under
+        # the wrong directory instead of the repo it's meant to protect.
+        git_dir_path = Path(git_dir.strip())
+        if not git_dir_path.is_absolute():
+            git_dir_path = Path(cwd) / git_dir_path
+        git_dir = str(git_dir_path)
+
+        rc, branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd)
+        branch = branch.strip() if rc == 0 else "unknown"
+        rc, head_sha = _run_git(["rev-parse", "HEAD"], cwd)
+        head_sha = head_sha.strip() if rc == 0 else ""
+        if not head_sha:
+            return None  # unborn branch / no commits yet — no baseline to restore to
+
+        rc, diff = _run_git(["diff", "HEAD"], cwd)
+        diff = diff if rc == 0 else ""
+        rc, status = _run_git(["status", "--porcelain"], cwd)
+        untracked = [
+            line[3:] for line in (status.splitlines() if rc == 0 else [])
+            if line.startswith("??")
+        ]
+
+        if not diff and not untracked:
+            return None  # working tree already clean — nothing this command could destroy
+
+        checkpoints_dir = Path(git_dir) / "youk-checkpoints"
+        checkpoints_dir.mkdir(parents=True, exist_ok=True)
+
+        import time
+        # Second-level precision alone collides on rapid consecutive destructive
+        # commands (each overwriting the previous checkpoint) — a microsecond suffix
+        # keeps ids sortable by time while guaranteeing uniqueness.
+        _now = time.time()
+        _micros = int((_now % 1) * 1_000_000)
+        checkpoint_id = time.strftime("%Y%m%dT%H%M%S", time.gmtime(_now)) + f".{_micros:06d}Z"
+        entry_dir = checkpoints_dir / checkpoint_id
+        entry_dir.mkdir(parents=True, exist_ok=True)
+
+        if diff:
+            (entry_dir / "working_tree.patch").write_text(diff)
+
+        for path in untracked:
+            src = Path(cwd) / path
+            if src.is_file():
+                try:
+                    dst = entry_dir / "untracked" / path
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    dst.write_bytes(src.read_bytes())
+                except Exception:
+                    continue
+
+        merge_head = Path(git_dir) / "MERGE_HEAD"
+        manifest = {
+            "id": checkpoint_id,
+            "cwd": cwd,
+            "branch": branch,
+            "head_sha": head_sha,
+            "merge_in_progress": merge_head.exists(),
+            "triggering_command": command[:300],
+            "has_patch": bool(diff),
+            "untracked_files": untracked,
+        }
+        (entry_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+
+        # Rolling cap: keep the most recent 20 checkpoints per repo.
+        all_entries = sorted(
+            (d for d in checkpoints_dir.iterdir() if d.is_dir()),
+            key=lambda d: d.name,
+        )
+        for old in all_entries[:-20]:
+            import shutil
+            shutil.rmtree(old, ignore_errors=True)
+
+        return checkpoint_id
+    except Exception:
+        return None
+
+
 # ── Output helpers ────────────────────────────────────────────────────────────
 
 def ok(system_message: str = "", additional_context: str = "") -> None:
