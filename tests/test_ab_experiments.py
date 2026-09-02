@@ -16,6 +16,7 @@ import json
 from ab_experiments import (
     assign_variant,
     log_exposure,
+    pilot_status,
     read_exposures,
     write_pending_reaction,
     consume_pending_reaction,
@@ -208,3 +209,71 @@ class TestLogReaction:
         blocked = tmp_path / "state"
         blocked.write_text("not a directory")
         log_reaction(tmp_path, "session-1", "exp-1", "nfr-check", "correction")  # must not raise
+
+
+class TestPilotStatus:
+    """Guards the pre-registration boundary: report counts, never a readout.
+
+    A comparison computed before the threshold is reached is a peek, and a stop
+    condition decided after seeing partial data is not a stop condition. These tests
+    exist to keep that line enforced in code, not just in the plan document.
+    """
+
+    def test_zero_exposures_is_not_ready(self, tmp_path):
+        s = pilot_status(tmp_path, "exp-1", threshold=20)
+        assert s["ready"] is False
+        assert s["total"] == 0
+        assert s["remaining"] == 20
+
+    def test_below_threshold_is_not_ready(self, tmp_path):
+        for i in range(19):
+            log_exposure(tmp_path, f"s{i}", "exp-1", "nfr-check", "control")
+        s = pilot_status(tmp_path, "exp-1", threshold=20)
+        assert s["ready"] is False
+        assert s["total"] == 19
+        assert s["remaining"] == 1
+
+    def test_at_threshold_is_ready(self, tmp_path):
+        for i in range(20):
+            log_exposure(tmp_path, f"s{i}", "exp-1", "nfr-check", "control")
+        s = pilot_status(tmp_path, "exp-1", threshold=20)
+        assert s["ready"] is True
+        assert s["remaining"] == 0
+
+    def test_above_threshold_stays_ready_remaining_never_negative(self, tmp_path):
+        for i in range(25):
+            log_exposure(tmp_path, f"s{i}", "exp-1", "nfr-check", "control")
+        s = pilot_status(tmp_path, "exp-1", threshold=20)
+        assert s["ready"] is True
+        assert s["remaining"] == 0
+
+    def test_counts_split_correctly_by_variant(self, tmp_path):
+        for i in range(3):
+            log_exposure(tmp_path, f"c{i}", "exp-1", "nfr-check", "control")
+        for i in range(5):
+            log_exposure(tmp_path, f"t{i}", "exp-1", "nfr-check", "treatment")
+        s = pilot_status(tmp_path, "exp-1", threshold=20)
+        assert s["by_variant"] == {"control": 3, "treatment": 5}
+        assert s["total"] == 8
+
+    def test_other_experiments_do_not_count_toward_this_ones_threshold(self, tmp_path):
+        for i in range(10):
+            log_exposure(tmp_path, f"s{i}", "unrelated-experiment", "x", "control")
+        s = pilot_status(tmp_path, "exp-1", threshold=20)
+        assert s["total"] == 0
+
+    def test_no_comparison_or_verdict_fields_present(self, tmp_path):
+        """The load-bearing guard: this function must never look like a readout."""
+        for i in range(25):
+            log_exposure(tmp_path, f"s{i}", "exp-1", "nfr-check",
+                        "treatment" if i % 2 else "control")
+        s = pilot_status(tmp_path, "exp-1", threshold=20)
+        banned = {"verdict", "winner", "significant", "p_value", "confidence",
+                  "comparison", "autonomy_depth", "result"}
+        assert not (banned & set(s)), f"readout-shaped field leaked: {banned & set(s)}"
+
+    def test_custom_threshold_is_respected(self, tmp_path):
+        for i in range(5):
+            log_exposure(tmp_path, f"s{i}", "exp-1", "nfr-check", "control")
+        assert pilot_status(tmp_path, "exp-1", threshold=5)["ready"] is True
+        assert pilot_status(tmp_path, "exp-1", threshold=6)["ready"] is False
