@@ -24,6 +24,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "servers" / "shared"))
+from ab_experiments import consume_pending_reaction, log_reaction
+from reaction_classifier import classify_reaction
 from youk_hook_utils import (
     read_stdin,
     youk_root,
@@ -138,6 +141,15 @@ def main() -> None:
     if len(user_prompt) >= MIN_PROMPT_LEN and _is_correction(user_prompt):
         session_id = _load_session_id(root)
         capture_correction(root, user_prompt, transcript_path, session_id)
+
+    # ── A/B exposure reaction capture ──────────────────────────────────────────
+    # Independent check on autonomy_depth: classify this message deterministically
+    # if it's the one immediately following a logged A/B pilot exposure. No-op
+    # (single cheap file read) for the common case where nothing is pending.
+    pending = consume_pending_reaction(root, slug)
+    if pending is not None:
+        reaction = classify_reaction(user_prompt)
+        log_reaction(root, slug, pending["experiment"], pending["skill"], reaction)
 
     # ── Voice corpus capture — append substantive user messages for profiling ──
     # Register: "chat" for all hook-captured messages (per-register tagging added later).

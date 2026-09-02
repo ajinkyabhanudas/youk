@@ -2137,6 +2137,9 @@ def check_voice(text: str) -> dict:
 def log_ab_exposure(session_slug: str, experiment: str, skill: str, variant: str) -> dict:
     """
     Persist an A/B experiment exposure record. Append-only, idempotent, ADR-011 compliant.
+    Also arms a pending-reaction marker so the next user message in this session gets
+    classified (correction/redirect/acknowledgment/silent_proceed) by the
+    UserPromptSubmit hook — see reaction_classifier.py.
 
     Exists because route_to_skill runs in youk-code, which mounts YOUK_ROOT read-only
     by design (skill-execution logic should not mutate global state directly — only
@@ -2152,14 +2155,15 @@ def log_ab_exposure(session_slug: str, experiment: str, skill: str, variant: str
 
     Returns: {"logged": bool, "path": str}
     """
-    from ab_experiments import log_exposure, _exposure_path
+    from ab_experiments import log_exposure, write_pending_reaction, _exposure_path
 
     try:
         log_exposure(YOUK_ROOT, session_slug, experiment, skill, variant)
+        write_pending_reaction(YOUK_ROOT, session_slug, experiment, skill)
         return {
             "logged": True,
             "path": str(_exposure_path(YOUK_ROOT)),
-            "state_written": ["state/ab-exposures.json"],
+            "state_written": ["state/ab-exposures.json", "state/pending-reaction.json"],
         }
     except Exception as exc:
         return {

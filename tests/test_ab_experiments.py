@@ -11,8 +11,18 @@ caller — an exposure log is telemetry, not a gate.
 """
 from __future__ import annotations
 
+import json
 
-from ab_experiments import assign_variant, log_exposure, pilot_status, read_exposures
+from ab_experiments import (
+    assign_variant,
+    log_exposure,
+    pilot_status,
+    read_exposures,
+    write_pending_reaction,
+    consume_pending_reaction,
+    log_reaction,
+    _reactions_path,
+)
 
 
 class TestAssignVariantIsDeterministic:
@@ -122,6 +132,83 @@ class TestReadExposures:
         log_exposure(tmp_path, "s1", "exp-a", "x", "control")
         log_exposure(tmp_path, "s1", "exp-b", "x", "control")
         assert len(read_exposures(tmp_path)) == 2
+
+
+class TestPendingReaction:
+    """Marker lifecycle: written after an exposure, consumed by exactly the next
+    check, gone after that regardless of what the caller does with it."""
+
+    def test_nothing_pending_returns_none(self, tmp_path):
+        assert consume_pending_reaction(tmp_path, "session-1") is None
+
+    def test_written_marker_is_consumed_once(self, tmp_path):
+        write_pending_reaction(tmp_path, "session-1", "exp-1", "nfr-check")
+        entry = consume_pending_reaction(tmp_path, "session-1")
+        assert entry["experiment"] == "exp-1"
+        assert entry["skill"] == "nfr-check"
+        assert consume_pending_reaction(tmp_path, "session-1") is None
+
+    def test_marker_is_scoped_to_its_session(self, tmp_path):
+        write_pending_reaction(tmp_path, "session-1", "exp-1", "nfr-check")
+        assert consume_pending_reaction(tmp_path, "session-2") is None
+        assert consume_pending_reaction(tmp_path, "session-1") is not None
+
+    def test_second_exposure_overwrites_first_unconsumed_marker(self, tmp_path):
+        write_pending_reaction(tmp_path, "session-1", "exp-1", "nfr-check")
+        write_pending_reaction(tmp_path, "session-1", "exp-1", "other-skill")
+        entry = consume_pending_reaction(tmp_path, "session-1")
+        assert entry["skill"] == "other-skill"
+
+    def test_raw_session_slug_never_written(self, tmp_path):
+        write_pending_reaction(tmp_path, "my-secret-project-slug", "exp-1", "nfr-check")
+        raw = (tmp_path / "state" / "pending-reaction.json").read_text()
+        assert "my-secret-project-slug" not in raw
+
+    def test_never_raises_on_unwritable_directory(self, tmp_path):
+        blocked = tmp_path / "state"
+        blocked.write_text("not a directory")
+        write_pending_reaction(tmp_path, "session-1", "exp-1", "nfr-check")  # must not raise
+        assert consume_pending_reaction(tmp_path, "session-1") is None  # must not raise
+
+    def test_never_raises_on_corrupt_existing_file(self, tmp_path):
+        state = tmp_path / "state"
+        state.mkdir()
+        (state / "pending-reaction.json").write_text("{not valid json")
+        write_pending_reaction(tmp_path, "session-1", "exp-1", "nfr-check")
+        entry = consume_pending_reaction(tmp_path, "session-1")
+        assert entry["skill"] == "nfr-check"
+
+
+class TestLogReaction:
+    def test_write_creates_the_file(self, tmp_path):
+        log_reaction(tmp_path, "session-1", "exp-1", "nfr-check", "correction")
+        assert _reactions_path(tmp_path).exists()
+
+    def test_entry_has_expected_shape(self, tmp_path):
+        log_reaction(tmp_path, "session-1", "exp-1", "nfr-check", "acknowledgment")
+        records = json.loads(_reactions_path(tmp_path).read_text())
+        assert len(records) == 1
+        r = records[0]
+        assert r["experiment"] == "exp-1"
+        assert r["skill"] == "nfr-check"
+        assert r["reaction"] == "acknowledgment"
+        assert "session_hash" in r
+        assert "ts" in r
+
+    def test_raw_session_slug_never_written(self, tmp_path):
+        log_reaction(tmp_path, "my-secret-project-slug", "exp-1", "nfr-check", "correction")
+        raw = _reactions_path(tmp_path).read_text()
+        assert "my-secret-project-slug" not in raw
+
+    def test_appends_across_separate_calls(self, tmp_path):
+        log_reaction(tmp_path, "s1", "exp-1", "a", "correction")
+        log_reaction(tmp_path, "s2", "exp-1", "a", "silent_proceed")
+        assert len(json.loads(_reactions_path(tmp_path).read_text())) == 2
+
+    def test_never_raises_on_unwritable_directory(self, tmp_path):
+        blocked = tmp_path / "state"
+        blocked.write_text("not a directory")
+        log_reaction(tmp_path, "session-1", "exp-1", "nfr-check", "correction")  # must not raise
 
 
 class TestPilotStatus:

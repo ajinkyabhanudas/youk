@@ -36,6 +36,7 @@ knowledge/proposals/
 knowledge/global/
 knowledge/imported/
 knowledge/voice-corpus.jsonl
+knowledge/corrections.jsonl
 knowledge/domain/*
 !knowledge/domain/.gitkeep
 !knowledge/domain/reasoning-integrity.md

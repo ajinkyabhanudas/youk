@@ -1,6 +1,13 @@
 """Tests for health.py — proposal filtering, 0-contracts finding, self-heal signals."""
 from __future__ import annotations
-from datetime import UTC
+from datetime import datetime, UTC
+
+# _read_recent_audit_logs(days=30) filters by file month vs (now - 30 days), truncated
+# to the 1st of that month. A hardcoded "2026-07" audit filename falls outside that
+# window once "now" drifts more than ~2 months past July — so tests that write to a
+# fixed past month break on a schedule, not from a real regression. Use the current
+# month everywhere a fixture needs to land inside the default lookback window.
+_CURRENT_MONTH = datetime.now(UTC).strftime("%Y-%m")
 
 
 def _audit_block(n: int, close: bool = True, skills: str = "code-review", project: str = "") -> str:
@@ -906,13 +913,13 @@ class TestRunHealthCheckWithSkillSignals:
     def _write_audit(self, claude_root, sessions=3, with_gap=False):
         lines = []
         for i in range(1, sessions + 1):
-            lines.append(f"### Session — 2026-07-0{i} 10:00 UTC")
+            lines.append(f"### Session — {_CURRENT_MONTH}-0{i} 10:00 UTC")
             lines.append("Skills: code-review")
             lines.append("CloseCluster: yes")
             lines.append("Commits: yes")
             if with_gap:
                 lines.append("SkillGap: learn — missing PERSIST phase")
-        (claude_root / "audit" / "2026-07.md").write_text("\n".join(lines))
+        (claude_root / "audit" / f"{_CURRENT_MONTH}.md").write_text("\n".join(lines))
 
     def test_returns_org_score(self, youk_root, claude_root):
         self._write_audit(claude_root)
@@ -2920,13 +2927,13 @@ class TestGapReverificationWiring:
         lines = []
         for i in range(1, 4):
             lines += [
-                f"### Session — 2026-07-0{i} 10:00 UTC",
+                f"### Session — {_CURRENT_MONTH}-0{i} 10:00 UTC",
                 "Skills: code-review",
                 "CloseCluster: yes",
                 "Commits: yes",
                 f"SkillGap: learn — {gap}",
             ]
-        (claude_root / "audit" / "2026-07.md").write_text("\n".join(lines))
+        (claude_root / "audit" / f"{_CURRENT_MONTH}.md").write_text("\n".join(lines))
 
     def _skill(self, claude_root, text: str):
         d = claude_root / "skills" / "learn"
@@ -3010,12 +3017,12 @@ class TestCappedScoreExplainsItself:
         lines = []
         for i in range(1, 4):
             lines += [
-                f"### Session — 2026-07-0{i} 10:00 UTC",
+                f"### Session — {_CURRENT_MONTH}-0{i} 10:00 UTC",
                 "Skills: code-review",
                 "CloseCluster: yes",
                 "Commits: yes",
             ]
-        (claude_root / "audit" / "2026-07.md").write_text("\n".join(lines))
+        (claude_root / "audit" / f"{_CURRENT_MONTH}.md").write_text("\n".join(lines))
 
     def test_broken_route_surfaces_a_cap_finding(self, youk_root, claude_root):
         self._audit(claude_root)
