@@ -53,9 +53,14 @@ work — a spent budget or low stakes means no gate, silently.
 
 ## Phase 3 — surface (Level-1 review)
 
-6. Render the tree (`CoverageTree.render()`). Gaps and contested nodes are already ordered first
-   (cheapest to check, security/data ahead of nfr). The human checks CONCEPTS here — "should this
-   task have handled X?" — answerable from the task, without opening a file.
+6. Call `youk-core.render_coverage_view(mode, target, outcomes, details, evidence)` — this is the
+   actual MCP tool; `CoverageTree.render()` is the Python method it wraps, not something you can
+   call directly. `outcomes` is your Phase 1 per-concept COVERED/PARTIAL/MISSING/NA map. Gaps and
+   contested nodes are already ordered first (cheapest to check, security/data ahead of nfr). The
+   human checks CONCEPTS here — "should this task have handled X?" — answerable from the task,
+   without opening a file. Skipping this call and hand-writing the tree in prose is exactly the
+   failure mode this tool exists to prevent — it existed as a prose-only bar before and was
+   skipped repeatedly because remembering to hand-render is a bar nobody clears.
 7. The adversary RAISES, it does not RULE. A contested node is a forced human glance, not a
    verdict. The human rules.
 

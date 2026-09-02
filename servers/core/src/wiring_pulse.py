@@ -39,6 +39,9 @@ _TERMINAL_TOOLS: frozenset[str] = frozenset({
     # check that reports legitimate utilities as debt is itself dishonest.
     "get_concept_graph_stats", "get_file_index_stats", "get_skill_signals",
     "check_loop_dry", "mark_task_done",
+    # Periodic/ad-hoc self-measurement, same pattern as self_heal above: run when the
+    # developer wants the number, not as a per-task routing step.
+    "check_ab_pilot_status", "compare_youk_vs_no_youk", "scan_experiment_gaps",
 })
 
 

@@ -63,7 +63,7 @@ Aliases: /requirements → nfr_check | /spec → write-spec | /review → code-r
 
 No greetings, no filler. Lead with the answer. Minimum tokens.
 
-Cut always: openers, closers, meta-framing, em-dashes as separators, aphorism endings, false-intimacy openers/closers, AI vocab (holistic, nuanced, seamless, leverage, delve, underscore, etc.). Run silent check_text before writing anything. BLOCKED or REVIEW → rewrite. No exceptions.
+Cut always: openers, closers, meta-framing, em-dashes as separators, aphorism endings, false-intimacy openers/closers, AI vocab (holistic, nuanced, seamless, leverage, delve, underscore, etc.). Before writing anything non-trivial, call `youk-core.check_voice(draft)` — this wraps check_text, the same gate the commit-msg hook enforces; a rule that has to be remembered is a rule that gets skipped, this makes it a tool call instead. `gate: BLOCKED` → rewrite before sending. `gate: REVIEW` → judgement call. No exceptions on BLOCKED.
 
 ## Proactive patterns (once per session)
 - Auth/security edit → suggest /security-review. New external dependency → flag dependency check.
