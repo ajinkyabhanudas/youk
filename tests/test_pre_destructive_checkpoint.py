@@ -47,7 +47,11 @@ def _git(args: list[str], cwd: Path, check: bool = True) -> subprocess.Completed
 def repo(tmp_path) -> Path:
     r = tmp_path / "repo"
     r.mkdir()
-    _git(["init", "-q"], r)
+    # -b main: init.defaultBranch is not guaranteed to be "main" on every git
+    # install (a hosted CI runner defaulted to "master", which is what actually
+    # broke this fixture in CI — not the mid-merge logic the test file is about).
+    # Force it explicitly so the fixture is deterministic everywhere.
+    _git(["init", "-q", "-b", "main"], r)
     # Hosted CI runners commonly refuse to operate on a repo whose ownership looks
     # "dubious" (CVE-2022-24765 mitigation) — harmless to set unconditionally here
     # since these are throwaway tmp_path repos, not anything security-sensitive.
