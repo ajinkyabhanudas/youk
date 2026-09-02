@@ -38,23 +38,44 @@ def nfr_check_fast(task: str) -> NFRBlock:
     )
 
 
-def nfr_check_quick(task: str) -> dict:
+_VALIDATE_MODE_INSTRUCTION = (
+    "Coverage check, not fresh prompting: for each of the 4 dimensions above, if your "
+    "session context already establishes an answer, output 'CONFIRMED: <dimension> — "
+    "<one-line basis>' rather than re-deriving it from scratch. Only reason a dimension "
+    "out fully if nothing in context already covers it. Output as [NFR — VALIDATE] block "
+    "followed by [CONNECTIONS] section. Keep total output under 200 words."
+)
+
+_STANDARD_MODE_INSTRUCTION = (
+    "Answer the 4 NFR questions above for this task using your full session context. "
+    "Output as [NFR — QUICK] block followed by [CONNECTIONS] section. "
+    "Keep total output under 400 words."
+)
+
+
+def nfr_check_quick(task: str, autonomy_mode: str = "standard") -> dict:
     """
     4-question NFR context for M tasks — returns in_session dict for Claude Code to answer.
     No API call: the active Claude Code session answers the questions with full project context.
+
+    autonomy_mode: "standard" (default) asks all 4 questions fresh, every time. "validate"
+    is the branch session.py's nfr_autonomy_mode computation was already deciding on
+    (rate >= 0.4 over the last 90 days) but that nothing here ever read — a developer
+    who has consistently answered these questions well gets asked to confirm coverage
+    against existing context instead of re-deriving each answer, not skip the gate. Any
+    value other than "validate" is treated as "standard" — the safe default when the mode
+    is missing, unrecognized, or the caller hasn't wired it through yet.
     """
     skill_content = load_skill("nfr-check")
+    validate = autonomy_mode == "validate"
     return {
         "mode": "in_session",
         "task": task,
         "size": "M",
         "skill_content": skill_content,
         "questions": _QUICK_4Q_QUESTIONS,
-        "instruction": (
-            "Answer the 4 NFR questions above for this task using your full session context. "
-            "Output as [NFR — QUICK] block followed by [CONNECTIONS] section. "
-            "Keep total output under 400 words."
-        ),
+        "autonomy_mode": "validate" if validate else "standard",
+        "instruction": _VALIDATE_MODE_INSTRUCTION if validate else _STANDARD_MODE_INSTRUCTION,
     }
 
 
@@ -103,17 +124,21 @@ def _is_youk_project() -> bool:
     return Path(slug).name == "youk" if slug else False
 
 
-def run_nfr_check(task: str, size_str: str = "M") -> NFRBlock | dict:
+def run_nfr_check(task: str, size_str: str = "M", autonomy_mode: str = "standard") -> NFRBlock | dict:
     """
     XS/S: returns NFRBlock (fast path, no API call).
     M+: returns in_session dict for Claude Code to execute with full context.
+
+    autonomy_mode only affects the M path — L/XL always run the full check regardless
+    of developer autonomy history. Higher-stakes work earns no reduction in ceremony;
+    only the M-level quick-path scales down, and only after it's been demonstrated.
     """
     size = TaskSize(size_str.upper()) if size_str.upper() in TaskSize.__members__ else TaskSize.M
 
     if size in (TaskSize.XS, TaskSize.S):
         return nfr_check_fast(task)
     elif size == TaskSize.M:
-        result = nfr_check_quick(task)
+        result = nfr_check_quick(task, autonomy_mode)
     else:
         result = nfr_check_full(task, size)
 
