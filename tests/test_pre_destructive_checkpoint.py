@@ -25,10 +25,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "plugin" / "scripts"))
 from youk_hook_utils import is_destructive_command, write_pre_destructive_checkpoint
 
 
-def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
+def _git(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
+    """check=True by default: a setup step that silently fails (e.g. a hosted CI
+    runner's safe.directory ownership check refusing to operate on the repo) must
+    surface as a loud, immediate assertion failure with git's own stderr attached,
+    not as a confusing downstream symptom several steps later. Pass check=False only
+    for git calls where non-zero is the expected, meaningful outcome (a conflicting
+    merge, or the stash-fails-mid-conflict assertion itself)."""
+    result = subprocess.run(
         ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=False,
     )
+    if check and result.returncode != 0:
+        raise AssertionError(
+            f"git {' '.join(args)} failed (rc={result.returncode}) in {cwd}\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+    return result
 
 
 @pytest.fixture
@@ -36,6 +48,10 @@ def repo(tmp_path) -> Path:
     r = tmp_path / "repo"
     r.mkdir()
     _git(["init", "-q"], r)
+    # Hosted CI runners commonly refuse to operate on a repo whose ownership looks
+    # "dubious" (CVE-2022-24765 mitigation) — harmless to set unconditionally here
+    # since these are throwaway tmp_path repos, not anything security-sensitive.
+    _git(["config", "--global", "--add", "safe.directory", str(r)], r)
     _git(["config", "user.email", "test@test.com"], r)
     _git(["config", "user.name", "test"], r)
     (r / "file.txt").write_text("line1\n")
@@ -166,13 +182,21 @@ class TestCheckpointDuringActiveMerge:
         _git(["checkout", "-q", "main"], repo)
         (repo / "file.txt").write_text("main change\n")
         _git(["commit", "-q", "-am", "main change"], repo)
-        _git(["merge", "feature", "-q"], repo)  # produces a conflict
+        merge = _git(["merge", "feature", "-q"], repo, check=False)  # conflict expected
+        status = _git(["status", "--porcelain"], repo).stdout
+        assert merge.returncode != 0 and "UU file.txt" in status, (
+            "fixture setup did not produce the expected merge conflict — "
+            f"merge rc={merge.returncode}, status={status!r}. If every prior git "
+            "call passed check=True cleanly, this means the merge itself resolved "
+            "or fast-forwarded instead of conflicting, which breaks this fixture's "
+            "premise rather than the code under test."
+        )
         return repo
 
     def test_git_stash_actually_fails_here(self, conflicted_repo):
         """Pins the premise: if this ever stops being true, the regression this
         test file protects against no longer applies the way it's described."""
-        result = _git(["stash"], conflicted_repo)
+        result = _git(["stash"], conflicted_repo, check=False)
         assert result.returncode != 0
 
     def test_checkpoint_succeeds_where_stash_fails(self, conflicted_repo):
