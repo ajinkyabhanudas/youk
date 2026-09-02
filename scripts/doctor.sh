@@ -251,7 +251,7 @@ else
     "Re-run: bash $YOUK_DIR/scripts/install.sh"
 fi
 
-for script in pre_compact.py user_prompt_submit.py post_tool_use.py youk_hook_utils.py; do
+for script in pre_compact.py user_prompt_submit.py post_tool_use.py pre_tool_use.py youk_hook_utils.py; do
   SCRIPT_PATH="$PLUGIN_SRC/scripts/$script"
   if [ -f "$SCRIPT_PATH" ]; then
     pass "hook script: $script"
