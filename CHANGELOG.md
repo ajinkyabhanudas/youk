@@ -8,6 +8,119 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ---
 
+## [1.2.0] — 2026-09-03
+
+Thirty-two changes since 1.1.0. The theme, visible only in hindsight: most of these are
+surfaces that reported healthy while the thing underneath was unreachable. A gate that
+wrote to a row nothing read, a skill directory git had been told to ignore, a check that
+passed on broken and fixed input alike. Where a fix landed, a sentinel landed with it.
+
+### Added
+
+**Self-measurement and the A/B pilot (#97, #98, #99, #100, #101, #102)**
+
+- `ab_experiments.py`: session-hash variant assignment, exposure logging, and
+  `pilot_status()` with an explicit `not_enough_data` state rather than a number with no
+  basis behind it.
+- Pre-registration boundary — the readout is fixed before the data is looked at.
+- Deterministic reaction classifier for exposures, no model call in the loop.
+- `nfr_autonomy_mode` wired to a real branch, giving the pilot a second signal.
+- `compare_youk_vs_no_youk`: replay-based self-measurement (Phase 4v1).
+- `scan_experiment_gaps`: proposes instrumentation for decision points that record nothing.
+
+**Observability, scoped to the maintainer (#85, #88, #95)**
+
+Langfuse session traces and a `patch_cycle_rate` score, then deliberately narrowed:
+moved under `dev/`, project paths hashed, identifying data no longer sent. Opt-in via
+`.env.langfuse`, off by default.
+
+**Comprehension channel (#110)**
+
+`output_channels` shipped in 1.1.0 with a data model, tests, and no caller. It now has a
+store. `admit_comprehension_item` records a load-bearing item — a trade-off, a
+foreclosure, or a reusable pattern, and nothing else qualifies. `render_task_view` emits
+the paced digest at a boundary. The file is project-scoped and rendering marks rather
+than deletes, so a session that ends without rendering leaves its items for the next one.
+Oversize input is rejected rather than truncated, because a truncating cap would let an
+append-only free-text store quietly become a transcript log.
+
+**Destructive-command checkpoint (#106)**
+
+An automatic checkpoint before a destructive bash command runs.
+
+### Fixed
+
+**Routing breadcrumb path mismatch (#109)**
+
+`route_task` wrote the breadcrumb to `state/sessions/{slug}/`; the nfr and challenge gate
+mirrors read `state/`. The paths never agreed once a session had a slug, so both mirrors
+fell through to a `task[:40]` fallback and `set_gate` created a stub row keyed on
+truncated task text. Eighteen phantom rows accumulated, real task rows never received
+their gate flags, and `next_task` served work that had shipped months earlier. Only stub
+rows could ever reach `unblocked=1`, since the mirror only ever wrote to stub ids.
+`scripts/repair_task_graph.py` cleans up rows already created.
+
+**Nine skills gitignored out of the repo (#112)**
+
+`skills/*/*` excludes the self-referential symlink `install.sh` creates, and also matched
+`SKILL.md`. Every skill added after that rule landed was dropped with no warning. Nine
+were listed ACTIVE in SKILL-REGISTRY.md and present in no clone. Fixed with one negation.
+
+**Fourteen repo skills unreachable at runtime (#89)**
+
+Plus the gap audit that reported them as present.
+
+**Checks that could not fail (#92, #105, #96, #86)**
+
+- The three integrity checks compared a value against itself.
+- `check_voice` and `render_coverage_view` were unenforced on their own output.
+- The voice gate passed every commit made from a worktree.
+- Langfuse instrumentation contained dead code and emitted fabricated traces.
+
+**Correctness (#87, #91, #83, #82, #103, #111)**
+
+- `route_task` returned null for omitted schema fields, breaking every call.
+- State paths made redirectable; modules no longer write on import.
+- `session_end` made idempotent; `promote_to_global_contracts` made atomic.
+- youk-code read-only guard returns `BUSINESS_RULE` instead of a raw `Errno 30`.
+- Audit-date fixtures no longer break main CI on a monthly boundary.
+- Pasted bot and CI output now triggers `route_task`.
+
+**Install and first run (#104, #107, #108)**
+
+- `install.sh` crashed on stock macOS bash and on a cold-start server wait.
+- `install.ps1` appended to CLAUDE.md once and never refreshed it on re-run.
+- `doctor.sh` never checked for `pre_tool_use.py`.
+
+**Self-improvement loop (#90, #93, #94, #81)**
+
+Skill edits, tool contracts and stage timing now close. `org_score` is capped on
+structural failure, and the coverage view surfaces evidence class so a reached-but-
+unverified angle is distinguishable from a measured one. Every dangling proposal cleared.
+
+### Changed
+
+New drift sentinels, each verified against the broken state before being trusted:
+every `@mcp.tool()` must appear in `docs/doc-map.yaml`, every `SKILL.md` on disk must be
+tracked, and no shipped skill may contain a machine-absolute path. Six tools missing from
+the doc map were added.
+
+### Note on 1.1.0
+
+The 1.1.0 section below was written and dated but never tagged, so `v1.1.0` did not exist
+as a release. It is tagged retroactively at `41dfc97`, the commit that wrote it. Nothing
+in that release changed; the tag makes the entry below true.
+
+### Upgrade notes
+
+`git pull --rebase && make update`. No breaking changes to MCP tool signatures or audit
+format. Two new tools: `admit_comprehension_item`, `render_task_view`.
+
+Run `python3 scripts/repair_task_graph.py` to clear phantom rows left by #109. It is a
+dry run by default and snapshots the database before writing.
+
+---
+
 ## [1.1.0] — 2026-08-26
 
 ### Added

@@ -34,7 +34,7 @@ You don't change how you work. You just install it.
 | Can't tell you if it's helping | Shows you a score and a direction |
 | Remembers your context | Remembers, and builds skills on top of it |
 
-> **Status:** v1.1.0. Compounding starts on day one; the gains get obvious around session 10–20 as youk tunes to your patterns and the audit log fills.
+> **Status:** v1.2.0. Compounding starts on day one; the gains get obvious around session 10–20 as youk tunes to your patterns and the audit log fills.
 
 ---
 
