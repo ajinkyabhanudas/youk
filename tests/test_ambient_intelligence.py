@@ -55,6 +55,47 @@ class TestDetectTaskSize:
         assert self.detect("add it") is None  # under 15 chars
 
 
+# ── Hook: external/diagnostic signal detection ──────────────────────────────
+# Regression coverage for the gap found 2026-09-02 (canopy scaling-upgrade
+# session): a pasted Codecov comment led to real code changes with zero
+# route_task call and zero nudge, because detect_task_size only matches
+# first-person imperative phrasing ("let's add", "can you build") — a bot
+# report contains none of that. See feedback-skill-gaps.md.
+
+class TestDetectExternalSignal:
+    def setup_method(self):
+        from youk_hook_utils import detect_external_signal
+        self.detect = detect_external_signal
+
+    def test_codecov_comment_detected(self):
+        prompt = (
+            "Codecov Report\n\n"
+            "❌ Patch coverage is 87.27273% with 35 lines in your changes missing coverage."
+        )
+        assert self.detect(prompt) is True
+
+    def test_traceback_detected(self):
+        prompt = "Traceback (most recent call last):\n  File \"app.py\", line 3\nException: boom"
+        assert self.detect(prompt) is True
+
+    def test_ci_failure_detected(self):
+        assert self.detect("the build failed on main, can you take a look") is True
+
+    def test_plain_error_marker_detected(self):
+        assert self.detect("error: connection refused") is True
+
+    def test_ordinary_question_not_detected(self):
+        assert self.detect("what does this function do?") is False
+
+    def test_slash_command_not_detected(self):
+        assert self.detect("/build codecov coverage fix") is False
+
+    def test_imperative_build_request_not_double_counted(self):
+        """Plain 'let's add a feature' has no external-signal marker — that
+        path is detect_task_size's job, not this one's."""
+        assert self.detect("let's add a new login endpoint") is False
+
+
 # ── Hook: session-end detection ──────────────────────────────────────────────
 
 class TestDetectSessionEnd:
