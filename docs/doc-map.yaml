@@ -73,6 +73,14 @@ mcp_tools:
     - {tool: request_external_review, refs: [README.md]}
     # medium-risk routing (PR-1 / L9 gap closure)
     - {tool: mark_medium_risk_surfaced, refs: [README.md, docs/claude-md-template.md]}
+    # A/B experiment tooling
+    - {tool: log_ab_exposure, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: check_ab_pilot_status, refs: [README.md]}
+    - {tool: scan_experiment_gaps, refs: [README.md]}
+    - {tool: compare_youk_vs_no_youk, refs: [README.md]}
+    # voice and coverage gates (shipped PR #105)
+    - {tool: check_voice, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: render_coverage_view, refs: [README.md]}
 
   youk-code:
     - {tool: nfr_check, refs: [README.md, docs/claude-md-template.md]}
