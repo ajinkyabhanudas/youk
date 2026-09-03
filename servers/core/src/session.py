@@ -451,6 +451,7 @@ _CAPABILITY_SKILLS = frozenset({
     "security-review", "security_review",
     "verify",
     "learn",
+    "surface-options", "surface_options",
 })
 
 
@@ -643,7 +644,7 @@ def _compute_dashboard_summary(audit_dir: Path, pending_proposals: int, slug: st
             "pm-review", "pm_review", "write-spec", "write_spec", "nfr-check", "nfr_check",
             "stress-test", "stress_test", "adr", "dev-loop", "dev_loop",
             "code-review", "code_review", "security-review", "security_review",
-            "verify", "learn",
+            "verify", "learn", "surface-options", "surface_options",
         })
         _skill_hit_count = 0
         _skill_total = len(_skill_entries)

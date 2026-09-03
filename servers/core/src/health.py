@@ -192,6 +192,7 @@ _CAPABILITY_SKILLS = frozenset({
     "security-review", "security_review",
     "verify",
     "learn",
+    "surface-options", "surface_options",
 })
 
 # Paths that FILE_CREATE proposals are permitted to write to

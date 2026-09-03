@@ -52,7 +52,9 @@ skills/learn/knowledge/
 
 # install.sh runtime symlinks (self-referential, machine-absolute paths — not portable)
 skills/*/*
-# Skill reference files and scripts are infrastructure, not accumulated knowledge — track them
+# The skill itself, its reference files and its scripts are the capability — track them.
+# Only the self-referential install.sh symlink (skills/{name}/{name}) is excluded above.
+!skills/*/SKILL.md
 !skills/*/references/
 !skills/*/scripts/
 
