@@ -391,6 +391,48 @@ def build_route_missing_warning() -> str:
         "check_nfr_gate → check_challenge_gate → dev-loop."
     )
 
+
+# External-signal markers — pasted bot/CI/tool output implying required
+# follow-up work, phrased as a report rather than an imperative request.
+# detect_task_size's _BUILD_SIGNALS list only matches first-person asks
+# ("let's add", "can you build") — a pasted Codecov comment, CI failure log,
+# traceback, or review-bot output contains none of those phrases and was
+# silently missing route_task's gate entirely. See feedback-skill-gaps.md
+# (canopy project, 2026-09-02): a Codecov patch-coverage comment triggered
+# real code changes with no route_task call and no nudge, because nothing
+# here recognized report-shaped inbound content as task-shaped input.
+_EXTERNAL_SIGNAL_MARKERS = [
+    "codecov", "patch coverage", "coverage report",
+    "traceback (most recent call last)", "stack trace",
+    "build failed", "ci failed", "pipeline failed", "workflow failed",
+    "lint error", "type error", "security alert", "vulnerability found",
+    "dependabot", "sentry", "exception:", "error:", "failed:",
+]
+
+
+def detect_external_signal(prompt: str) -> bool:
+    """Detect pasted bot/CI/tool output that implies required follow-up work,
+    even though it contains no imperative build phrase for detect_task_size
+    to match. Deliberately marker-based rather than length/shape heuristics —
+    a short "tests failed" message deserves the same gate as a long log dump.
+    """
+    lower = prompt.lower()
+    if lower.strip().startswith("/"):
+        return False
+    return any(marker in lower for marker in _EXTERNAL_SIGNAL_MARKERS)
+
+
+def build_external_signal_warning() -> str:
+    """Warning injected when pasted external/diagnostic content is detected
+    but route_task hasn't run — distinct wording from build_route_missing_warning
+    so the nudge honestly reflects what actually triggered it."""
+    return (
+        "[YOUK] External signal detected (bot/CI/report output) — this looks like "
+        "content that implies follow-up work, not just information. route_task has "
+        "not run this session. Call route_task before making changes, even if this "
+        "isn't phrased as a build request."
+    )
+
 # Session-end signals — natural phrases that close a work block
 _SESSION_END_SIGNALS = [
     "ok thanks", "that's all", "that's all for now", "looks good", "we're done",

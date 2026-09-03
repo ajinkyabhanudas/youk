@@ -35,12 +35,14 @@ from youk_hook_utils import (
     build_intent_gated_brief,
     estimate_context_tokens,
     detect_task_size,
+    detect_external_signal,
     detect_session_end,
     nfr_check_ran_this_session,
     route_task_ran_this_session,
     count_route_warnings_this_session,
     log_route_warning,
     build_route_missing_warning,
+    build_external_signal_warning,
     load_routes_yaml_signals,
     load_session_health,
     build_build_nudge,
@@ -203,6 +205,19 @@ def main() -> None:
                     log_route_warning(root, slug)
             elif not nfr_check_ran_this_session(root, slug):
                 nudges.append(build_build_nudge(user_prompt))
+
+        # 2b. External/diagnostic signal detection (bot comments, CI failures,
+        # tracebacks) — report-shaped inbound content that detect_task_size's
+        # imperative-phrase matching structurally cannot see, but which just
+        # as often leads to real code changes. Same route_task gate, same
+        # warning counter — the underlying concern (route_task hasn't run) is
+        # identical, only the trigger shape differs.
+        elif detect_external_signal(user_prompt):
+            if not route_task_ran_this_session(root, slug):
+                warn_count = count_route_warnings_this_session(root, slug)
+                if warn_count < _ROUTE_WARNING_SUPPRESS_AFTER:
+                    nudges.append(build_external_signal_warning())
+                    log_route_warning(root, slug)
 
     # 3. Ambient health — only inject every ~8 turns so it doesn't become noise
     turn_count = _estimate_turn_count(transcript_path) if transcript_path else 0
