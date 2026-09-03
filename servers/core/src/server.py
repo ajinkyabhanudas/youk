@@ -2210,6 +2210,66 @@ def render_coverage_view(
 
 
 @mcp.tool()
+def admit_comprehension_item(kind: str, takeaway: str, context: str = "") -> dict:
+    """
+    Record one load-bearing item for the comprehension channel.
+
+    output_channels defines the two-channel split — execution reasoning collapses to one
+    glanceable line, and only genuinely load-bearing items reach the human, paced to a
+    boundary rather than fired per step. It shipped with tests and no caller, so the split
+    existed as a data model and changed nothing. This is the write half.
+
+    Items accrue in a project-scoped file and surface only when render_task_view is called.
+    Admitting is cheap and continuous; surfacing is rare and paced. Per-step teaching is
+    the firehose this exists to prevent.
+
+    kind: "tradeoff" (a real decision with a rejected alternative), "foreclosure" (an
+        irreversible door closed, which the human may want to veto), or "pattern" (a
+        reusable pattern worth internalising). These three are the whole filter. If an
+        item is none of them it belongs in the execution channel, not here.
+    takeaway: the one thing the reader's mental model should update with. Capped at 280
+        characters and REJECTED rather than truncated when over: this store holds extracted
+        takeaways, and truncating would quietly let it become a transcript log instead.
+    context: optional pointer to what it attaches to — a file, a decision. Capped at 120.
+
+    Returns: {ok, admitted, pending, state_written} or {ok: False, error_type, error}.
+    admitted=False with ok=True means it duplicated an item already pending, not a failure.
+    """
+    from comprehension_digest import admit as _admit
+    try:
+        slug = _get_session_slug()
+    except Exception:
+        slug = ""
+    return _admit(YOUK_ROOT, kind, takeaway, context, session_slug=slug)
+
+
+@mcp.tool()
+def render_task_view(mark_surfaced: bool = True) -> dict:
+    """
+    Render the pending comprehension items as the paced digest, at a task or session
+    boundary. Surface `view` verbatim; it is pre-rendered.
+
+    Rendering marks items surfaced, it does not delete them. A session that ended without
+    rendering — a crash, a closed tab, a switch to another model mid-task — leaves its
+    items pending, so the next session picks up what the previous one never showed. The
+    file is project-scoped for that reason: a slug-scoped path would be invisible to the
+    next session and the handoff would silently never happen.
+
+    An empty digest renders to an empty string. Nothing load-bearing happened is a valid
+    and common result, and manufacturing teaching where none occurred is the exact failure
+    this channel was built to avoid.
+
+    mark_surfaced: pass False to preview without consuming — the items stay pending.
+
+    Returns: {ok, view, item_count, origin_sessions?, state_written?}.
+    origin_sessions appears when the items came from earlier sessions, so a handoff digest
+    is distinguishable from one this session produced.
+    """
+    from comprehension_digest import render as _render
+    return _render(YOUK_ROOT, mark_surfaced=mark_surfaced)
+
+
+@mcp.tool()
 def check_voice(text: str) -> dict:
     """
     Check text for hard AI-tells before it is surfaced or committed.
