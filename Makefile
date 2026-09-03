@@ -40,7 +40,15 @@ uninstall: ## Revert youk integration (preserves knowledge; pass ARGS="--purge" 
 
 .PHONY: update
 update: ## Pull latest + rebuild images + restart persistent servers
-	git pull --rebase
+	@# A pinned install is on a detached HEAD, where `git pull --rebase` aborts with
+	@# "You are not currently on a branch". Refusing to update a pin is right; that
+	@# message is not how to say it. Rebuild on the pinned version instead.
+	@if git symbolic-ref -q HEAD >/dev/null; then \
+	  git pull --rebase; \
+	else \
+	  echo "==> Pinned to $$(git describe --tags --always) — not pulling."; \
+	  echo "    Rebuilding at this version. To move: git fetch --tags && git checkout <tag>"; \
+	fi
 	docker stop youk-core-server youk-code-server 2>/dev/null || true
 	$(MAKE) build
 	launchctl kickstart -k gui/$$(id -u)/com.youk.core-server 2>/dev/null || true

@@ -10,6 +10,12 @@ $ErrorActionPreference = "Stop"
 
 $YOUK_DIR  = "$env:USERPROFILE\.claude\youk"
 $CLAUDE_DIR = "$env:USERPROFILE\.claude"
+# Version to install. $null means the default branch. Set to any tag or branch to pin:
+#   $env:YOUK_REF = "v1.2.1"; .\scripts\install.ps1
+# PowerShell does not surface environment variables as plain variables, so this mapping
+# is required — without it $YOUK_REF would always be null and the pin silently ignored.
+# Only ever passed as a `git clone --branch` value, never into a URL.
+$YOUK_REF = $env:YOUK_REF
 
 function ok($msg)   { Write-Host "  [OK]  $msg" -ForegroundColor Green }
 function warn($msg) { Write-Host "  [!]   $msg" -ForegroundColor Yellow }
@@ -78,12 +84,38 @@ step "Repository"
 if (Test-Path "$YOUK_DIR\.git") {
     ok "youk already cloned at $YOUK_DIR"
     Push-Location $YOUK_DIR
-    git pull --ff-only --quiet
-    if ($LASTEXITCODE -eq 0) { ok "Pulled latest" } else { warn "Already up to date" }
+    # A pinned install sits on a detached HEAD, where pulling fails. Reporting that as
+    # "Already up to date" said the opposite of what happened. Report the pin and leave
+    # it alone — re-running the installer must not move a pinned install off its tag.
+    git symbolic-ref -q HEAD *> $null
+    if ($LASTEXITCODE -eq 0) {
+        git pull --ff-only --quiet
+        if ($LASTEXITCODE -eq 0) { ok "Pulled latest" }
+        else { warn "Could not fast-forward — resolve by hand in $YOUK_DIR" }
+    } else {
+        $pinned = (git describe --tags --always).Trim()
+        ok "Pinned to $pinned — leaving it there"
+        if ($YOUK_REF) {
+            warn "YOUK_REF=$YOUK_REF ignored: $YOUK_DIR already exists. To switch version:"
+            warn "  git -C $YOUK_DIR fetch --tags; git -C $YOUK_DIR checkout $YOUK_REF"
+        }
+    }
     Pop-Location
 } else {
-    git clone https://github.com/ajinkyabhanudas/youk $YOUK_DIR --quiet
-    ok "Cloned to $YOUK_DIR"
+    if ($YOUK_REF) {
+        # No fallback to the default branch on a bad ref. Installing a version other
+        # than the one asked for is worse than not installing.
+        git clone --branch $YOUK_REF https://github.com/ajinkyabhanudas/youk $YOUK_DIR --quiet
+        if ($LASTEXITCODE -ne 0) {
+            fail "No such tag or branch: $YOUK_REF"
+            fail "Available versions: https://github.com/ajinkyabhanudas/youk/releases"
+            exit 1
+        }
+        ok "Cloned to $YOUK_DIR at $YOUK_REF"
+    } else {
+        git clone https://github.com/ajinkyabhanudas/youk $YOUK_DIR --quiet
+        ok "Cloned to $YOUK_DIR (latest on the default branch)"
+    }
 }
 
 # ── Step 2: Runtime directories ──────────────────────────────────────────────

@@ -8,6 +8,63 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ---
 
+## [1.2.1] — 2026-09-03
+
+### Fixed
+
+**The documented install did not work (#114)**
+
+`curl -sL .../scripts/install.sh | bash` — the first command in the README — cloned the
+repo and then aborted:
+
+```
+▶ Pre-install snapshot
+bash: line 143: /wherever/you/were/lib/snapshot.sh: No such file or directory
+```
+
+A piped script has no `BASH_SOURCE[0]`, so `SCRIPT_DIR` resolved to whatever directory
+the operator happened to be standing in, and sourcing `lib/snapshot.sh` from there
+failed. `set -e` then stopped the install before symlinks, MCP registration, the Docker
+build, or the CLAUDE.md patch. Reading `BASH_SOURCE[0]` under `set -u` also emitted an
+`unbound variable` error on line 14 of every piped run.
+
+Present since #5 and shipped in v1.0.0, v1.1.0 and v1.2.0. Anything sourced now comes
+from the clone at `$YOUK_DIR`, which step 1 guarantees exists, and a missing file says
+so instead of dying on a bare `No such file`.
+
+### Added
+
+**Installing a specific version (#114)**
+
+Both installers take `YOUK_REF`, any tag or branch, defaulting to the latest on `main`:
+
+```bash
+YOUK_REF=v1.2.1 bash -c "$(curl -sL https://raw.githubusercontent.com/ajinkyabhanudas/youk/main/scripts/install.sh)"
+```
+
+```powershell
+$env:YOUK_REF = "v1.2.1"; .\scripts\install.ps1
+```
+
+A ref that does not resolve stops the install and names it. There is no fallback to the
+default branch, because handing someone a version other than the one they asked for is
+worse than not installing. `install.ps1` maps `$env:YOUK_REF` explicitly — PowerShell
+does not surface environment variables as plain variables, and without that the pin
+would have been silently ignored on Windows.
+
+**Pinned installs stay pinned (#114)**
+
+Re-running the installer on a detached HEAD reported the failed pull as "Already up to
+date", which said the opposite of what happened. Both installers now branch on
+`git symbolic-ref` and report the pin by name. `make update` rebuilds at the pinned
+version rather than aborting with "You are not currently on a branch".
+
+### Upgrade notes
+
+`git pull --rebase && make update`. No API changes.
+
+---
+
 ## [1.2.0] — 2026-09-03
 
 Thirty-two changes since 1.1.0. The theme, visible only in hindsight: most of these are
