@@ -81,6 +81,9 @@ mcp_tools:
     # voice and coverage gates (shipped PR #105)
     - {tool: check_voice, refs: [README.md, docs/claude-md-template.md]}
     - {tool: render_coverage_view, refs: [README.md]}
+    # comprehension channel — output_channels wiring
+    - {tool: admit_comprehension_item, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: render_task_view, refs: [README.md, docs/claude-md-template.md]}
 
   youk-code:
     - {tool: nfr_check, refs: [README.md, docs/claude-md-template.md]}
