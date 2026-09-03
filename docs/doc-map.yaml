@@ -279,7 +279,7 @@ concepts:
   - concept: release_version
     description: "Current release version — version string must be consistent across user-facing docs"
     authority: CHANGELOG.md
-    invariant: "1.2.0"
+    invariant: "1.2.1"
     # scan_scope: glob patterns scanned for invariant presence at check time.
     # No manual registration needed — new docs matching these patterns are caught automatically.
     # Deliberately narrow: only files that make a "current version" claim.

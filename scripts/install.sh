@@ -7,8 +7,21 @@ set -euo pipefail
 
 YOUK_DIR="$HOME/.claude/youk"
 CLAUDE_DIR="$HOME/.claude"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(dirname "$SCRIPT_DIR")"
+# Version to install. Empty means the default branch. Set to any tag or branch to pin:
+#   YOUK_REF=v1.2.1 bash scripts/install.sh
+# Only ever passed as a `git clone --branch` value, never into a URL.
+YOUK_REF="${YOUK_REF:-}"
+# Piped installs (`curl -sL .../install.sh | bash`) have no BASH_SOURCE, and reading it
+# under `set -u` aborts with "unbound variable". Default it, and leave SCRIPT_DIR empty
+# when there is no file on disk to resolve — an empty value is honest, where the old
+# expression silently resolved to the caller's working directory.
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  REPO_DIR="$(dirname "$SCRIPT_DIR")"
+else
+  SCRIPT_DIR=""
+  REPO_DIR=""
+fi
 
 # ── Platform detection ────────────────────────────────────────────────────────
 OS="$(uname -s)"
@@ -73,14 +86,44 @@ step "Repository"
 
 if [[ -d "$YOUK_DIR/.git" ]]; then
   ok "youk already cloned at $YOUK_DIR"
-  if [[ "$REPO_DIR" != "$YOUK_DIR" ]]; then
-    warn "Running from $REPO_DIR, not $YOUK_DIR — skipping pull"
+  # A pinned install sits on a detached HEAD. Pulling there fails, and reporting that
+  # failure as "Already up to date" told the operator the opposite of what happened.
+  # Report the pin instead, and leave it alone — an install pinned to a tag should not
+  # be moved off it by re-running the installer.
+  if git -C "$YOUK_DIR" symbolic-ref -q HEAD >/dev/null; then
+    # An empty REPO_DIR means a piped install with no local checkout, so there is no
+    # other repo to be running from and the pull below is the right thing to do.
+    if [[ -n "$REPO_DIR" && "$REPO_DIR" != "$YOUK_DIR" ]]; then
+      warn "Running from $REPO_DIR, not $YOUK_DIR — skipping pull"
+    elif git -C "$YOUK_DIR" pull --ff-only --quiet; then
+      ok "Pulled latest"
+    else
+      warn "Could not fast-forward — resolve by hand in $YOUK_DIR"
+    fi
   else
-    git -C "$YOUK_DIR" pull --ff-only --quiet && ok "Pulled latest" || warn "Already up to date"
+    ok "Pinned to $(git -C "$YOUK_DIR" describe --tags --always) — leaving it there"
+    if [[ -n "$YOUK_REF" ]]; then
+      warn "YOUK_REF=$YOUK_REF ignored: $YOUK_DIR already exists. To switch version:"
+      warn "  git -C $YOUK_DIR fetch --tags && git -C $YOUK_DIR checkout $YOUK_REF"
+    fi
   fi
 else
-  git clone https://github.com/ajinkyabhanudas/youk "$YOUK_DIR" --quiet
-  ok "Cloned to $YOUK_DIR"
+  if [[ -n "$YOUK_REF" ]]; then
+    # No fallback to the default branch on a bad ref. Installing a version other than
+    # the one asked for is worse than not installing.
+    # advice.detachedHead off: pinning is the intent here, so git's paragraph about
+    # detached HEAD is noise in an install transcript, not a warning worth printing.
+    if ! git -c advice.detachedHead=false clone --branch "$YOUK_REF" \
+         https://github.com/ajinkyabhanudas/youk "$YOUK_DIR" --quiet; then
+      fail "No such tag or branch: $YOUK_REF"
+      fail "Available versions: https://github.com/ajinkyabhanudas/youk/releases"
+      exit 1
+    fi
+    ok "Cloned to $YOUK_DIR at $YOUK_REF"
+  else
+    git clone https://github.com/ajinkyabhanudas/youk "$YOUK_DIR" --quiet
+    ok "Cloned to $YOUK_DIR (latest on the default branch)"
+  fi
 fi
 
 # ── Step 2: Runtime directories ──────────────────────────────────────────────
@@ -110,8 +153,18 @@ ok "path-map.env written to state/"
 # so scripts/uninstall.sh can restore it exactly. Idempotent — a good snapshot is
 # never overwritten. See scripts/lib/snapshot.sh.
 step "Pre-install snapshot"
+# Source from the clone, not from SCRIPT_DIR. A piped install has no script on disk, so
+# SCRIPT_DIR resolved to whatever directory the user happened to be in, and this line
+# aborted the install for anyone following the README's curl command. Step 1 guarantees
+# the repo is at $YOUK_DIR, which makes it the only reliable place to read this from.
+SNAPSHOT_LIB="$YOUK_DIR/scripts/lib/snapshot.sh"
+if [[ ! -f "$SNAPSHOT_LIB" ]]; then
+  fail "Missing $SNAPSHOT_LIB — the clone at $YOUK_DIR looks incomplete."
+  fail "Remove $YOUK_DIR and re-run the installer."
+  exit 1
+fi
 # shellcheck source=lib/snapshot.sh
-. "$SCRIPT_DIR/lib/snapshot.sh"
+. "$SNAPSHOT_LIB"
 youk_take_snapshot
 
 # ── Step 3: Symlinks ─────────────────────────────────────────────────────────

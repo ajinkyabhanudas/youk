@@ -34,7 +34,7 @@ You don't change how you work. You just install it.
 | Can't tell you if it's helping | Shows you a score and a direction |
 | Remembers your context | Remembers, and builds skills on top of it |
 
-> **Status:** v1.2.0. Compounding starts on day one; the gains get obvious around session 10–20 as youk tunes to your patterns and the audit log fills.
+> **Status:** v1.2.1. Compounding starts on day one; the gains get obvious around session 10–20 as youk tunes to your patterns and the audit log fills.
 
 ---
 
@@ -70,6 +70,20 @@ cd "$HOME\.claude\youk"; Set-ExecutionPolicy -Scope Process -ExecutionPolicy Byp
 ```
 
 One command — builds the Docker image, registers the MCP servers, patches your `CLAUDE.md`. First run ~2 min; re-runs are idempotent. Then open any Claude Code session and just work — youk activates itself.
+
+**Installing a specific version.** Both installers take `YOUK_REF`, which accepts any tag or branch and defaults to the latest on `main`. Released versions are listed under [Releases](https://github.com/ajinkyabhanudas/youk/releases).
+
+```bash
+YOUK_REF=v1.2.1 bash -c "$(curl -sL https://raw.githubusercontent.com/ajinkyabhanudas/youk/main/scripts/install.sh)"
+```
+
+```powershell
+$env:YOUK_REF = "v1.2.1"; .\scripts\install.ps1
+```
+
+A ref that does not exist stops the install and names it, rather than quietly falling back to `main` and giving you a version you did not ask for. `YOUK_REF` only applies to a fresh install; if `~/.claude/youk` already exists, the installer says so and leaves it alone. Move an existing install with `git -C ~/.claude/youk fetch --tags && git -C ~/.claude/youk checkout v1.2.1`.
+
+A pinned install stays pinned. Re-running the installer will not drag it back to `main`, and `make update` rebuilds at the pinned version instead of pulling.
 
 **Prerequisites:** Docker Desktop (running) · Claude Code · Python 3.11+
 **Verify anytime:** `bash ~/.claude/youk/scripts/doctor.sh` — checks every dependency and prints a `Fix:` line for anything broken.
