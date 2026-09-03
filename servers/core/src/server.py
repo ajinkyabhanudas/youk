@@ -150,6 +150,39 @@ def _append_gate_to_active_task(gate_name: str) -> None:
     _append_gate_impl(gate_name, youk_root=YOUK_ROOT)
 
 
+def _routed_task_id() -> str | None:
+    """Return the task_id route_task recorded for the current task, or None.
+
+    Reads the same slug-scoped path routing._breadcrumb_file writes to, falling back
+    to the root path for a slugless session. Returns None when no breadcrumb exists —
+    callers must skip the graph mirror rather than synthesise an id. Deriving one from
+    the task text (the previous `task[:40]` fallback) produced a row keyed on a truncated
+    label instead of route_task's sha1 id, so gate passage landed on a phantom task and
+    left the real one permanently blocked.
+    """
+    candidates = []
+    try:
+        slug = _get_session_slug()
+    except Exception:
+        slug = ""
+    if slug:
+        # Built directly rather than via _sp.slug_state_dir, which mkdirs — a read
+        # path must not create the directory it is looking in.
+        candidates.append(YOUK_ROOT / "state" / "sessions" / slug / "routing-breadcrumb.json")
+    candidates.append(YOUK_ROOT / "state" / "routing-breadcrumb.json")
+
+    import json as _json_bc
+    for path in candidates:
+        try:
+            if path.exists():
+                task_id = _json_bc.loads(path.read_text()).get("task_id")
+                if task_id:
+                    return task_id
+        except Exception:
+            continue
+    return None
+
+
 mcp = FastMCP(
     "youk-core",
     host=_server_args.host,
@@ -721,16 +754,14 @@ def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) 
         result["state_written"] = ["state/{slug}/nfr-check-ran.json", "state/active_task.json"]
         # Mirror gate passage to task graph for cross-session recovery.
         # Fails silently — JSON flag file is the authoritative gate; graph is the durable record.
-        try:
-            breadcrumb_file = YOUK_ROOT / "state" / "routing-breadcrumb.json"
-            if breadcrumb_file.exists():
-                import json as _json2
-                task_id = _json2.loads(breadcrumb_file.read_text()).get("task_id", task[:40])
-            else:
-                task_id = task[:40]
-            _set_gate(task_id, "nfr_cleared", True)
-        except Exception:
-            pass
+        task_id = _routed_task_id()
+        if task_id is None:
+            result["graph_mirror"] = "skipped — no routing breadcrumb; run route_task first"
+        else:
+            try:
+                _set_gate(task_id, "nfr_cleared", True)
+            except Exception:
+                pass
     return result
 
 
@@ -862,21 +893,19 @@ def check_challenge_gate(task: str, size: str) -> CheckChallengeGateResult:
         _record_gate("challenge_gate", _cg_slug)
         # Mirror gate passage to task graph for cross-session recovery.
         # Also set unblocked=True when challenge clears — challenge is the final gate before dev-loop.
-        try:
-            import json as _json2
-            breadcrumb_file = YOUK_ROOT / "state" / "routing-breadcrumb.json"
-            if breadcrumb_file.exists():
-                task_id = _json2.loads(breadcrumb_file.read_text()).get("task_id", task[:40])
-            else:
-                task_id = task[:40]
-            _set_gate(task_id, "challenge_cleared", True)
-            # Mark unblocked only if nfr also cleared — check graph state first
-            from graph import is_unblocked as _graph_is_unblocked
-            state = _graph_is_unblocked(task_id)
-            if state.get("gates", {}).get("nfr_cleared"):
-                _set_gate(task_id, "unblocked", True)
-        except Exception:
-            pass
+        task_id = _routed_task_id()
+        if task_id is None:
+            result["graph_mirror"] = "skipped — no routing breadcrumb; run route_task first"
+        else:
+            try:
+                _set_gate(task_id, "challenge_cleared", True)
+                # Mark unblocked only if nfr also cleared — check graph state first
+                from graph import is_unblocked as _graph_is_unblocked
+                state = _graph_is_unblocked(task_id)
+                if state.get("gates", {}).get("nfr_cleared"):
+                    _set_gate(task_id, "unblocked", True)
+            except Exception:
+                pass
     return result
 
 
