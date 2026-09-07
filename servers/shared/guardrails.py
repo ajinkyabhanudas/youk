@@ -44,6 +44,29 @@ def load_guardrails() -> dict:
         return yaml.safe_load(f)
 
 
+def rule_applies_to_actor(rule: dict, actor: str | None) -> bool:
+    """Whether a guardrail rule applies to (restricts) the given actor.
+
+    Actor extension, defaulted off: no rule in guardrails.yaml declares `role_scope`
+    today, so this always returns True and nothing changes.
+
+    A rule with no `role_scope` key applies to everyone — today's behaviour for every
+    existing rule, unchanged. A rule that DOES declare `role_scope` (a list of actor
+    names it restricts) applies only to actors in that list, EXCEPT when actor is
+    unknown (None/empty): that resolves to True (the rule applies / actor is treated
+    as restricted). This is the default-deny direction — an actor the caller couldn't
+    identify must never be silently exempted from a restriction meant to narrow who
+    it applies to. A known actor not in the scope list is correctly exempt (returns
+    False): the rule was written to restrict a *different* role, not this one.
+    """
+    scope = rule.get("role_scope")
+    if not scope:
+        return True
+    if not actor:
+        return True
+    return actor in scope
+
+
 class HardRuleViolation(Exception):
     def __init__(self, rule_id: str, message: str):
         self.rule_id = rule_id

@@ -1,6 +1,13 @@
 version: "1.0"
 updated: "2026-06-28"
 
+# Optional field on any rule below: `role_scope: [actor, ...]` (e.g. [contractor]).
+# Absent (the default on every rule here today) means the rule applies to everyone,
+# unchanged from prior behaviour. When present, evaluate with
+# guardrails.rule_applies_to_actor(rule, actor) rather than checking role_scope
+# directly — it default-denies (treats the rule as applying) when actor is unknown.
+# No rule currently declares this; it is a mechanism, not yet a policy.
+
 hard_rules:
   - id: no-auto-apply-proposals
     name: "Self-heal proposals require founder approval"
