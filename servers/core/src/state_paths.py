@@ -140,6 +140,18 @@ def current_session_slug(scope: str | None = None) -> str:
     return "unknown"
 
 
+def skills_invoked_log_path(slug: str, scope: str | None = None) -> Path:
+    """Path to this session's mechanically-logged skill invocations.
+
+    Written by log_skill_invocation() (server.py) immediately after each
+    route_to_skill call — the write-authorized half, since route_to_skill itself
+    runs in the read-only youk-code container. Read and cleared by session_end
+    as a fallback when the self-reported skills_used argument is empty or
+    incomplete (self-reporting at session close is unreliable; this is checkable).
+    """
+    return slug_state_dir(slug, scope) / "skills-invoked.jsonl"
+
+
 def gate_flag_path(slug: str, flag_name: str, scope: str | None = None) -> Path:
     """Return the slug-scoped path for a gate flag file, within a tenant scope.
 

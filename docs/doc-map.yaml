@@ -75,6 +75,8 @@ mcp_tools:
     - {tool: mark_medium_risk_surfaced, refs: [README.md, docs/claude-md-template.md]}
     # A/B experiment tooling
     - {tool: log_ab_exposure, refs: [README.md, docs/claude-md-template.md]}
+    # mechanical skill-invocation logging (session_end fallback)
+    - {tool: log_skill_invocation, refs: [README.md]}
     - {tool: check_ab_pilot_status, refs: [README.md]}
     - {tool: scan_experiment_gaps, refs: [README.md]}
     - {tool: compare_youk_vs_no_youk, refs: [README.md]}

@@ -747,6 +747,38 @@ def _bootstrap_cold_start(project_dir: str, slug: str, tooling: dict) -> list[st
     return signals
 
 
+def _read_and_clear_skills_invoked(slug: str) -> set[str]:
+    """Read this session's mechanically-logged skill invocations, then clear the log.
+
+    Written by log_skill_invocation() (server.py) after each route_to_skill call.
+    Cleared here so it never leaks into the next session's count. Any read/parse
+    failure returns an empty set rather than raising -- a missing mechanical log
+    must never block session_end, only mean session_end falls back to whatever
+    skills_used was passed explicitly.
+    """
+    _sync_sp()
+    path = _sp.skills_invoked_log_path(slug)
+    if not path.exists():
+        return set()
+    skills: set[str] = set()
+    try:
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                skills.add(json.loads(line)["skill"])
+            except Exception:
+                continue
+    except Exception:
+        return set()
+    finally:
+        try:
+            path.unlink()
+        except Exception:
+            pass
+    return skills
+
+
 def _find_cross_project_contract(current_slug: str, current_contracts: list[str]) -> tuple[str, str] | None:
     """
     Scan other projects' contracts.md files for behavioural agreements not yet in
@@ -2745,6 +2777,17 @@ def end_session(
     audit_file = audit_dir / f"{month}.md"
 
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+    # Mechanical fallback: a self-reported skills_used list at session close is
+    # unreliable (a session can genuinely use six skills and still report "none"
+    # if the closing call forgets them). Merge with what was actually logged via
+    # log_skill_invocation() during this session -- never removes what was
+    # reported, only adds what's mechanically provable but was missed.
+    _current_slug = _slug(_load_state().get("last_project", ""))
+    _mechanical_skills = _read_and_clear_skills_invoked(_current_slug)
+    if _mechanical_skills:
+        skills_used = sorted(set(skills_used or []) | _mechanical_skills)
+
     skills_line = ", ".join(skills_used) if skills_used else "none"
     close_line = "yes" if close_cluster else "no"
 
