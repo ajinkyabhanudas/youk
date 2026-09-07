@@ -28,26 +28,64 @@ HOST_HOME: Path = Path("/host-home")
 _SLUG_OPEN_MAX_AGE_SECONDS = 4 * 60 * 60  # 4 hours
 
 
-def slug_state_dir(slug: str) -> Path:
-    """Return (and create) the per-slug state directory: state/sessions/{slug}/."""
-    d = YOUK_ROOT / "state" / "sessions" / slug
+# Tenant scope, defaulted off. The default scope (no scope configured) uses the
+# flat state/sessions/{slug}/ layout unchanged — this is what makes the extension
+# zero-migration for every existing single-tenant install. Only a NON-default scope
+# gets a nested state/scopes/{scope}/sessions/{slug}/ tree, so isolation is a
+# directory boundary rather than a value that could be filtered on incorrectly.
+_DEFAULT_SCOPE = "_default"
+
+
+def resolve_scope(raw: str | None) -> str:
+    """Normalise a candidate tenant-scope value, falling back to the default scope."""
+    if raw and raw.strip():
+        return raw.strip()
+    return _DEFAULT_SCOPE
+
+
+def scope_state_root(scope: str | None = None) -> Path:
+    """Root state directory for a tenant scope.
+
+    The default scope resolves to YOUK_ROOT/state (today's layout, untouched).
+    Any other scope resolves to YOUK_ROOT/state/scopes/{scope}/ — a separate
+    subtree, so a session in one scope cannot reach another's state by any
+    relative-path mistake.
+    """
+    resolved = resolve_scope(scope)
+    if resolved == _DEFAULT_SCOPE:
+        return YOUK_ROOT / "state"
+    return YOUK_ROOT / "state" / "scopes" / resolved
+
+
+def slug_state_dir(slug: str, scope: str | None = None) -> Path:
+    """Return (and create) the per-slug state directory for a scope.
+
+    Default scope (the common case, and every call site before this change):
+    state/sessions/{slug}/, identical to pre-scope behaviour. A configured
+    scope: state/scopes/{scope}/sessions/{slug}/.
+    """
+    d = scope_state_root(scope) / "sessions" / slug
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
-def current_session_slug() -> str:
-    """Return the slug of the most recently opened active session.
+def current_session_slug(scope: str | None = None) -> str:
+    """Return the slug of the most recently opened active session within a scope.
 
     Resolution order:
-    1. All state/sessions/*/open.json files, sorted by mtime descending.
+    1. All sessions/*/open.json files under this scope's root, sorted by mtime descending.
     2. Skip entries older than _SLUG_OPEN_MAX_AGE_SECONDS (stale/crashed sessions).
     3. Return "unknown" if no valid entry found.
+
+    Scopes are resolved independently — a session open in one scope is invisible to
+    current_session_slug() called for a different scope, by construction (different
+    glob root), not by a filter that could be forgotten.
 
     The root-level state/session-open.json is NOT consulted — it is a legacy
     redirect pointer only and must not be used for slug resolution after this
     module is in use.
     """
-    sessions_dir = YOUK_ROOT / "state" / "sessions"
+    sessions_dir = scope_state_root(scope) / "sessions"
     if not sessions_dir.exists():
         return "unknown"
 
@@ -73,13 +111,13 @@ def current_session_slug() -> str:
     return "unknown"
 
 
-def gate_flag_path(slug: str, flag_name: str) -> Path:
-    """Return the slug-scoped path for a gate flag file.
+def gate_flag_path(slug: str, flag_name: str, scope: str | None = None) -> Path:
+    """Return the slug-scoped path for a gate flag file, within a tenant scope.
 
     Example: gate_flag_path("youk", "challenge-ran.json")
-             → state/sessions/youk/challenge-ran.json
+             → state/sessions/youk/challenge-ran.json   (default scope, unchanged)
     """
-    return slug_state_dir(slug) / flag_name
+    return slug_state_dir(slug, scope) / flag_name
 
 
 def atomic_write(path: Path, data: str) -> None:
