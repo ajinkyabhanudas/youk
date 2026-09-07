@@ -263,7 +263,7 @@ class TestOpenJsonPayload:
 class TestResolveActor:
     def test_valid_actor_passes_through(self):
         assert state_paths.resolve_actor("founder") == "founder"
-        assert state_paths.resolve_actor("contractor") == "contractor"
+        assert state_paths.resolve_actor("member") == "member"
 
     def test_unrecognised_value_falls_back_to_founder(self):
         assert state_paths.resolve_actor("admin") == "founder"
@@ -279,8 +279,8 @@ class TestSessionActor:
 
     def test_reads_actor_from_open_json(self, isolated_youk_root):
         d = state_paths.slug_state_dir("youk")
-        (d / "open.json").write_text(json.dumps({"slug": "youk", "actor": "contractor"}))
-        assert state_paths.session_actor("youk") == "contractor"
+        (d / "open.json").write_text(json.dumps({"slug": "youk", "actor": "member"}))
+        assert state_paths.session_actor("youk") == "member"
 
     def test_old_open_json_with_no_actor_field_defaults_to_founder(self, isolated_youk_root):
         """A session written before this feature existed must not need a migration."""

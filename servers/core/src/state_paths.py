@@ -30,7 +30,7 @@ _SLUG_OPEN_MAX_AGE_SECONDS = 4 * 60 * 60  # 4 hours
 # Actor extension (defaulted off): every session carries an actor, "founder" unless
 # explicitly set otherwise. Unrecognised values fall back to "founder" rather than
 # raising — a malformed or future actor value must never block a session from starting.
-_VALID_ACTORS = frozenset({"founder", "contractor"})
+_VALID_ACTORS = frozenset({"founder", "member"})
 _DEFAULT_ACTOR = "founder"
 
 

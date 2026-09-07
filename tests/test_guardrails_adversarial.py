@@ -226,24 +226,24 @@ class TestRuleAppliesToActor:
         """No rule in guardrails.yaml declares role_scope today — must stay universal."""
         rule = {"id": "no-credential-commits"}
         assert rule_applies_to_actor(rule, "founder") is True
-        assert rule_applies_to_actor(rule, "contractor") is True
+        assert rule_applies_to_actor(rule, "member") is True
         assert rule_applies_to_actor(rule, None) is True
 
     def test_scoped_rule_applies_to_actor_in_scope(self):
-        rule = {"id": "example", "role_scope": ["contractor"]}
-        assert rule_applies_to_actor(rule, "contractor") is True
+        rule = {"id": "example", "role_scope": ["member"]}
+        assert rule_applies_to_actor(rule, "member") is True
 
     def test_scoped_rule_exempts_known_actor_not_in_scope(self):
-        rule = {"id": "example", "role_scope": ["contractor"]}
+        rule = {"id": "example", "role_scope": ["member"]}
         assert rule_applies_to_actor(rule, "founder") is False
 
     def test_scoped_rule_default_denies_unknown_actor(self):
         """Default-deny: an actor we couldn't identify must not be silently exempted."""
-        rule = {"id": "example", "role_scope": ["contractor"]}
+        rule = {"id": "example", "role_scope": ["member"]}
         assert rule_applies_to_actor(rule, None) is True
         assert rule_applies_to_actor(rule, "") is True
 
     def test_scoped_rule_with_multiple_actors(self):
-        rule = {"id": "example", "role_scope": ["founder", "contractor"]}
+        rule = {"id": "example", "role_scope": ["founder", "member"]}
         assert rule_applies_to_actor(rule, "founder") is True
-        assert rule_applies_to_actor(rule, "contractor") is True
+        assert rule_applies_to_actor(rule, "member") is True

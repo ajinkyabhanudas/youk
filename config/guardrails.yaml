@@ -1,7 +1,7 @@
 version: "1.0"
 updated: "2026-06-28"
 
-# Optional field on any rule below: `role_scope: [actor, ...]` (e.g. [contractor]).
+# Optional field on any rule below: `role_scope: [actor, ...]` (e.g. [member]).
 # Absent (the default on every rule here today) means the rule applies to everyone,
 # unchanged from prior behaviour. When present, evaluate with
 # guardrails.rule_applies_to_actor(rule, actor) rather than checking role_scope
