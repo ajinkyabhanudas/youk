@@ -78,11 +78,22 @@ def _run(
     cmd = ["docker", "run", "-i", "--rm"]
 
     if state_dir is not None:
-        # Sandbox: mount temp state dir instead of live state/
+        # Sandbox: mount temp state dir instead of live state/.
+        # /claude is still mounted for skills/config, but audit and
+        # knowledge/projects writes get their own sandbox override mounts —
+        # otherwise session_end writes real "Skills: none" entries into the
+        # live audit log every test run, silently dragging down
+        # skill_invocation_rate with sessions that were never real work.
+        audit_sandbox = state_dir / "claude-audit"
+        knowledge_sandbox = state_dir / "claude-knowledge-projects"
+        audit_sandbox.mkdir(parents=True, exist_ok=True)
+        knowledge_sandbox.mkdir(parents=True, exist_ok=True)
         cmd += [
             "-v", f"{CLAUDE_DIR}:/claude",
             "-v", f"{YOUK_DIR}:/youk",
             "-v", f"{state_dir}:/youk/state",
+            "-v", f"{audit_sandbox}:/claude/audit",
+            "-v", f"{knowledge_sandbox}:/claude/knowledge/projects",
         ]
     else:
         cmd += [
