@@ -602,6 +602,31 @@ class TestApplyProposalSafeTypes:
         assert result["applied"] is False
         assert "not found" in result["error"]
 
+    def test_default_actor_recorded_as_founder(self, youk_root, claude_root, monkeypatch):
+        import health as h
+        self._setup(h)
+        monkeypatch.setattr(h, "_execute_proposal", lambda p: {"applied": True})
+        result = h.apply_proposal("PENDING-001", confirmed=True, safe_types=["SKILL_EDIT"])
+        assert result["confirmed_by"] == "founder"
+        conn = h._proposals_conn()
+        row = conn.execute("SELECT confirmed_by FROM proposals WHERE id=?", ("PENDING-001",)).fetchone()
+        conn.close()
+        assert row["confirmed_by"] == "founder"
+
+    def test_explicit_actor_recorded(self, youk_root, claude_root, monkeypatch):
+        import health as h
+        self._setup(h)
+        monkeypatch.setattr(h, "_execute_proposal", lambda p: {"applied": True})
+        result = h.apply_proposal("PENDING-001", confirmed=True, safe_types=["SKILL_EDIT"], actor="contractor")
+        assert result["confirmed_by"] == "contractor"
+
+    def test_unrecognised_actor_falls_back_to_founder(self, youk_root, claude_root, monkeypatch):
+        import health as h
+        self._setup(h)
+        monkeypatch.setattr(h, "_execute_proposal", lambda p: {"applied": True})
+        result = h.apply_proposal("PENDING-001", confirmed=True, safe_types=["SKILL_EDIT"], actor="not-a-real-role")
+        assert result["confirmed_by"] == "founder"
+
 
 # ── Project type coverage gaps ───────────────────────────────────────────────
 

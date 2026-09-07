@@ -27,6 +27,35 @@ HOST_HOME: Path = Path("/host-home")
 # open.json entries older than this are considered stale (prior session, crashed, etc.)
 _SLUG_OPEN_MAX_AGE_SECONDS = 4 * 60 * 60  # 4 hours
 
+# Actor extension (defaulted off): every session carries an actor, "founder" unless
+# explicitly set otherwise. Unrecognised values fall back to "founder" rather than
+# raising — a malformed or future actor value must never block a session from starting.
+_VALID_ACTORS = frozenset({"founder", "contractor"})
+_DEFAULT_ACTOR = "founder"
+
+
+def resolve_actor(raw: str | None) -> str:
+    """Validate a candidate actor value, falling back to the default on anything else."""
+    if raw in _VALID_ACTORS:
+        return raw
+    return _DEFAULT_ACTOR
+
+
+def session_actor(slug: str) -> str:
+    """Return the actor recorded for slug's current open session, defaulting to "founder".
+
+    Old sessions written before this field existed (or any read/parse failure) resolve
+    to the default — this is intentionally the same fail-safe shape as current_session_slug().
+    """
+    open_file = slug_state_dir(slug) / "open.json"
+    if not open_file.exists():
+        return _DEFAULT_ACTOR
+    try:
+        data = json.loads(open_file.read_text())
+        return resolve_actor(data.get("actor"))
+    except Exception:
+        return _DEFAULT_ACTOR
+
 
 def slug_state_dir(slug: str) -> Path:
     """Return (and create) the per-slug state directory: state/sessions/{slug}/."""
