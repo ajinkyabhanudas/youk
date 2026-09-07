@@ -292,3 +292,13 @@ class TestSessionActor:
         d = state_paths.slug_state_dir("youk")
         (d / "open.json").write_text("not valid json")
         assert state_paths.session_actor("youk") == "founder"
+
+
+class TestSkillsInvokedLogPath:
+    def test_default_scope_path(self, isolated_youk_root):
+        p = state_paths.skills_invoked_log_path("youk")
+        assert p == isolated_youk_root / "state" / "sessions" / "youk" / "skills-invoked.jsonl"
+
+    def test_named_scope_path(self, isolated_youk_root):
+        p = state_paths.skills_invoked_log_path("youk", scope="acme")
+        assert p == isolated_youk_root / "state" / "scopes" / "acme" / "sessions" / "youk" / "skills-invoked.jsonl"

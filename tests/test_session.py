@@ -1819,3 +1819,95 @@ class TestPromoteToGlobalContractsIdempotency:
         content = global_file.read_text()
         assert "rule A" in content
         assert "rule B" in content
+
+
+# ── Mechanical skill-invocation fallback ────────────────────────────────────
+
+class TestReadAndClearSkillsInvoked:
+    def test_no_log_returns_empty_set(self, youk_root):
+        from session import _read_and_clear_skills_invoked
+        assert _read_and_clear_skills_invoked("youk") == set()
+
+    def test_reads_logged_skills(self, youk_root):
+        import json
+        import state_paths as sp
+        sp.YOUK_ROOT = youk_root
+        log_path = sp.skills_invoked_log_path("youk")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            json.dumps({"skill": "nfr_check", "ts": 1.0}) + "\n"
+            + json.dumps({"skill": "dev-loop", "ts": 2.0}) + "\n"
+        )
+        from session import _read_and_clear_skills_invoked
+        assert _read_and_clear_skills_invoked("youk") == {"nfr_check", "dev-loop"}
+
+    def test_clears_log_after_reading(self, youk_root):
+        import json
+        import state_paths as sp
+        sp.YOUK_ROOT = youk_root
+        log_path = sp.skills_invoked_log_path("youk")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(json.dumps({"skill": "learn", "ts": 1.0}) + "\n")
+
+        from session import _read_and_clear_skills_invoked
+        _read_and_clear_skills_invoked("youk")
+        assert not log_path.exists()
+
+    def test_malformed_log_line_skipped_not_fatal(self, youk_root):
+        import json
+        import state_paths as sp
+        sp.YOUK_ROOT = youk_root
+        log_path = sp.skills_invoked_log_path("youk")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            "not valid json\n" + json.dumps({"skill": "verify", "ts": 1.0}) + "\n"
+        )
+        from session import _read_and_clear_skills_invoked
+        assert _read_and_clear_skills_invoked("youk") == {"verify"}
+
+
+class TestEndSessionMechanicalSkillsMerge:
+    def test_mechanical_skills_merged_into_audit_line(self, youk_root, claude_root, monkeypatch):
+        """The exact bug this fixes: session reports skills_used=[] but skills
+        were actually logged via log_skill_invocation() during the session."""
+        import json
+        import session
+        import state_paths as sp
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        sp.YOUK_ROOT = youk_root
+        log_path = sp.skills_invoked_log_path("youk")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(json.dumps({"skill": "code-review", "ts": 1.0}) + "\n")
+
+        (youk_root / "state" / "session.json").write_text(
+            json.dumps({"session_counter": 1, "last_project": "/some/youk"})
+        )
+
+        from session import end_session
+        end_session(summary="test session", commits_made=False, skills_used=None)
+
+        audit_file = claude_root / "audit" / __import__("datetime").datetime.utcnow().strftime("%Y-%m.md")
+        content = audit_file.read_text()
+        assert "Skills: code-review" in content
+
+    def test_explicit_skills_used_preserved_alongside_mechanical(self, youk_root, claude_root, monkeypatch):
+        import json
+        import session
+        import state_paths as sp
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        sp.YOUK_ROOT = youk_root
+        log_path = sp.skills_invoked_log_path("youk")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(json.dumps({"skill": "learn", "ts": 1.0}) + "\n")
+
+        (youk_root / "state" / "session.json").write_text(
+            json.dumps({"session_counter": 1, "last_project": "/some/youk"})
+        )
+
+        from session import end_session
+        end_session(summary="test session", commits_made=False, skills_used=["humanize"])
+
+        audit_file = claude_root / "audit" / __import__("datetime").datetime.utcnow().strftime("%Y-%m.md")
+        content = audit_file.read_text()
+        assert "humanize" in content
+        assert "learn" in content

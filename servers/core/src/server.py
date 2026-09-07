@@ -2355,6 +2355,42 @@ def log_ab_exposure(session_slug: str, experiment: str, skill: str, variant: str
 
 
 @mcp.tool()
+def log_skill_invocation(skill: str) -> dict:
+    """
+    Record that a capability skill was routed and executed this session.
+
+    Call this immediately after route_to_skill returns (same point CLAUDE.md
+    already requires calling write_skill_handoff). Exists for the same reason
+    as log_ab_exposure: route_to_skill runs in youk-code, mounted read-only by
+    design, so it cannot persist its own invocation. This is the write-authorized
+    half.
+
+    session_end reads this log as a mechanical fallback/supplement to the
+    self-reported skills_used argument -- a typed-in list at session close is
+    unreliable (a session can genuinely use six skills and still report "none"
+    if the closing call forgets them); a same-turn logged call is not.
+
+    skill: the skill name exactly as passed to route_to_skill.
+
+    Returns: {"logged": bool, "path": str}
+    """
+    import json as _json
+    import time as _time
+
+    _sp.YOUK_ROOT = YOUK_ROOT
+    slug = _get_session_slug()
+    if slug == "unknown":
+        return {"logged": False, "error": "no active session slug", "error_type": "BUSINESS_RULE"}
+    try:
+        path = _sp.skills_invoked_log_path(slug)
+        with open(path, "a") as f:
+            f.write(_json.dumps({"skill": skill, "ts": _time.time()}) + "\n")
+        return {"logged": True, "path": str(path)}
+    except Exception as exc:
+        return {"logged": False, "error": str(exc), "error_type": "SYSTEM"}
+
+
+@mcp.tool()
 def check_ab_pilot_status(experiment: str = "rationale_terseness", threshold: int = 20) -> dict:
     """
     Report exposure counts against the pre-registered stop threshold. Not a readout.
