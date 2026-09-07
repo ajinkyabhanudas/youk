@@ -36,9 +36,14 @@ CREATE TABLE IF NOT EXISTS proposals (
     content         TEXT NOT NULL DEFAULT '',
     review_required INTEGER NOT NULL DEFAULT 0,
     proposed_date   TEXT NOT NULL,
-    applied_at      TEXT
+    applied_at      TEXT,
+    confirmed_by    TEXT
 )
 """
+
+# Actor extension: confirmed_by predates the CREATE TABLE for any DB created before this
+# change landed. ALTER TABLE ADD COLUMN is the additive path — never touches existing rows.
+_ADD_CONFIRMED_BY_COLUMN = "ALTER TABLE proposals ADD COLUMN confirmed_by TEXT"
 
 
 # Tracks which DB paths have been initialized (WAL + schema + migration).
@@ -65,6 +70,10 @@ def _proposals_conn() -> sqlite3.Connection:
                 _init_conn.execute("PRAGMA busy_timeout=5000")
                 _init_conn.execute(_CREATE_PROPOSALS_TABLE)
                 _init_conn.commit()
+                _existing_cols = {row[1] for row in _init_conn.execute("PRAGMA table_info(proposals)")}
+                if "confirmed_by" not in _existing_cols:
+                    _init_conn.execute(_ADD_CONFIRMED_BY_COLUMN)
+                    _init_conn.commit()
                 _migrate_pending_md_to_db(_init_conn)
                 _init_conn.close()
                 _PROPOSALS_INITIALIZED.add(db_key)
@@ -3592,9 +3601,14 @@ def apply_proposal(
     confirmed: bool,
     safe_types: list[str] | None = None,
     review_required_override: bool = False,
+    actor: str = "founder",
 ) -> dict:
     """
     Two-step proposal application with optional change_type gate.
+
+    actor: who confirmed this application ("founder" or "contractor"). Defaulted to
+    "founder" so existing callers are unaffected. Recorded on the proposal row so every
+    applied change has an auditable confirming actor (actor extension, defaulted off).
 
     confirmed=False → returns diff preview, nothing written.
     confirmed=True  → executes write per change_type, marks APPLIED in PENDING.md.
@@ -3658,15 +3672,18 @@ def apply_proposal(
         }
 
     # confirmed=True path: execute + mark applied in SQLite (atomic single-row UPDATE)
+    from state_paths import resolve_actor as _resolve_actor
+    _confirmed_by = _resolve_actor(actor)
     result = _execute_proposal(target)
     if result.get("applied"):
         try:
             conn = _proposals_conn()
             conn.execute(
-                "UPDATE proposals SET status=?, applied_at=? WHERE id=?",
+                "UPDATE proposals SET status=?, applied_at=?, confirmed_by=? WHERE id=?",
                 (
                     f"APPLIED — {datetime.now(UTC).strftime('%Y-%m-%d')}",
                     datetime.now(UTC).isoformat(),
+                    _confirmed_by,
                     proposal_id,
                 ),
             )
@@ -3675,6 +3692,7 @@ def apply_proposal(
         except sqlite3.OperationalError as e:
             raise RuntimeError(f"apply_proposal status update failed — DB unavailable: {e}") from e
         result["change_summary"] = target.change_description
+        result["confirmed_by"] = _confirmed_by
 
     return result
 

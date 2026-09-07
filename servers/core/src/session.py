@@ -1824,12 +1824,19 @@ def start_session(project_dir: str) -> SessionState:
     # written_at field enables staleness detection in state_paths.current_session_slug().
     # Root-level session-open.json is written as a legacy redirect pointer only —
     # it MUST NOT be used for slug resolution; use state_paths.current_session_slug().
+    # Actor extension (defaulted off): read from YOUK_ACTOR env var if the container/host
+    # set one, else "founder". resolve_actor() falls back to "founder" on anything
+    # unrecognised, so a malformed env value never blocks session start.
+    import os as _os
+    _actor = _sp.resolve_actor(_os.environ.get("YOUK_ACTOR"))
+
     _open_payload = json.dumps({
         "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "slug": slug,
         "written_at": __import__("time").time(),
         "session_counter": state["session_counter"],
         "plan_items": session_plan[:3],
+        "actor": _actor,
     }, indent=2)
     try:
         _sp.YOUK_ROOT = YOUK_ROOT

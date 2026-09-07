@@ -180,3 +180,39 @@ class TestOpenJsonPayload:
         after = time.time()
         assert "written_at" in payload
         assert before <= payload["written_at"] <= after
+
+
+# ── actor extension (resolve_actor / session_actor) ────────────────────────────
+
+class TestResolveActor:
+    def test_valid_actor_passes_through(self):
+        assert state_paths.resolve_actor("founder") == "founder"
+        assert state_paths.resolve_actor("contractor") == "contractor"
+
+    def test_unrecognised_value_falls_back_to_founder(self):
+        assert state_paths.resolve_actor("admin") == "founder"
+        assert state_paths.resolve_actor("") == "founder"
+
+    def test_none_falls_back_to_founder(self):
+        assert state_paths.resolve_actor(None) == "founder"
+
+
+class TestSessionActor:
+    def test_no_open_file_defaults_to_founder(self, isolated_youk_root):
+        assert state_paths.session_actor("no-such-slug") == "founder"
+
+    def test_reads_actor_from_open_json(self, isolated_youk_root):
+        d = state_paths.slug_state_dir("youk")
+        (d / "open.json").write_text(json.dumps({"slug": "youk", "actor": "contractor"}))
+        assert state_paths.session_actor("youk") == "contractor"
+
+    def test_old_open_json_with_no_actor_field_defaults_to_founder(self, isolated_youk_root):
+        """A session written before this feature existed must not need a migration."""
+        d = state_paths.slug_state_dir("youk")
+        (d / "open.json").write_text(json.dumps({"slug": "youk", "written_at": time.time()}))
+        assert state_paths.session_actor("youk") == "founder"
+
+    def test_malformed_open_json_defaults_to_founder(self, isolated_youk_root):
+        d = state_paths.slug_state_dir("youk")
+        (d / "open.json").write_text("not valid json")
+        assert state_paths.session_actor("youk") == "founder"
