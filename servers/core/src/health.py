@@ -3606,7 +3606,7 @@ def apply_proposal(
     """
     Two-step proposal application with optional change_type gate.
 
-    actor: who confirmed this application ("founder" or "contractor"). Defaulted to
+    actor: who confirmed this application ("founder" or "member"). Defaulted to
     "founder" so existing callers are unaffected. Recorded on the proposal row so every
     applied change has an auditable confirming actor (actor extension, defaulted off).
 

@@ -617,8 +617,8 @@ class TestApplyProposalSafeTypes:
         import health as h
         self._setup(h)
         monkeypatch.setattr(h, "_execute_proposal", lambda p: {"applied": True})
-        result = h.apply_proposal("PENDING-001", confirmed=True, safe_types=["SKILL_EDIT"], actor="contractor")
-        assert result["confirmed_by"] == "contractor"
+        result = h.apply_proposal("PENDING-001", confirmed=True, safe_types=["SKILL_EDIT"], actor="member")
+        assert result["confirmed_by"] == "member"
 
     def test_unrecognised_actor_falls_back_to_founder(self, youk_root, claude_root, monkeypatch):
         import health as h
