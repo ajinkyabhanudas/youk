@@ -8,6 +8,25 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ---
 
+## [1.2.2] — 2026-09-09
+
+### Fixed
+
+**Skill signal tracking was blind to project-scoped skills**
+
+`skill_signals._load_skill_md()` resolved every skill's `SKILL.md` against a single
+hardcoded root (`~/.claude/skills`). A skill defined only under a consuming project's
+own `<project_dir>/.claude/skills/` — invoked for real through Claude Code's `Skill`
+tool — was structurally invisible to `get_skill_signals`, `generate_skill_improvement_proposal`,
+and skill forking: it could never be found, so it never accrued signal.
+
+Skill resolution now checks a project-scoped root before the global root whenever
+project context is available — passed explicitly, or recovered from the same
+`state/session.json` `last_project` field `session_start()` already writes on every
+session. With no project context at all (the common case for tools that never pass
+one), resolution degrades to exactly the old global-only behavior — no change for
+existing global skills.
+
 ## [1.2.1] — 2026-09-03
 
 ### Fixed

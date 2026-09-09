@@ -1932,7 +1932,7 @@ def get_skill_signals(skill_name: str | None = None, window: int = 10) -> dict:
 
 
 @mcp.tool()
-def generate_skill_improvement_proposal(skill_name: str, dimension: str = "") -> dict:
+def generate_skill_improvement_proposal(skill_name: str, dimension: str = "", project_dir: str | None = None) -> dict:
     """Generate a 5-part evaluable improvement proposal for a skill with a detected pattern.
 
     Reads the current improvement queue (state/skill-improvement-queue.json), finds the
@@ -1940,10 +1940,15 @@ def generate_skill_improvement_proposal(skill_name: str, dimension: str = "") ->
     and produces a structured proposal in the 5-part evaluable format. Queues it via
     add_proposal — requires human approval before apply_proposal can act on it.
 
+    project_dir: optional consuming-project root. When set (or otherwise recoverable
+    from the active session's last_project), a project-scoped skill root
+    (<project_dir>/.claude/skills) is checked alongside the global root
+    (~/.claude/skills) so skills that live only inside a project are found too.
+
     Returns: {proposal_id, proposal_text, queued, pattern_used}
     Returns {no_pattern: true} if no qualifying pattern exists for this skill.
     """
-    return _generate_skill_improvement_proposal(skill_name, dimension)
+    return _generate_skill_improvement_proposal(skill_name, dimension, project_dir=project_dir)
 
 
 @mcp.tool()
