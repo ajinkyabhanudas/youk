@@ -467,10 +467,16 @@ def get_skill_health_summary(points_file: Path | None = None) -> dict:
 
 # ── session integration ───────────────────────────────────────────────────────
 
-def record_session_signals(audit_block: str, session_n: int) -> dict:
+def record_session_signals(audit_block: str, session_n: int, project_dir: str | None = None) -> dict:
     """Top-level function called from session_end(). Silent-fail.
 
     Computes signals, appends to jsonl, updates point ledger.
+
+    project_dir: optional consuming-project root, forwarded to
+    check_fork_threshold_and_maybe_fork so a project-scoped skill can be
+    forked/archived correctly. Defaults to the project_dir recorded in
+    shared session state when omitted (see _current_project_dir).
+
     Returns summary dict (informational only — never raises).
     """
     try:
@@ -536,7 +542,7 @@ def record_session_signals(audit_block: str, session_n: int) -> dict:
             )
 
         # Phase 3b: auto-fork any skill that crossed the threshold this session
-        fork_results = check_fork_threshold_and_maybe_fork(session_n)
+        fork_results = check_fork_threshold_and_maybe_fork(session_n, project_dir=project_dir)
 
         return {
             "signals_recorded": len(signals),
@@ -552,17 +558,71 @@ def record_session_signals(audit_block: str, session_n: int) -> dict:
 # ── Phase 2: proposal generation ─────────────────────────────────────────────
 
 _SKILL_ROOT = CLAUDE_ROOT / "skills"
+_SESSION_STATE_FILE = _STATE_DIR / "session.json"
 _IMPROVEMENT_QUEUE = _STATE_DIR / "skill-improvement-queue.json"
 _APPLIED_PROPOSALS = _STATE_DIR / "applied-proposals.json"
 
 
-def _load_skill_md(skill_name: str) -> str:
-    """Load SKILL.md content for a skill. Returns empty string on failure."""
-    skill_path = _SKILL_ROOT / skill_name / "SKILL.md"
+def _current_project_dir() -> str:
+    """Best-effort read of the active project_dir from shared session state.
+
+    Reuses the same state/session.json that session.start_session() writes
+    "last_project" to on every session start — no new plumbing, silent-fail
+    to "" so callers that never had project context keep working unchanged.
+    """
     try:
-        return skill_path.read_text()
+        if _SESSION_STATE_FILE.exists():
+            state = json.loads(_SESSION_STATE_FILE.read_text())
+            return state.get("last_project", "") or ""
     except Exception:
-        return ""
+        pass
+    return ""
+
+
+def _skill_search_roots(project_dir: str | None = None) -> list[Path]:
+    """Return the ordered list of skill roots to search for a skill's SKILL.md.
+
+    Generic multi-root resolution: when project context is available (passed
+    explicitly, or recoverable from shared session state), a project-scoped
+    root (<project_dir>/.claude/skills) is checked first — most specific
+    wins — then the global root (~/.claude/skills). With no project context
+    at all, this degrades to exactly the old global-only behavior.
+    """
+    roots: list[Path] = []
+    resolved_project_dir = project_dir if project_dir is not None else _current_project_dir()
+    if resolved_project_dir:
+        roots.append(Path(resolved_project_dir) / ".claude" / "skills")
+    roots.append(_SKILL_ROOT)
+    return roots
+
+
+def _load_skill_md(skill_name: str, project_dir: str | None = None) -> str:
+    """Load SKILL.md content for a skill. Returns empty string on failure.
+
+    Checks a project-scoped skill root before the global root (see
+    _skill_search_roots) so a skill defined only inside a consuming
+    project's own .claude/skills/ is found, not just ~/.claude/skills.
+    """
+    for root in _skill_search_roots(project_dir):
+        skill_path = root / skill_name / "SKILL.md"
+        try:
+            if skill_path.exists():
+                return skill_path.read_text()
+        except Exception:
+            continue
+    return ""
+
+
+def _skill_md_path(skill_name: str, project_dir: str | None = None) -> Path:
+    """Return the resolved path to a skill's SKILL.md (project root preferred),
+    falling back to the global-root path (even if it doesn't exist) so callers
+    always get a stable path string to display/store.
+    """
+    for root in _skill_search_roots(project_dir):
+        candidate = root / skill_name / "SKILL.md"
+        if candidate.exists():
+            return candidate
+    return _SKILL_ROOT / skill_name / "SKILL.md"
 
 
 def _load_signal_evidence(skill_name: str, dimension: str, window: int = 10) -> list[dict]:
@@ -602,12 +662,17 @@ def _mdl_check(before_lines: int, after_lines: int, signal_type: str) -> dict:
     }
 
 
-def generate_improvement_proposal(skill_name: str, dimension: str = "") -> dict:
+def generate_improvement_proposal(skill_name: str, dimension: str = "", project_dir: str | None = None) -> dict:
     """Generate a 5-part evaluable skill improvement proposal.
 
     Reads improvement queue, loads SKILL.md, constructs the 5-part proposal format,
     queues it via add_proposal (requires human approval), and records it in
     applied-proposals.json tracking.
+
+    project_dir: optional consuming-project root, used to also search
+    <project_dir>/.claude/skills for skill_name's SKILL.md before falling
+    back to the global ~/.claude/skills root. Defaults to the project_dir
+    recorded in shared session state when omitted.
 
     Returns: {proposal_id, proposal_text, queued, pattern_used, no_pattern (bool)}
     """
@@ -640,7 +705,7 @@ def generate_improvement_proposal(skill_name: str, dimension: str = "") -> dict:
     recent_signals = _load_signal_evidence(skill_name, dim)
 
     # Load current SKILL.md
-    skill_md = _load_skill_md(skill_name)
+    skill_md = _load_skill_md(skill_name, project_dir=project_dir)
     skill_md_lines = len(skill_md.splitlines()) if skill_md else 0
 
     # Estimate proposed change scope based on signal type
@@ -726,7 +791,7 @@ def generate_improvement_proposal(skill_name: str, dimension: str = "") -> dict:
         from models import Proposal
         from health import add_proposal as _add_proposal_fn
 
-        skill_md_path = str(_SKILL_ROOT / skill_name / "SKILL.md")
+        skill_md_path = str(_skill_md_path(skill_name, project_dir=project_dir))
         proposal = Proposal(
             id=proposal_id,
             target=skill_md_path,
@@ -1005,12 +1070,16 @@ def _save_candidates(candidates: dict) -> None:
     _CANDIDATES_FILE.write_text(json.dumps(candidates, indent=2))
 
 
-def fork_skill(skill_name: str, gap_history: list[dict], session_n: int) -> dict:
+def fork_skill(skill_name: str, gap_history: list[dict], session_n: int, project_dir: str | None = None) -> dict:
     """Archive the current skill version and register a candidate at 70 points.
 
     Called when a skill drops to or below the fork threshold (40 points).
     The candidate starts at 70 points and competes with the archived current version
     via LinUCB selection over the next 5 sessions.
+
+    project_dir: optional consuming-project root, forwarded to _load_skill_md so a
+    project-scoped skill (one that only exists under <project_dir>/.claude/skills)
+    can be archived and forked same as a global one.
 
     Returns: {forked: bool, candidate_id, archive_path}
     """
@@ -1025,7 +1094,7 @@ def fork_skill(skill_name: str, gap_history: list[dict], session_n: int) -> dict
         }
 
     # Archive current SKILL.md
-    skill_md = _load_skill_md(skill_name)
+    skill_md = _load_skill_md(skill_name, project_dir=project_dir)
     archive_path = ""
     if skill_md:
         try:
@@ -1175,11 +1244,14 @@ def record_arm_reward(
     return result
 
 
-def check_fork_threshold_and_maybe_fork(session_n: int) -> list[dict]:
+def check_fork_threshold_and_maybe_fork(session_n: int, project_dir: str | None = None) -> list[dict]:
     """Check all skills against the fork threshold. Fork any that qualify.
 
     Called from record_session_signals() after update_points(). Returns list of
     fork results for skills that were newly forked this session.
+
+    project_dir: forwarded to fork_skill so a project-scoped skill's SKILL.md
+    can be located and archived, not just skills under ~/.claude/skills.
     """
     ledger = _load_points()
     candidates = _load_candidates()
@@ -1190,7 +1262,7 @@ def check_fork_threshold_and_maybe_fork(session_n: int) -> list[dict]:
         # Only fork if below threshold AND no active candidate exists
         if points <= _FORK_THRESHOLD and skill not in candidates:
             gap_history = _load_signal_evidence(skill, "")
-            result = fork_skill(skill, gap_history, session_n)
+            result = fork_skill(skill, gap_history, session_n, project_dir=project_dir)
             results.append(result)
 
     return results

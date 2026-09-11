@@ -904,6 +904,179 @@ class TestBanditAutoFeed:
         assert len(selections) >= 1  # update fired
 
 
+# ── TestProjectScopedSkillResolution (multi-root skill resolution) ──────────
+
+from skill_signals import (
+    _load_skill_md,
+    _skill_search_roots,
+    _skill_md_path,
+    _current_project_dir,
+)
+
+
+class TestProjectScopedSkillResolution:
+    """A skill's SKILL.md must be resolvable from either the global root
+    (~/.claude/skills) or a project-scoped root (<project_dir>/.claude/skills),
+    with global-only behavior preserved when no project context exists.
+    """
+
+    def _write_skill(self, root: Path, skill_name: str, content: str) -> Path:
+        skill_dir = root / skill_name
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text(content)
+        return skill_md
+
+    # (a) regression: existing global-skill behavior is unchanged ────────────
+
+    def test_global_skill_found_with_no_project_dir(self, tmp_path, monkeypatch):
+        """A skill under the global root is still found when no project_dir
+        is passed and none is recoverable from session state."""
+        global_root = tmp_path / "global-skills"
+        self._write_skill(global_root, "dev-loop", "# dev-loop skill content")
+        monkeypatch.setattr(skill_signals, "_SKILL_ROOT", global_root)
+        monkeypatch.setattr(skill_signals, "_SESSION_STATE_FILE", tmp_path / "no-session.json")
+
+        content = _load_skill_md("dev-loop")
+        assert content == "# dev-loop skill content"
+
+    def test_global_skill_found_even_with_project_context_present(self, tmp_path, monkeypatch):
+        """A global-only skill (not shadowed by a project-scoped one) is still
+        found when project context IS available — global root stays in the
+        search path, just checked after the project root."""
+        global_root = tmp_path / "global-skills"
+        self._write_skill(global_root, "dev-loop", "# global dev-loop")
+        project_dir = tmp_path / "some-project"
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        monkeypatch.setattr(skill_signals, "_SKILL_ROOT", global_root)
+
+        content = _load_skill_md("dev-loop", project_dir=str(project_dir))
+        assert content == "# global dev-loop"
+
+    def test_missing_skill_returns_empty_string_unchanged(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(skill_signals, "_SKILL_ROOT", tmp_path / "empty-global")
+        monkeypatch.setattr(skill_signals, "_SESSION_STATE_FILE", tmp_path / "no-session.json")
+        assert _load_skill_md("does-not-exist") == ""
+
+    def test_search_roots_is_global_only_with_no_project_context(self, tmp_path, monkeypatch):
+        global_root = tmp_path / "global-skills"
+        monkeypatch.setattr(skill_signals, "_SKILL_ROOT", global_root)
+        monkeypatch.setattr(skill_signals, "_SESSION_STATE_FILE", tmp_path / "no-session.json")
+        roots = _skill_search_roots(None)
+        assert roots == [global_root]
+
+    # (b) project-scoped skill is now found and its signals tracked ──────────
+
+    def test_project_scoped_skill_found_via_explicit_project_dir(self, tmp_path, monkeypatch):
+        global_root = tmp_path / "global-skills"
+        monkeypatch.setattr(skill_signals, "_SKILL_ROOT", global_root)
+        project_dir = tmp_path / "test-project"
+        self._write_skill(
+            project_dir / ".claude" / "skills", "test-project-skill", "# project-scoped skill"
+        )
+
+        content = _load_skill_md("test-project-skill", project_dir=str(project_dir))
+        assert content == "# project-scoped skill"
+
+    def test_project_scoped_skill_takes_precedence_over_same_named_global(self, tmp_path, monkeypatch):
+        """Project-scoped root is checked first: a same-named project skill
+        shadows a global one, since project context is the more specific source."""
+        global_root = tmp_path / "global-skills"
+        self._write_skill(global_root, "shared-name", "# global version")
+        monkeypatch.setattr(skill_signals, "_SKILL_ROOT", global_root)
+
+        project_dir = tmp_path / "test-project"
+        self._write_skill(project_dir / ".claude" / "skills", "shared-name", "# project version")
+
+        content = _load_skill_md("shared-name", project_dir=str(project_dir))
+        assert content == "# project version"
+
+    def test_project_dir_auto_resolved_from_session_state(self, tmp_path, monkeypatch):
+        """When project_dir isn't passed explicitly, it's recovered from the
+        same state/session.json that session.start_session() already writes
+        last_project to — no new plumbing required of callers."""
+        global_root = tmp_path / "global-skills"
+        monkeypatch.setattr(skill_signals, "_SKILL_ROOT", global_root)
+
+        project_dir = tmp_path / "test-project"
+        self._write_skill(
+            project_dir / ".claude" / "skills", "test-project-skill", "# auto-resolved skill"
+        )
+
+        session_state_file = tmp_path / "session.json"
+        session_state_file.write_text(json.dumps({"last_project": str(project_dir)}))
+        monkeypatch.setattr(skill_signals, "_SESSION_STATE_FILE", session_state_file)
+
+        assert _current_project_dir() == str(project_dir)
+        content = _load_skill_md("test-project-skill")  # no project_dir passed
+        assert content == "# auto-resolved skill"
+
+    def test_corrupt_session_state_falls_back_gracefully(self, tmp_path, monkeypatch):
+        global_root = tmp_path / "global-skills"
+        self._write_skill(global_root, "dev-loop", "# global dev-loop")
+        monkeypatch.setattr(skill_signals, "_SKILL_ROOT", global_root)
+
+        bad_state = tmp_path / "session.json"
+        bad_state.write_text("NOT VALID JSON {{{")
+        monkeypatch.setattr(skill_signals, "_SESSION_STATE_FILE", bad_state)
+
+        assert _current_project_dir() == ""
+        assert _load_skill_md("dev-loop") == "# global dev-loop"
+
+    def test_generate_improvement_proposal_finds_project_scoped_skill(self, tmp_path, monkeypatch):
+        """End-to-end: generate_improvement_proposal (one of the two named
+        structurally-blind consumers) now loads a project-scoped skill's
+        SKILL.md and includes its resolved path in the queued proposal."""
+        monkeypatch.setattr(skill_signals, "_STATE_DIR", tmp_path)
+        monkeypatch.setattr(skill_signals, "_SIGNALS_FILE", tmp_path / "skill-signals.jsonl")
+        monkeypatch.setattr(skill_signals, "_POINTS_FILE", tmp_path / "skill-points.json")
+        monkeypatch.setattr(skill_signals, "_IMPROVEMENT_QUEUE", tmp_path / "skill-improvement-queue.json")
+        monkeypatch.setattr(skill_signals, "_APPLIED_PROPOSALS", tmp_path / "applied-proposals.json")
+        monkeypatch.setattr(skill_signals, "_SKILL_ROOT", tmp_path / "global-skills")
+        monkeypatch.setattr(skill_signals, "_SESSION_STATE_FILE", tmp_path / "no-session.json")
+
+        project_dir = tmp_path / "test-project"
+        self._write_skill(
+            project_dir / ".claude" / "skills",
+            "test-project-skill",
+            "# test-project-skill\n\nProject-scoped skill content.",
+        )
+
+        queue = tmp_path / "skill-improvement-queue.json"
+        queue.write_text(json.dumps({
+            "patterns": [{
+                "skill": "test-project-skill", "signal_type": "GAP", "dimension": "scope",
+                "count": 3, "sessions": [1, 2, 3], "evidence_samples": ["missed scope"] * 3,
+            }],
+            "updated_at": "2026-09-09T00:00:00+00:00",
+        }))
+
+        result = generate_improvement_proposal("test-project-skill", project_dir=str(project_dir))
+        assert result["no_pattern"] is False
+        assert "TEST-PROJECT-SKILL" in result["proposal_id"]
+
+    def test_fork_skill_archives_project_scoped_skill(self, tmp_path, monkeypatch):
+        """fork_skill (used by check_fork_threshold_and_maybe_fork) can archive
+        a project-scoped skill's SKILL.md, not just a global one."""
+        monkeypatch.setattr(skill_signals, "_STATE_DIR", tmp_path)
+        monkeypatch.setattr(skill_signals, "_CANDIDATES_FILE", tmp_path / "skill-candidates.json")
+        monkeypatch.setattr(skill_signals, "_ARCHIVE_DIR", tmp_path / "skill-archives")
+        monkeypatch.setattr(skill_signals, "_POINTS_FILE", tmp_path / "skill-points.json")
+        monkeypatch.setattr(skill_signals, "_SKILL_ROOT", tmp_path / "global-skills")
+        monkeypatch.setattr(skill_signals, "_SESSION_STATE_FILE", tmp_path / "no-session.json")
+
+        project_dir = tmp_path / "test-project"
+        self._write_skill(
+            project_dir / ".claude" / "skills", "test-project-skill", "# archived content"
+        )
+
+        result = fork_skill("test-project-skill", gap_history=[], session_n=1, project_dir=str(project_dir))
+        assert result["forked"] is True
+        archived = Path(result["archive_path"])
+        assert archived.exists()
+        assert archived.read_text() == "# archived content"
+
+
 # ── TestFalsifierAlertCLAUDEMD (Fix 3 — behavioral contract) ─────────────────
 
 class TestFalsifierAlertContract:
