@@ -23,6 +23,7 @@ for _p in [
     str(_REPO / "servers" / "shared"),
     str(_REPO / "servers" / "core" / "src"),
     str(_REPO / "servers" / "code" / "src"),
+    str(_REPO / "scripts"),
 ]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
