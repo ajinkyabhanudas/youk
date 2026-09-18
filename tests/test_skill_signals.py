@@ -180,6 +180,21 @@ class TestComputeSignals:
         scope_miss = [s for s in signals if s["signal_type"] == "SCOPE_MISS" and s["skill"] == "dev-loop"]
         assert len(scope_miss) >= 1
 
+    def test_non_core_skill_is_scored_when_it_actually_fires(self):
+        """A skill outside the fixed _TRACKED_SKILLS core set (e.g. one that only
+        lives under a consuming project's own <project_dir>/.claude/skills) must
+        still be scored when it fires this session -- previously silently
+        skipped because compute_signals_for_session only iterated the fixed
+        core set."""
+        surface = _sample_examination_surface("a-project-scoped-skill")
+        block = (
+            "Skills: a-project-scoped-skill\n"
+            "[FINDING: HIGH] Error handling — missing null check\n"
+            + surface
+        )
+        signals = compute_signals_for_session(block, session_n=1)
+        assert any(s["skill"] == "a-project-scoped-skill" for s in signals)
+
     def test_surplus_when_developer_pre_empted_at_deep(self):
         block = (
             "Skills: nfr-check\n"
@@ -435,6 +450,22 @@ class TestHealthSummary:
         update_points(signals)
         summary = get_skill_health_summary()
         assert summary["dev-loop"]["status"] in ("degrading", "at_risk")
+
+    def test_non_core_skill_with_real_points_is_reported(self, tmp_path, monkeypatch):
+        """A skill outside the fixed _TRACKED_SKILLS core set that has actually
+        accrued a real points ledger entry must appear in the health summary --
+        previously silently dropped because get_skill_health_summary only
+        iterated the fixed core set, regardless of what the ledger held."""
+        import skill_signals
+        pf = tmp_path / "skill-points.json"
+        monkeypatch.setattr(skill_signals, "_STATE_DIR", tmp_path)
+        monkeypatch.setattr(skill_signals, "_POINTS_FILE", pf)
+        signals = [{"session_n": 1, "skill": "a-project-scoped-skill", "signal_type": "STABLE",
+                    "dimension": "overall", "weight": 2.0, "recorded_at": ""}]
+        update_points(signals)
+        summary = get_skill_health_summary()
+        assert "a-project-scoped-skill" in summary
+        assert summary["a-project-scoped-skill"]["status"] == "healthy"
 
 
 # ── TestProposalGeneration (Phase 2) ─────────────────────────────────────────

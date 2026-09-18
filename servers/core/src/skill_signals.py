@@ -205,8 +205,15 @@ def compute_signals_for_session(audit_block: str, session_n: int) -> list[dict]:
     matrix = _load_scope_matrix()
 
     # ── per-skill signal computation ──────────────────────────────────────────
+    # Union with skills_used/surfaces so a scope-scoped skill (one that lives
+    # only under a consuming project's own <project_dir>/.claude/skills, not
+    # in the fixed core set below) still gets scored when it actually fires
+    # this session, instead of being silently skipped because it isn't a
+    # member of _TRACKED_SKILLS. The "did it actually fire" check right below
+    # still gates everything -- this only widens which names are considered.
+    _skills_to_score = _TRACKED_SKILLS | set(skills_used) | set(surfaces.keys())
 
-    for skill in _TRACKED_SKILLS:
+    for skill in _skills_to_score:
         if skill not in skills_used and skill not in surfaces:
             continue  # skill didn't fire this session — no signal
 
@@ -446,11 +453,17 @@ def get_fork_candidates(points_file: Path | None = None) -> list[dict]:
 
 
 def get_skill_health_summary(points_file: Path | None = None) -> dict:
-    """Return health summary for all tracked skills."""
+    """Return health summary for all tracked skills.
+
+    Iterates the core tracked set unioned with any skill that already has a real
+    points ledger entry -- a scope-scoped or otherwise non-core skill that has
+    actually accrued signal is reported here too, not silently dropped just
+    because it isn't in the original fixed core set. See _TRACKED_SKILLS.
+    """
     points_file = points_file if points_file is not None else _POINTS_FILE
     ledger = _load_points()
     summary = {}
-    for skill in _TRACKED_SKILLS:
+    for skill in _TRACKED_SKILLS | set(ledger.keys()):
         data = ledger.get(skill, {"points": _STARTING_POINTS, "deductions": [], "recoveries": []})
         points = data["points"]
         if points >= 80:
