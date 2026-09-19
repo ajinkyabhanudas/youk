@@ -204,8 +204,95 @@ _CAPABILITY_SKILLS = frozenset({
     "surface-options", "surface_options",
 })
 
-# Paths that FILE_CREATE proposals are permitted to write to
-_ALLOWED_WRITE_ROOTS = [YOUK_ROOT, CLAUDE_ROOT / "skills"]
+def _allowed_write_roots() -> list[Path]:
+    """Paths that FILE_CREATE proposals are permitted to write to.
+
+    A function, not a frozen module-level list: YOUK_ROOT/CLAUDE_ROOT are
+    monkeypatched to tmp dirs in tests (see conftest.py's youk_root/claude_root
+    fixtures), and a list built once at import time would keep referencing the
+    real /youk, /claude/skills regardless of that patch.
+    """
+    return [YOUK_ROOT, CLAUDE_ROOT / "skills"]
+
+def _host_path_markers() -> tuple[tuple[str, Path], ...]:
+    """health.py runs inside the youk-core container, where the host's
+    ~/.claude and ~/.claude/youk are bind-mounted at CLAUDE_ROOT and YOUK_ROOT
+    respectively (see install.sh / docker-compose). A caller outside the
+    container — e.g. Claude Code running on the host — only knows its own
+    real filesystem path, never the container-internal one, so a host-absolute
+    path landing inside one of these directories was previously rejected
+    outright even though it names a location this container can legitimately
+    write to. These markers translate it back.
+
+    A function, not a frozen tuple, for the same reason as _allowed_write_roots:
+    a tuple built once at import time keeps the real /youk, /claude/skills even
+    after tests monkeypatch YOUK_ROOT/CLAUDE_ROOT.
+    """
+    return (
+        (".claude/youk/", YOUK_ROOT),
+        (".claude/skills/", CLAUDE_ROOT / "skills"),
+    )
+
+
+def _resolve_write_target(raw_target: str) -> Path | None:
+    """Resolve a FILE_CREATE proposal's target to a container-absolute path
+    inside an allowed write root, or None if it falls outside every root.
+
+    Confirmed bug (2026-09-19): every real FILE_CREATE proposal this codebase
+    generates uses a bare relative target (e.g. "cross-project.md" — see the
+    promotion-candidate generator above), and any caller running outside this
+    container can only supply a host-absolute path. Neither ever equals or
+    starts with the container-absolute roots in _ALLOWED_WRITE_ROOTS, so
+    apply_proposal rejected every FILE_CREATE proposal ever produced.
+
+    Handles the three shapes a target can arrive in:
+    - Container-absolute already (e.g. "/youk/knowledge/x.md") — used as-is.
+    - Host-absolute, containing a _HOST_PATH_MARKERS segment (e.g.
+      "/Users/x/.claude/youk/knowledge/x.md") — translated to the container
+      path by keeping everything after the marker.
+    - Relative (the real shape every generated proposal uses) — resolved
+      under YOUK_ROOT, the only root proposals are ever generated to target.
+
+    A target that resolves outside every allowed root (a real external
+    project path, or a "../" escape) returns None — that rejection is the
+    intended safety boundary, not part of this bug.
+    """
+    target_path = Path(raw_target)
+
+    if not target_path.is_absolute():
+        candidate = (YOUK_ROOT / target_path).resolve()
+    else:
+        raw_str = str(target_path)
+        candidate = None
+        for marker, root in _host_path_markers():
+            marker_pos = raw_str.find(marker)
+            if marker_pos != -1:
+                candidate = (root / raw_str[marker_pos + len(marker):]).resolve()
+                break
+        if candidate is None:
+            candidate = target_path.resolve()
+
+    if any(str(candidate).startswith(str(root)) for root in _allowed_write_roots()):
+        return candidate
+    return None
+
+
+def _host_relative_path(container_path: Path) -> str:
+    """Best-effort host-relative-to-~/.claude path for a written container path.
+
+    A caller running outside this container (e.g. Claude Code on the host)
+    cannot resolve /youk or /claude/skills itself and has no way to verify a
+    write succeeded — the confirmed cause of a real write being mistaken for
+    a silent no-op (2026-09-19: a REFERENCE_ADD wrote correctly but its
+    returned target_file, "/claude/skills/...", does not exist on the host).
+    Returns a path the caller can join with its own known ~/.claude directory.
+    """
+    s = str(container_path)
+    if s.startswith(str(YOUK_ROOT)):
+        return "youk/" + s[len(str(YOUK_ROOT)):].lstrip("/")
+    if s.startswith(str(CLAUDE_ROOT)):
+        return s[len(str(CLAUDE_ROOT)):].lstrip("/")
+    return s
 
 
 def _read_instrument_boundaries() -> list[dict]:
@@ -2124,7 +2211,7 @@ def _analyze_promotion_candidates(audit_texts: list[str]) -> list[dict]:
                 promotion_target = f"servers/core/src/{skill}.py"
             elif len(projects) >= 2:
                 change_type = "FILE_CREATE"
-                promotion_target = "cross-project.md"
+                promotion_target = "knowledge/cross-project.md"
             else:
                 change_type = "SKILL_EDIT"
                 promotion_target = f"skills/{skill}/SKILL.md"
@@ -3431,24 +3518,34 @@ def _execute_proposal(proposal: Proposal) -> dict:
         }
 
     if ct == "FILE_CREATE":
-        target_path = Path(proposal.target)
-        allowed = any(
-            str(target_path).startswith(str(r)) for r in _ALLOWED_WRITE_ROOTS
-        )
-        if not allowed:
+        target_path = _resolve_write_target(proposal.target)
+        if target_path is None:
             return {
                 "applied": False,
-                "error": f"FILE_CREATE blocked: {target_path} is outside permitted write roots.",
+                "error": (
+                    f"FILE_CREATE blocked: {proposal.target!r} does not resolve inside "
+                    f"any permitted write root ({[str(r) for r in _allowed_write_roots()]})."
+                ),
             }
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_text(proposal.content)
-        return {"applied": True, "target_file": str(target_path), "change_type": ct}
+        return {
+            "applied": True,
+            "target_file": str(target_path),
+            "target_file_relative": _host_relative_path(target_path),
+            "change_type": ct,
+        }
 
     if ct == "REFERENCE_ADD":
         ref_path = CLAUDE_ROOT / "skills" / proposal.target / "references" / proposal.target_section
         ref_path.parent.mkdir(parents=True, exist_ok=True)
         ref_path.write_text(proposal.content)
-        return {"applied": True, "target_file": str(ref_path), "change_type": ct}
+        return {
+            "applied": True,
+            "target_file": str(ref_path),
+            "target_file_relative": _host_relative_path(ref_path),
+            "change_type": ct,
+        }
 
     if ct == "SKILL_EDIT":
         skill_path = CLAUDE_ROOT / "skills" / proposal.target / "SKILL.md"

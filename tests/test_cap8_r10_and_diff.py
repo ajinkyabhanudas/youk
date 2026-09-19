@@ -128,7 +128,6 @@ class TestDiffInPayload:
         youk_root.mkdir(parents=True)
         monkeypatch.setattr(h, "CLAUDE_ROOT", croot)
         monkeypatch.setattr(h, "YOUK_ROOT", youk_root)
-        monkeypatch.setattr(h, "_ALLOWED_WRITE_ROOTS", [youk_root, croot / "skills"])
 
         target_path = croot / "skills" / "new-skill" / "references" / "test.md"
         p = _make_proposal(
