@@ -1237,9 +1237,8 @@ class TestExecuteProposal:
         assert result["applied"] is False
         assert "blocked" in result["error"].lower() or "outside" in result["error"].lower()
 
-    def test_file_create_writes_inside_youk_root(self, youk_root, claude_root, monkeypatch):
+    def test_file_create_writes_inside_youk_root(self, youk_root, claude_root):
         import health
-        monkeypatch.setattr(health, "_ALLOWED_WRITE_ROOTS", [youk_root])
         target = str(youk_root / "knowledge" / "proposals" / "test-create.md")
         p = self._make_proposal("FILE_CREATE", target, content="# Created\n")
         result = health._execute_proposal(p)
