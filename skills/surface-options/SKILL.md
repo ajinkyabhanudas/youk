@@ -1,47 +1,39 @@
 ---
 name: surface-options
-rationale_why: "A single confident answer to an open question is a silent choice the developer never got to make. Naming the real options — and their real costs — is what actually sharpens judgment, not just resolves the request."
+rationale_why: "challenge and adr both engage only after a direction already exists — challenge attacks an interpretation once one is picked, adr documents a choice once it's made. Neither one catches the moment before either exists: an ambiguous, open-ended, or judgment-call request where a real fork is being collapsed silently, with no visibility into what else was on the table."
 description: >
-  Fires on ambiguous, open-ended, or judgment-call requests where a single answer would
-  flatten a real decision — "how should we approach X", "what do you think about Y",
-  "what's the best way to Z", naming choices, structuring something with no single
-  right shape, or any request where a competent senior engineer would say "it depends."
-  Instead of picking silently, surfaces 2-4 materially different framings with their
-  costs, plus one explicit recommendation. Triggers on: exploratory questions ("what
-  could we do about X", "how should we approach this", "what do you think"), any
-  request with an unstated but real fork in direction, ADR-adjacent decisions too
-  small to warrant a full ADR. Does NOT trigger on: requests with only one reasonable
-  approach, tasks where the user has already stated their chosen direction, pure
-  factual/lookup questions, XS/S mechanical tasks. Distinct from challenge (which
-  attacks a direction already chosen) and adr (which records a decision already made) —
-  surface-options runs BEFORE a direction exists, when the fork itself hasn't been named.
-fast-path: |
-  If the request has exactly one reasonable approach (no real fork — a typo fix, a
-  named library call, a fully-specified spec) → skip straight to answering. Naming
-  fake options where none exist is worse than naming none.
-auto-skip: |
-  Skip if the user already stated their chosen approach this session ("let's use X"),
-  if this exact fork was already surfaced and resolved in the last 5 exchanges, or if
-  route_task sized the task M+ (challenge/nfr-check own the direction gate for M+ —
-  surface-options only owns S-tier and pre-route_task exploratory questions; never
-  double-surface the same fork through two skills). Also skip — full OFFER — if
-  mid-dev-loop with an active phase: surface the fork as a one-line flag inside that
-  phase's compact summary instead, and only run a full OFFER between phases or before
-  dev-loop starts. Cap firing at roughly one full OFFER per 3 exchanges unless STAKES
-  is high — a skill that interrupts every exchange trains the user to skim past it.
+  Fires on an ambiguous/open-ended/judgment-call request that has a real, unstated
+  fork in it — surfaces 2-4 costed options plus a mandatory recommendation instead
+  of picking one silently. Produces: a short options list (what each option is, its
+  real cost/tradeoff, what's lost by not choosing it) and exactly one named
+  recommendation with a stated reason. Triggers on: a request with a genuine open
+  design/scope/approach choice not yet resolved this session ("should we...",
+  "how should this work", "what's the best way to..."), or explicitly "surface the
+  options" / "what are my options here". Do NOT trigger when: the direction is
+  already explicitly confirmed by the user this session (that fork is closed, not
+  open), the task is XS/S with no real branching path, or the "choice" only has one
+  sane answer (no real fork — that's not ambiguity, it's a rhetorical question).
+  Do-not-trigger-on (disambiguation from `challenge`): a request already committed
+  to a specific interpretation, where the open question is whether that
+  interpretation is *right* — that is challenge's surface ("is this the right
+  problem?"), not this skill's ("which of these real paths do we take?"). If both
+  could plausibly fire on the same request, challenge runs first — it can dissolve
+  the fork entirely (wrong problem framing) before this skill would waste a
+  recommendation on a fork that shouldn't exist. Never fire both on the same
+  request in the same turn.
 ---
 
-# surface-options — Decision Surface Skill
+# surface-options — Decision Surface
 
-Picking silently is a service until it isn't. When a request has one right answer,
-answering it directly is correct — asking would just be noise. But when a request
-has a real fork — a judgment call with more than one defensible path — collapsing it
-into a single confident answer removes the developer's chance to weigh in on their
-own decision. This skill exists to catch that second case and hand the fork back,
-named and costed, instead of resolved in silence.
+Silently picking a direction on an open fork is a decision the user never got to see.
+This skill exists to make that fork visible before it's collapsed — not to slow
+everything down, only the requests that actually have one.
 
-Not a hedge. A recommendation is mandatory every time this fires — "here are some
-options" with no pick is abdication, not nuance.
+Interruption budget: at most once per real fork. Once a fork has been surfaced and the
+user has picked (or the assistant has proceeded on a stated default), that fork is
+closed for the rest of the session — do not re-surface it, do not re-litigate it, and
+do not surface a second, unrelated fork in the same turn unless the user asks for more
+than one decision at once.
 
 ---
 
@@ -49,109 +41,183 @@ options" with no pick is abdication, not nuance.
 
 | Invocation | Behaviour |
 |------------|-----------|
-| *(no directive)* | Full: DETECT → SHAPE → OFFER, 2-4 options with recommendation |
-| `quick` | DETECT → OFFER only — top 2 options, one-line tradeoff each, no SHAPE elaboration |
-| `options only` | Enumerate options without a recommendation — only when the user explicitly asked to decide themselves |
-| `deepen: [option]` | User picked one surfaced option — expand it into a normal answer/plan, drop the others |
-| `why not: [option]` | User wants the rejected-option reasoning made explicit — one paragraph, cite the cost that ruled it out |
+| *(no directive)* | Full: DETECT → SURFACE → RECOMMEND |
+| `quick` | DETECT + SURFACE only, skip the full cost breakdown per option (name + one-line tradeoff each), still ends with a mandatory recommendation |
+| `silent` | Run DETECT internally; if no real fork exists, proceed with no output. If a real fork exists, this mode does NOT suppress it — an undisclosed fork is exactly what this skill exists to prevent, unlike `challenge`'s `silent` mode which can hold LOW findings back |
 
 ---
 
 ## Context Capture (Always First)
 
 ```
-REQUEST:        [the user's question or ask, verbatim or paraphrased]
-REAL_FORK:      [the actual axis of disagreement a competent engineer would have — name it in one clause]
-STAKES:         [low / medium / high — medium and low share the same OFFER behavior, only high changes it]
-ALREADY_STATED: [any constraint or preference the user already gave this session — these narrow options, they don't get re-offered as options]
-IN_DEV_LOOP:    [is an active dev-loop phase in progress? if yes, this fires as a one-line flag inside that phase's output, not a full OFFER]
-RECENT_FIRES:   [how many full OFFERs in the last 3 exchanges — 1+ means lean toward fast-path or fold this fork into the current answer instead of a new OFFER]
+TASK:              [the request, verbatim or paraphrased]
+CANDIDATE_FORK:    [the specific open choice this skill thinks exists]
+ALREADY_DECIDED:   [any fork the user already closed this session — do not reopen]
+REVERSIBILITY:     [easy / hard / very hard — independent of STAKES, see Phase 3]
+STAKES:            [low / medium / high — cost of picking wrong and having to redo]
 ```
 
-If REAL_FORK cannot be named in one clause, there isn't one — take the fast-path
-and answer directly instead of manufacturing options.
+`ALREADY_DECIDED` is not conversation-only: before DETECT, check `contracts.md` (the same
+file `challenge`/session_end already write explicit agreements to) for a closed fork
+matching this one. A fork closed earlier in a session that later hits a compaction
+boundary, or is picked back up in a new session, must not silently reopen just because
+the conversation context that closed it is gone — that is precisely the "contracts survive
+via files, not conversation" failure this codebase has already been burned by once. If a
+real fork's resolution is worth protecting from re-litigation across a session boundary,
+write it to `contracts.md` in Phase 3, not left to live only in this turn's context.
+
+If `CANDIDATE_FORK` turns out not to be real once DETECT runs (see Phase 1's veto), stop
+here and proceed with the task directly — do not force a surfaced list where none is
+warranted.
 
 ---
 
-## Phases
+## Phase 1 — DETECT
 
-### Phase 1 — DETECT
+`[PHASE: DETECT]`
 
-1. Ask: does this request have more than one defensible approach, or exactly one?
-2. If exactly one (a named tool, a fully-specified request, a mechanical task) → fast-path, skip to a direct answer.
-3. If genuinely open, name REAL_FORK — the specific axis the options will differ on (e.g. "build vs. buy", "consistency vs. latency", "one skill vs. a mode inside an existing one").
-4. Falsifiability check: state one concrete scenario where each side of REAL_FORK would actually win. If only one side has a real winning scenario, this was a fast-path case wearing a fork's clothes — answer directly instead.
-5. Check STAKES. Low/medium stakes + quick invocation → cap at 2 options. High stakes → allow up to 4, no more.
-6. Check IN_DEV_LOOP and RECENT_FIRES per auto-skip — downgrade to a one-line flag or fold into the current answer if either applies.
+1. State the candidate fork in one sentence: what are the genuinely different paths this
+   request could go, phrased as an actual question ("in-memory cache vs. Redis", "fix the
+   symptom here vs. the root cause upstream").
+2. Veto check — a fork is NOT real if any of these hold: only one option is actually sane
+   given stated constraints; the user already picked this fork earlier in the session;
+   the "options" are cosmetic variations of the same approach, not substantively different
+   costs/outcomes. If the veto check fires, stop — this is not a surface-options case,
+   proceed with the task directly.
+3. If real: name each option candidate (2-4, never more — more than 4 means the fork
+   isn't scoped tightly enough, split it).
 
-> Compact phase summary: "Fork identified: {REAL_FORK}. Stakes: {STAKES}. Option count target: {N}."
+> Compact phase summary: "Fork: {one sentence}. {N} real options identified, or VETOED: {reason}."
 
-### Phase 2 — SHAPE
+---
 
-1. Generate 2-4 options that differ on REAL_FORK, not on cosmetic details. Two options that share the same tradeoff profile are one option, not two.
-2. For each option, state: what it is (one clause), what it costs (the real tradeoff, not a strawman downside), and when it's the right call.
-3. Discard any option that has no realistic scenario where it wins — that's not an option, it's a distractor.
-4. If an option itself splits into sub-options mid-generation, that split is evidence STAKES was undercounted for that branch — collapse it back to the outer fork, note the nested split as a one-line caveat on that option's cost line, and do not expand past 4 top-level options.
-5. Pick a recommendation. State the one factor that tips it — not "it depends," the actual thing that made the call.
+## Phase 2 — SURFACE
 
-> Compact phase summary: "{N} options shaped, each with a distinct cost. Recommendation: {option} because {tipping factor}."
+`[PHASE: SURFACE]`
 
-### Phase 3 — OFFER
+For each of the 2-4 real options, state:
+- **What it is** — one sentence, concrete, not "the flexible approach."
+- **Cost** — real cost in the units that matter here (time, tokens, irreversibility,
+  maintenance burden) — never "cheap" or "expensive" unqualified.
+- **What's lost by not choosing it** — the real thing forfeited if this option is
+  skipped. If nothing meaningful is lost, that's evidence this isn't a real option
+  (revisit Phase 1's veto).
 
-1. Match output length to STAKES: low/medium stakes → 2-3 sentences total, one line per option. High stakes → structured list acceptable, but every option still gets exactly one tradeoff line, not a paragraph.
-2. State the recommendation and its tipping factor plainly, before or after the list — never buried.
-3. Frame it as redirectable, not a question blocking progress: state the pick and proceed, don't wait for the user to choose, for low/medium stakes.
-4. If STAKES is high (irreversible, cross-system, or explicitly asked "what do you think"): stop and wait for the user's steer instead of proceeding on the recommendation. This is the one place efficiency yields to the skill's actual purpose — a genuinely high-stakes fork is exactly where the developer needs to be the one to clear it, not have it resolved for them.
+In `quick` mode: name + one-line tradeoff per option, skip the full three-part breakdown.
 
-> Compact phase summary: "Options offered, recommendation stated. {Proceeding on recommendation | Waiting for steer} based on STAKES."
+> Compact phase summary: "{N} options surfaced: {short names}."
+
+---
+
+## Phase 3 — RECOMMEND
+
+`[PHASE: RECOMMEND]`
+
+1. Name exactly one recommended option. A neutral list with no pick is not this skill's
+   output — surfacing options without a recommendation just moves the silent-decision
+   problem onto the user with extra steps.
+2. State the reason in one sentence, tied to `STAKES` and the real costs from Phase 2 —
+   not "it's generally better."
+3. **Proceed-vs-wait uses REVERSIBILITY, not STAKES alone.** A fork can be low-effort but
+   very-hard-to-reverse (delete vs. archive; a public-facing rename; anything that ships
+   externally) — STAKES alone would call that "low" and auto-proceed, which is wrong. Wait
+   for explicit confirmation whenever `REVERSIBILITY` is hard or very hard, regardless of
+   how low-effort the fork looked. Only proceed on the recommendation without waiting when
+   BOTH stakes are low/medium AND reversibility is easy.
+4. If this fork is worth protecting from silent re-litigation later (a real, recurring
+   decision point, not a one-off), write the closed fork to `contracts.md` — the same
+   mechanism `ALREADY_DECIDED` reads from. A fork resolved only in this turn's output and
+   never written down is not actually closed past this session.
+
+> Compact phase summary: "Recommend: {option}. Reason: {one line}. {Proceeding / Waiting for confirmation — reversibility: {easy/hard/very hard}}."
 
 ---
 
 ## Quality Bars (Non-Negotiable)
 
-- **No option without a cost:** every option lists what it gives up, not just what it gains. An option with no stated downside is marketing, not analysis.
-- **No abdication:** a recommendation is mandatory whenever this fires in default mode. "Here are some options" with nothing picked is not a valid OFFER output.
-- **Material difference only:** options must differ on REAL_FORK. Two options that differ only in naming or phrasing collapse to one — SHAPE must catch this before OFFER.
-- **Fork or nothing:** if DETECT cannot name a one-clause REAL_FORK, the skill does not fire — it answers directly. Manufacturing a fork where none exists trains the user to distrust every future "here are your options."
-- **Length matches stakes:** low-stakes forks get 2-3 sentences, not a five-option table. Over-ceremony on a small call is its own failure mode.
-- **Redirectable, not blocking:** default posture is "here's my pick and why, redirect me if wrong" — not "please choose," except when STAKES is genuinely high.
-- **Falsifiable fork, not a fluent one:** naming a fork in one clause is not enough — DETECT must state a concrete winning scenario for each side. If only one side has one, it wasn't a fork.
-- **No silent under-firing:** the fast-path is for genuine single-approach requests, not an escape hatch from doing SHAPE work on a real fork. If DETECT's falsifiability check produces two real winning scenarios, it does not get waved through as a fast-path.
-- **Respect the interruption budget:** at most one full OFFER per ~3 exchanges outside high-stakes cases, and never a full OFFER mid-dev-loop-phase — a one-line flag instead. A skill that interrupts constantly gets skimmed past, defeating its own purpose.
+- **Every surfaced list ends with exactly one recommendation.** A list with no pick, or
+  with "it depends," fails this skill's entire purpose.
+- **The veto check is not optional.** Running SURFACE on a fork that fails Phase 1's
+  veto manufactures ambiguity that was not real — this is as much a failure as silently
+  picking a real fork.
+- **At most 4 options, at most once per real fork.** A 5th option means the fork isn't
+  scoped; a second surface of the same fork means the interruption budget was violated.
+- **"What's lost by not choosing it" must be real, not filler.** If an option has
+  nothing genuinely lost by skipping it, it should not have been listed as an option.
+- **Never re-litigate a fork the user already closed this session — or a prior one.** Check
+  `ALREADY_DECIDED` against `contracts.md`, not only conversation context, before DETECT
+  runs — a fork closed before a compaction or in an earlier session must stay closed.
+- **Reversibility gates auto-proceed, stakes alone never does.** A low-stakes-looking fork
+  that is hard or very-hard to reverse always waits for explicit confirmation, even when
+  Phase 2's cost breakdown made it look cheap.
 
-**Hiring Validation** — does this skill run for real, or go through the motions?
-1. Given "what do you think about X" with a genuine fork, does it name the fork explicitly before listing options — or does it jump straight to a listicle with no shared axis?
-2. Given a request with exactly one reasonable approach, does it fast-path to a direct answer — or does it manufacture two fake options to look thorough?
-3. Does every option carry a real cost, or does one option get a strawman downside so the recommendation looks obviously correct?
-4. On a low-stakes exploratory question, is the output 2-3 sentences — or does it produce a five-paragraph decision memo for a throwaway call?
-5. Does OFFER ever end without a stated recommendation in default mode? (Should never happen.)
-6. Given a request mid-dev-loop with a real embedded fork, does it downgrade to a one-line flag instead of a full interrupting OFFER?
-7. Across a session, does it ever fire a full OFFER on 3+ consecutive exchanges — or does the interruption budget actually throttle it?
+### Hiring Validation
+
+1. **Veto discipline:** given "should I name this function `getUser` or `get_user`" in a
+   Python-only codebase with an established convention, this skill vetoes — one option is
+   not sane given the stated constraint, this is not a real fork.
+2. **Mandatory recommendation:** given a genuine fork (in-process cache vs. Redis for a
+   single-process app with no restart requirement), this skill never ends with "both are
+   valid, your call" — it names one and says why.
+3. **Interruption budget respected across a session boundary:** given the user said "let's
+   use Postgres" in a prior session, and that agreement was written to `contracts.md`, a
+   later task in a new session touching the database does not re-surface
+   Postgres-vs-alternative as an open fork — this must hold even though the conversation
+   that closed it is gone.
+4. **Reversibility overrides a low-stakes read:** given a fork like "delete these unused
+   files vs. archive them" — low effort either way — this skill does not auto-proceed on
+   "delete" just because STAKES looked low; it waits, because reversal is hard once deleted.
+5. **Disambiguation from challenge holds:** given a request that could plausibly trigger
+   both skills ("should we restructure this module?"), this skill does not fire alongside
+   challenge in the same turn — challenge runs first to confirm the problem framing itself
+   is right before this skill would surface paths for solving it.
+6. **Scope discipline:** given a fork with 6 candidate options, this skill collapses or
+   splits them to 4 or fewer rather than listing all 6.
+7. **Real cost, not filler:** every "what's lost" line names a specific, concrete forfeit
+   — never a generic "less flexibility" with nothing behind it.
 
 ---
 
 ## Example Flows
 
-**Low-stakes exploratory question:**
-> "what could we do about the flaky test in the payments suite?"
+**A genuine open fork:**
+> "We need to store session state — what's the best way to do this?"
 
-DETECT: fork = retry-the-flake vs. fix-the-race-condition. STAKES: low (test-only, reversible).
-SHAPE: option A (add retry) — fast, costs nothing but leaves the real bug live; option B (fix the race) — slower, actually resolves it.
-OFFER (2-3 sentences): "This is either a quick retry-wrap or an actual race-condition fix — retry is faster but leaves the bug live, fix is slower but real. I'd fix it since it's a payments path; flag if you want the fast patch instead."
+DETECT: fork = "in-process dict vs. Redis vs. SQLite for session state." Veto check:
+none apply — genuinely different cost/durability tradeoffs. 3 real options.
+SURFACE: in-process dict (zero infra, cost: state lost on restart) / Redis (survives
+restart, cost: new infra dependency + ops burden) / SQLite (survives restart, cost:
+none — already a project dependency, slight latency vs. in-process).
+RECOMMEND: SQLite — survives restart like Redis, zero new infra cost unlike Redis,
+already a dependency. Proceeding (medium stakes, easy to reverse — swapping the storage
+backend later touches one module).
 
-**High-stakes architectural fork:**
-> "how should we handle the cache invalidation for the new query-plan cache?"
+**A manufactured non-fork (veto fires):**
+> "Should I use a for loop or manually unroll it 50 times to sum this list?"
 
-DETECT: fork = TTL-based vs. event-driven invalidation. STAKES: high (cross-system, hard to reverse once callers depend on the semantics).
-SHAPE: 3 options (TTL-only, event-driven, hybrid) each with cost (staleness window vs. plumbing complexity vs. both).
-OFFER: structured list, one tradeoff line each, recommendation stated with tipping factor, then STOP and wait — stakes are high enough that proceeding without a steer is the wrong call.
+DETECT: candidate fork stated, but Phase 1 veto fires — only one option is sane, this
+isn't a real tradeoff. `[PHASE: DETECT] VETOED: not a real fork, proceeding directly.`
+No SURFACE, no RECOMMEND — just do the task.
 
-**Fast-path (no real fork):**
-> "add a null check before this Redis call"
+**Already-decided fork, correctly not reopened across a session boundary:**
+> `contracts.md` has "Postgres for storage" from a session 9 days ago. Now: "add a table for X."
 
-DETECT: exactly one reasonable approach. Fast-path — no options manufactured, direct answer given.
+DETECT: ALREADY_DECIDED check against contracts.md finds "Postgres for storage" — this
+candidate fork is closed, and it survived the gap between sessions because it was written
+to a file, not left in conversation context that no longer exists. Proceed directly.
 
-**`deepen:` follow-up:**
-> "deepen: the event-driven one"
+**Reversibility overrides a low-effort read:**
+> "Should I delete these three unused files or move them to an archive folder?"
 
-Previous OFFER surfaced 3 options. User picked one. Skill drops the other two and expands the chosen option into a normal implementation-ready answer — no re-litigation of the fork.
+DETECT: fork = "delete vs. archive," genuinely different outcomes. SURFACE: delete (cost:
+zero disk use, lost: unrecoverable if wrong) / archive (cost: some clutter, lost: nothing —
+fully reversible). RECOMMEND: archive — the disk-space savings from deleting are trivial
+compared to the cost of being wrong. Reversibility: very hard for delete, easy for archive
+— WAITING for confirmation even though this looked like a low-stakes, low-effort choice.
+
+**`quick` mode:**
+> "quick: should this endpoint be sync or async?"
+
+DETECT: real fork (blocking I/O inside vs. not). SURFACE (quick): sync (simple, blocks
+under load) / async (more complex, scales under concurrent load). RECOMMEND: depends on
+real traffic pattern — name the one that fits the stated/observed load, one line.
