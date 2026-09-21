@@ -5,6 +5,8 @@ sys.path.insert(0, "/shared")
 
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state, _record_outcome_followup, enrich_route_result as _enrich_route_result_impl, write_routing_context as _write_routing_context_impl, append_gate_to_active_task as _append_gate_impl
 from routing import route_task as _route_task
@@ -14,6 +16,7 @@ from health import (
     apply_proposal as _apply_proposal,
     _load_pending_proposals,
     _build_review_bundle,
+    AUDIT_DIR as _AUDIT_DIR,
 )
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
 from schemas import (
@@ -2447,6 +2450,102 @@ def check_ab_pilot_status(experiment: str = "rationale_terseness", threshold: in
     """
     from ab_experiments import pilot_status
     return pilot_status(YOUK_ROOT, experiment, threshold)
+
+
+_AGENT_GUARD_ROOT = YOUK_ROOT / "knowledge" / "agent-guards"
+_VALID_AGENT_TYPES = {"paperclip_support", "paperclip_department_head"}
+
+
+@mcp.custom_route("/agent-guards", methods=["GET"])
+async def get_agent_guards(request: Request) -> JSONResponse:
+    """
+    Plain HTTP guard service for agents that cannot do an MCP handshake (Paperclip's
+    Codex/Claude-backed agents, invoked via curl from their own shell tools, not this
+    orchestrating session's MCP-mounted youk-core).
+
+    Real problem this closes (2026-09-21): a standing rule found after a real incident
+    had to be hand-copied into 11 separate AGENTS.md files, verified once by grep, with
+    no mechanism to catch future drift between them. This endpoint makes the canonical
+    content in knowledge/agent-guards/{agent_type}.md the single source of truth --
+    every agent of a given type fetches the same live content on its own heartbeat,
+    no propagation step, no drift possible between copies because there is only one copy.
+
+    Query param: agent_type — one of _VALID_AGENT_TYPES. No auth: this is guard
+    *content* (behavioral instructions), not privileged data — same trust level as a
+    public SKILL.md file, matching custom_route's own documented no-auth default.
+
+    Returns: {agent_type, guards: <real markdown content>, source} or 400 on an
+    unrecognized agent_type, listing the valid set so a caller can self-correct.
+    """
+    agent_type = request.query_params.get("agent_type", "")
+    if agent_type not in _VALID_AGENT_TYPES:
+        return JSONResponse(
+            {"error": f"unknown agent_type {agent_type!r}", "valid_agent_types": sorted(_VALID_AGENT_TYPES)},
+            status_code=400,
+        )
+    guard_file = _AGENT_GUARD_ROOT / f"{agent_type}.md"
+    if not guard_file.exists():
+        return JSONResponse(
+            {"error": f"no guard content on disk for {agent_type!r} at {guard_file}"},
+            status_code=404,
+        )
+    return JSONResponse({
+        "agent_type": agent_type,
+        "guards": guard_file.read_text(),
+        "source": f"youk/knowledge/agent-guards/{agent_type}.md",
+    })
+
+
+@mcp.custom_route("/agent-guards/gap", methods=["POST"])
+async def report_agent_gap(request: Request) -> JSONResponse:
+    """
+    Feedback half of the agent-guards service: a Paperclip agent that hits a real gap
+    (a guard that should exist but doesn't, one that fired wrong, a case it wasn't
+    covered for) reports it here instead of the finding evaporating with the run that
+    found it. Written in the exact `SkillGap:` line shape self_heal() already parses
+    from audit logs, so a real, recurring Paperclip-agent gap surfaces through the same
+    signal pipeline Claude Code session gaps already do -- one accumulation point, not two.
+
+    Body: {agent_type, agent_name, gap} — all required strings, gap non-empty.
+    Returns: {logged: bool, path} or 422 on missing/empty fields.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"logged": False, "error": "body must be JSON"}, status_code=422)
+
+    agent_type = str(body.get("agent_type", "")).strip()
+    agent_name = str(body.get("agent_name", "")).strip()
+    gap = str(body.get("gap", "")).strip()
+    if agent_type not in _VALID_AGENT_TYPES or not agent_name or not gap:
+        return JSONResponse(
+            {
+                "logged": False,
+                "error": "agent_type (valid set), agent_name, and gap are all required and non-empty",
+                "valid_agent_types": sorted(_VALID_AGENT_TYPES),
+            },
+            status_code=422,
+        )
+
+    from datetime import datetime, UTC
+    now = datetime.now(UTC)
+    _AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+    audit_file = _AUDIT_DIR / f"{now.strftime('%Y-%m')}.md"
+    block = (
+        f"\n### Paperclip Agent Report — {now.strftime('%Y-%m-%d %H:%M')} UTC\n"
+        f"Project: circaid\n"
+        f"Agent: {agent_name} ({agent_type})\n"
+        f"SkillGap: agent-guards ({agent_type}) — {gap}\n"
+    )
+    with open(audit_file, "a") as f:
+        f.write(block)
+    # audit_file is a container-internal path (this server runs in the youk-core
+    # container). A caller outside the container -- a Paperclip agent on the host,
+    # or a host-side test -- cannot resolve it directly; return the path relative
+    # to CLAUDE_ROOT too, the same fix PR #126 already applied to apply_proposal's
+    # FILE_CREATE/REFERENCE_ADD results for the exact same reason.
+    path_relative = str(audit_file).removeprefix(str(CLAUDE_ROOT)).lstrip("/")
+    return JSONResponse({"logged": True, "path": str(audit_file), "path_relative": path_relative})
 
 
 if __name__ == "__main__":
