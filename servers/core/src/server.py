@@ -29,7 +29,7 @@ from challenge_gate import check_challenge_gate as _check_challenge_gate
 from ceremony_sequencer import record_gate as _record_gate, check_order as _check_order
 from intake_gate import check_intake_gate as _check_intake_gate
 from intent import optimize_intent as _optimize_intent
-from compaction import build_brief, write_contracts
+from compaction import build_brief, write_contracts, _slug as _project_slug
 from tokens import init_token_tracker, record_checkpoint
 from session_slug import get_session_slug as _get_session_slug_impl
 import state_paths as _sp
@@ -1584,6 +1584,38 @@ def compact_context(project_dir: str, intent: str = "") -> dict:
     """
     _reset_tool_call_count()
     return build_brief(project_dir, intent)
+
+
+@mcp.tool()
+def checkpoint_now(project_dir: str, note: str, agent: str = "") -> dict:
+    """
+    Write a cheap, one-line save point between full checkpoints.
+
+    compact_context/task_checkpoint/session_end are heavy and only fire at big
+    moments. Between them, a decision made only in conversation is invisible to
+    a fresh session and lost entirely if the session ends without warning (a
+    usage limit, an agent switch mid-task) — nothing in youk can see that coming
+    in advance, so the fix is making saves cheap enough to call constantly
+    instead of trying to predict the cutoff.
+
+    Call this after any non-trivial decision or sub-goal change — not on every
+    tool call, but whenever losing this specific line would mean re-deriving
+    work. The note is surfaced once, automatically, at the next full checkpoint
+    (session_start, compact_context, task_checkpoint) in either Claude or Codex,
+    then consumed — it will not repeat.
+
+    project_dir: The current project directory (same as session_start).
+    note: One line — the current sub-goal or decision, not a transcript excerpt.
+          Rejected if empty or over 280 chars; write the concrete version, not
+          a paraphrase of the conversation.
+    agent: Optional — "claude" or "codex", so the next session/agent to read
+           this knows whether it's its own trail or a handoff from the other.
+
+    Returns: {ok, written, pending, state_written} or {ok: False, error_type, error}.
+    """
+    from turn_checkpoint import write_note as _write_checkpoint_note
+    slug = _project_slug(project_dir)
+    return _write_checkpoint_note(YOUK_ROOT, slug, note, agent=agent)
 
 
 @mcp.tool()
