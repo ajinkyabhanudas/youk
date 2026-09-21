@@ -22,6 +22,7 @@ mcp_tools:
     - {tool: apply_proposal, refs: [README.md]}
     - {tool: task_checkpoint, refs: [README.md, docs/claude-md-template.md]}
     - {tool: compact_context, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: checkpoint_now, refs: [README.md]}
     - {tool: track_tokens, refs: [README.md, docs/claude-md-template.md]}
     - {tool: check_doc_graph, refs: [README.md, docs/doc-map.yaml]}
     - {tool: promote_to_global_contracts, refs: [README.md, docs/claude-md-template.md]}

@@ -29,6 +29,18 @@ One loop. Exit on silence.
 
 ## Invocation Grammar
 
+Triggers on any M+ task, including one being *handed to someone else*, not only work this
+session will build directly: writing a delegation ticket, a build brief for another agent, or
+any spec that a different actor (human or agent) will implement from is the same M+ trigger as
+building it yourself. A ticket is itself a direction — get it wrong and the delegate builds the
+wrong thing correctly, which is more expensive to catch than catching it before dispatch. Run at
+minimum Lens 3 (hidden assumptions) against the ticket's own claims before dispatch: does this
+ticket's specified behavior actually match what the artifact it modifies already declares
+(a metric's stated definition, an existing contract, a prior decision)? A real incident (CIR-98,
+2026-09-21): a ticket specified writing a running cumulative count for a metric OUTCOMES.md
+declared as "weekly" — a hidden assumption challenge would have caught this before the delegate
+built and shipped it, instead of costing a second review-and-fix cycle after.
+
 | Invocation | Behaviour |
 |------------|-----------|
 | *(no directive)* | Full challenge loop — all four lenses, iterate until stable |
@@ -38,9 +50,6 @@ One loop. Exit on silence.
 | `retest: [revised direction]` | Given a revised direction, run one more challenge round to confirm it survives |
 | `silent` | Run challenge internally, only surface if a blocking objection is found |
 | `plan: [task list]` | Plan coherence check — Lens 2+3 across the full task list as a unit, then Lens 3 quick on tasks that need sharpening. Fires before any task is implemented. |
-
----
-
 ## Context Capture (Always First)
 
 Extract before any phase:

@@ -334,6 +334,20 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
             f"Project: {slug} | Session #{session_n} | Dir: {project}"
         )
 
+        # Since-last-checkpoint notes — cheap save points written between full
+        # checkpoints (see turn_checkpoint.py). Surfaced once, then consumed, so a
+        # fresh session or a handoff to the other agent never re-reads a stale note.
+        try:
+            from turn_checkpoint import render_and_consume as _render_checkpoint_notes
+            _tc_result = _render_checkpoint_notes(YOUK_ROOT, slug)
+            if _tc_result.get("lines"):
+                sections.append(
+                    f"## Since last full checkpoint {TIER_DECISION}\n"
+                    + "\n".join(_tc_result["lines"])
+                )
+        except Exception:
+            pass
+
         # Session goal — DECISION tier so success_criteria survives compaction.
         # Allows the loop to re-evaluate goal_met after context compression.
         goal_block = _load_session_goal()
