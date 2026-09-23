@@ -33,6 +33,11 @@ contains provider, model, and schema version only; credentials remain environmen
 Unavailable or incompatible providers degrade explicitly, and execution records retain
 hashes and policy outcomes rather than prompt or response content.
 
+Information governance follows the same rule: explicit, versioned local metadata
+declares non-code authority; links remain discovery evidence. Hash lineage catches stale
+derived files, while bounded local BM25 retrieval controls context cost without an LLM,
+embedding service, or vendor-specific storage. See [information governance](docs/information-governance.md).
+
 You don't change how you work. You just install it.
 
 | A normal AI agent | youk |

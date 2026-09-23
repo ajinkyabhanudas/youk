@@ -346,6 +346,16 @@ environment. Unsupported providers report an explicit degraded result and never 
 back silently. Execution traces contain hashes and policy outcomes, never prompts or
 responses.
 
+## Information governance
+
+For projects that need lifecycle checks on non-code files, add a versioned
+`docs/information-governance.yaml` registry. It explicitly marks source-of-truth and
+derived files; links and imports remain discovery evidence and never imply authority.
+youk compares authority content hashes to surface stale derived files and reports an
+absent registry as unknown rather than healthy. Retrieval remains local BM25 with fixed
+query, result, graph-expansion, and context budgets. See
+[Information governance](information-governance.md) for the schema and operator view.
+
 ## Agent-host selection
 
 `/youk/state/agent-host.json` may explicitly select a host using only `host_id` and

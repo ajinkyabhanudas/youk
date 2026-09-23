@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import json
 import re
 import sqlite3
 import subprocess
@@ -84,6 +85,26 @@ CREATE TABLE IF NOT EXISTS file_relations (
 
 CREATE INDEX IF NOT EXISTS file_relations_to ON file_relations (to_path);
 CREATE INDEX IF NOT EXISTS file_relations_from ON file_relations (from_project, from_path);
+
+CREATE TABLE IF NOT EXISTS information_governance (
+    project_slug TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    role TEXT NOT NULL,
+    authority_path TEXT NOT NULL DEFAULT '',
+    lifecycle TEXT NOT NULL DEFAULT 'maintained',
+    verified_authority_hash TEXT NOT NULL DEFAULT '',
+    registry_version INTEGER NOT NULL,
+    PRIMARY KEY (project_slug, file_path)
+);
+
+CREATE INDEX IF NOT EXISTS information_governance_authority
+    ON information_governance (project_slug, authority_path);
+
+CREATE TABLE IF NOT EXISTS information_governance_state (
+    project_slug TEXT PRIMARY KEY,
+    registry_status TEXT NOT NULL,
+    error_code TEXT NOT NULL DEFAULT ''
+);
 """
 
 # File extensions worth indexing, by type
@@ -100,6 +121,15 @@ _SKIP_DIRS = {
 
 # Max file size to index (bytes) — skip large generated files
 _MAX_FILE_BYTES = 256 * 1024  # 256 KB
+_MAX_QUERY_CHARS = 500
+_MAX_QUERY_TERMS = 32
+_MAX_RESULTS = 50
+_MAX_RELATED_SEEDS = 20
+_MAX_RELATED_NEIGHBORS = 10
+_MAX_TOKEN_BUDGET = 8_000
+_GOVERNANCE_REGISTRY = Path("docs/information-governance.yaml")
+_GOVERNANCE_ROLES = {"source_of_truth", "derived", "reference_only"}
+_GOVERNANCE_LIFECYCLES = {"maintained", "generated", "archived"}
 
 
 class _DB:
@@ -378,6 +408,146 @@ def _git_dirty_paths(project_dir: Path) -> set[str] | None:
         return None
 
 
+def _normalise_project_path(value: str) -> str | None:
+    """Return a canonical project-relative POSIX path, or None when unsafe."""
+    candidate = Path(value)
+    if not value or candidate.is_absolute() or "://" in value:
+        return None
+    parts: list[str] = []
+    for part in value.replace("\\", "/").split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            return None
+        parts.append(part)
+    return "/".join(parts) or None
+
+
+def _load_governance_registry(project_path: Path) -> dict[str, Any]:
+    """Load explicit lifecycle declarations without inferring them from links."""
+    registry_path = project_path / _GOVERNANCE_REGISTRY
+    if not registry_path.exists():
+        return {"status": "absent", "version": 0, "entries": [], "errors": []}
+    try:
+        import yaml
+        raw = yaml.safe_load(registry_path.read_text()) or {}
+    except Exception as exc:
+        return {"status": "invalid", "version": 0, "entries": [],
+                "errors": [f"registry_parse_error:{type(exc).__name__}"]}
+
+    version = raw.get("version")
+    entries = raw.get("files")
+    if version != 1 or not isinstance(entries, list):
+        return {"status": "invalid", "version": version or 0, "entries": [],
+                "errors": ["registry_schema_invalid"]}
+
+    errors: list[str] = []
+    normalised: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in entries:
+        if not isinstance(item, dict):
+            errors.append("registry_entry_invalid")
+            continue
+        unknown_fields = set(item) - {"path", "role", "authority", "lifecycle"}
+        if unknown_fields:
+            errors.append(f"registry_unknown_fields:{','.join(sorted(unknown_fields))}")
+            continue
+        path = _normalise_project_path(str(item.get("path", "")))
+        role = item.get("role")
+        authority = _normalise_project_path(str(item.get("authority", ""))) \
+            if item.get("authority") else ""
+        lifecycle = str(item.get("lifecycle", "maintained"))
+        if not path or path in seen or role not in _GOVERNANCE_ROLES \
+                or lifecycle not in _GOVERNANCE_LIFECYCLES:
+            errors.append(f"registry_entry_invalid:{item.get('path', '')}")
+            continue
+        if role == "derived" and not authority:
+            errors.append(f"derived_authority_missing:{path}")
+            continue
+        if role != "derived" and authority:
+            errors.append(f"authority_not_allowed:{path}")
+            continue
+        seen.add(path)
+        normalised.append({"path": path, "role": role, "authority": authority,
+                           "lifecycle": lifecycle})
+
+    by_path = {entry["path"]: entry for entry in normalised}
+    for entry in normalised:
+        authority = entry["authority"]
+        if authority and (authority not in by_path or by_path[authority]["role"] != "source_of_truth"):
+            errors.append(f"authority_not_source_of_truth:{entry['path']}")
+
+    def _has_cycle(path: str, visiting: set[str], visited: set[str]) -> bool:
+        if path in visiting:
+            return True
+        if path in visited:
+            return False
+        visited.add(path)
+        authority = by_path[path]["authority"]
+        return bool(authority and authority in by_path and _has_cycle(authority, visiting | {path}, visited))
+
+    visited: set[str] = set()
+    if any(_has_cycle(path, set(), visited) for path in by_path):
+        errors.append("authority_cycle")
+    return {"status": "invalid" if errors else "valid", "version": version,
+            "entries": normalised, "errors": sorted(set(errors))}
+
+
+def _record_governance_state(db_path: Path, project_slug: str, status: str, error_code: str = "") -> None:
+    with _connect(db_path) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO information_governance_state "
+            "(project_slug, registry_status, error_code) VALUES (?, ?, ?)",
+            (project_slug, status, error_code),
+        )
+
+
+def _is_safe_existing_file(project_path: Path, relative_path: str) -> bool:
+    try:
+        (project_path / relative_path).resolve().relative_to(project_path.resolve())
+        return (project_path / relative_path).is_file()
+    except (OSError, ValueError):
+        return False
+
+
+def _trim_results_to_budget(results: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    """Keep serialized retrieval evidence inside a conservative token upper bound."""
+    kept: list[dict[str, Any]] = []
+    used = 0
+    for result in results:
+        cost = len(json.dumps(result, sort_keys=True, ensure_ascii=True))
+        if used + cost > _MAX_TOKEN_BUDGET:
+            break
+        kept.append(result)
+        used += cost
+    return kept, used
+
+
+def _validate_limit(limit: int, maximum: int = _MAX_RESULTS) -> tuple[int | None, str | None]:
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+        return None, "invalid_limit"
+    if limit > maximum:
+        return None, "limit_exceeds_maximum"
+    return limit, None
+
+
+def _retrieval_budget(query: str, limit: int) -> dict[str, Any]:
+    if len(query) > _MAX_QUERY_CHARS:
+        return {"error": "query_too_long"}
+    safe_query = re.sub(r"[^\w\s]", " ", query).strip()
+    terms = safe_query.split()
+    if not terms:
+        return {"error": "invalid_query"}
+    if len(terms) > _MAX_QUERY_TERMS:
+        return {"error": "query_too_many_terms"}
+    valid_limit, error = _validate_limit(limit)
+    if error:
+        return {"error": error}
+    return {"safe_query": " ".join(terms), "limit": valid_limit,
+            "estimated_tokens": min(_MAX_TOKEN_BUDGET, valid_limit * 80),
+            "token_budget": _MAX_TOKEN_BUDGET}
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -404,23 +574,40 @@ def index_project(
         return {"indexed": 0, "skipped": 0, "total_files": 0, "project_slug": project_slug,
                 "error": f"project_dir not found: {project_dir}"}
 
+    registry = _load_governance_registry(project_path)
+    if registry["status"] == "invalid":
+        _record_governance_state(db_path, project_slug, "invalid", "governance_registry_invalid")
+        return {"indexed": 0, "skipped": 0, "total_files": 0, "project_slug": project_slug,
+                "error": "governance_registry_invalid", "governance": registry}
+    for entry in registry["entries"]:
+        if not _is_safe_existing_file(project_path, entry["path"]):
+            registry["errors"].append(f"declared_path_missing:{entry['path']}")
+    if registry["errors"]:
+        registry["status"] = "invalid"
+        _record_governance_state(db_path, project_slug, "invalid", "governance_registry_invalid")
+        return {"indexed": 0, "skipped": 0, "total_files": 0, "project_slug": project_slug,
+                "error": "governance_registry_invalid", "governance": registry}
+
     # force=True: bypass all skip logic (dirty-bit and hash)
     dirty_paths = None if force else _git_dirty_paths(project_path)
     now = _dt.now(_UTC).isoformat()
 
-    # Load existing hashes for this project to enable hash-skip (not needed when force)
+    # Load existing hashes for hash-skip and hash-lineage verification. Force bypasses
+    # skipping, but must not claim a derived file was re-verified when bytes did not change.
     existing_hashes: dict[str, str] = {}
-    if not force:
-        with _connect(db_path) as conn:
-            rows = conn.execute(
-                "SELECT file_path, file_hash FROM file_index WHERE project_slug = ?",
-                (project_slug,),
-            ).fetchall()
-            existing_hashes = {r["file_path"]: r["file_hash"] for r in rows}
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT file_path, file_hash FROM file_index WHERE project_slug = ?",
+            (project_slug,),
+        ).fetchall()
+        existing_hashes = {r["file_path"]: r["file_hash"] for r in rows}
 
     indexed = 0
     skipped = 0
     total = 0
+    indexed_paths: set[str] = set()
+    changed_paths: set[str] = set()
+    manifest: set[str] = set()
 
     with _connect(db_path) as conn:
         for file_path in project_path.rglob("*"):
@@ -438,6 +625,7 @@ def index_project(
 
             total += 1
             rel = str(file_path.relative_to(project_path))
+            manifest.add(rel)
 
             if not force:
                 # Dirty-bit fast path: git says file is clean → check hash
@@ -455,6 +643,8 @@ def index_project(
                         continue
 
             current_hash = _file_hash(file_path)
+            if existing_hashes.get(rel) != current_hash:
+                changed_paths.add(rel)
             summary, symbols, imports, headings = _extract_semantic_units(file_path)
 
             # DELETE + INSERT rather than ON CONFLICT UPDATE so that FTS5 triggers
@@ -494,6 +684,22 @@ def index_project(
             _upsert_relations(conn, project_slug, rel, edges)
 
             indexed += 1
+            indexed_paths.add(rel)
+
+        # A completed scan is authoritative for the project manifest. Reconcile
+        # deleted/renamed files and every edge/registry record attached to them in
+        # the same transaction so stale paths cannot survive as valid evidence.
+        prior_rows = conn.execute(
+            "SELECT file_path FROM file_index WHERE project_slug = ?", (project_slug,)
+        ).fetchall()
+        removed_paths = {row["file_path"] for row in prior_rows} - manifest
+        for removed in removed_paths:
+            conn.execute("DELETE FROM file_index WHERE project_slug = ? AND file_path = ?",
+                         (project_slug, removed))
+            conn.execute("DELETE FROM file_relations WHERE from_project = ? AND (from_path = ? OR to_path = ?)",
+                         (project_slug, removed, removed))
+        conn.execute("DELETE FROM file_relations WHERE from_project = ? AND rel_type = 'doc_map_ref'",
+                     (project_slug,))
 
         # After walking all files, load explicit doc-map edges (authoritative declarations).
         # These supplement extracted edges with higher-weight, manually maintained links.
@@ -506,6 +712,40 @@ def index_project(
                 [(project_slug, fp, tp, rt, w) for fp, tp, rt, w in docmap_raw],
             )
 
+        prior_governance = {
+            row["file_path"]: row["verified_authority_hash"]
+            for row in conn.execute(
+                "SELECT file_path, verified_authority_hash FROM information_governance WHERE project_slug = ?",
+                (project_slug,),
+            ).fetchall()
+        }
+        conn.execute("DELETE FROM information_governance WHERE project_slug = ?", (project_slug,))
+        for entry in registry["entries"]:
+            authority_hash = ""
+            if entry["authority"]:
+                row = conn.execute(
+                    "SELECT file_hash FROM file_index WHERE project_slug = ? AND file_path = ?",
+                    (project_slug, entry["authority"]),
+                ).fetchone()
+                authority_hash = row["file_hash"] if row else ""
+            verified_hash = ""
+            if entry["role"] == "derived":
+                verified_hash = authority_hash if entry["path"] in changed_paths or entry["path"] not in prior_governance \
+                    else prior_governance[entry["path"]]
+            conn.execute(
+                "INSERT INTO information_governance "
+                "(project_slug, file_path, role, authority_path, lifecycle, verified_authority_hash, registry_version) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (project_slug, entry["path"], entry["role"], entry["authority"], entry["lifecycle"],
+                 verified_hash, registry["version"]),
+            )
+
+        conn.execute(
+            "INSERT OR REPLACE INTO information_governance_state "
+            "(project_slug, registry_status, error_code) VALUES (?, ?, '')",
+            (project_slug, registry["status"]),
+        )
+
         conn.commit()
 
     return {
@@ -513,6 +753,9 @@ def index_project(
         "skipped": skipped,
         "total_files": total,
         "project_slug": project_slug,
+        "removed_count": len(removed_paths),
+        "governance": {"status": registry["status"], "declared_count": len(registry["entries"]),
+                       "errors": registry["errors"]},
     }
 
 
@@ -530,13 +773,14 @@ def find_relevant(
     Results from the current project are boosted: returned first, then other projects.
     """
     db_path = db_path if db_path is not None else _INDEX_DB
-    if not query.strip():
-        return {"results": [], "query": query, "total": 0}
-
-    # Sanitise FTS5 query: strip special characters that break the parser
-    safe_query = re.sub(r'[^\w\s]', ' ', query).strip()
-    if not safe_query:
-        return {"results": [], "query": query, "total": 0}
+    if not db_path.exists():
+        return {"results": [], "query": query, "total": 0, "status": "absent"}
+    budget = _retrieval_budget(query, limit)
+    if "error" in budget:
+        return {"results": [], "query": query, "total": 0, "status": "invalid",
+                "error": budget["error"]}
+    safe_query = budget["safe_query"]
+    limit = budget["limit"]
 
     with _connect(db_path) as conn:
         try:
@@ -580,7 +824,8 @@ def find_relevant(
                     (safe_query, limit),
                 ).fetchall()
         except sqlite3.OperationalError:
-            return {"results": [], "query": query, "total": 0, "error": "fts_query_failed"}
+            return {"results": [], "query": query, "total": 0, "status": "failed",
+                    "error": "fts_query_failed"}
 
     results = [
         {
@@ -591,7 +836,11 @@ def find_relevant(
         }
         for r in rows
     ]
-    return {"results": results, "query": query, "total": len(results)}
+    results, serialized_bytes = _trim_results_to_budget(results)
+    return {"results": results, "query": query, "total": len(results), "status": "ready",
+            "retrieval_budget": {"result_limit": limit, "serialized_bytes": serialized_bytes,
+                                 "token_budget": _MAX_TOKEN_BUDGET,
+                                 "truncated": len(results) == limit}}
 
 
 def find_affected(
@@ -641,72 +890,44 @@ def find_stale_relations(
     db_path: Path | None = None,
     limit: int = 20,
 ) -> dict[str, Any]:
-    """Graph-driven staleness: walk file_relations and flag derived files whose source
-    was re-indexed more recently than they were.
-
-    This replaces the hand-maintained 13-entry doc-map.yaml staleness list with the full
-    file_relations graph (all indexed links). For each relation (from_path -> to_path),
-    if the authority/source (from_path) has a newer last_indexed than the derived doc
-    (to_path), the derived doc is a staleness candidate — the source changed, the doc may
-    not have followed. Uses last_indexed (updated on each re-index when file_hash changes)
-    as the freshness signal; both endpoints must be indexed to compare.
-
-    project_slug: restrict to one project's relations, or None for all.
-    Returns {"stale": [{from_path, to_path, rel_type, source_indexed, derived_indexed,
-             project_slug}], "checked": int, "stale_count": int}
-    """
+    """Return stale derived files from explicit hash-lineage declarations only."""
     db_path = db_path if db_path is not None else _INDEX_DB
+    valid_limit, error = _validate_limit(limit)
+    if error:
+        return {"stale": [], "checked": 0, "stale_count": 0, "error": error}
+    if not db_path.exists():
+        return {"stale": [], "checked": 0, "stale_count": 0, "status": "absent"}
     project_clause = ""
-    params: tuple = ()
+    params: tuple[Any, ...] = ()
     if project_slug is not None:
-        project_clause = " WHERE r.from_project = ?"
+        project_clause = " AND g.project_slug = ?"
         params = (project_slug,)
-
     with _connect(db_path) as conn:
-        # Join each relation to its two endpoints' last_indexed timestamps.
-        # A relation is stale when the source endpoint is newer than the derived endpoint.
         rows = conn.execute(
             f"""
-            SELECT r.from_project AS project_slug, r.from_path, r.to_path, r.rel_type,
-                   src.last_indexed AS source_indexed,
-                   dst.last_indexed AS derived_indexed
-            FROM file_relations r
-            JOIN file_index src
-              ON src.project_slug = r.from_project AND src.file_path = r.from_path
-            JOIN file_index dst
-              ON dst.project_slug = r.from_project AND dst.file_path = r.to_path
-            {project_clause}
+            SELECT g.project_slug, g.file_path AS to_path, g.authority_path AS from_path,
+                   g.verified_authority_hash, src.file_hash AS authority_hash,
+                   src.last_indexed AS source_indexed, dst.last_indexed AS derived_indexed
+            FROM information_governance g
+            LEFT JOIN file_index src ON src.project_slug = g.project_slug AND src.file_path = g.authority_path
+            LEFT JOIN file_index dst ON dst.project_slug = g.project_slug AND dst.file_path = g.file_path
+            WHERE g.role = 'derived' {project_clause}
+            ORDER BY src.last_indexed DESC, g.file_path ASC
+            LIMIT ?
             """,
-            params,
+            (*params, valid_limit + 1),
         ).fetchall()
-
-    checked = len(rows)
-    stale = []
-    for r in rows:
-        src_t = r["source_indexed"]
-        dst_t = r["derived_indexed"]
-        if src_t is None or dst_t is None:
-            continue
-        if src_t > dst_t:
-            stale.append(
-                {
-                    "project_slug": r["project_slug"],
-                    "from_path": r["from_path"],
-                    "to_path": r["to_path"],
-                    "rel_type": r["rel_type"],
-                    "source_indexed": src_t,
-                    "derived_indexed": dst_t,
-                }
-            )
-
-    # Most-recently-diverged first (by how new the source is), capped.
-    # last_indexed is an ISO-8601 string — lexical order equals chronological order.
-    stale.sort(key=lambda s: s["source_indexed"], reverse=True)
-    return {
-        "stale": stale[:limit],
-        "checked": checked,
-        "stale_count": len(stale),
-    }
+    stale: list[dict[str, Any]] = []
+    unknown_count = 0
+    for row in rows:
+        if not row["authority_hash"] or not row["derived_indexed"]:
+            unknown_count += 1
+        elif row["authority_hash"] != row["verified_authority_hash"]:
+            stale.append({"project_slug": row["project_slug"], "from_path": row["from_path"],
+                          "to_path": row["to_path"], "rel_type": "derives_from",
+                          "source_indexed": row["source_indexed"], "derived_indexed": row["derived_indexed"]})
+    return {"stale": stale[:valid_limit], "checked": len(rows), "stale_count": len(stale),
+            "unknown_count": unknown_count, "truncated": len(rows) > valid_limit, "status": "ready"}
 
 
 def find_relations(
@@ -744,8 +965,8 @@ def find_relations(
                 """SELECT to_path, rel_type, weight
                    FROM file_relations
                    WHERE from_project = ? AND from_path = ?
-                   ORDER BY weight DESC, to_path""",
-                (project_slug, file_path),
+                   ORDER BY weight DESC, to_path LIMIT ?""",
+                (project_slug, file_path, _MAX_RESULTS + 1),
             ).fetchall()
             outbound = [
                 {"file_path": r["to_path"], "rel_type": r["rel_type"],
@@ -758,8 +979,8 @@ def find_relations(
                 """SELECT from_path, rel_type, weight
                    FROM file_relations
                    WHERE from_project = ? AND to_path = ?
-                   ORDER BY weight DESC, from_path""",
-                (project_slug, file_path),
+                   ORDER BY weight DESC, from_path LIMIT ?""",
+                (project_slug, file_path, _MAX_RESULTS + 1),
             ).fetchall()
             inbound = [
                 {"file_path": r["from_path"], "rel_type": r["rel_type"],
@@ -767,6 +988,10 @@ def find_relations(
                 for r in rows
             ]
 
+    outbound_truncated = len(outbound) > _MAX_RESULTS
+    inbound_truncated = len(inbound) > _MAX_RESULTS
+    outbound = outbound[:_MAX_RESULTS]
+    inbound = inbound[:_MAX_RESULTS]
     all_relations = outbound + inbound
     return {
         "file_path": file_path,
@@ -776,6 +1001,7 @@ def find_relations(
         "total": len(all_relations),
         "outbound_count": len(outbound),
         "inbound_count": len(inbound),
+        "truncated": outbound_truncated or inbound_truncated,
     }
 
 
@@ -802,8 +1028,14 @@ def find_related_docs(
     limit: max results per bucket (code and docs each capped separately)
     """
     db_path = db_path if db_path is not None else _INDEX_DB
-    if not query.strip():
-        return {"related_code": [], "related_docs": [], "query": query, "total": 0}
+    valid_limit, error = _validate_limit(limit, _MAX_RELATED_SEEDS)
+    if error:
+        return {"related_code": [], "related_docs": [], "query": query, "total": 0,
+                "status": "invalid", "error": error}
+    limit = valid_limit
+    if not db_path.exists():
+        return {"related_code": [], "related_docs": [], "query": query, "total": 0,
+                "status": "absent"}
 
     _DOC_SUFFIXES = {".md", ".rst", ".txt"}
     _CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".rb"}
@@ -856,8 +1088,8 @@ def find_related_docs(
                     """SELECT to_path, rel_type, weight
                        FROM file_relations
                        WHERE from_project = ? AND from_path = ?
-                       ORDER BY weight DESC LIMIT 10""",
-                    (slug, fp),
+                       ORDER BY weight DESC, to_path LIMIT ?""",
+                    (slug, fp, _MAX_RELATED_NEIGHBORS),
                 ).fetchall()
 
                 # Inbound edges pointing to this file
@@ -865,8 +1097,8 @@ def find_related_docs(
                     """SELECT from_path, rel_type, weight
                        FROM file_relations
                        WHERE from_project = ? AND to_path = ?
-                       ORDER BY weight DESC LIMIT 10""",
-                    (slug, fp),
+                       ORDER BY weight DESC, from_path LIMIT ?""",
+                    (slug, fp, _MAX_RELATED_NEIGHBORS),
                 ).fetchall()
 
                 for row in list(out_rows) + list(in_rows):
@@ -901,6 +1133,8 @@ def find_related_docs(
         "related_code": code_results[:limit],
         "related_docs": doc_results[:limit],
         "total": len(code_results[:limit]) + len(doc_results[:limit]),
+        "status": bm25.get("status", "ready"),
+        "retrieval_budget": bm25.get("retrieval_budget", {}),
     }
 
 
@@ -946,3 +1180,49 @@ def get_index_stats(project_slug: str | None = None, db_path: Path | None = None
         "relations": relation_summary,
         "total_relations": sum(relation_summary.values()),
     }
+
+
+def get_information_governance_health(
+    project_slug: str,
+    db_path: Path | None = None,
+) -> dict[str, Any]:
+    """Expose bounded, content-free evidence about lifecycle governance health."""
+    db_path = db_path if db_path is not None else _INDEX_DB
+    if not db_path.exists():
+        return {"project_slug": project_slug, "status": "absent", "declared": 0,
+                "derived": 0, "stale": 0, "unknown": 0, "coverage": "unknown"}
+    with _connect(db_path) as conn:
+        state = conn.execute(
+            "SELECT registry_status, error_code FROM information_governance_state WHERE project_slug = ?",
+            (project_slug,),
+        ).fetchone()
+        if state and state["registry_status"] == "invalid":
+            return {"project_slug": project_slug, "status": "invalid", "declared": 0,
+                    "derived": 0, "stale": 0, "unknown": 0, "coverage": "unknown",
+                    "error": state["error_code"]}
+        declared = conn.execute(
+            "SELECT COUNT(*) FROM information_governance WHERE project_slug = ?", (project_slug,)
+        ).fetchone()[0]
+        derived = conn.execute(
+            "SELECT COUNT(*) FROM information_governance WHERE project_slug = ? AND role = 'derived'",
+            (project_slug,),
+        ).fetchone()[0]
+        stale = conn.execute(
+            """SELECT COUNT(*) FROM information_governance g
+               JOIN file_index src ON src.project_slug = g.project_slug AND src.file_path = g.authority_path
+               WHERE g.project_slug = ? AND g.role = 'derived'
+                 AND src.file_hash != g.verified_authority_hash""",
+            (project_slug,),
+        ).fetchone()[0]
+        unknown = conn.execute(
+            """SELECT COUNT(*) FROM information_governance g
+               LEFT JOIN file_index src ON src.project_slug = g.project_slug AND src.file_path = g.authority_path
+               LEFT JOIN file_index dst ON dst.project_slug = g.project_slug AND dst.file_path = g.file_path
+               WHERE g.project_slug = ? AND g.role = 'derived'
+                 AND (src.file_path IS NULL OR dst.file_path IS NULL)""",
+            (project_slug,),
+        ).fetchone()[0]
+    status = "ready" if declared else "unmanaged"
+    return {"project_slug": project_slug, "status": status, "declared": declared,
+            "derived": derived, "stale": stale, "unknown": unknown,
+            "coverage": "declared_only" if declared else "unknown"}

@@ -12,6 +12,15 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ### Added
 
+**Deterministic information governance**
+
+Projects can declare non-code source-of-truth and derived-file relationships in a
+versioned local registry. Validation rejects unsafe paths, missing authorities, cycles,
+and malformed metadata. Staleness now uses source-content hash lineage only, never a
+generic Markdown/import/config edge. Indexing reconciles deleted paths, retrieval has
+strict query/result/context budgets, and an MCP health view reports declared, stale, and
+unknown governance evidence without raw document or query telemetry.
+
 **Runtime agent-host control plane**
 
 The Codex startup hook now validates a credential-free host configuration against

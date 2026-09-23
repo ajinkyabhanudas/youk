@@ -36,7 +36,7 @@ def _seed(db, files, relations):
     conn.close()
 
 
-def test_flags_stale_derived_when_source_newer(tmp_path):
+def test_generic_relations_do_not_imply_derived_authority(tmp_path):
     db = tmp_path / "idx.db"
     _seed(
         db,
@@ -47,9 +47,7 @@ def test_flags_stale_derived_when_source_newer(tmp_path):
         relations=[("youk", "README.md", "STATS.md", "doc_link")],
     )
     result = find_stale_relations(project_slug="youk", db_path=db)
-    assert result["stale_count"] == 1
-    assert result["stale"][0]["to_path"] == "STATS.md"
-    assert result["stale"][0]["from_path"] == "README.md"
+    assert result["stale_count"] == 0
 
 
 def test_not_stale_when_derived_newer(tmp_path):
@@ -78,8 +76,7 @@ def test_skips_relation_with_unindexed_endpoint(tmp_path):
     assert result["stale_count"] == 0  # GHOST.md not indexed -> not comparable
 
 
-def test_covers_many_files_not_a_handlist(tmp_path):
-    """The whole point: coverage scales with the link graph, not a hand-maintained list."""
+def test_many_generic_links_do_not_create_staleness_alerts(tmp_path):
     db = tmp_path / "idx.db"
     files = [("youk", "src.md", "2026-08-06T00:00:00")]
     relations = []
@@ -88,8 +85,8 @@ def test_covers_many_files_not_a_handlist(tmp_path):
         relations.append(("youk", "src.md", f"derived{i}.md", "doc_link"))
     _seed(db, files, relations)
     result = find_stale_relations(project_slug="youk", db_path=db)
-    assert result["checked"] == 10
-    assert result["stale_count"] == 10  # all 10 derived are older than the source
+    assert result["checked"] == 0
+    assert result["stale_count"] == 0
 
 
 def test_project_scoped(tmp_path):
@@ -108,5 +105,4 @@ def test_project_scoped(tmp_path):
         ],
     )
     youk_only = find_stale_relations(project_slug="youk", db_path=db)
-    assert youk_only["stale_count"] == 1
-    assert all(s["project_slug"] == "youk" for s in youk_only["stale"])
+    assert youk_only["stale_count"] == 0
