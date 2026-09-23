@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_host import CapabilityUnavailableError, HostCapabilities
+from agent_host import CapabilityUnavailableError, HostCapabilities, HostConfiguration
 
 # server.py imports mcp.server.fastmcp specifically. Guarding on the top-level `mcp`
 # package is not enough: mcp 2.x installs cleanly, renames FastMCP to MCPServer, and
@@ -307,6 +307,19 @@ class TestToolRegistration:
         )
 
         with pytest.raises(CapabilityUnavailableError, match="session_context"):
+            server.session_start_hook("/project")
+
+    def test_codex_hook_blocks_conflicting_persisted_host(self, monkeypatch):
+        server = _core_server()
+        monkeypatch.setattr(
+            server, "load_host_configuration", lambda _path: HostConfiguration("claude-code")
+        )
+        monkeypatch.setattr(
+            server,
+            "session_start",
+            lambda _project_dir: pytest.fail("conflicting host must block before session start"),
+        )
+        with pytest.raises(RuntimeError, match="Codex SessionStart hook blocked"):
             server.session_start_hook("/project")
 
     def test_all_registered_tools_are_callable(self):

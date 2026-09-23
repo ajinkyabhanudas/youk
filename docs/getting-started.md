@@ -346,6 +346,12 @@ environment. Unsupported providers report an explicit degraded result and never 
 back silently. Execution traces contain hashes and policy outcomes, never prompts or
 responses.
 
+## Agent-host selection
+
+`/youk/state/agent-host.json` may explicitly select a host using only `host_id` and
+schema version. Without it, a host-specific entry point supplies runtime evidence.
+Conflicting configuration blocks startup rather than selecting a host silently.
+
 ### Codex SessionStart hooks
 
 Configure a Codex `mcp_tool` SessionStart hook to call `youk-core.session_start_hook`,

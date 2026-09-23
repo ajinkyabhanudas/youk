@@ -12,6 +12,12 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ### Added
 
+**Runtime agent-host control plane**
+
+The Codex startup hook now validates a credential-free host configuration against
+runtime evidence before creating session state. Conflicting or unavailable hosts block
+explicitly; host configuration changes are atomic and rollbackable.
+
 **Provider-neutral inference foundation**
 
 Intent optimization now selects its optional inference provider through a versioned,

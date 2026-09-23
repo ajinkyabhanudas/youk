@@ -19,7 +19,14 @@ from health import (
     AUDIT_DIR as _AUDIT_DIR,
 )
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
-from agent_host import CodexHost, HostCapability, require_capability
+from agent_host import (
+    CodexHost,
+    HostCapability,
+    HostSelectionStatus,
+    load_host_configuration,
+    require_capability,
+    select_host,
+)
 from schemas import (
     ErrorType,
     OptimizeIntentResult,
@@ -238,6 +245,12 @@ def session_start_hook(project_dir: str) -> dict:
     project_dir: The current project directory (same as session_start).
     Returns: {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": brief}}.
     """
+    configuration = load_host_configuration(YOUK_ROOT / "state" / "agent-host.json")
+    selected = select_host(
+        frozenset({"codex"}), configuration.host_id if configuration else None
+    )
+    if selected.status is not HostSelectionStatus.SELECTED or selected.host_id != "codex":
+        raise RuntimeError(f"Codex SessionStart hook blocked: {selected.reason}")
     require_capability(CodexHost.capabilities, HostCapability.SESSION_CONTEXT)
     result = session_start(project_dir)
     return CodexHost.render_session_context(result.get("brief", ""))
