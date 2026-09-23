@@ -69,7 +69,12 @@ def nfr_check(task: str, size: str = "M", nfr_autonomy_mode: str = "standard") -
 
 
 @mcp.tool()
-def route_to_skill(skill: str, task: str, context: dict | None = None) -> dict:
+def route_to_skill(
+    task: str,
+    skill: str | None = None,
+    skill_name: str | None = None,
+    context: dict | None = None,
+) -> dict:
     """
     Load a skill and return context for in-session execution by Claude Code.
 
@@ -79,11 +84,21 @@ def route_to_skill(skill: str, task: str, context: dict | None = None) -> dict:
 
     skill: Skill name (e.g. 'pm-review', 'write-spec', 'adr', 'stress-test', 'humanize', 'learn').
     task: Task description for the skill.
+    skill: Skill directory name. Kept for existing MCP callers.
+    skill_name: Documented alias for skill. Supply either skill or skill_name, not both.
     context: Optional key-value pairs for additional context.
 
     Returns: {mode: "in_session", skill_name, skill_content, task, context, instruction}
     """
-    return _route_to_skill(skill, task, context)
+    if skill and skill_name and skill != skill_name:
+        return {
+            "blocked": True,
+            "reason": "skill and skill_name disagree; supply one skill identifier.",
+        }
+    resolved_skill = skill_name or skill
+    if not resolved_skill:
+        return {"blocked": True, "reason": "skill or skill_name is required."}
+    return _route_to_skill(resolved_skill, task, context)
 
 
 @mcp.tool()

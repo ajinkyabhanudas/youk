@@ -263,6 +263,25 @@ class TestIsolationActuallyHolds:
 
 
 class TestToolRegistration:
+    def test_session_start_hook_uses_the_codex_envelope(self, monkeypatch):
+        """Codex rejects a bare SessionState from a SessionStart MCP hook."""
+        server = _core_server()
+        calls: list[str] = []
+
+        def _start(project_dir: str) -> dict:
+            calls.append(project_dir)
+            return {"brief": "[YOUK CONTEXT BRIEF]"}
+
+        monkeypatch.setattr(server, "session_start", _start)
+
+        assert server.session_start_hook("/project") == {
+            "hookSpecificOutput": {
+                "hookEventName": "SessionStart",
+                "additionalContext": "[YOUK CONTEXT BRIEF]",
+            }
+        }
+        assert calls == ["/project"]
+
     def test_all_registered_tools_are_callable(self):
         """A registered tool with no callable fn is a broken registration."""
         mgr = _core_server().mcp._tool_manager

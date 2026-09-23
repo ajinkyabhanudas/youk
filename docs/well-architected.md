@@ -60,7 +60,10 @@ A gate implemented as `Path.exists()` on a state file that has a consumer is imp
    - **Tombstone**: consumer writes `{name}-closed.json` after deleting `{name}.json`. Absence of `{name}.json` + presence of tombstone = correctly consumed. Absence of both = never written.
    - **Durable timestamp**: writer also stamps a separate `last-{name}-at.json` that survives consumption. Compare timestamps, not file presence.
 
-**Known instance (session #88):** `pending_build_task` detection in `session_start` reads `routing-breadcrumb.json` absence as "never routed." But `task_checkpoint` deletes the breadcrumb on clean session close. Fix: write `last-routed-at.json` on each `route_task` call; compare to latest commit timestamp.
+**Resolved instance (session #88):** `pending_build_task` once treated a missing
+`routing-breadcrumb.json` as "never routed," even though `task_checkpoint` removes
+that breadcrumb on a clean close. It now compares the latest commit timestamp with the
+durable per-session `route-task-ran.json` records written by `route_task`.
 
 **When this matters most:** Gates that drive automation (not just advisory signals). A false-positive machine signal causes spurious work; a false-negative silently skips a gate.
 
@@ -90,7 +93,7 @@ A gate implemented as `Path.exists()` on a state file that has a consumer is imp
 |---|---|
 | Docker isolation | youk-core and youk-code are independent containers — one failure doesn't cascade |
 | stdio transport | No network socket, no port binding — no connection-level failures |
-| `make checkup` (L0–L6) | Hierarchical integration test suite — each layer gates the next; L3 exercises all 53 capability skills via real MCP, L5 tests gate contracts and proposal lifecycle, L6 runs a full session round-trip |
+| `make checkup` (L0–L6) | Hierarchical integration test suite — each layer gates the next; L3 exercises all 54 capability skills via real MCP, L5 tests gate contracts and proposal lifecycle, L6 runs a full session round-trip |
 | `make checkup-fast` | L0+L1 only — environment + Docker + MCP handshake; replaces `make doctor` for quick infra checks |
 | `check_doc_graph()` at session_start | Catches documentation drift before it causes confusion in later sessions |
 | Compounding context loop | `session_end` writes `resume-from:` externally; `session_start` reads it — sessions compound without relying on Claude's context window surviving |

@@ -236,7 +236,7 @@ make checkup
 | L0 Environment | Python ≥3.11, docker CLI, PyYAML, model imports | No |
 | L1 Infrastructure | Docker daemon, image existence, MCP handshake, critical tool list | Yes |
 | L2 Route Reachability | `route_task` sizing, session lifecycle, slug correlation | Yes |
-| L3 Skill Completeness | SKILL-REGISTRY.md vs SKILL.md files, `route_to_skill` for all 53 capability skills | Yes |
+| L3 Skill Completeness | SKILL-REGISTRY.md vs SKILL.md files, `route_to_skill` for all 54 capability skills | Yes |
 | L4 Integrity | YAML validity, doc-map authority paths, stale state detection | No (static) / Yes (dynamic) |
 | L5 Gates | NFR gate, challenge gate, task contract gate, guardrails, proposal lifecycle | No |
 | L6 End-to-End | Full session round-trip: `session_start → route_task → route_to_skill → self_heal → session_end` | Yes |
@@ -336,6 +336,16 @@ No manual compaction needed. Context stays lean; auto-compaction rarely fires.
 `route_task` writes the current task into `state/active_task.json`, and a post-tool hook
 keeps it current as work proceeds. If the terminal closes mid-task, the next
 `session_start` reads `active_task` back and resumes from it rather than starting cold.
+
+### Codex SessionStart hooks
+
+Configure a Codex `mcp_tool` SessionStart hook to call `youk-core.session_start_hook`,
+not `session_start`. The hook adapter runs the same session-start path but returns the
+`hookSpecificOutput` envelope Codex requires to inject the generated context brief.
+
+Add the hook once in either `~/.codex/hooks.json` or `~/.codex/config.toml`, after
+configuring `youk-core` as a Codex MCP server. Review and trust it with `/hooks`;
+Codex does not run an untrusted hook.
 
 This is why routing matters even for work you could do without it: the routing call is
 what leaves the breadcrumb.
