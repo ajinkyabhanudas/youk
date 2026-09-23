@@ -19,6 +19,7 @@ from health import (
     AUDIT_DIR as _AUDIT_DIR,
 )
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
+from agent_host import CodexHost, HostCapability, require_capability
 from schemas import (
     ErrorType,
     OptimizeIntentResult,
@@ -237,13 +238,9 @@ def session_start_hook(project_dir: str) -> dict:
     project_dir: The current project directory (same as session_start).
     Returns: {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": brief}}.
     """
+    require_capability(CodexHost.capabilities, HostCapability.SESSION_CONTEXT)
     result = session_start(project_dir)
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "SessionStart",
-            "additionalContext": result.get("brief", ""),
-        }
-    }
+    return CodexHost.render_session_context(result.get("brief", ""))
 
 
 @mcp.tool()
@@ -672,6 +669,12 @@ def task_contract(task: str, size: str | None = None) -> TaskContractResult:
     from task_contract import generate_task_contract
     result = generate_task_contract(task, size)
     result["calls_since_compact"] = _increment_tool_call_count()
+    # FastMCP serializes omitted total=False TypedDict fields as null. Its generated
+    # schema declares these fields as strings, so a client rejects the otherwise valid
+    # result. Use deterministic empty strings for fields that do not apply to this
+    # size rather than leaking nullable transport details to every MCP client.
+    for field in ("reason", "contract_id", "path", "contract"):
+        result.setdefault(field, "")
     return result
 
 

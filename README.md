@@ -24,6 +24,10 @@ A normal AI agent gets sharper as a conversation goes — you correct it, it ada
 
 Underneath all that is plain memory: your working agreements, decisions, and resume point saved to files that survive a `git clone`. Plenty of tools remember context now. The part worth having is what youk does on top of it.
 
+youk's core policy is agent-host neutral. Claude Code and Codex integrations declare
+their capabilities at the boundary; a missing safety capability blocks rather than
+silently weakening the workflow. See [ADR-012](docs/adr-012-agent-host-capability-contract.md).
+
 You don't change how you work. You just install it.
 
 | A normal AI agent | youk |
