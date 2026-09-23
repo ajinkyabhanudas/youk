@@ -59,6 +59,7 @@ from file_index import (
     find_related_docs as _find_related_docs,
     find_stale_relations as _find_stale_relations,
     get_index_stats as _get_index_stats,
+    get_information_governance_health as _get_information_governance_health,
 )
 from steering_vocab import (
     record_decomposition as _record_decomposition,
@@ -1923,21 +1924,17 @@ def find_related_docs(query: str, project_slug: str | None = None, limit: int = 
 
 @mcp.tool()
 def find_stale_relations(project_slug: str | None = None, limit: int = 20) -> dict:
-    """Graph-driven staleness: flag derived files whose source changed more recently.
+    """Report stale derived files using explicit authority hash lineage.
 
-    Walks the full file_relations graph (every indexed link) and reports each relation
-    where the source/authority (from_path) was re-indexed more recently than its derived
-    file (to_path) — meaning the source changed and the derived doc may not have followed.
-
-    Replaces the hand-maintained doc-map.yaml staleness list (which only covered a handful
-    of files) with the whole indexed link graph across all indexed files. Use at session
-    start or before a docs commit to catch stale derived files no one remembered to update.
+    Only `docs/information-governance.yaml` declarations can establish a source and
+    derived relationship. Links, imports, and doc-map references remain retrieval evidence;
+    they never create lifecycle alerts. Unknown endpoints are reported explicitly.
 
     project_slug: restrict to one project, or None for all.
     limit: max stale relations to return (most-recently-diverged first).
 
     Returns: {stale: [{project_slug, from_path, to_path, rel_type, source_indexed,
-              derived_indexed}], checked: int, stale_count: int}
+              derived_indexed}], checked, stale_count, unknown_count, status}
     """
     return _find_stale_relations(project_slug=project_slug, limit=limit)
 
@@ -1951,6 +1948,16 @@ def get_file_index_stats(project_slug: str | None = None) -> dict:
               total_files, relations: {rel_type: count}, total_relations}
     """
     return _get_index_stats(project_slug=project_slug)
+
+
+@mcp.tool()
+def get_information_governance_health(project_slug: str) -> dict:
+    """Return content-free evidence about declared non-code ownership and freshness.
+
+    The result distinguishes absent/unmanaged registry state from stale or unknown
+    derived files. It never infers authority from markdown links or imports.
+    """
+    return _get_information_governance_health(project_slug)
 
 
 @mcp.tool()
