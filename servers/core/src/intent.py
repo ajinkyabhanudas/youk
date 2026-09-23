@@ -7,32 +7,23 @@ Serves three purposes:
 3. Clarification capture — seeds knowledge/clarifications/ when intent was non-obvious
 """
 from __future__ import annotations
-import os
 import re
 from pathlib import Path
-
-CLAUDE_ROOT = Path("/claude")
-
-def _resolve_api_key() -> str:
-    """Read API key from env var, then fall back to mounted file."""
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if key:
-        return key
-    fallback = CLAUDE_ROOT / ".anthropic" / "api_key"
-    if fallback.exists():
-        return fallback.read_text().strip()
-    return ""
-
-try:
-    import anthropic
-    _API_KEY = _resolve_api_key()
-    _CLIENT = anthropic.Anthropic(api_key=_API_KEY)
-    _ANTHROPIC_AVAILABLE = bool(_API_KEY)
-except Exception:
-    _ANTHROPIC_AVAILABLE = False
-    _API_KEY = ""
+from inference import InferenceStatus, record_execution, select_intent_provider
 
 YOUK_ROOT = Path("/youk")
+_PROVIDER = select_intent_provider(config_path=YOUK_ROOT / "state" / "inference-provider.json")
+# Compatibility seam for existing deterministic API-down tests. New policy reads the
+# provider capability; this flag will be removed once callers inject a provider.
+_ANTHROPIC_AVAILABLE = _PROVIDER.capability.status is InferenceStatus.AVAILABLE
+
+
+def _record_provider_execution(raw_input: str, outcome: str) -> None:
+    """Tracing is best-effort and privacy-safe; it cannot alter intent routing."""
+    try:
+        record_execution(YOUK_ROOT / "state" / "inference-executions.jsonl", _PROVIDER.capability, raw_input, outcome)
+    except OSError:
+        pass
 
 _INTENT_SYSTEM_PROMPT = """\
 You are an intent optimizer. Your job is to take a raw user request (possibly vague, multi-part, or ambiguous) and produce a structured, compressed intent brief that a software engineer can execute directly.
@@ -465,22 +456,18 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
         interpretation_context = f"\n\nKnown interpretation patterns for this user:\n{interpretation_file.read_text()[:2000]}"
 
     if not _ANTHROPIC_AVAILABLE:
+        _record_provider_execution(raw_input, "degraded")
         return _heuristic_brief(raw_input, mode="fallback_no_api")
 
     user_content = f"Raw input: {raw_input}"
     if clarified_context:
         user_content += f"\n\nAdditional context from conversation: {clarified_context}"
 
-    _model = "claude-haiku-4-5-20251001"
+    _model = _PROVIDER.capability.model
     try:
         import time as _time
         _gen_t0 = _time.monotonic()
-        response = _CLIENT.messages.create(
-            model=_model,
-            max_tokens=800,
-            system=_INTENT_SYSTEM_PROMPT + interpretation_context,
-            messages=[{"role": "user", "content": user_content}],
-        )
+        response = _PROVIDER.generate(_INTENT_SYSTEM_PROMPT + interpretation_context, user_content, 800)
         _record_generation(_model, response, _time.monotonic() - _gen_t0)
         text = response.content[0].text.strip()
         # Extract JSON from response (model may wrap in markdown)
@@ -497,19 +484,17 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
                 and not _intake_has_run()
             )
             result["implicit_assumptions"] = _extract_implicit_assumptions(raw_input)
+            _record_provider_execution(raw_input, "validated")
             return result
         else:
             raise ValueError("No JSON in response")
     except Exception as e:
         error_msg = str(e)
         # Surface the actual error so it can be debugged, not silently swallowed
-        if not _API_KEY:
-            error_msg = (
-                "ANTHROPIC_API_KEY not set and /claude/.anthropic/api_key not found. "
-                "Set the env var in your shell profile or create the fallback file. "
-                f"Original error: {e}"
-            )
+        if _PROVIDER.capability.status is not InferenceStatus.AVAILABLE:
+            error_msg = f"No compatible inference provider is available: {_PROVIDER.capability.reason}. Original error: {e}"
         # Degrade to the heuristic path rather than returning a stub. A billing
         # failure, rate limit, or network error must not produce a brief that
         # claims the input was analysed and found unambiguous.
+        _record_provider_execution(raw_input, "degraded")
         return _heuristic_brief(raw_input, mode="api_error", error=error_msg)

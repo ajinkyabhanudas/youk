@@ -12,6 +12,13 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ### Added
 
+**Provider-neutral inference foundation**
+
+Intent optimization now selects its optional inference provider through a versioned,
+credential-free configuration contract. Incompatible providers degrade explicitly;
+provider/model/policy outcomes are recorded without prompt or response content.
+Configuration changes are atomic and support deterministic rollback.
+
 **Vendor-neutral agent-host capability contract**
 
 Core policy now evaluates versioned host capabilities instead of branching on an LLM
