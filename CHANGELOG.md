@@ -8,6 +8,21 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ---
 
+## [Unreleased]
+
+### Added
+
+**Vendor-neutral agent-host capability contract**
+
+Core policy now evaluates versioned host capabilities instead of branching on an LLM
+vendor. Claude Code and Codex adapters share deterministic parity tests. Missing safety
+capabilities block; missing advisory capabilities return an explicit degraded state.
+
+The first slice moves Codex SessionStart rendering into its adapter. Installer and
+plugin migration is intentionally deferred until the contract has proven stable.
+
+---
+
 ## [1.2.2] — 2026-09-09
 
 ### Fixed

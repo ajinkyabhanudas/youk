@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from agent_host import CapabilityUnavailableError, HostCapabilities
+
 # server.py imports mcp.server.fastmcp specifically. Guarding on the top-level `mcp`
 # package is not enough: mcp 2.x installs cleanly, renames FastMCP to MCPServer, and
 # then every test here errors on import instead of skipping. Guard the exact module
@@ -64,7 +66,7 @@ def _isolate_roots(tmp_path, monkeypatch):
     import server  # noqa: F401
     for _lazy in ("challenge_gate", "revisable_sets", "graph", "file_index",
                   "steering_vocab", "knowledge_index", "state_paths", "session",
-                  "health", "intent", "observability"):
+                  "health", "intent", "observability", "task_contract"):
         try:
             __import__(_lazy)
         except Exception:
@@ -263,6 +265,14 @@ class TestIsolationActuallyHolds:
 
 
 class TestToolRegistration:
+    @pytest.mark.parametrize("size", ["XS", "L"])
+    def test_task_contract_serializes_optional_fields_without_nulls(self, size):
+        """Every task-contract shape must be valid over MCP, not only as a Python dict."""
+        tool = _tool("task_contract")
+        structured = _structured(tool, tool.fn("build a host adapter", size))
+        nulls = sorted(key for key, value in structured.items() if value is None)
+        assert nulls == [], f"task_contract emitted null field(s): {nulls}"
+
     def test_session_start_hook_uses_the_codex_envelope(self, monkeypatch):
         """Codex rejects a bare SessionState from a SessionStart MCP hook."""
         server = _core_server()
@@ -281,6 +291,23 @@ class TestToolRegistration:
             }
         }
         assert calls == ["/project"]
+
+    def test_session_start_hook_blocks_without_session_context(self, monkeypatch):
+        """The live hook must enforce its safety capability before starting a session."""
+        server = _core_server()
+        monkeypatch.setattr(
+            server.CodexHost,
+            "capabilities",
+            HostCapabilities("codex", 1, frozenset()),
+        )
+        monkeypatch.setattr(
+            server,
+            "session_start",
+            lambda _project_dir: pytest.fail("session must not start without its safety capability"),
+        )
+
+        with pytest.raises(CapabilityUnavailableError, match="session_context"):
+            server.session_start_hook("/project")
 
     def test_all_registered_tools_are_callable(self):
         """A registered tool with no callable fn is a broken registration."""

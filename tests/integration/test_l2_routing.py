@@ -102,6 +102,25 @@ def test_session_start_hook_returns_codex_envelope(sandbox_state):
     assert isinstance(hook_output.get("additionalContext"), str)
 
 
+@pytest.mark.parametrize(
+    ("task", "size"),
+    [
+        ("fix typo in README", "XS"),
+        ("build a host adapter", "L"),
+    ],
+)
+def test_task_contract_mcp_output_has_no_null_optional_fields(sandbox_state, task, size):
+    """FastMCP must emit every task-contract shape without nullable string fields."""
+    result = call_tool(
+        "youk-core:latest",
+        "task_contract",
+        {"task": task, "size": size},
+        state_dir=sandbox_state,
+    )
+    nulls = sorted(key for key, value in result.items() if value is None)
+    assert nulls == [], f"task_contract emitted null field(s): {nulls}"
+
+
 def test_session_start_writes_session_open(sandbox_state):
     call_tool("youk-core:latest", "session_start", {"project_dir": YOUK_DIR_STR}, state_dir=sandbox_state)
     f = sandbox_state / "session-open.json"
