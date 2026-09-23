@@ -11,7 +11,7 @@ YOUK_DIR_STR = str(YOUK_DIR)
 # route_task sizing (all via MCP — verifies JSON-RPC wiring, not just the function)
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def route(sandbox_state):
     """Call route_task via MCP, return the result dict."""
     def _route(task: str, intent_brief: dict | None = None) -> dict:
@@ -88,6 +88,18 @@ def test_session_start_returns_required_fields(sandbox_state):
     r = call_tool("youk-core:latest", "session_start", {"project_dir": YOUK_DIR_STR}, state_dir=sandbox_state)
     for field in ("project", "resume_point", "session_counter", "session_plan"):
         assert field in r, f"session_start missing field: {field}"
+
+
+def test_session_start_hook_returns_codex_envelope(sandbox_state):
+    r = call_tool(
+        "youk-core:latest",
+        "session_start_hook",
+        {"project_dir": YOUK_DIR_STR},
+        state_dir=sandbox_state,
+    )
+    hook_output = r.get("hookSpecificOutput", {})
+    assert hook_output.get("hookEventName") == "SessionStart"
+    assert isinstance(hook_output.get("additionalContext"), str)
 
 
 def test_session_start_writes_session_open(sandbox_state):

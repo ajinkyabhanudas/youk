@@ -11,6 +11,7 @@
 mcp_tools:
   youk-core:
     - {tool: session_start, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: session_start_hook, refs: [README.md, docs/getting-started.md]}
     - {tool: session_end, refs: [README.md, docs/claude-md-template.md]}
     - {tool: optimize_intent, refs: [README.md]}
     - {tool: route_task, refs: [README.md, docs/claude-md-template.md]}

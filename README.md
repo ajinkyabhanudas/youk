@@ -129,6 +129,10 @@ A `PreCompact` hook fires before Claude Code compacts the conversation, so contr
 and decisions are written to disk rather than surviving only in context that is about
 to be summarised away.
 
+For Codex SessionStart hooks, use `youk-core.session_start_hook`; it wraps the normal
+session-start result in Codex's required hook response format. See
+[the setup guide](docs/getting-started.md#codex-sessionstart-hooks).
+
 Full command list and routing detail: **[docs/getting-started.md](docs/getting-started.md)**.
 
 ---

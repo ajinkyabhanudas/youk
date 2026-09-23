@@ -164,6 +164,13 @@ class TestTaskContractGate:
 
 class TestGuardrails:
 
+    @staticmethod
+    def _isolate_proposals_db(health, tmp_path, monkeypatch):
+        """Proposal reads are SQLite-backed; PENDING.md is migration input only."""
+        db_path = tmp_path / "shared-index.db"
+        monkeypatch.setattr(health, "_PROPOSALS_DB", db_path)
+        health._PROPOSALS_INITIALIZED.discard(str(db_path.resolve()))
+
     def _write_pending(self, proposals_file, pid, target, content="# test\n", review_required=True):
         """Write a PENDING.md in the format _load_pending_proposals expects."""
         from models import Proposal
@@ -190,6 +197,7 @@ class TestGuardrails:
                             "skills/test-skill/SKILL.md", review_required=True)
         monkeypatch.setattr(health, "PROPOSALS_FILE", proposals_file)
         monkeypatch.setattr(health, "YOUK_ROOT", tmp_path)
+        self._isolate_proposals_db(health, tmp_path, monkeypatch)
         from health import apply_proposal
         r = apply_proposal(
             proposal_id="PENDING-TEST-001",
@@ -210,7 +218,7 @@ class TestGuardrails:
                             content="# test skill checkup\n\nContent here.\n", review_required=True)
         monkeypatch.setattr(health, "PROPOSALS_FILE", proposals_file)
         monkeypatch.setattr(health, "YOUK_ROOT", tmp_path)
-        monkeypatch.setattr(health, "_ALLOWED_WRITE_ROOTS", [tmp_path])
+        self._isolate_proposals_db(health, tmp_path, monkeypatch)
         from health import apply_proposal
         r = apply_proposal(
             proposal_id="PENDING-TEST-002",
@@ -253,9 +261,11 @@ class TestProposalLifecycle:
     def _patch(self, monkeypatch, tmp_path):
         import health
         proposals_file = tmp_path / "PENDING.md"
+        db_path = tmp_path / "shared-index.db"
         monkeypatch.setattr(health, "PROPOSALS_FILE", proposals_file)
         monkeypatch.setattr(health, "YOUK_ROOT", tmp_path)
-        monkeypatch.setattr(health, "_ALLOWED_WRITE_ROOTS", [tmp_path])
+        monkeypatch.setattr(health, "_PROPOSALS_DB", db_path)
+        health._PROPOSALS_INITIALIZED.discard(str(db_path.resolve()))
         return proposals_file
 
     def test_self_heal_returns_org_score(self, tmp_path, monkeypatch):
@@ -272,7 +282,7 @@ class TestProposalLifecycle:
 
     def _make_proposal(self, pid: str, title: str, change_type: str, target: str, content: str = ""):
         from models import Proposal
-        from datetime import datetime
+        from datetime import UTC, datetime
         return Proposal(
             id=pid,
             target=target,
@@ -281,7 +291,7 @@ class TestProposalLifecycle:
             before="",
             after=content[:300],
             status="PENDING",
-            proposed_date=datetime.utcnow().strftime("%Y-%m-%d"),
+            proposed_date=datetime.now(UTC).strftime("%Y-%m-%d"),
             change_type=change_type,
             content=content,
         )
@@ -294,7 +304,9 @@ class TestProposalLifecycle:
             "FILE_CREATE", "skills/checkup-test/SKILL.md", "# Checkup Test\n",
         )
         health.add_proposal(proposal)
-        assert proposals_file.exists(), "PENDING.md must be created by add_proposal"
+        assert (tmp_path / "shared-index.db").exists(), (
+            "add_proposal must persist the proposal in the SQLite store"
+        )
 
         proposals = health._load_pending_proposals()
         assert len(proposals) >= 1
@@ -309,14 +321,14 @@ class TestProposalLifecycle:
             "FILE_CREATE", "skills/dup-test/SKILL.md", "x",
         )
         p2 = self._make_proposal(
-            "PENDING-20260721000003", "dup test proposal",
+            "PENDING-20260721000002", "dup test proposal",
             "FILE_CREATE", "skills/dup-test/SKILL.md", "x",
         )
         health.add_proposal(p1)
         health.add_proposal(p2)  # should be skipped — same change_description
         proposals = health._load_pending_proposals()
         matching = [p for p in proposals if p.change_description == "dup test proposal"]
-        assert len(matching) == 1, f"Deduplication failed — found {len(matching)} entries"
+        assert len(matching) == 1, f"Idempotency failed — found {len(matching)} entries"
 
     def test_apply_proposal_file_create(self, tmp_path, monkeypatch):
         """Subsequent updates can be made — FILE_CREATE writes the file to disk."""

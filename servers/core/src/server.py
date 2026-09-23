@@ -219,6 +219,34 @@ def session_start(project_dir: str) -> dict:
 
 
 @mcp.tool()
+def session_start_hook(project_dir: str) -> dict:
+    """
+    session_start, reshaped for Codex's SessionStart hook contract.
+
+    A Codex SessionStart hook of type "mcp_tool" must return exactly
+    {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": str}}
+    -- session_start's own return shape (brief, resume_point, context_health, ...)
+    doesn't match that envelope, so a hook pointed directly at session_start fails
+    with "invalid session start JSON output" and the brief never reaches the model.
+
+    This calls the exact same session_start path Claude Code uses -- same state,
+    same brief content, same side effects -- and only reshapes the output for this
+    one caller contract. Claude Code's session_start tool is untouched; this is an
+    adapter, not a second implementation of session start.
+
+    project_dir: The current project directory (same as session_start).
+    Returns: {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": brief}}.
+    """
+    result = session_start(project_dir)
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": result.get("brief", ""),
+        }
+    }
+
+
+@mcp.tool()
 def session_end(
     summary: str,
     commits_made: bool = False,

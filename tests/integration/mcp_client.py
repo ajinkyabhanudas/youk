@@ -10,7 +10,9 @@ parsed result dict. No long-running container needed.
 from __future__ import annotations
 
 import json
+import select
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -104,29 +106,58 @@ def _run(
     cmd.append(image)
 
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
-            input=payload,
-            capture_output=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
+            bufsize=1,
         )
     except FileNotFoundError as e:
         raise RuntimeError("docker not found — is Docker Desktop installed?") from e
-    except subprocess.TimeoutExpired as e:
-        raise RuntimeError(f"MCP call to {image}:{payload_msg[:40]} timed out ({timeout}s)") from e
 
-    for raw in proc.stdout.splitlines():
-        try:
-            msg = json.loads(raw)
-        except json.JSONDecodeError:
-            continue
-        if msg.get("id") == 2:
-            if "error" in msg:
-                raise RuntimeError(f"MCP error from {image}: {msg['error']}")
-            return msg.get("result", {})
+    stdout: list[str] = []
+    try:
+        assert proc.stdin is not None
+        assert proc.stdout is not None
+        proc.stdin.write(payload)
+        proc.stdin.flush()
 
-    raise RuntimeError(
-        f"No result in MCP response from {image}.\n"
-        f"stdout: {proc.stdout[:400]}\nstderr: {proc.stderr[:200]}"
-    )
+        deadline = time.monotonic() + timeout
+        while remaining := deadline - time.monotonic():
+            readable, _, _ = select.select([proc.stdout], [], [], remaining)
+            if not readable:
+                break
+            raw = proc.stdout.readline()
+            if not raw:
+                break
+            stdout.append(raw)
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if msg.get("id") == 2:
+                if "error" in msg:
+                    raise RuntimeError(f"MCP error from {image}: {msg['error']}")
+                return msg.get("result", {})
+
+        stderr = ""
+        if proc.stderr is not None:
+            readable, _, _ = select.select([proc.stderr], [], [], 0)
+            if readable:
+                stderr = proc.stderr.read(200)
+        raise RuntimeError(
+            f"No result in MCP response from {image}.\n"
+            f"stdout: {''.join(stdout)[:400]}\nstderr: {stderr}"
+        )
+    finally:
+        if proc.stdin is not None and not proc.stdin.closed:
+            proc.stdin.close()
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
