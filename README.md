@@ -28,6 +28,11 @@ youk's core policy is agent-host neutral. Claude Code and Codex integrations dec
 their capabilities at the boundary; a missing safety capability blocks rather than
 silently weakening the workflow. See [ADR-012](docs/adr-012-agent-host-capability-contract.md).
 
+Optional inference follows the same boundary: `/youk/state/inference-provider.json`
+contains provider, model, and schema version only; credentials remain environment-only.
+Unavailable or incompatible providers degrade explicitly, and execution records retain
+hashes and policy outcomes rather than prompt or response content.
+
 You don't change how you work. You just install it.
 
 | A normal AI agent | youk |

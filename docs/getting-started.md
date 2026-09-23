@@ -337,6 +337,15 @@ No manual compaction needed. Context stays lean; auto-compaction rarely fires.
 keeps it current as work proceeds. If the terminal closes mid-task, the next
 `session_start` reads `active_task` back and resumes from it rather than starting cold.
 
+## Optional inference provider
+
+Intent optimization remains usable without an LLM through its deterministic heuristic
+path. To select an installed adapter, write a credential-free provider/model/schema
+configuration to `/youk/state/inference-provider.json`; keep credentials in the
+environment. Unsupported providers report an explicit degraded result and never fall
+back silently. Execution traces contain hashes and policy outcomes, never prompts or
+responses.
+
 ### Codex SessionStart hooks
 
 Configure a Codex `mcp_tool` SessionStart hook to call `youk-core.session_start_hook`,
