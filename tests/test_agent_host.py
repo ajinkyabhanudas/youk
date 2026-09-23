@@ -14,6 +14,12 @@ from agent_host import (
     HostCapabilities,
     evaluate_capability,
     require_capability,
+    HostSelectionStatus,
+    HostConfiguration,
+    load_host_configuration,
+    rollback_host_configuration,
+    save_host_configuration,
+    select_host,
 )
 
 
@@ -76,3 +82,23 @@ def test_missing_requirement_mapping_blocks_instead_of_raising(monkeypatch):
 def test_runtime_requirement_blocks_a_missing_safety_capability():
     with pytest.raises(CapabilityUnavailableError, match="pre_tool_guard"):
         require_capability(CodexHost.capabilities, HostCapability.PRE_TOOL_GUARD)
+
+
+def test_runtime_host_selection_blocks_ambiguous_evidence():
+    result = select_host(frozenset({"codex", "claude-code"}))
+    assert result.status is HostSelectionStatus.AMBIGUOUS
+
+
+def test_explicit_host_configuration_overrides_runtime_evidence():
+    result = select_host(frozenset({"codex", "claude-code"}), "codex")
+    assert result.status is HostSelectionStatus.SELECTED
+    assert result.source == "configuration"
+
+
+def test_host_configuration_rollback_restores_prior_selection(tmp_path):
+    path = tmp_path / "host.json"
+    original = HostConfiguration("codex")
+    save_host_configuration(path, original)
+    previous = save_host_configuration(path, HostConfiguration("claude-code"))
+    rollback_host_configuration(path, previous)
+    assert load_host_configuration(path) == original

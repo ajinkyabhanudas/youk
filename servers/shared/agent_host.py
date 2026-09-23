@@ -7,6 +7,8 @@ vendor-specific hook response.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 from enum import StrEnum
 from typing import Final
 
@@ -35,6 +37,12 @@ class CapabilityStatus(StrEnum):
     BLOCKED = "blocked"
 
 
+class HostSelectionStatus(StrEnum):
+    SELECTED = "selected"
+    AMBIGUOUS = "ambiguous"
+    INCOMPATIBLE = "incompatible"
+
+
 _REQUIREMENTS: Final[dict[HostCapability, CapabilityRequirement]] = {
     HostCapability.SESSION_CONTEXT: CapabilityRequirement.SAFETY,
     HostCapability.COMPACTION_CONTEXT: CapabilityRequirement.ADVISORY,
@@ -51,6 +59,20 @@ class HostCapabilities:
     host_id: str
     schema_version: int
     supported: frozenset[HostCapability]
+
+
+@dataclass(frozen=True)
+class HostSelection:
+    host_id: str
+    status: HostSelectionStatus
+    source: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class HostConfiguration:
+    host_id: str
+    schema_version: int = 1
 
 
 @dataclass(frozen=True)
@@ -167,3 +189,36 @@ class CodexHost:
                 "additionalContext": brief,
             }
         }
+
+
+_HOSTS = {"claude-code": ClaudeCodeHost.capabilities, "codex": CodexHost.capabilities}
+
+
+def select_host(runtime_hosts: frozenset[str], configured_host: str | None = None) -> HostSelection:
+    """Choose a host only from explicit config or unambiguous runtime evidence."""
+    selected = configured_host or (next(iter(runtime_hosts)) if len(runtime_hosts) == 1 else "")
+    source = "configuration" if configured_host else "runtime_probe"
+    if not selected:
+        return HostSelection("", HostSelectionStatus.AMBIGUOUS, source, "runtime host evidence is ambiguous")
+    if selected not in _HOSTS:
+        return HostSelection(selected, HostSelectionStatus.INCOMPATIBLE, source, "host adapter is not installed")
+    return HostSelection(selected, HostSelectionStatus.SELECTED, source, "host selected")
+
+
+def load_host_configuration(path: Path) -> HostConfiguration | None:
+    if not path.exists():
+        return None
+    return HostConfiguration(**json.loads(path.read_text(encoding="utf-8")))
+
+
+def save_host_configuration(path: Path, configuration: HostConfiguration) -> HostConfiguration | None:
+    previous = load_host_configuration(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staged = path.with_suffix(".tmp")
+    staged.write_text(json.dumps(configuration.__dict__, sort_keys=True), encoding="utf-8")
+    staged.replace(path)
+    return previous
+
+
+def rollback_host_configuration(path: Path, previous: HostConfiguration) -> None:
+    save_host_configuration(path, previous)
