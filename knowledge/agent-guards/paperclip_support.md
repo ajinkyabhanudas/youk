@@ -71,3 +71,14 @@ read that real definition yourself and confirm the ticket's specified behavior
 actually satisfies it. If it doesn't, flag the mismatch back to the ticket's author
 before building the wrong thing correctly — a ticket is a claim about what's
 needed, not a substitute for checking against ground truth.
+
+**Mechanical strengthening (CIR-117/CIR-135 P8, 2026-09-26):** "read it and confirm"
+was not enough on its own — the check is invisible to a reviewer and easy to skip
+under time pressure, which is exactly how CIR-98 shipped anyway. Before moving an
+issue past `in_progress` on a ticket that implements a previously-written definition
+(`OUTCOMES.md`, an ADR, a plugin spec), quote the exact source text you built against
+verbatim in a comment on the issue, next to a one-line statement of the shipped
+behavior. If the two don't match, that mismatch has to be visible in the quote itself
+— you cannot quote the real definition and still claim a contradicting behavior
+satisfies it. No quote in the issue comment means the check did not happen, regardless
+of what the implementer believes they verified privately.
