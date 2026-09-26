@@ -1156,6 +1156,67 @@ class TestMergeStaleCheckpoint:
         assert "tab-close" in content
         assert "Fix the login bug" in content
 
+    def test_real_skills_credited_instead_of_hardcoded_none(self, tmp_path, monkeypatch):
+        """The actual bug behind skill_invocation_rate undercounting: this path used to
+        write "Skills: none" unconditionally, even when log_skill_invocation() had
+        already recorded real skills for this session in real time. A session that ends
+        via compaction instead of a clean /done must still get credit for what it
+        actually ran."""
+        import json
+        import session
+        youk_root = tmp_path / "youk"
+        claude_root = tmp_path / "claude"
+        (youk_root / "state").mkdir(parents=True)
+        (claude_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+
+        slug = "myproject"
+        skills_log = youk_root / "state" / "sessions" / slug
+        skills_log.mkdir(parents=True)
+        (skills_log / "skills-invoked.jsonl").write_text(
+            "\n".join(
+                json.dumps({"skill": s, "ts": 1.0}) for s in ["cto", "pm-review", "challenge"]
+            ) + "\n"
+        )
+
+        self._write_checkpoint(
+            youk_root / "state", "session-open.json",
+            slug=slug, timestamp="2026-07-01T10:00:00Z",
+            plan_items=[],
+        )
+
+        session._merge_stale_checkpoint()
+
+        content = (claude_root / "audit" / "2026-07.md").read_text()
+        assert "Skills: challenge, cto, pm-review" in content
+        assert "Skills: none" not in content
+        # Same contract as session_end's own use of this helper: the log is cleared so
+        # it never leaks into the next session's count.
+        assert not (skills_log / "skills-invoked.jsonl").exists()
+
+    def test_no_real_skills_still_writes_none_honestly(self, tmp_path, monkeypatch):
+        """No fabrication in the other direction: a session with genuinely nothing logged
+        must still read "Skills: none", not a stale or invented value."""
+        import session
+        youk_root = tmp_path / "youk"
+        claude_root = tmp_path / "claude"
+        (youk_root / "state").mkdir(parents=True)
+        (claude_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+
+        self._write_checkpoint(
+            youk_root / "state", "session-open.json",
+            slug="emptyproject", timestamp="2026-07-01T10:00:00Z",
+            plan_items=[],
+        )
+
+        session._merge_stale_checkpoint()
+
+        content = (claude_root / "audit" / "2026-07.md").read_text()
+        assert "Skills: none" in content
+
     def test_stale_checkpoint_file_deleted_after_merge(self, tmp_path, monkeypatch):
         import session
         youk_root = tmp_path / "youk"

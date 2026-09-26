@@ -1260,12 +1260,25 @@ def _merge_stale_checkpoint() -> None:
                     month = cp_timestamp[:7]
                     audit_file = audit_dir / f"{month}.md"
                     plan_text = "\n".join(f"- {item}" for item in cp_plan[:3]) if cp_plan else ""
+                    # Real root cause found investigating skill_invocation_rate's crossed
+                    # kill criterion (CIR-117 corroboration, cross-system with CIR-120):
+                    # this line was hardcoded to "none" regardless of what actually ran,
+                    # because log_skill_invocation() writes incrementally in real time but
+                    # nothing ever read that log back for a session that ended without a
+                    # clean /done -- the exact same "the closing step is the last action
+                    # and dies with the session" failure as CIR-120, in a second system.
+                    # _read_and_clear_skills_invoked is the same helper session_end already
+                    # uses for a clean close; using it here means a tab-close/compaction
+                    # exit gets credit for the skills it actually ran, not a fabricated
+                    # zero that undercounts the org's own primary metric.
+                    real_skills = _read_and_clear_skills_invoked(cp_slug) if cp_slug and cp_slug != "unknown" else set()
+                    skills_line = f"Skills: {', '.join(sorted(real_skills))}\n" if real_skills else "Skills: none\n"
                     entry = (
                         f"\n### Session — {cp_timestamp} ({label})\n"
                         f"Project: {cp_slug}\n"
                         f"Session ended without /done.\n"
                         f"{plan_text}\n"
-                        f"Skills: none\n"
+                        f"{skills_line}"
                         f"CloseCluster: no\n"
                         f"Commits: unknown\n"
                     )
