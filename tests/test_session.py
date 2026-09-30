@@ -1390,6 +1390,75 @@ class TestColdStart:
         state = session.start_session(str(project_dir))
         assert state.close_cluster_missed is False
 
+    def test_cold_start_no_kill_criterion_packet(self, youk_root, tmp_path):
+        """No kill-criterion-triggered.json = no decision packet."""
+        import session
+
+        project_dir = tmp_path / "no-kill-criterion-project"
+        project_dir.mkdir()
+
+        state = session.start_session(str(project_dir))
+        assert state.kill_criterion_decision_packet is None
+
+
+class TestKillCriterionDecisionPacket:
+    """CIR-150 item 4 / CIR-151: session_start must surface a triggered
+    kill_criterion as a real decision packet, not silently continue."""
+
+    @pytest.fixture(autouse=True)
+    def patch_claude_root(self, tmp_path, monkeypatch, youk_root):
+        import session
+        claude_root = tmp_path / "claude"
+        (claude_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        return claude_root
+
+    def test_triggered_flag_surfaces_as_decision_packet(self, youk_root, tmp_path):
+        import json
+        import session
+
+        (youk_root / "state" / "kill-criterion-triggered.json").write_text(json.dumps({
+            "triggered": True,
+            "metric": "skill_invocation_rate",
+            "detected_at": "2026-09-21T00:00:00Z",
+            "reason": "skill_invocation_rate stayed below 0.50 for 4 consecutive weeks.",
+        }))
+
+        project_dir = tmp_path / "kill-criterion-project"
+        project_dir.mkdir()
+        state = session.start_session(str(project_dir))
+
+        assert state.kill_criterion_decision_packet is not None
+        packet = state.kill_criterion_decision_packet
+        assert packet["metric"] == "skill_invocation_rate"
+        assert "consequence" in packet
+        assert "decision_needed" in packet
+
+    def test_untriggered_flag_produces_no_packet(self, youk_root, tmp_path):
+        import json
+        import session
+
+        (youk_root / "state" / "kill-criterion-triggered.json").write_text(json.dumps({
+            "triggered": False,
+        }))
+
+        project_dir = tmp_path / "not-triggered-project"
+        project_dir.mkdir()
+        state = session.start_session(str(project_dir))
+
+        assert state.kill_criterion_decision_packet is None
+
+    def test_corrupt_flag_file_does_not_crash_session_start(self, youk_root, tmp_path):
+        import session
+
+        (youk_root / "state" / "kill-criterion-triggered.json").write_text("not valid json {{{")
+
+        project_dir = tmp_path / "corrupt-flag-project"
+        project_dir.mkdir()
+        state = session.start_session(str(project_dir))
+
+        assert state.kill_criterion_decision_packet is None
+
 
 # ── _is_generalizable — broadened heuristic ───────────────────────────────────
 

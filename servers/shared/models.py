@@ -142,6 +142,12 @@ class SessionState:
     # failure mode. None = no unrouted commits detected. Non-None = run /build on this description
     # before starting new code work.
     pending_build_task: str | None = None
+    # kill_criterion_decision_packet: non-None when skill_invocation_rate's kill_criterion has
+    # fired (state/kill-criterion-triggered.json, written by health.py). CIR-150/CIR-151: this
+    # is the real, code-level consequence of crossing the threshold — surface it as a blocking
+    # decision for the founder, not a line buried in a health report. The matching per-write
+    # consequence lives in pre_tool_use.py's PreToolUse gate (plugin/scripts/youk_hook_utils.py).
+    kill_criterion_decision_packet: dict | None = None
     # Recurring domain audit patterns from audit-signals.jsonl (cross-session).
     # Non-empty = domain flagged HIGH in ≥40% of last 5 sessions on this project.
     # Surface as: "Recurring audit signal: {domain} flagged HIGH in {count}/{total} sessions on {project}"
@@ -196,6 +202,7 @@ class SessionState:
             "cross_project_concepts": self.cross_project_concepts,
             "convergence_state": self.convergence_state,
             "pending_build_task": self.pending_build_task,
+            "kill_criterion_decision_packet": self.kill_criterion_decision_packet,
         }
 
 

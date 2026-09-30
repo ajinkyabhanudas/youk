@@ -2376,6 +2376,10 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
     else:
         verdict = "COLD — no gaps, no proposals; loop starved"
 
+    # Defined outside the try block below so a failure writing improvement-metrics.json
+    # can never leave this undefined for the return statement at the bottom.
+    kill_criterion_triggered = False
+
     # Persist metrics for dashboard trend view
     metrics_file = YOUK_ROOT / "state" / "improvement-metrics.json"
     try:
@@ -2408,6 +2412,38 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
         }
         existing_entries.append(entry)
         existing_entries = existing_entries[-20:]  # keep last 20 health cycles
+
+        # kill_criterion (OUTCOMES.md: "If skill_invocation_rate stays below 50%
+        # for 4 consecutive weeks despite the proactive routing in CLAUDE.md, the
+        # routing mechanism itself is wrong, not the developer's habits. Stop
+        # tuning nudges, redesign the gate.") — CIR-150 found this was prose only,
+        # never machine-enforced. This is the real enforcement: a checkable flag
+        # file that pre_tool_use.py's M+ write gate reads (see
+        # youk_hook_utils.kill_criterion_triggered / check_m_plus_write_gate) and
+        # that session_start surfaces as a decision packet (see
+        # session.py:start_session). Crossing the threshold now has a code
+        # consequence, not just a health-report line.
+        kill_criterion_triggered = _skill_invocation_rate_below_floor_for_weeks(existing_entries)
+        kill_flag_file = YOUK_ROOT / "state" / "kill-criterion-triggered.json"
+        if kill_criterion_triggered:
+            if not kill_flag_file.exists():
+                kill_flag_file.write_text(json.dumps({
+                    "triggered": True,
+                    "metric": "skill_invocation_rate",
+                    "threshold": 0.5,
+                    "consecutive_weeks_required": 4,
+                    "detected_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "reason": (
+                        "skill_invocation_rate stayed below 0.50 for 4 consecutive "
+                        "weeks. Per OUTCOMES.md's own stop condition: stop tuning "
+                        "nudges, redesign the gate."
+                    ),
+                }))
+        elif kill_flag_file.exists():
+            # Rate recovered — clear the flag the same way other gate flags in
+            # this codebase are live state, not a manually-acknowledged incident
+            # log. If it fires again, detected_at is written fresh above.
+            kill_flag_file.unlink()
 
         # Per-project org_score: read current slug from state, store under "projects" key.
         # Enables session_start to surface "canopy: 7.0/10 ▲+0.1" vs system-wide score.
@@ -2447,7 +2483,71 @@ def _compute_improvement_velocity(audit_texts: list[str], current_score: float) 
         "close_cluster_rate": close_rate,
         "evolution_loop_active": evolution_active,
         "loop_verdict": verdict,
+        "kill_criterion_triggered": kill_criterion_triggered,
     }
+
+
+def _iso_week_key(timestamp: str) -> tuple[int, int] | None:
+    """Parse a %Y-%m-%dT%H:%M:%SZ timestamp into an (iso_year, iso_week) key."""
+    try:
+        dt = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        return None
+    iso = dt.isocalendar()
+    return (iso[0], iso[1])
+
+
+def _next_iso_week(key: tuple[int, int]) -> tuple[int, int]:
+    """Return the (iso_year, iso_week) key immediately after the given one,
+    correctly handling year boundaries (52- or 53-week years)."""
+    year, week = key
+    weeks_in_year = datetime(year, 12, 28).isocalendar()[1]  # Dec 28 is always in the last ISO week
+    if week >= weeks_in_year:
+        return (year + 1, 1)
+    return (year, week + 1)
+
+
+def _skill_invocation_rate_below_floor_for_weeks(
+    entries: list[dict], threshold: float = 0.5, weeks_required: int = 4,
+) -> bool:
+    """
+    Real implementation of OUTCOMES.md's kill_criterion: True only when the most
+    recent `weeks_required` DISTINCT, CONSECUTIVE calendar weeks each have a
+    recorded skill_invocation_rate below `threshold`.
+
+    - "Distinct week" = one value per ISO calendar week (latest entry that week
+      wins, so a week with a late recovery is judged on its most current data).
+    - "Consecutive" = no gap between the weeks compared — a health check that
+      skipped a week (or a week with no cycles at all) breaks the streak rather
+      than being silently skipped over, since that would understate how long
+      the metric was actually left unexamined.
+    - Fewer than `weeks_required` distinct weeks of history = insufficient data,
+      never triggers (matches "for 4 consecutive weeks" requiring an actual
+      4-week span to have elapsed).
+    """
+    weekly_latest: dict[tuple[int, int], tuple[str, float]] = {}
+    for e in entries:
+        ts = e.get("timestamp")
+        rate = e.get("skill_invocation_rate")
+        if not ts or rate is None:
+            continue
+        key = _iso_week_key(ts)
+        if key is None:
+            continue
+        prev = weekly_latest.get(key)
+        if prev is None or ts > prev[0]:
+            weekly_latest[key] = (ts, rate)
+
+    if len(weekly_latest) < weeks_required:
+        return False
+
+    ordered_keys = sorted(weekly_latest.keys())
+    last_n = ordered_keys[-weeks_required:]
+    for i in range(1, len(last_n)):
+        if _next_iso_week(last_n[i - 1]) != last_n[i]:
+            return False  # gap in the week sequence — not a consecutive streak
+
+    return all(weekly_latest[k][1] < threshold for k in last_n)
 
 
 def recompute_org_score(slug: str = "") -> dict:

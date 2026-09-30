@@ -1957,6 +1957,37 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass
 
+    # kill_criterion decision packet (CIR-150 item 4 / CIR-151): when
+    # health.py's _compute_improvement_velocity has written
+    # state/kill-criterion-triggered.json, surface it here as a blocking
+    # decision for the founder rather than letting the session continue as if
+    # nothing happened. This is the session_start half of the consequence —
+    # the pre_tool_use.py PreToolUse gate is the per-write half.
+    _kill_criterion_decision_packet: dict | None = None
+    try:
+        _kc_flag = YOUK_ROOT / "state" / "kill-criterion-triggered.json"
+        if _kc_flag.exists():
+            _kc_data = json.loads(_kc_flag.read_text())
+            if _kc_data.get("triggered"):
+                _kill_criterion_decision_packet = {
+                    "metric": _kc_data.get("metric", "skill_invocation_rate"),
+                    "detected_at": _kc_data.get("detected_at", ""),
+                    "reason": _kc_data.get("reason", ""),
+                    "consequence": (
+                        "Every Edit/Write this session is now denied at the "
+                        "PreToolUse boundary until route_task has run, regardless "
+                        "of task size (see pre_tool_use.py's M+ write gate)."
+                    ),
+                    "decision_needed": (
+                        "The routing mechanism itself needs redesign, not another "
+                        "nudge — per OUTCOMES.md's own stop condition. This flag "
+                        "self-clears the next time skill_invocation_rate recovers; "
+                        "it does not require manual dismissal."
+                    ),
+                }
+    except Exception:
+        pass
+
     # Cross-project concept graph: query on resume_point to surface related patterns
     # from other projects. Top-3 cross-project hits only (project_slug=None = all projects).
     # Filtered to exclude concepts from the current project (those are in domain/ already).
@@ -2049,6 +2080,7 @@ def start_session(project_dir: str) -> SessionState:
         pending_proposals_count=pending,
         session_counter=counter,
         health_check_due=health_check_due,
+        kill_criterion_decision_packet=_kill_criterion_decision_packet,
         project_type=project_type,
         contracts=contracts,
         close_cluster_missed=close_cluster_missed,
