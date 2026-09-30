@@ -1839,9 +1839,12 @@ def start_session(project_dir: str) -> SessionState:
     # Correct sequencing: session-plan.json was just written above, so build_brief reads
     # fresh data.
     try:
-        brief = _build_brief(project_dir).get("brief", "")
+        _brief_result = _build_brief(project_dir)
+        brief = _brief_result.get("brief", "")
+        _verbatim_lines = _brief_result.get("verbatim_lines", [])
     except Exception:
         brief = ""
+        _verbatim_lines = []
 
     # Write a session stub to the audit dir immediately at session open.
     # This breadcrumb survives even if the developer tabs out without calling /done —
@@ -2081,6 +2084,7 @@ def start_session(project_dir: str) -> SessionState:
         session_counter=counter,
         health_check_due=health_check_due,
         kill_criterion_decision_packet=_kill_criterion_decision_packet,
+        verbatim_lines=_verbatim_lines,
         project_type=project_type,
         contracts=contracts,
         close_cluster_missed=close_cluster_missed,

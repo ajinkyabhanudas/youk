@@ -178,6 +178,64 @@ class TestBuildBrief:
         assert "brief" in result
 
 
+class TestVerbatimLines:
+    """CIR-150 item 5 / CIR-151: build_brief must also return the CONTRACT tier
+    as a flat, tag-free list -- structurally separate from the [TIER:CONTRACT]-
+    tagged prose in `brief` -- so a host without a pre-compaction hook to parse
+    that tag syntax (e.g. Codex) can still reconstruct the preservation
+    guarantee from stored state, at read time, in session_start_hook."""
+
+    def _seed(self, youk_root: Path, slug: str, contracts: list[str]) -> None:
+        proj_dir = youk_root / "knowledge" / "projects" / slug
+        proj_dir.mkdir(parents=True, exist_ok=True)
+        if contracts:
+            (proj_dir / "contracts.md").write_text(
+                "\n".join(f"- {c}" for c in contracts) + "\n"
+            )
+        (youk_root / "state" / "session-plan.json").write_text(
+            json.dumps({"plan": ["work on X"], "slug": slug})
+        )
+        (youk_root / "state" / "session.json").write_text(
+            json.dumps({"last_project": slug, "session_counter": 3})
+        )
+
+    def test_verbatim_lines_present_and_matches_contracts_count(self, youk_root, tmp_path):
+        self._seed(youk_root, "testproj", ["always run tests", "never force push"])
+        from compaction import build_brief
+        result = build_brief(str(tmp_path / "testproj"))
+        assert len(result["verbatim_lines"]) == 2
+        assert result["contracts_count"] == len(result["verbatim_lines"])
+
+    def test_verbatim_lines_contain_the_actual_contract_text(self, youk_root, tmp_path):
+        self._seed(youk_root, "testproj", ["always run tests"])
+        from compaction import build_brief
+        result = build_brief(str(tmp_path / "testproj"))
+        assert any("always run tests" in line for line in result["verbatim_lines"])
+
+    def test_verbatim_lines_empty_when_no_contracts(self, youk_root, tmp_path):
+        self._seed(youk_root, "testproj", [])
+        from compaction import build_brief
+        result = build_brief(str(tmp_path / "testproj"))
+        assert result["verbatim_lines"] == []
+
+    def test_verbatim_lines_present_in_index_mode_too(self, youk_root, tmp_path):
+        """Index mode is the minimal per-turn brief -- verbatim_lines must
+        still be a structural echo of the loaded contracts, not something
+        only the full mode computes."""
+        self._seed(youk_root, "testproj", ["always run ruff"])
+        from compaction import build_brief
+        result = build_brief(str(tmp_path / "testproj"), intent="run ruff before committing", mode="index")
+        assert result["verbatim_lines"]
+
+    def test_verbatim_lines_do_not_depend_on_conversation_state(self, youk_root, tmp_path):
+        """build_brief's only input identifying WHAT to load is project_dir --
+        there is no conversation-text parameter it could be trusting instead."""
+        import inspect
+        from compaction import build_brief
+        sig = inspect.signature(build_brief)
+        assert set(sig.parameters) == {"project_dir", "intent", "mode"}
+
+
 class TestCompactionFaithfulness:
     """Ground-truth faithfulness: contracts written must appear verbatim in the brief.
 

@@ -244,6 +244,12 @@ def session_start_hook(project_dir: str) -> dict:
     one caller contract. Claude Code's session_start tool is untouched; this is an
     adapter, not a second implementation of session start.
 
+    CIR-150 item 5 / CIR-151: also passes result["verbatim_lines"] through to
+    CodexHost.render_session_context -- the CONTRACT tier as a tag-free flat
+    list, reconstructed fresh from state by session_start itself (never from
+    conversation), so Codex's continuity does not depend on it recognizing the
+    [TIER:CONTRACT] tag syntax embedded in `brief` for Claude Code's benefit.
+
     project_dir: The current project directory (same as session_start).
     Returns: {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": brief}}.
     """
@@ -255,7 +261,9 @@ def session_start_hook(project_dir: str) -> dict:
         raise RuntimeError(f"Codex SessionStart hook blocked: {selected.reason}")
     require_capability(CodexHost.capabilities, HostCapability.SESSION_CONTEXT)
     result = session_start(project_dir)
-    return CodexHost.render_session_context(result.get("brief", ""))
+    return CodexHost.render_session_context(
+        result.get("brief", ""), result.get("verbatim_lines", [])
+    )
 
 
 @mcp.tool()

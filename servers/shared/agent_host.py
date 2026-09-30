@@ -169,7 +169,19 @@ class ClaudeCodeHost:
 
 
 class CodexHost:
-    """Codex boundary declaration and SessionStart hook renderer."""
+    """Codex boundary declaration and SessionStart hook renderer.
+
+    PRE_TOOL_GUARD (CIR-150 item 5 / CIR-151): declared here because the
+    underlying mechanism (pre_tool_use.py's M+ write gate, added for CIR-150
+    item 4) is vendor-neutral by construction — pure Python reading session
+    state files, no Claude-specific API. The gate is wired at the hook
+    BOUNDARY (whatever the host's PreToolUse-equivalent event is), not
+    in-process, so any host capable of invoking that boundary gets the same
+    enforcement. Declaring the capability here is a statement about the
+    mechanism's design, not a claim that Codex's own hook wiring has been
+    exercised live — that verification is explicitly out of scope for this
+    change (see CIR-151's SCOPE-OUT: no Codex usage authorized this session).
+    """
 
     capabilities = HostCapabilities(
         host_id="codex",
@@ -177,16 +189,39 @@ class CodexHost:
         supported=frozenset({
             HostCapability.SESSION_CONTEXT,
             HostCapability.COMPACTION_CONTEXT,
+            HostCapability.PRE_TOOL_GUARD,
         }),
     )
 
     @staticmethod
-    def render_session_context(brief: str) -> dict:
-        """Render the only Codex-specific SessionStart response shape."""
+    def render_session_context(brief: str, verbatim_lines: list[str] | None = None) -> dict:
+        """Render the only Codex-specific SessionStart response shape.
+
+        verbatim_lines (CIR-150 item 5 / CIR-151): the CONTRACT-tier content,
+        as a flat list of plain strings — structurally separate from `brief`'s
+        [TIER:CONTRACT]-tagged prose. Those tags exist so a host with its own
+        pre-compaction hook (today: only Claude, via pre_compact.py) can bias
+        ITS OWN mid-session summarization; nothing guarantees a different
+        host parses that tag syntax at all. When verbatim_lines is provided,
+        this renders them as an explicit, tag-free preservation block ahead
+        of the general brief, so Codex's continuity does not depend on it
+        recognizing Claude-oriented tag syntax it was never designed to read.
+        """
+        context = brief
+        if verbatim_lines:
+            # Lines are rendered as-is, not re-bulleted — callers (compaction.py's
+            # contracts loader) already store them with their own "- " prefix, and
+            # adding a second one here would double it.
+            preserved = "\n".join(verbatim_lines)
+            context = (
+                "The following working agreements must be preserved verbatim "
+                "in any further summarization of this session:\n"
+                f"{preserved}\n\n{brief}"
+            )
         return {
             "hookSpecificOutput": {
                 "hookEventName": "SessionStart",
-                "additionalContext": brief,
+                "additionalContext": context,
             }
         }
 

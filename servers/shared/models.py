@@ -159,6 +159,12 @@ class SessionState:
     # decision for the founder, not a line buried in a health report. The matching per-write
     # consequence lives in pre_tool_use.py's PreToolUse gate (plugin/scripts/youk_hook_utils.py).
     kill_criterion_decision_packet: dict | None = None
+    # verbatim_lines (CIR-150 item 5 / CIR-151): the CONTRACT tier as a flat,
+    # tag-free list, echoed from compaction.build_brief's verbatim_lines field.
+    # Lets a SessionStart renderer (agent_host.CodexHost.render_session_context)
+    # reconstruct the preservation guarantee at read time, without depending on
+    # a host parsing brief's [TIER:CONTRACT] tag syntax out of running prose.
+    verbatim_lines: list[str] = field(default_factory=list)
     # Recurring domain audit patterns from audit-signals.jsonl (cross-session).
     # Non-empty = domain flagged HIGH in ≥40% of last 5 sessions on this project.
     # Surface as: "Recurring audit signal: {domain} flagged HIGH in {count}/{total} sessions on {project}"
@@ -214,6 +220,7 @@ class SessionState:
             "convergence_state": self.convergence_state,
             "pending_build_task": self.pending_build_task,
             "kill_criterion_decision_packet": self.kill_criterion_decision_packet,
+            "verbatim_lines": self.verbatim_lines,
         }
 
 
