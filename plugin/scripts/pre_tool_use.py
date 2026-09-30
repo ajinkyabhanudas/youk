@@ -38,6 +38,13 @@ Two independent jobs:
    running container's actual boot time (Docker) to the latest commit touching
    runtime-sensitive paths, and auto-restarts (or denies) when it's stale —
    see server_freshness.enforce.
+
+4. mcp__youk-core__session_end with close_cluster=True: the verification-
+   contract gate. Reuses this same PreToolUse boundary and deny-outright
+   precedent as the M+ write gate above, but for claims: any claim on record
+   under state/verification-contracts/claims/ with an unresolved
+   (non-"verified") sub_claim blocks the session from being reported done.
+   See servers/core/src/verification_contract.gate_all_claims.
 """
 from __future__ import annotations
 import re
@@ -45,6 +52,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "servers" / "core" / "src"))
 from youk_hook_utils import (
     read_stdin,
     is_destructive_command,
@@ -57,6 +65,7 @@ from youk_hook_utils import (
     deny,
 )
 from server_freshness import enforce as enforce_deploy_freshness
+from verification_contract import gate_all_claims
 
 _MCP_YOUK_TOOL_RE = re.compile(r"^mcp__(youk-core|youk-code)__")
 
@@ -71,6 +80,11 @@ def main() -> None:
     if mcp_match:
         root = youk_root()
         if root is not None:
+            if tool_name.endswith("__session_end") and tool_input.get("close_cluster"):
+                claim_verdict = gate_all_claims(root)
+                if claim_verdict is not None:
+                    deny(claim_verdict["message"])
+                    return
             verdict = enforce_deploy_freshness(root, mcp_match.group(1))
             if verdict["action"] == "deny":
                 deny(verdict["message"])

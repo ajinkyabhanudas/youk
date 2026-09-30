@@ -410,3 +410,115 @@ class TestMPlusWriteGate:
             env={"YOUK_ROOT": str(root)},
         )
         assert out == {"continue": True}
+
+
+class TestVerificationClaimGate:
+    """CIR-154 item 4: a claim on record with an unresolved sub_claim must
+    block mcp__youk-core__session_end(close_cluster=True) at the same
+    PreToolUse boundary CIR-150 item 4 already uses for the M+ write gate --
+    real subprocess hook, real claim files on disk, no mocking."""
+
+    def _youk_root(self, tmp_path) -> Path:
+        root = tmp_path / "youk_root"
+        (root / "state").mkdir(parents=True)
+        return root
+
+    def _write_claim(self, root: Path, name: str, sub_claims: list[dict]) -> None:
+        claims_dir = root / "state" / "verification-contracts" / "claims"
+        claims_dir.mkdir(parents=True, exist_ok=True)
+        (claims_dir / f"{name}.json").write_text(json.dumps({
+            "statement": name,
+            "dimension": "host",
+            "sub_claims": sub_claims,
+            "all_verified": all(sc["status"] == "verified" for sc in sub_claims),
+        }))
+
+    def _fake_fresh_docker_bin(self, tmp_path: Path) -> Path:
+        """Minimal fake docker/launchctl reporting an always-fresh container,
+        so tests that fall through the claim gate (nothing to block) don't
+        also need to exercise CIR-153's separate deploy-freshness gate."""
+        bindir = tmp_path / "bin"
+        bindir.mkdir(exist_ok=True)
+        (bindir / "docker").write_text('#!/bin/sh\nprintf %s "2099-01-01T00:00:00Z"\n')
+        (bindir / "docker").chmod(0o755)
+        return bindir
+
+    def test_session_end_with_unresolved_sub_claim_is_denied(self, tmp_path):
+        root = self._youk_root(tmp_path)
+        self._write_claim(root, "youk-is-agent-agnostic", [
+            {"id": "pre_tool_guard:claude-code", "mechanism": "pre_tool_guard",
+             "host": "claude-code", "status": "verified", "evidence": "plugin/hooks/hooks.json:26"},
+            {"id": "pre_tool_guard:codex", "mechanism": "pre_tool_guard",
+             "host": "codex", "status": "failed", "evidence": None},
+        ])
+
+        out = _run_hook(
+            {"tool_name": "mcp__youk-core__session_end",
+             "tool_input": {"summary": "done", "close_cluster": True},
+             "cwd": str(tmp_path)},
+            env={"YOUK_ROOT": str(root)},
+        )
+        assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+        reason = out["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "pre_tool_guard:codex" in reason
+        assert "failed" in reason
+
+    def test_session_end_with_every_sub_claim_verified_is_allowed(self, tmp_path):
+        root = self._youk_root(tmp_path)
+        self._write_claim(root, "compaction-works-everywhere", [
+            {"id": "compaction_context:claude-code", "mechanism": "compaction_context",
+             "host": "claude-code", "status": "verified", "evidence": "plugin/hooks/hooks.json:4"},
+        ])
+        bindir = self._fake_fresh_docker_bin(tmp_path)
+
+        out = _run_hook(
+            {"tool_name": "mcp__youk-core__session_end",
+             "tool_input": {"summary": "done", "close_cluster": True},
+             "cwd": str(tmp_path)},
+            env={"YOUK_ROOT": str(root), "PATH": f"{bindir}:{os.environ.get('PATH', '')}"},
+        )
+        assert "hookSpecificOutput" not in out or out["hookSpecificOutput"].get("permissionDecision") != "deny"
+
+    def test_session_end_without_close_cluster_is_not_gated_on_claims(self, tmp_path):
+        """A mid-session session_end (close_cluster not set) isn't the "report
+        this done" boundary -- only the close_cluster=True call is."""
+        root = self._youk_root(tmp_path)
+        self._write_claim(root, "youk-is-agent-agnostic", [
+            {"id": "pre_tool_guard:codex", "mechanism": "pre_tool_guard",
+             "host": "codex", "status": "failed", "evidence": None},
+        ])
+        bindir = self._fake_fresh_docker_bin(tmp_path)
+
+        out = _run_hook(
+            {"tool_name": "mcp__youk-core__session_end",
+             "tool_input": {"summary": "partial"},
+             "cwd": str(tmp_path)},
+            env={"YOUK_ROOT": str(root), "PATH": f"{bindir}:{os.environ.get('PATH', '')}"},
+        )
+        assert "hookSpecificOutput" not in out or out["hookSpecificOutput"].get("permissionDecision") != "deny"
+
+    def test_other_mcp_tool_calls_are_not_gated_on_claims(self, tmp_path):
+        root = self._youk_root(tmp_path)
+        self._write_claim(root, "youk-is-agent-agnostic", [
+            {"id": "pre_tool_guard:codex", "mechanism": "pre_tool_guard",
+             "host": "codex", "status": "failed", "evidence": None},
+        ])
+        bindir = self._fake_fresh_docker_bin(tmp_path)
+
+        out = _run_hook(
+            {"tool_name": "mcp__youk-core__route_task", "tool_input": {}, "cwd": str(tmp_path)},
+            env={"YOUK_ROOT": str(root), "PATH": f"{bindir}:{os.environ.get('PATH', '')}"},
+        )
+        assert "hookSpecificOutput" not in out or out["hookSpecificOutput"].get("permissionDecision") != "deny"
+
+    def test_no_claims_directory_at_all_falls_through_to_allow(self, tmp_path):
+        root = self._youk_root(tmp_path)
+        bindir = self._fake_fresh_docker_bin(tmp_path)
+
+        out = _run_hook(
+            {"tool_name": "mcp__youk-core__session_end",
+             "tool_input": {"summary": "done", "close_cluster": True},
+             "cwd": str(tmp_path)},
+            env={"YOUK_ROOT": str(root), "PATH": f"{bindir}:{os.environ.get('PATH', '')}"},
+        )
+        assert "hookSpecificOutput" not in out or out["hookSpecificOutput"].get("permissionDecision") != "deny"
