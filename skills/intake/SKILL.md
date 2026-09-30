@@ -169,6 +169,7 @@ After user corrects:
 2. Synthesize the gap: "Based on your corrections, the unconsidered constraint is: {X}"
 3. If the gap changes the problem statement materially: restate the problem in one sentence
 4. Pass the restated problem (and gap) to routing as the `intent_brief`
+5. **If the restated problem needs a bigger size than the original task was routed at** (CIR-150/CIR-151): call `youk-core.escalate_scope(task, reason, suggested_size, source="intake_gap_synthesis")` with the unconsidered constraint as `reason`. This is a real scope-widening event, not the same case challenge's ITERATE minimum-revision check exists to suppress (see that skill's note on the distinction) — a materially restated problem is a reframing, not a sharpening, and route_task's next call for this task must not settle for the original size.
 
 Format:
 ```

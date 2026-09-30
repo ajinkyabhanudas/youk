@@ -62,6 +62,15 @@ class RoutingDecision:
     # without a second tool call.
     overengineering_flag: bool = False
     overengineering_note: str | None = None
+    # scope_escalated: True when this call's size was raised by a pending
+    # state/sessions/{slug}/scope-escalation.json signal (CIR-150 item 2 / CIR-151)
+    # rather than route_task's own keyword scoring. Written by
+    # routing.write_scope_escalation — called from task_contract.py's ESCALATE
+    # disposition, or directly from challenge/intake when Lens 1 / GAP SYNTHESIS
+    # finds the ORIGINAL problem framing was wrong (not the minimum-revision case
+    # of merely sharpening a direction within its existing scope).
+    scope_escalated: bool = False
+    scope_escalation_reason: str = ""
 
     def to_dict(self) -> dict:
         d = {
@@ -82,6 +91,8 @@ class RoutingDecision:
             # default-filled with null by the output validator and then fails its own
             # non-nullable "type": "string" check. Empty string is the empty signal.
             "collapsing_question": self.collapsing_question,
+            "scope_escalated": self.scope_escalated,
+            "scope_escalation_reason": self.scope_escalation_reason,
         }
         if self.overengineering_note:
             d["overengineering_note"] = self.overengineering_note

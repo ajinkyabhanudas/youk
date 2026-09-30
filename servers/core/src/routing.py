@@ -61,6 +61,111 @@ def _load_routes() -> dict:
         return yaml.safe_load(f)
 
 
+# ── Scope escalation (CIR-150 item 2 / CIR-151) ────────────────────────────────
+#
+# task_contract.py's disposition vocabulary was IN-SCOPE | DEFER | ACCEPT-RISK |
+# N/A — no way for a finding that "the ORIGINAL problem framing is wrong" (Lens 1:
+# is the stated problem a symptom of a deeper problem? / intake Phase 4 GAP
+# SYNTHESIS: the restated problem materially changes scope) to actually widen
+# what gets built. It could only be printed and dropped, or fall into
+# challenge's minimum-revision check — which is the WRONG rule for this case:
+# minimum-revision governs REVISING a direction to address an objection WITHIN
+# its existing scope; it exists specifically to suppress widening there. This is
+# the opposite situation — the scope itself needs to grow — and must not be
+# suppressed by that rule. write_scope_escalation / _consume_scope_escalation
+# below is the real mechanism: a one-shot, slug-scoped signal file that forces
+# route_task's very next call this session to a floor size, so the finding
+# actually changes what gets built instead of just getting surfaced as text.
+
+_SIZE_RANK = {TaskSize.XS: 1, TaskSize.S: 2, TaskSize.M: 3, TaskSize.L: 4, TaskSize.XL: 5}
+
+
+def _scope_escalation_file(slug: str) -> Path:
+    """Path only — no mkdir. Path.exists()/.read_text() never need the parent
+    directory to exist, and route_task calls this on every invocation (via
+    _consume_scope_escalation) regardless of whether any escalation was ever
+    written, so a side-effecting mkdir here would create session directories
+    for slugs that never had one and, worse, crash on a read-only mount where
+    the state tree hasn't been created yet by anything else."""
+    d = YOUK_ROOT / "state" / "sessions" / (slug or "unknown")
+    return d / "scope-escalation.json"
+
+
+def write_scope_escalation(slug: str, task: str, reason: str, suggested_size: str, source: str) -> dict:
+    """
+    Persist a scope-escalation signal. Called from task_contract.py's ESCALATE
+    disposition, or directly by challenge/intake when Lens 1 / GAP SYNTHESIS
+    finds the original framing was wrong.
+
+    suggested_size must be M, L, or XL — escalation only ever grows scope, never
+    shrinks it. Returns {"escalated": False, "reason": ...} on an invalid size
+    rather than raising: this is called from in-session skill reasoning that
+    should degrade safely on a malformed value, not crash the calling turn.
+    """
+    try:
+        target = TaskSize(suggested_size.upper())
+    except ValueError:
+        return {"escalated": False, "reason": f"invalid suggested_size: {suggested_size!r}"}
+    if target not in (TaskSize.M, TaskSize.L, TaskSize.XL):
+        return {"escalated": False, "reason": "escalation must target M, L, or XL"}
+
+    entry = {
+        # Normalized the same way _scope_escalation_file resolves the file
+        # path, so a slug of "" and "unknown" can never look like a mismatch
+        # between where the file lives and what _consume_scope_escalation's
+        # slug check compares against.
+        "slug": slug or "unknown",
+        "task": task[:200],
+        "reason": reason,
+        "suggested_size": target.value,
+        "source": source,
+        "ts": datetime.utcnow().isoformat(),
+        "consumed": False,
+    }
+    _escalation_path = _scope_escalation_file(slug)
+    _escalation_path.parent.mkdir(parents=True, exist_ok=True)
+    _escalation_path.write_text(json.dumps(entry))
+    return {
+        "escalated": True,
+        "suggested_size": target.value,
+        "instruction": (
+            f"Scope escalation recorded ({source}): {reason} Call route_task "
+            f"again for this task — the next call this session will not settle "
+            f"for a size smaller than {target.value}."
+        ),
+    }
+
+
+def _consume_scope_escalation(slug: str) -> TaskSize | None:
+    """
+    Read and consume (mark used) a pending scope escalation for this slug.
+
+    One-shot by design: applies to exactly the next route_task call, not every
+    subsequent call this session. An escalation that silently reapplied forever
+    would make route_task's returned size unpredictable long after the finding
+    that justified it stopped being the live concern.
+    """
+    f = _scope_escalation_file(slug)
+    if not f.exists():
+        return None
+    try:
+        data = json.loads(f.read_text())
+    except Exception:
+        return None
+    if data.get("consumed") or data.get("slug") != (slug or "unknown"):
+        return None
+    try:
+        size = TaskSize(data.get("suggested_size", ""))
+    except ValueError:
+        return None
+    data["consumed"] = True
+    try:
+        f.write_text(json.dumps(data))
+    except Exception:
+        pass
+    return size
+
+
 def _score_size(task: str, routes: dict) -> TaskSize:
     """
     Net-score routing: positive signal matches minus (negative signal matches × 2).
@@ -170,6 +275,20 @@ def route_task(
     else:
         size = _score_size(task, routes)
 
+    # Scope escalation (CIR-150 item 2 / CIR-151): a pending, unconsumed
+    # write_scope_escalation() signal for this slug forces a floor on the size
+    # computed above — never lowers it, only raises it, and only once.
+    scope_escalated = False
+    scope_escalation_reason = ""
+    _escalated_size = _consume_scope_escalation(slug)
+    if _escalated_size is not None and _SIZE_RANK[_escalated_size] > _SIZE_RANK[size]:
+        scope_escalated = True
+        scope_escalation_reason = (
+            f"escalated from {size.value} to {_escalated_size.value} — the "
+            "original problem framing was found to be wrong, not just under-specified"
+        )
+        size = _escalated_size
+
     sizes_config = routes.get("task_sizes", {})
     size_config = sizes_config.get(size.value, {})
 
@@ -246,6 +365,8 @@ def route_task(
         plan_hook=plan_hook,
         overengineering_flag=_overeng_flag,
         overengineering_note=_overeng_note,
+        scope_escalated=scope_escalated,
+        scope_escalation_reason=scope_escalation_reason,
     )
     # Write breadcrumb so task_checkpoint can verify routing ran before M+ work.
     # Only write for non-blocked M+ decisions — XS/S bypass is intentional.

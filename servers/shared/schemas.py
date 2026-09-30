@@ -98,6 +98,17 @@ class RouteTaskResult(TypedDict, total=False):
     graph_state: dict[str, object]  # present when blocked_count > 0
     calls_since_compact: int
     steering_context: list[SteeringBehavior]
+    scope_escalated: bool
+    scope_escalation_reason: str
+
+
+# ── escalate_scope ────────────────────────────────────────────────────────────
+
+class EscalateScopeResult(TypedDict, total=False):
+    escalated: bool
+    reason: str                    # present when escalated=False
+    suggested_size: str
+    instruction: str
 
 
 # ── task_contract ─────────────────────────────────────────────────────────────

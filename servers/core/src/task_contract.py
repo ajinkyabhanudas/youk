@@ -19,6 +19,7 @@ CLAUDE_ROOT = Path("/claude")
 import sys
 sys.path.insert(0, "/shared")
 from models import TaskSize
+from routing import write_scope_escalation as _write_scope_escalation
 
 YOUK_ROOT = Path("/youk")
 _CONTRACTS_DIR = YOUK_ROOT / "state" / "task-contracts"
@@ -26,6 +27,21 @@ _RISK_LEDGER = YOUK_ROOT / "state" / "risk-ledger.jsonl"
 _FRAMES_FILE = YOUK_ROOT / "skills" / "adversarial-planning" / "references" / "frames.md"
 _ROUTES_FILE = YOUK_ROOT / "config" / "routes.yaml"
 _AUDIT_DIR = CLAUDE_ROOT / "audit"
+
+# CIR-150 item 2 / CIR-151: ESCALATE added to the disposition vocabulary. Distinct
+# from the other four — IN-SCOPE/DEFER/ACCEPT-RISK/N/A all resolve a provocation
+# WITHIN the contract's current scope. ESCALATE means the provocation revealed the
+# ORIGINAL problem framing was wrong (a symptom of something bigger), and this
+# contract's size needs to grow before work proceeds — see write_scope_escalation
+# in routing.py, called from approve_task_contract below. Single source of truth
+# for the vocabulary string so _render_contract and the unresolved-provocation
+# check below can never drift apart on what counts as "resolved."
+_DISPOSITION_VOCAB = "IN-SCOPE | DEFER | ACCEPT-RISK | ESCALATE | N/A"
+
+# One size tier up per disposition — ESCALATE always grows scope by exactly one
+# tier from the contract's own size, never more; a provocation disposition
+# carries no explicit target size of its own to escalate to.
+_NEXT_SIZE_UP = {"M": "L", "L": "XL", "XL": "XL"}
 
 _FRAME_QUESTIONS: dict[str, str] = {
     "F1": "If this works perfectly, does the user actually feel the benefit?",
@@ -371,7 +387,7 @@ def _render_contract(
         citation_suffix = f" ({p['citation']})" if p["citation"] else ""
         lines.append(
             f"  P{i} [{p['frame']} {p['label']}] {p['risk']}{citation_suffix}"
-            f"          → IN-SCOPE | DEFER | ACCEPT-RISK | N/A"
+            f"          → {_DISPOSITION_VOCAB}"
         )
 
     if not is_mini:
@@ -388,6 +404,20 @@ def _render_contract(
     ]
 
     return "\n".join(lines)
+
+
+def _find_provocation_text(approved_text: str, key: str) -> tuple[str, str]:
+    """Find provocation `key`'s (frame, risk) text in the approved contract body.
+    Shared by the ACCEPT-RISK ledger append and the ESCALATE scope-widening call —
+    factored out so the two dispositions can't drift on how they parse the same
+    line shape."""
+    for line in approved_text.splitlines():
+        if line.strip().startswith(f"{key} ["):
+            m = re.match(r"\s*P\d+ \[(\w+[^]]*)\] (.+?)(?:\s+→|\s*$)", line)
+            if m:
+                return m.group(1).strip(), m.group(2).strip()
+            break
+    return "", ""
 
 
 def generate_task_contract(task: str, size: str | None = None) -> dict:
@@ -509,38 +539,53 @@ def approve_task_contract(
     # Check for unresolved provocations
     unresolved: list[str] = []
     for line in as_approved.splitlines():
-        if "→ IN-SCOPE | DEFER | ACCEPT-RISK | N/A" in line:
+        if f"→ {_DISPOSITION_VOCAB}" in line:
             m = re.match(r"\s*(P\d+)", line)
             if m:
                 unresolved.append(m.group(1))
 
     record["unresolved_provocations"] = unresolved
-    path.write_text(f"---\n{json.dumps(record, indent=2)}\n---\n\n{as_approved}\n")
 
     # Append ACCEPT-RISK items to risk ledger
     dispositions = disposition_map or {}
     for key, disposition in dispositions.items():
         if disposition.upper() == "ACCEPT-RISK":
+            frame, risk_text = _find_provocation_text(as_approved, key)
             entry = {
                 "date": datetime.now(UTC).isoformat(),
                 "contract_id": contract_id,
-                "risk": key,
-                "frame": "",
+                "risk": risk_text or key,
+                "frame": frame,
             }
-            # Find the provocation text for this key
-            for line in as_approved.splitlines():
-                if line.strip().startswith(f"{key} ["):
-                    m = re.match(r"\s*P\d+ \[(\w+[^]]*)\] (.+?)(?:\s+→|\s*$)", line)
-                    if m:
-                        entry["frame"] = m.group(1).strip()
-                        entry["risk"] = m.group(2).strip()
-                    break
             try:
                 _RISK_LEDGER.parent.mkdir(parents=True, exist_ok=True)
                 with open(_RISK_LEDGER, "a") as f:
                     f.write(json.dumps(entry) + "\n")
             except Exception:
                 pass
+
+    # ESCALATE dispositions: real call-site wiring, not a printed-and-dropped
+    # finding. See _DISPOSITION_VOCAB's docstring above for why this is a
+    # different case from the ITERATE minimum-revision check.
+    escalations: list[dict] = []
+    for key, disposition in dispositions.items():
+        if disposition.upper() != "ESCALATE":
+            continue
+        _, risk_text = _find_provocation_text(as_approved, key)
+        target_size = _NEXT_SIZE_UP.get(record.get("size", "M"), "L")
+        outcome = _write_scope_escalation(
+            record.get("project", ""),
+            record.get("task", ""),
+            risk_text or f"provocation {key} dispositioned ESCALATE",
+            target_size,
+            "task_contract_provocation",
+        )
+        outcome["provocation"] = key
+        escalations.append(outcome)
+    if escalations:
+        record["escalations"] = escalations
+
+    path.write_text(f"---\n{json.dumps(record, indent=2)}\n---\n\n{as_approved}\n")
 
     result: dict = {
         "saved": True,
@@ -549,6 +594,7 @@ def approve_task_contract(
         "edit_rate": edit_rate,
         "unresolved_provocations": unresolved,
         "blocked": len(unresolved) > 0,
+        "escalations": escalations,
     }
 
     # Wire approved contract → task graph node (the mechanical guarantee that no
