@@ -19,6 +19,13 @@ you supply the reasoning content and spawn the adversary subagent.
    nfr). Read `TEMPLATES[domain]` from coverage_tree.py for each — those are the required concepts.
 2. For each concept, mark Coverage: COVERED / PARTIAL / MISSING / NA, with one-line detail.
    Be honest — marking MISSING is the feature, not a failure. This is the Builder's self-claim.
+3. **Task-specific asks (CIR-150 item 3 / CIR-151):** call `youk-core.extract_task_specific_asks(task)`
+   with the ORIGINAL task text (not your plan, not a summary of it). The four domains above are
+   fixed and generic — an explicit functional ask that falls outside all four is invisible to
+   them. If it returns a non-empty `asks` list, mark Coverage for each ask exactly like a domain
+   concept, and render it as one more branch in Phase 3: `render_coverage_view(mode="task-specific
+   asks", target=task, outcomes={...})`. An ask the user explicitly named that your plan dropped
+   now shows as a real MISSING node instead of never having had a checklist item at all.
 
 ## Phase 2 — spawn the adversary (STAKES-GATED, spawn-don't-fake)
 

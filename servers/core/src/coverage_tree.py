@@ -30,6 +30,7 @@ tree logic.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -197,6 +198,64 @@ def add_concept_to_template(
     return True
 
 
+# --- task-specific asks (CIR-150 item 3 / CIR-151) ----------------------------------------
+# The four domain templates above are fixed and generic — a plan that silently drops a
+# FUNCTIONAL requirement the user explicitly asked for, but which falls outside all four
+# generic buckets, shows as 100% covered, because nothing ties the checklist back to the
+# task's own stated asks. This closes that gap: parse the task's own text (not the plan)
+# for the discrete asks it enumerates, and add them as one more branch alongside the four
+# generic domains — so dropping one of them is a real MISSING node, not an invisible miss.
+
+_TASK_SPECIFIC_DOMAIN = "task-specific asks"
+_MIN_ASK_WORDS = 3
+_MAX_ASKS = 8
+# Split on the enumeration/conjunction markers a developer naturally uses to list multiple
+# asks in one request ("add X, support Y, and log Z") — the "and/also/plus" alternative is
+# tried first so ", and " splits as one unit rather than leaving a stray leading "and ".
+_CONJUNCTION_SPLIT = re.compile(r",?\s+(?:and|also|plus)\s+|,\s*|;\s*", re.IGNORECASE)
+_BULLET_PREFIX = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
+
+
+def extract_task_specific_asks(task: str) -> list[str]:
+    """
+    Parse the task's own explicitly-stated functional asks straight from its raw text —
+    never from a plan. Deliberately simple and deterministic (no LLM): splits on the
+    enumeration/conjunction markers a developer naturally uses to list multiple asks in
+    one request, plus bullet/numbered lines.
+
+    Returns [] when fewer than 2 distinct asks are extractable — a single-clause task has
+    nothing this phase adds beyond the four generic domain templates, and one "ask" is not
+    a checklist, it is the whole task restated.
+    """
+    if not task or not task.strip():
+        return []
+
+    fragments: list[str] = []
+    for line in task.splitlines():
+        line = _BULLET_PREFIX.sub("", line.strip())
+        if not line:
+            continue
+        fragments.extend(p.strip() for p in _CONJUNCTION_SPLIT.split(line))
+
+    asks: list[str] = []
+    seen: set[str] = set()
+    for fragment in fragments:
+        fragment = fragment.strip(" .")
+        if not fragment or len(fragment.split()) < _MIN_ASK_WORDS:
+            continue
+        key = fragment.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        asks.append(fragment)
+        if len(asks) >= _MAX_ASKS:
+            break
+
+    if len(asks) < 2:
+        return []
+    return asks
+
+
 # --- spawn decision (W1): when must the independent adversary run? -------------------------
 # Domains where a missed CONCEPT (not a bug — a concept never considered) has unbounded cost.
 # The adversary spawn is NEVER rationed away for these, regardless of stakes/budget — an L9
@@ -353,16 +412,32 @@ def build_tree(
     domains: list[str],
     populate: Populator,
     adversary: Adversary | None,
+    include_task_specific: bool = True,
 ) -> CoverageTree:
     """Build the tree: populate each domain, then run the adversary if available.
 
     The degraded path (BUILD-SPEC no-API section) is the DEFAULT posture, not an exception:
     if adversary is None OR raises, adversary_status stays NOT_RUN and the tree renders
     UNVERIFIED — never a false-green clean result. This is the fail-safe made structural.
+
+    include_task_specific: when True (default) and extract_task_specific_asks(task) finds
+    ≥2 distinct asks, adds one more branch (domain=_TASK_SPECIFIC_DOMAIN) whose template IS
+    those asks — not one of the four fixed generic domains. This is what makes an explicitly
+    requested functional ask that a plan silently drops a real MISSING node instead of never
+    appearing on any checklist at all. Opt out only for callers that already have their own
+    task-specific extraction (avoids double-surfacing the same gap two different ways).
     """
+    templates_by_domain: dict[str, list[str]] = dict(TEMPLATES)
+    effective_domains = list(domains)
+    if include_task_specific:
+        asks = extract_task_specific_asks(task)
+        if asks:
+            templates_by_domain[_TASK_SPECIFIC_DOMAIN] = asks
+            effective_domains.append(_TASK_SPECIFIC_DOMAIN)
+
     tree = CoverageTree(task=task)
-    for domain in domains:
-        template = TEMPLATES.get(domain, [])
+    for domain in effective_domains:
+        template = templates_by_domain.get(domain, [])
         branch = Branch(domain=domain, nodes=populate(task, domain, template))
         tree.branches.append(branch)
 
@@ -372,7 +447,7 @@ def build_tree(
 
     found_any = False
     for branch in tree.branches:
-        template = TEMPLATES.get(branch.domain, [])
+        template = templates_by_domain.get(branch.domain, [])
         try:
             additions = adversary(task, branch, template)
         except Exception:

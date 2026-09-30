@@ -2268,6 +2268,30 @@ def record_steering_decomposition(
 
 
 @mcp.tool()
+def extract_task_specific_asks(task: str) -> dict:
+    """
+    CIR-150 item 3 / CIR-151: parse the task's own explicitly-stated functional asks
+    straight from its raw text — never from a plan — for coverage-tree's Phase 1.
+
+    coverage_tree.py's four domain templates (security, correctness, data, nfr) are
+    fixed and generic. A plan that silently drops a functional requirement the user
+    explicitly asked for, but which falls outside all four buckets, showed as 100%
+    covered — nothing tied the checklist back to the task's own stated asks. Call
+    this alongside the four domain templates in Phase 1, then render its result as
+    one more branch via render_coverage_view(mode="task-specific asks", target=task,
+    outcomes={ask: COVERED/PARTIAL/MISSING/NA, ...}) — an ask this task explicitly
+    named but the plan dropped now surfaces as a real MISSING node.
+
+    task: the raw task text — not a plan, not a summary of one.
+
+    Returns: {"asks": list[str]} — [] when fewer than 2 distinct asks are
+    extractable (a single-clause task has nothing this phase adds).
+    """
+    from coverage_tree import extract_task_specific_asks as _extract
+    return {"asks": _extract(task)}
+
+
+@mcp.tool()
 def render_coverage_view(
     mode: str,
     target: str,
