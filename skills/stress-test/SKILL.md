@@ -111,14 +111,10 @@ Finding {n}:
 
 Lens: What inputs, states, or sequences of events were not considered?
 
-Areas to probe:
-- What happens with empty inputs, zero-row results, null values?
-- What happens when an external dependency returns a partial response?
-- What happens when the operation is interrupted mid-way?
-- What happens when the input is valid but semantically unexpected? (e.g., a query that returns 50,000 rows)
-- What happens when two operations happen in an unexpected order?
-- Are all error types caught and handled, or only the expected ones?
-- What is the behavior on the first run when caches and state are empty?
+Read `references/edge-case-questions.md` for the areas to probe. This is the same
+question bank nfr-check's proactive functional edge-case derivation phase applies to
+the raw task text before a plan exists — Agent B applies it reactively, against a
+finished plan.
 
 Output format:
 ```

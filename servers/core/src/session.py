@@ -1140,10 +1140,14 @@ def _check_doc_freshness() -> list[str]:
 def _routing_ran_last_session(current_slug: str) -> tuple[bool, str]:
     """
     Returns (ran, task_label) — True when route_task was called during this session.
-    Uses state/route-task-ran.json written by server.py's route_task wrapper.
-    Supports both legacy single-object format and new array format.
+
+    Reads the slug-scoped state/sessions/{slug}/route-task-ran.json that
+    server.py's route_task wrapper actually writes — the L7 isolation contract
+    guarantees the flat state/route-task-ran.json path is never written, so
+    reading that path here always returned False regardless of whether routing
+    actually ran. Supports both legacy single-object format and new array format.
     """
-    flag_file = YOUK_ROOT / "state" / "route-task-ran.json"
+    flag_file = YOUK_ROOT / "state" / "sessions" / current_slug / "route-task-ran.json"
     if not flag_file.exists():
         return False, ""
     try:
@@ -1852,9 +1856,12 @@ def start_session(project_dir: str) -> SessionState:
     # Correct sequencing: session-plan.json was just written above, so build_brief reads
     # fresh data.
     try:
-        brief = _build_brief(project_dir).get("brief", "")
+        _brief_result = _build_brief(project_dir)
+        brief = _brief_result.get("brief", "")
+        _verbatim_lines = _brief_result.get("verbatim_lines", [])
     except Exception:
         brief = ""
+        _verbatim_lines = []
 
     # Write a session stub to the audit dir immediately at session open.
     # This breadcrumb survives even if the developer tabs out without calling /done —
@@ -1970,6 +1977,37 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass
 
+    # kill_criterion decision packet (CIR-150 item 4 / CIR-151): when
+    # health.py's _compute_improvement_velocity has written
+    # state/kill-criterion-triggered.json, surface it here as a blocking
+    # decision for the founder rather than letting the session continue as if
+    # nothing happened. This is the session_start half of the consequence —
+    # the pre_tool_use.py PreToolUse gate is the per-write half.
+    _kill_criterion_decision_packet: dict | None = None
+    try:
+        _kc_flag = YOUK_ROOT / "state" / "kill-criterion-triggered.json"
+        if _kc_flag.exists():
+            _kc_data = json.loads(_kc_flag.read_text())
+            if _kc_data.get("triggered"):
+                _kill_criterion_decision_packet = {
+                    "metric": _kc_data.get("metric", "skill_invocation_rate"),
+                    "detected_at": _kc_data.get("detected_at", ""),
+                    "reason": _kc_data.get("reason", ""),
+                    "consequence": (
+                        "Every Edit/Write this session is now denied at the "
+                        "PreToolUse boundary until route_task has run, regardless "
+                        "of task size (see pre_tool_use.py's M+ write gate)."
+                    ),
+                    "decision_needed": (
+                        "The routing mechanism itself needs redesign, not another "
+                        "nudge — per OUTCOMES.md's own stop condition. This flag "
+                        "self-clears the next time skill_invocation_rate recovers; "
+                        "it does not require manual dismissal."
+                    ),
+                }
+    except Exception:
+        pass
+
     # Cross-project concept graph: query on resume_point to surface related patterns
     # from other projects. Top-3 cross-project hits only (project_slug=None = all projects).
     # Filtered to exclude concepts from the current project (those are in domain/ already).
@@ -2062,6 +2100,8 @@ def start_session(project_dir: str) -> SessionState:
         pending_proposals_count=pending,
         session_counter=counter,
         health_check_due=health_check_due,
+        kill_criterion_decision_packet=_kill_criterion_decision_packet,
+        verbatim_lines=_verbatim_lines,
         project_type=project_type,
         contracts=contracts,
         close_cluster_missed=close_cluster_missed,

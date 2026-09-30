@@ -40,8 +40,21 @@ def test_missing_advisory_capability_is_explicitly_degraded():
     assert decision.reason == "advisory capability is unavailable"
 
 
-def test_missing_safety_capability_fails_closed():
+def test_codex_declares_pre_tool_guard():
+    """CIR-150 item 5 / CIR-151: pre_tool_use.py's M+ write gate (CIR-150 item 4)
+    is vendor-neutral by construction -- pure Python reading session state
+    files, no Claude-specific API -- and wired at the hook boundary, not
+    in-process. CodexHost now declares the capability to reflect that."""
     decision = evaluate_capability(CodexHost.capabilities, HostCapability.PRE_TOOL_GUARD)
+    assert decision.requirement is CapabilityRequirement.SAFETY
+    assert decision.status is CapabilityStatus.AVAILABLE
+
+
+def test_missing_safety_capability_fails_closed():
+    host = HostCapabilities(
+        "bare-host", CAPABILITY_SCHEMA_VERSION, frozenset({HostCapability.SESSION_CONTEXT})
+    )
+    decision = evaluate_capability(host, HostCapability.PRE_TOOL_GUARD)
     assert decision.requirement is CapabilityRequirement.SAFETY
     assert decision.status is CapabilityStatus.BLOCKED
     assert decision.reason == "required safety capability is unavailable"
@@ -63,6 +76,31 @@ def test_codex_hook_rendering_stays_at_the_vendor_boundary():
     }
 
 
+def test_codex_hook_rendering_with_no_verbatim_lines_is_unchanged():
+    """Backward compatible: omitting verbatim_lines (or passing []) must not
+    change the rendered output at all."""
+    assert CodexHost.render_session_context("brief", []) == {
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": "brief",
+        }
+    }
+    assert CodexHost.render_session_context("brief", None) == CodexHost.render_session_context("brief")
+
+
+def test_codex_hook_rendering_prepends_verbatim_lines_tag_free():
+    """CIR-150 item 5 / CIR-151: verbatim_lines renders as an explicit,
+    tag-free preservation block ahead of `brief` -- Codex's continuity must
+    not depend on it parsing Claude-oriented [TIER:CONTRACT] tag syntax."""
+    result = CodexHost.render_session_context("brief", ["- always run ruff", "- no force push"])
+    context = result["hookSpecificOutput"]["additionalContext"]
+    assert "[TIER:" not in context.split("\n\n")[0]
+    assert "- always run ruff" in context
+    assert "- no force push" in context
+    assert context.endswith("brief")
+    assert "preserved verbatim" in context.lower()
+
+
 def test_unsupported_schema_version_is_blocked():
     host = HostCapabilities("future-host", CAPABILITY_SCHEMA_VERSION + 1, frozenset(HostCapability))
     decision = evaluate_capability(host, HostCapability.SESSION_CONTEXT)
@@ -80,8 +118,18 @@ def test_missing_requirement_mapping_blocks_instead_of_raising(monkeypatch):
 
 
 def test_runtime_requirement_blocks_a_missing_safety_capability():
+    host = HostCapabilities(
+        "bare-host", CAPABILITY_SCHEMA_VERSION, frozenset({HostCapability.SESSION_CONTEXT})
+    )
     with pytest.raises(CapabilityUnavailableError, match="pre_tool_guard"):
-        require_capability(CodexHost.capabilities, HostCapability.PRE_TOOL_GUARD)
+        require_capability(host, HostCapability.PRE_TOOL_GUARD)
+
+
+def test_runtime_requirement_allows_codex_pre_tool_guard_now():
+    """The mirror case: CodexHost now HAS the capability, so require_capability
+    must not raise -- proving the declaration is actually load-bearing, not
+    just an unused enum member."""
+    require_capability(CodexHost.capabilities, HostCapability.PRE_TOOL_GUARD)
 
 
 def test_runtime_host_selection_blocks_ambiguous_evidence():

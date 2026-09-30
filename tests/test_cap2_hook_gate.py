@@ -94,22 +94,23 @@ class TestRouteTaskRanThisSession:
         assert route_task_ran_this_session(hook_root, "myproject") is False
 
     def test_returns_false_when_wrong_slug(self, hook_root):
-        (hook_root / "state" / "route-task-ran.json").write_text(
-            json.dumps([{"slug": "otherproject", "task_hash": "abc"}])
-        )
+        flag = hook_root / "state" / "sessions" / "otherproject" / "route-task-ran.json"
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.write_text(json.dumps([{"slug": "otherproject", "task_hash": "abc"}]))
         from youk_hook_utils import route_task_ran_this_session
         assert route_task_ran_this_session(hook_root, "myproject") is False
 
     def test_returns_true_when_slug_matches(self, hook_root):
-        (hook_root / "state" / "route-task-ran.json").write_text(
-            json.dumps([{"slug": "myproject", "task_hash": "abc"}])
-        )
+        flag = hook_root / "state" / "sessions" / "myproject" / "route-task-ran.json"
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.write_text(json.dumps([{"slug": "myproject", "task_hash": "abc"}]))
         from youk_hook_utils import route_task_ran_this_session
         assert route_task_ran_this_session(hook_root, "myproject") is True
 
     def test_returns_false_when_flag_older_than_session_open(self, hook_root, tmp_path):
         """Flag file older than session-open.json = prior session's route_task."""
-        flag = hook_root / "state" / "route-task-ran.json"
+        flag = hook_root / "state" / "sessions" / "myproject" / "route-task-ran.json"
+        flag.parent.mkdir(parents=True, exist_ok=True)
         flag.write_text(json.dumps([{"slug": "myproject", "task_hash": "abc"}]))
         # Write session-open.json with a newer mtime
         open_file = hook_root / "state" / "session-open.json"
@@ -127,7 +128,8 @@ class TestRouteTaskRanThisSession:
         import os
         import datetime as _dt
         import time as _time
-        flag = hook_root / "state" / "route-task-ran.json"
+        flag = hook_root / "state" / "sessions" / "myproject" / "route-task-ran.json"
+        flag.parent.mkdir(parents=True, exist_ok=True)
         flag.write_text(json.dumps([{"slug": "myproject", "task_hash": "abc"}]))
         # Backdate the flag to yesterday
         yesterday = _dt.date.today() - _dt.timedelta(days=1)

@@ -9,7 +9,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state, _record_outcome_followup, enrich_route_result as _enrich_route_result_impl, write_routing_context as _write_routing_context_impl, append_gate_to_active_task as _append_gate_impl
-from routing import route_task as _route_task
+from routing import route_task as _route_task, write_scope_escalation as _write_scope_escalation
 from health import (
     run_health_check_with_skill_signals,
     add_proposal as _add_proposal,
@@ -34,6 +34,7 @@ from schemas import (
     TaskContractResult,
     CheckNfrGateResult,
     CheckChallengeGateResult,
+    EscalateScopeResult,
 )
 from nfr_gate import check_nfr_gate as _check_nfr_gate
 from challenge_gate import check_challenge_gate as _check_challenge_gate
@@ -243,6 +244,12 @@ def session_start_hook(project_dir: str) -> dict:
     one caller contract. Claude Code's session_start tool is untouched; this is an
     adapter, not a second implementation of session start.
 
+    CIR-150 item 5 / CIR-151: also passes result["verbatim_lines"] through to
+    CodexHost.render_session_context -- the CONTRACT tier as a tag-free flat
+    list, reconstructed fresh from state by session_start itself (never from
+    conversation), so Codex's continuity does not depend on it recognizing the
+    [TIER:CONTRACT] tag syntax embedded in `brief` for Claude Code's benefit.
+
     project_dir: The current project directory (same as session_start).
     Returns: {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": brief}}.
     """
@@ -254,7 +261,9 @@ def session_start_hook(project_dir: str) -> dict:
         raise RuntimeError(f"Codex SessionStart hook blocked: {selected.reason}")
     require_capability(CodexHost.capabilities, HostCapability.SESSION_CONTEXT)
     result = session_start(project_dir)
-    return CodexHost.render_session_context(result.get("brief", ""))
+    return CodexHost.render_session_context(
+        result.get("brief", ""), result.get("verbatim_lines", [])
+    )
 
 
 @mcp.tool()
@@ -631,6 +640,42 @@ def route_task(
     result["calls_since_compact"] = _increment_tool_call_count()
     result["state_written"] = ["state/{slug}/route-task-ran.json", "state/active_task.json"]
     return result
+
+
+@mcp.tool()
+def escalate_scope(task: str, reason: str, suggested_size: str, source: str = "challenge") -> EscalateScopeResult:
+    """
+    CIR-150 item 2 / CIR-151: record that a task's ORIGINAL problem framing was
+    found wrong — not merely under-specified — and force route_task's next call
+    this session to a floor size, instead of the finding being surfaced as text
+    and then dropped.
+
+    Call this when:
+    - challenge Lens 1 finds the stated problem is a symptom of a deeper problem
+      (BLOCKING/WRONG verdict on framing, not a sharpening of the same direction)
+    - intake Phase 4 GAP SYNTHESIS restates the problem in a way that materially
+      changes its scope
+    - a task_contract PROVOCATION is dispositioned ESCALATE
+
+    Do NOT call this for challenge's ITERATE minimum-revision case (Lens 2 applied
+    to a proposed revision) — that is a different rule, on purpose: minimum-revision
+    keeps a revision from over-solving the SAME objection within the SAME scope;
+    this widens the scope itself because the original framing was wrong. Merging
+    the two would suppress real escalations under the anti-widening rule they were
+    never meant to police.
+
+    task: The task whose scope needs to grow.
+    reason: One sentence — why the original framing was wrong.
+    suggested_size: M, L, or XL. Escalation only ever grows scope.
+    source: "challenge_lens1" | "intake_gap_synthesis" | "task_contract_provocation".
+
+    Returns: {"escalated": bool, "suggested_size": str, "instruction": str}
+    When escalated=True: call route_task again for this task — its size will not
+    be smaller than suggested_size.
+    When escalated=False: reason explains why (invalid suggested_size).
+    """
+    slug = _get_session_slug()
+    return _write_scope_escalation(slug, task, reason, suggested_size, source)
 
 
 def _enrich_route_result(result: dict, task: str) -> None:
@@ -2228,6 +2273,30 @@ def record_steering_decomposition(
     the strictness stays tunable. Call after work completes with the honest confidence.
     """
     return _record_decomposition(label, behavior, task_context, confidence=confidence)
+
+
+@mcp.tool()
+def extract_task_specific_asks(task: str) -> dict:
+    """
+    CIR-150 item 3 / CIR-151: parse the task's own explicitly-stated functional asks
+    straight from its raw text — never from a plan — for coverage-tree's Phase 1.
+
+    coverage_tree.py's four domain templates (security, correctness, data, nfr) are
+    fixed and generic. A plan that silently drops a functional requirement the user
+    explicitly asked for, but which falls outside all four buckets, showed as 100%
+    covered — nothing tied the checklist back to the task's own stated asks. Call
+    this alongside the four domain templates in Phase 1, then render its result as
+    one more branch via render_coverage_view(mode="task-specific asks", target=task,
+    outcomes={ask: COVERED/PARTIAL/MISSING/NA, ...}) — an ask this task explicitly
+    named but the plan dropped now surfaces as a real MISSING node.
+
+    task: the raw task text — not a plan, not a summary of one.
+
+    Returns: {"asks": list[str]} — [] when fewer than 2 distinct asks are
+    extractable (a single-clause task has nothing this phase adds).
+    """
+    from coverage_tree import extract_task_specific_asks as _extract
+    return {"asks": _extract(task)}
 
 
 @mcp.tool()

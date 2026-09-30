@@ -1,10 +1,25 @@
 """
-Context compaction — youk's alternative to Claude's generic auto-compaction.
+Context compaction — youk's alternative to generic host auto-compaction.
 
-The key difference: Claude compacts by recency. Youk compacts by information tier.
-CONTRACT content is pinned verbatim. DECISION content is summarized. EXPLORATION
-is compressed. CLARIFICATION is dropped. The brief is rebuilt from structured files,
-not summarized from conversation — so no information is lost through paraphrase.
+The load-bearing guarantee, and it does not depend on any host's cooperation: at
+every session_start / session_start_hook / compact_context call, build_brief()
+rebuilds the CONTRACT tier fresh from durable files (knowledge/projects/{slug}/
+contracts.md), never from conversation — so nothing here is ever "trusted from
+whatever compacted text a session handed back." That property holds identically
+for Claude Code and Codex, because neither host's own conversation state is
+ever read as an input to this function; only project_dir is.
+
+What is genuinely host-specific, and honestly documented as such rather than
+assumed away: the [TIER:*] tags below are a MID-SESSION hint, useful only to a
+host that has its own pre-compaction hook to inject them ahead of (today: only
+Claude Code, via plugin/scripts/pre_compact.py, registered under Claude Code's
+PreCompact hook event — Codex has no equivalent hook wired). A host without
+that hook never gets a chance to have its OWN compaction biased by these tags,
+and nothing here claims otherwise. build_brief() also returns verbatim_lines —
+the CONTRACT tier as a flat list, structurally separate from the tagged prose —
+so a host's SessionStart renderer (see agent_host.CodexHost.render_session_context)
+can reconstruct the preservation guarantee itself, at read time, without needing
+to parse "[TIER:CONTRACT]" out of running text at all.
 """
 from __future__ import annotations
 import json
@@ -18,9 +33,11 @@ YOUK_ROOT = Path("/youk")
 
 _TIER_INSTRUCTION = """CONTRACT lines are load-bearing behavioral agreements — preserve them VERBATIM through any further compaction. Never paraphrase, shorten, or omit them. They are exactly what must survive."""
 
-# Tier tags embedded in brief sections so Claude's auto-compaction honors the hierarchy.
-# When Claude summarizes a [TIER:CONTRACT] block it sees the tag and knows: verbatim only.
-# Without tags the brief is a flat string and all tiers get compressed equally.
+# Tier tags: a best-effort mid-session hint for a host with its own pre-compaction
+# hook to bias ITS OWN summarization (today: only Claude Code, via pre_compact.py).
+# Not load-bearing for continuity — that guarantee is build_brief() re-reading the
+# CONTRACT tier from files on every call, independent of these tags or of any
+# host's cooperation. See this module's docstring and verbatim_lines below.
 TIER_CONTRACT = "[TIER:CONTRACT — PRESERVE VERBATIM]"
 TIER_DECISION = "[TIER:DECISION — key fact + rationale, 1-2 sentences max]"
 TIER_EXPLORATION = "[TIER:EXPLORATION — compress to 1 sentence]"
@@ -163,16 +180,20 @@ def _contract_matches(contract: str, keywords: set[str]) -> bool:
     return bool({w.lower() for w in contract.split()} & keywords)
 
 
-def _load_routing_gate_state() -> str:
+def _load_routing_gate_state(slug: str) -> str:
     """
     Read challenge-ran.json and route-task-ran.json to surface which routing gates
     ran this session. Included in the brief so post-compaction self-check has
     file-backed state rather than relying on conversation text that may be lost.
     Returns empty string when neither file exists (no gates ran yet).
+
+    Reads the slug-scoped route-task-ran.json — the flat path is guaranteed
+    empty by the L7 isolation contract (server.py's route_task wrapper only
+    writes the slug-scoped file).
     """
     parts: list[str] = []
 
-    route_file = YOUK_ROOT / "state" / "route-task-ran.json"
+    route_file = YOUK_ROOT / "state" / "sessions" / slug / "route-task-ran.json"
     if route_file.exists():
         try:
             raw = json.loads(route_file.read_text())
@@ -386,7 +407,7 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
 
         # Routing gate state — survives compaction so post-compaction self-check has
         # file-backed evidence of which gates ran this session, not just conversation text.
-        gate_state = _load_routing_gate_state()
+        gate_state = _load_routing_gate_state(slug)
         if gate_state:
             sections.append(
                 f"## Routing gate state {TIER_DECISION}\n{gate_state}"
@@ -422,6 +443,13 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
 
     return {
         "brief": brief,
+        # verbatim_lines (CIR-150 item 5 / CIR-151): the CONTRACT tier as a flat,
+        # tag-free list — structurally separate from the [TIER:CONTRACT]-tagged
+        # prose in `brief`. A host without a pre-compaction hook to interpret
+        # those tags (e.g. Codex, see agent_host.CodexHost.render_session_context)
+        # can still reconstruct the preservation guarantee from this field
+        # directly, without needing to parse tag syntax out of running text.
+        "verbatim_lines": list(contracts),
         "contracts_count": len(contracts),
         "decisions_count": len(decisions),
         "session_plan_items": len(session_plan),

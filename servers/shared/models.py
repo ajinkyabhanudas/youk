@@ -62,6 +62,15 @@ class RoutingDecision:
     # without a second tool call.
     overengineering_flag: bool = False
     overengineering_note: str | None = None
+    # scope_escalated: True when this call's size was raised by a pending
+    # state/sessions/{slug}/scope-escalation.json signal (CIR-150 item 2 / CIR-151)
+    # rather than route_task's own keyword scoring. Written by
+    # routing.write_scope_escalation — called from task_contract.py's ESCALATE
+    # disposition, or directly from challenge/intake when Lens 1 / GAP SYNTHESIS
+    # finds the ORIGINAL problem framing was wrong (not the minimum-revision case
+    # of merely sharpening a direction within its existing scope).
+    scope_escalated: bool = False
+    scope_escalation_reason: str = ""
 
     def to_dict(self) -> dict:
         d = {
@@ -82,6 +91,8 @@ class RoutingDecision:
             # default-filled with null by the output validator and then fails its own
             # non-nullable "type": "string" check. Empty string is the empty signal.
             "collapsing_question": self.collapsing_question,
+            "scope_escalated": self.scope_escalated,
+            "scope_escalation_reason": self.scope_escalation_reason,
         }
         if self.overengineering_note:
             d["overengineering_note"] = self.overengineering_note
@@ -142,6 +153,18 @@ class SessionState:
     # failure mode. None = no unrouted commits detected. Non-None = run /build on this description
     # before starting new code work.
     pending_build_task: str | None = None
+    # kill_criterion_decision_packet: non-None when skill_invocation_rate's kill_criterion has
+    # fired (state/kill-criterion-triggered.json, written by health.py). CIR-150/CIR-151: this
+    # is the real, code-level consequence of crossing the threshold — surface it as a blocking
+    # decision for the founder, not a line buried in a health report. The matching per-write
+    # consequence lives in pre_tool_use.py's PreToolUse gate (plugin/scripts/youk_hook_utils.py).
+    kill_criterion_decision_packet: dict | None = None
+    # verbatim_lines (CIR-150 item 5 / CIR-151): the CONTRACT tier as a flat,
+    # tag-free list, echoed from compaction.build_brief's verbatim_lines field.
+    # Lets a SessionStart renderer (agent_host.CodexHost.render_session_context)
+    # reconstruct the preservation guarantee at read time, without depending on
+    # a host parsing brief's [TIER:CONTRACT] tag syntax out of running prose.
+    verbatim_lines: list[str] = field(default_factory=list)
     # Recurring domain audit patterns from audit-signals.jsonl (cross-session).
     # Non-empty = domain flagged HIGH in ≥40% of last 5 sessions on this project.
     # Surface as: "Recurring audit signal: {domain} flagged HIGH in {count}/{total} sessions on {project}"
@@ -196,6 +219,8 @@ class SessionState:
             "cross_project_concepts": self.cross_project_concepts,
             "convergence_state": self.convergence_state,
             "pending_build_task": self.pending_build_task,
+            "kill_criterion_decision_packet": self.kill_criterion_decision_packet,
+            "verbatim_lines": self.verbatim_lines,
         }
 
 

@@ -123,14 +123,17 @@ class TestDispositionEnforcement:
         assert result["blocked"] is True
 
     def test_approved_contract_unblocks_gate(self, youk_root):
-        from task_contract import generate_task_contract, approve_task_contract, check_task_contract_gate
+        from task_contract import (
+            generate_task_contract, approve_task_contract, check_task_contract_gate,
+            _DISPOSITION_VOCAB,
+        )
         gen = generate_task_contract("build new pipeline system", size="L")
         assert gen["contract_required"] is True
 
         approve_result = approve_task_contract(
             gen["contract_id"],
             as_approved=gen["contract"].replace(
-                "→ IN-SCOPE | DEFER | ACCEPT-RISK | N/A", "→ IN-SCOPE"
+                f"→ {_DISPOSITION_VOCAB}", "→ IN-SCOPE"
             ),
             disposition_map={"P1": "IN-SCOPE", "P2": "IN-SCOPE", "P3": "IN-SCOPE",
                              "P4": "N/A", "P5": "N/A"},
@@ -255,3 +258,89 @@ class TestOrgScoreInvariant:
         assert score_with == score_without, (
             f"org_score changed with contracts present: {score_without} → {score_with}"
         )
+
+
+class TestEscalateDisposition:
+    """CIR-150 item 2 / CIR-151: ESCALATE must actually widen scope, not just be
+    a fifth word printed in the disposition line and then dropped."""
+
+    def _patch_routing_root(self, youk_root, monkeypatch):
+        import routing
+        monkeypatch.setattr(routing, "YOUK_ROOT", youk_root)
+
+    def test_escalate_vocab_present_in_rendered_contract(self, youk_root):
+        from task_contract import generate_task_contract, _DISPOSITION_VOCAB
+        gen = generate_task_contract("build new pipeline system", size="L")
+        assert "ESCALATE" in _DISPOSITION_VOCAB
+        assert f"→ {_DISPOSITION_VOCAB}" in gen["contract"]
+
+    def test_escalate_disposition_writes_a_scope_escalation(self, youk_root, monkeypatch):
+        self._patch_routing_root(youk_root, monkeypatch)
+        from task_contract import generate_task_contract, approve_task_contract, _DISPOSITION_VOCAB
+
+        gen = generate_task_contract("build new pipeline system", size="M")
+        approved = gen["contract"].replace(f"→ {_DISPOSITION_VOCAB}", "→ IN-SCOPE")
+
+        result = approve_task_contract(
+            gen["contract_id"], approved, disposition_map={"P1": "ESCALATE"},
+        )
+        assert result["escalations"]
+        assert result["escalations"][0]["escalated"] is True
+        assert result["escalations"][0]["provocation"] == "P1"
+        # M-sized contract escalates exactly one tier, to L (see _NEXT_SIZE_UP).
+        assert result["escalations"][0]["suggested_size"] == "L"
+
+    def test_escalate_actually_forces_route_task_next_call(self, youk_root, monkeypatch, tmp_path):
+        """The real end-to-end proof: after ESCALATE, route_task for the SAME
+        task+slug this session cannot come back below the escalated size."""
+        self._patch_routing_root(youk_root, monkeypatch)
+        import routing
+        routes = tmp_path / "routes.yaml"
+        routes.write_text("""\
+task_sizes:
+  M:
+    signals: [pipeline]
+    negative_signals: []
+    ceremony: standard
+    skills: []
+  L:
+    signals: []
+    negative_signals: []
+    ceremony: full
+    skills: []
+token_budgets: {M: 15000, L: 40000}
+""")
+        monkeypatch.setattr(routing, "ROUTES_FILE", routes)
+
+        from task_contract import generate_task_contract, approve_task_contract, _DISPOSITION_VOCAB
+        gen = generate_task_contract("build new pipeline system", size="M")
+        approved = gen["contract"].replace(f"→ {_DISPOSITION_VOCAB}", "→ IN-SCOPE")
+        approve_task_contract(gen["contract_id"], approved, disposition_map={"P1": "ESCALATE"})
+
+        result = routing.route_task("build new pipeline system", slug="unknown")
+        assert result.size.value == "L"
+        assert result.scope_escalated is True
+
+    def test_non_escalate_dispositions_do_not_write_an_escalation(self, youk_root, monkeypatch):
+        self._patch_routing_root(youk_root, monkeypatch)
+        from task_contract import generate_task_contract, approve_task_contract, _DISPOSITION_VOCAB
+
+        gen = generate_task_contract("build new pipeline system", size="L")
+        approved = gen["contract"].replace(f"→ {_DISPOSITION_VOCAB}", "→ IN-SCOPE")
+        result = approve_task_contract(
+            gen["contract_id"], approved,
+            disposition_map={"P1": "IN-SCOPE", "P2": "DEFER", "P3": "ACCEPT-RISK"},
+        )
+        assert result["escalations"] == []
+
+    def test_xl_escalation_stays_at_xl(self, youk_root, monkeypatch):
+        """_NEXT_SIZE_UP caps at XL — there is no size beyond it to escalate to."""
+        self._patch_routing_root(youk_root, monkeypatch)
+        from task_contract import generate_task_contract, approve_task_contract, _DISPOSITION_VOCAB
+
+        gen = generate_task_contract("rearchitect the entire platform", size="XL")
+        approved = gen["contract"].replace(f"→ {_DISPOSITION_VOCAB}", "→ IN-SCOPE")
+        result = approve_task_contract(
+            gen["contract_id"], approved, disposition_map={"P1": "ESCALATE"},
+        )
+        assert result["escalations"][0]["suggested_size"] == "XL"

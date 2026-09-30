@@ -314,7 +314,7 @@ def route_task_ran_this_session(root: Path, slug: str) -> bool:
     a flag file from yesterday is treated as a prior session.
     """
     import datetime as _dt
-    flag_file = root / "state" / "route-task-ran.json"
+    flag_file = root / "state" / "sessions" / slug / "route-task-ran.json"
     if not flag_file.exists():
         return False
     try:
@@ -390,6 +390,157 @@ def build_route_missing_warning() -> str:
         "Run /build before implementing: route_task → challenge → nfr_check → "
         "check_nfr_gate → check_challenge_gate → dev-loop."
     )
+
+
+# ── M+ write gate (CIR-150 item 4 / CIR-151) ───────────────────────────────────
+#
+# Everything above this point is advisory only — it injects warning text into a
+# prompt that the model can read, agree with, and still ignore under time pressure.
+# CIR-150 named this as the root cause of skill_invocation_rate never once reaching
+# its 50% floor: there was no PreToolUse hook on Edit/Write, so nothing at the tool
+# boundary could actually say no. This section is the hard backstop: pre_tool_use.py
+# calls check_m_plus_write_gate() for every Edit/Write and denies the call outright
+# when it returns non-None.
+#
+# Path note: route_task (server.py) writes its flag to the SLUG-SCOPED path
+# state/sessions/{slug}/route-task-ran.json — this is an enforced isolation
+# contract (tests/integration/test_l7_isolation.py asserts the flat
+# state/route-task-ran.json must never be written). This gate reads that same
+# slug-scoped path, as do route_task_ran_this_session() and
+# routing_ran_for_task() above, and session.py's/compaction.py's equivalents.
+
+def _session_open_mtime(root: Path, slug: str) -> float | None:
+    """mtime of this session's open marker, or None if it doesn't exist."""
+    open_file = root / "state" / "sessions" / slug / "open.json"
+    if open_file.exists():
+        return open_file.stat().st_mtime
+    return None
+
+
+def _entries_written_this_session(flag_file: Path, session_open_mtime: float | None) -> list[dict]:
+    """Load a gate-flag JSON array, scoped to entries written during the current
+    session (same session-boundary contract as route_task_ran_this_session:
+    mtime-after-session-open when open.json exists, same-calendar-day fallback
+    otherwise)."""
+    if not flag_file.exists():
+        return []
+    try:
+        raw = json.loads(flag_file.read_text())
+        entries = raw if isinstance(raw, list) else [raw]
+    except Exception:
+        return []
+    if session_open_mtime is not None:
+        if flag_file.stat().st_mtime < session_open_mtime:
+            return []
+        return entries
+    import datetime as _dt
+    flag_day = _dt.date.fromtimestamp(flag_file.stat().st_mtime)
+    if flag_day != _dt.date.today():
+        return []
+    return entries
+
+
+def latest_routed_size_this_session(root: Path, slug: str) -> str | None:
+    """Most recent task size route_task recorded for this session+slug, or None
+    if route_task has not run this session. Reads the slug-scoped flag file
+    route_task itself writes (state/sessions/{slug}/route-task-ran.json)."""
+    flag_file = root / "state" / "sessions" / slug / "route-task-ran.json"
+    entries = _entries_written_this_session(flag_file, _session_open_mtime(root, slug))
+    slug_entries = [e for e in entries if e.get("slug") == slug]
+    if not slug_entries:
+        return None
+    return slug_entries[-1].get("size")
+
+
+def session_has_logged_skill(root: Path, slug: str) -> bool:
+    """True when log_skill_invocation() has recorded at least one capability skill
+    this session (state/sessions/{slug}/skills-invoked.jsonl, same session-boundary
+    contract as the other gate-flag readers in this module)."""
+    log_file = root / "state" / "sessions" / slug / "skills-invoked.jsonl"
+    if not log_file.exists():
+        return False
+    try:
+        lines = [ln for ln in log_file.read_text().splitlines() if ln.strip()]
+    except Exception:
+        return False
+    if not lines:
+        return False
+    open_mtime = _session_open_mtime(root, slug)
+    if open_mtime is None:
+        import datetime as _dt
+        flag_day = _dt.date.fromtimestamp(log_file.stat().st_mtime)
+        return flag_day == _dt.date.today()
+    for ln in lines:
+        try:
+            entry = json.loads(ln)
+        except Exception:
+            continue
+        if entry.get("ts", 0) >= open_mtime:
+            return True
+    return False
+
+
+def kill_criterion_triggered(root: Path) -> bool:
+    """True when the skill_invocation_rate kill_criterion has fired — written by
+    health.py's _compute_improvement_velocity when the metric has stayed below
+    its 50% floor for 4 consecutive weeks. See state/kill-criterion-triggered.json."""
+    flag = root / "state" / "kill-criterion-triggered.json"
+    if not flag.exists():
+        return False
+    try:
+        return bool(json.loads(flag.read_text()).get("triggered"))
+    except Exception:
+        return False
+
+
+def check_m_plus_write_gate(root: Path, slug: str) -> dict | None:
+    """
+    Decide whether an Edit/Write tool call should be denied at the PreToolUse
+    boundary. Returns None to allow the call through unchanged, or
+    {"reason": str, "message": str} to deny it.
+
+    Two independent block conditions (CIR-150 item 4):
+
+    1. route_task recorded this session's task as M/L/XL, but no capability
+       skill has been logged since — routing happened, the mandated skill
+       chain after it (challenge/nfr_check/dev-loop per /build) did not.
+
+    2. kill_criterion has fired (see kill_criterion_triggered): the
+       advisory-nudge mechanism already had its stated 4-consecutive-week
+       grace period and failed. Once fired, the free pass every session
+       normally gets for tasks route_task was never called on is revoked —
+       any Edit/Write requires route_task to have run this session,
+       regardless of what size it reports.
+    """
+    routed_size = latest_routed_size_this_session(root, slug)
+
+    if routed_size is None and kill_criterion_triggered(root):
+        return {
+            "reason": "kill_criterion",
+            "message": (
+                "[YOUK] kill_criterion fired — skill_invocation_rate stayed below "
+                "50% for 4 consecutive weeks (state/kill-criterion-triggered.json). "
+                "The advisory-nudge gate already had its stated grace period and "
+                "failed, so the routing-optional free pass is revoked: every "
+                "Edit/Write this session now requires route_task to have run "
+                "first, regardless of task size. Call route_task, then retry."
+            ),
+        }
+
+    if routed_size not in ("M", "L", "XL"):
+        return None
+    if session_has_logged_skill(root, slug):
+        return None
+    return {
+        "reason": "route_task_without_skill",
+        "message": (
+            f"[YOUK] route_task recorded this session's task as size {routed_size}, "
+            "but no capability skill has been logged since "
+            "(skills-invoked.jsonl is empty this session). Call route_to_skill for "
+            "the required chain (challenge → nfr_check → dev-loop, per /build) "
+            "before editing or writing files."
+        ),
+    }
 
 
 # External-signal markers — pasted bot/CI/tool output implying required
@@ -506,9 +657,11 @@ def routing_ran_for_task(root: Path, slug: str, task_hash: str) -> bool:
     """
     Check whether route_task was called for this specific task this session.
     Returns False if route_task was never called, or was called for different tasks only.
-    Uses the array format written by server.py's route_task wrapper.
+    Uses the array format written by server.py's route_task wrapper, at the
+    slug-scoped path it actually writes — the flat path is guaranteed empty by
+    the L7 isolation contract.
     """
-    flag_file = root / "state" / "route-task-ran.json"
+    flag_file = root / "state" / "sessions" / slug / "route-task-ran.json"
     if not flag_file.exists():
         return False
     try:
@@ -1064,6 +1217,27 @@ def ok(system_message: str = "", additional_context: str = "") -> None:
 def ok_no_output() -> None:
     """Emit minimal approval with no injected content."""
     print(json.dumps({"continue": True}))
+    sys.exit(0)
+
+
+def deny(reason: str) -> None:
+    """Emit a PreToolUse deny decision and exit 0.
+
+    continue=True (Claude Code keeps the session running, e.g. to call
+    route_task and retry) with hookSpecificOutput.permissionDecision="deny"
+    (only this specific tool call is blocked) — deliberately not exit code 2 /
+    continue=False, which would halt the whole turn rather than let the model
+    correct course.
+    """
+    out = {
+        "continue": True,
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        },
+    }
+    print(json.dumps(out))
     sys.exit(0)
 
 
