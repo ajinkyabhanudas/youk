@@ -176,6 +176,20 @@ Optional:       [list — may skip with note]
 > Rule: Any feature that touches an external API, LLM, or database with variable
 > response cost has CACHING as mandatory, not conditional.
 
+**Functional edge cases (CIR-150 item 1 / CIR-151):** before moving to Phase 2, also
+answer the questions in the `functional_edge_case_questions` field (M/L/XL calls only
+— nfr_check_quick/nfr_check_full populate it from
+`references/edge-case-questions.md` via `stress-test`'s Agent B question bank, the
+same list Agent B uses to attack a finished plan reactively). Answering them here,
+against the bare task text, is the proactive counterpart — empty/null inputs,
+boundary values, concurrent/ordering issues, partial failure — derived before a plan
+exists rather than attacked after one does. Output:
+
+```
+[FUNCTIONAL EDGE CASES]
+{question} → {inferred answer from task text, or "OPEN — needs plan-time decision"}
+```
+
 ---
 
 ### Phase 2 — PROBE

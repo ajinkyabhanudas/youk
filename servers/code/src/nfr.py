@@ -6,7 +6,7 @@ YOUK_ROOT = Path("/youk")
 sys.path.insert(0, "/shared")
 
 from models import NFRBlock, TaskSize
-from skill_loader import load_skill
+from skill_loader import load_skill, load_skill_reference
 
 _FAST_PATH_QUESTIONS = [
     "Does this touch an external API, DB write, or auth path?",
@@ -53,6 +53,45 @@ _STANDARD_MODE_INSTRUCTION = (
 )
 
 
+def _parse_markdown_bullets(markdown: str) -> list[str]:
+    """Extract top-level `- ` bullet lines from a markdown reference file."""
+    return [
+        stripped[2:].strip()
+        for line in markdown.splitlines()
+        if (stripped := line.strip()).startswith("- ")
+    ]
+
+
+def load_functional_edge_case_questions() -> list[str]:
+    """
+    CIR-150 item 1 / CIR-151: the functional-edge-case question bank, loaded from
+    the SAME reference file stress-test's Agent B reads
+    (skills/stress-test/references/edge-case-questions.md) — one list, so this
+    proactive-derivation phase and Agent B's reactive attack can never drift apart.
+
+    Returns [] if the reference file is missing rather than raising — nfr-check
+    must never fail to run because stress-test's reference moved or was renamed.
+    """
+    try:
+        content = load_skill_reference("stress-test", "edge-case-questions.md")
+    except FileNotFoundError:
+        return []
+    return _parse_markdown_bullets(content)
+
+
+_FUNCTIONAL_EDGE_CASE_INSTRUCTION = (
+    "Before drafting any plan, answer each functional edge-case question below "
+    "against the raw task text — empty/null inputs, boundary values, "
+    "concurrent/ordering issues, partial failure. This is stress-test's Agent B "
+    "lens (references/edge-case-questions.md) applied proactively to the problem "
+    "statement, the same way Phase 1 CLASSIFY derives NFR categories from raw "
+    "task text before a plan exists — not run reactively against a finished "
+    "design the way stress-test itself runs. State inferred answers where the "
+    "task text already settles them; flag only the ones a plan needs to "
+    "actually decide."
+)
+
+
 def nfr_check_quick(task: str, autonomy_mode: str = "standard") -> dict:
     """
     4-question NFR context for M tasks — returns in_session dict for Claude Code to answer.
@@ -76,6 +115,8 @@ def nfr_check_quick(task: str, autonomy_mode: str = "standard") -> dict:
         "questions": _QUICK_4Q_QUESTIONS,
         "autonomy_mode": "validate" if validate else "standard",
         "instruction": _VALIDATE_MODE_INSTRUCTION if validate else _STANDARD_MODE_INSTRUCTION,
+        "functional_edge_case_questions": load_functional_edge_case_questions(),
+        "functional_edge_case_instruction": _FUNCTIONAL_EDGE_CASE_INSTRUCTION,
     }
 
 
@@ -91,6 +132,8 @@ def nfr_check_full(task: str, size: TaskSize) -> dict:
         "size": size.value,
         "skill_content": skill_content,
         "questions": _QUICK_4Q_QUESTIONS,
+        "functional_edge_case_questions": load_functional_edge_case_questions(),
+        "functional_edge_case_instruction": _FUNCTIONAL_EDGE_CASE_INSTRUCTION,
         "instruction": (
             f"Run the full nfr-check skill (all phases) for this {size.value} task. "
             "Output the complete NFR DECISION BLOCK and CONNECTIONS section. "

@@ -53,7 +53,11 @@ def nfr_check(task: str, size: str = "M", nfr_autonomy_mode: str = "standard") -
     ab_variant handling.
 
     XS/S returns: size, mode, decisions, connections, markdown.
-    M+ returns: mode="in_session", skill_content, questions, instruction, autonomy_mode.
+    M+ returns: mode="in_session", skill_content, questions, instruction, autonomy_mode,
+    functional_edge_case_questions, functional_edge_case_instruction — stress-test's
+    Agent B question bank (empty/null inputs, boundary values, ordering, partial
+    failure), applied proactively to the raw task text before any plan exists.
+    Answer these before drafting a plan, same as the 4 core NFR questions.
     """
     result = run_nfr_check(task, size, nfr_autonomy_mode)
     if isinstance(result, dict):
