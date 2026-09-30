@@ -25,12 +25,12 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|Edit|Write",
+        "matcher": "Bash|Edit|Write|mcp__youk-core__.*|mcp__youk-code__.*",
         "hooks": [
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/pre_tool_use.py\"",
-            "timeout": 8
+            "timeout": 30
           }
         ]
       }
