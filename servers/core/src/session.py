@@ -1140,10 +1140,14 @@ def _check_doc_freshness() -> list[str]:
 def _routing_ran_last_session(current_slug: str) -> tuple[bool, str]:
     """
     Returns (ran, task_label) — True when route_task was called during this session.
-    Uses state/route-task-ran.json written by server.py's route_task wrapper.
-    Supports both legacy single-object format and new array format.
+
+    Reads the slug-scoped state/sessions/{slug}/route-task-ran.json that
+    server.py's route_task wrapper actually writes — the L7 isolation contract
+    guarantees the flat state/route-task-ran.json path is never written, so
+    reading that path here always returned False regardless of whether routing
+    actually ran. Supports both legacy single-object format and new array format.
     """
-    flag_file = YOUK_ROOT / "state" / "route-task-ran.json"
+    flag_file = YOUK_ROOT / "state" / "sessions" / current_slug / "route-task-ran.json"
     if not flag_file.exists():
         return False, ""
     try:

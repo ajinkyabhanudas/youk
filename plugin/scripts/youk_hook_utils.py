@@ -314,7 +314,7 @@ def route_task_ran_this_session(root: Path, slug: str) -> bool:
     a flag file from yesterday is treated as a prior session.
     """
     import datetime as _dt
-    flag_file = root / "state" / "route-task-ran.json"
+    flag_file = root / "state" / "sessions" / slug / "route-task-ran.json"
     if not flag_file.exists():
         return False
     try:
@@ -404,13 +404,10 @@ def build_route_missing_warning() -> str:
 #
 # Path note: route_task (server.py) writes its flag to the SLUG-SCOPED path
 # state/sessions/{slug}/route-task-ran.json — this is an enforced isolation
-# contract (tests/integration/test_l7_isolation.py asserts the flat state/
-# root/route-task-ran.json must never be written). route_task_ran_this_session()
-# above reads the flat root path, which the isolation contract guarantees is
-# always empty — that function (and its callers in session.py / compaction.py)
-# appear to predate the slug-scoping migration and were never updated. This gate
-# deliberately reads the real, currently-written slug-scoped path instead of
-# copying that stale pattern.
+# contract (tests/integration/test_l7_isolation.py asserts the flat
+# state/route-task-ran.json must never be written). This gate reads that same
+# slug-scoped path, as do route_task_ran_this_session() and
+# routing_ran_for_task() above, and session.py's/compaction.py's equivalents.
 
 def _session_open_mtime(root: Path, slug: str) -> float | None:
     """mtime of this session's open marker, or None if it doesn't exist."""
@@ -660,9 +657,11 @@ def routing_ran_for_task(root: Path, slug: str, task_hash: str) -> bool:
     """
     Check whether route_task was called for this specific task this session.
     Returns False if route_task was never called, or was called for different tasks only.
-    Uses the array format written by server.py's route_task wrapper.
+    Uses the array format written by server.py's route_task wrapper, at the
+    slug-scoped path it actually writes — the flat path is guaranteed empty by
+    the L7 isolation contract.
     """
-    flag_file = root / "state" / "route-task-ran.json"
+    flag_file = root / "state" / "sessions" / slug / "route-task-ran.json"
     if not flag_file.exists():
         return False
     try:

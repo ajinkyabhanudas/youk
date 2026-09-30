@@ -180,16 +180,20 @@ def _contract_matches(contract: str, keywords: set[str]) -> bool:
     return bool({w.lower() for w in contract.split()} & keywords)
 
 
-def _load_routing_gate_state() -> str:
+def _load_routing_gate_state(slug: str) -> str:
     """
     Read challenge-ran.json and route-task-ran.json to surface which routing gates
     ran this session. Included in the brief so post-compaction self-check has
     file-backed state rather than relying on conversation text that may be lost.
     Returns empty string when neither file exists (no gates ran yet).
+
+    Reads the slug-scoped route-task-ran.json — the flat path is guaranteed
+    empty by the L7 isolation contract (server.py's route_task wrapper only
+    writes the slug-scoped file).
     """
     parts: list[str] = []
 
-    route_file = YOUK_ROOT / "state" / "route-task-ran.json"
+    route_file = YOUK_ROOT / "state" / "sessions" / slug / "route-task-ran.json"
     if route_file.exists():
         try:
             raw = json.loads(route_file.read_text())
@@ -403,7 +407,7 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
 
         # Routing gate state — survives compaction so post-compaction self-check has
         # file-backed evidence of which gates ran this session, not just conversation text.
-        gate_state = _load_routing_gate_state()
+        gate_state = _load_routing_gate_state(slug)
         if gate_state:
             sections.append(
                 f"## Routing gate state {TIER_DECISION}\n{gate_state}"

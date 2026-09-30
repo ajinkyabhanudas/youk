@@ -118,7 +118,9 @@ class TestRouteTaskRanArray:
         monkeypatch.setattr(session, "YOUK_ROOT", tmp_path)
         state_dir = tmp_path / "state"
         state_dir.mkdir()
-        (state_dir / "route-task-ran.json").write_text(json.dumps(
+        slug_dir = state_dir / "sessions" / "myproject"
+        slug_dir.mkdir(parents=True)
+        (slug_dir / "route-task-ran.json").write_text(json.dumps(
             {"slug": "myproject", "task": "old task", "size": "M", "ts": "2026-07-01T10:00:00"}
         ))
         ran, task = session._routing_ran_last_session("myproject")
@@ -131,7 +133,9 @@ class TestRouteTaskRanArray:
         monkeypatch.setattr(session, "YOUK_ROOT", tmp_path)
         state_dir = tmp_path / "state"
         state_dir.mkdir()
-        (state_dir / "route-task-ran.json").write_text(json.dumps([
+        slug_dir = state_dir / "sessions" / "proj"
+        slug_dir.mkdir(parents=True)
+        (slug_dir / "route-task-ran.json").write_text(json.dumps([
             {"slug": "proj", "task": "task one", "task_hash": "aaa", "size": "M", "ts": "2026-07-14T09:00:00"},
             {"slug": "proj", "task": "task two", "task_hash": "bbb", "size": "M", "ts": "2026-07-14T10:00:00"},
         ]))
@@ -201,7 +205,9 @@ class TestRoutingRanForTask:
         state_dir.mkdir()
         slug = "myproject"
         task_hash = hashlib.md5(b"add auth endpoint").hexdigest()[:8]
-        (state_dir / "route-task-ran.json").write_text(json.dumps([
+        slug_dir = state_dir / "sessions" / slug
+        slug_dir.mkdir(parents=True)
+        (slug_dir / "route-task-ran.json").write_text(json.dumps([
             {"slug": slug, "task": "add auth endpoint", "task_hash": task_hash, "size": "M", "ts": "2026-07-14T10:00:00"}
         ]))
         assert routing_ran_for_task(tmp_path, slug, task_hash) is True
