@@ -1,9 +1,16 @@
 """Tests for servers/code/src/domain_edge_cases.py (CIR-163, Phase 2 of 4).
 
-Runs against the real, committed state/domain-brief.json on this repo -- not a mock
-or a synthetic fixture -- so a passing test is proof the filter works against actual
-project data, same discipline as test_domain_brief.py's real-DECISIONS.md tests.
-"""
+Runs against this repo's real DECISIONS.md -- not a mock or a synthetic fixture --
+so a passing test is proof the filter works against actual project data, same
+discipline as test_domain_brief.py's real-DECISIONS.md tests.
+
+state/domain-brief.json itself is gitignored (state/* in .gitignore) and never
+committed -- it does not exist in a fresh checkout or CI (confirmed: these tests
+originally assumed it would already be on disk, which only held on a machine that
+had separately run build_domain_brief before, and failed for real in CI). The
+_real_domain_brief fixture below regenerates it fresh from the real, committed
+DECISIONS.md before each test, so the tests are correct regardless of whether the
+file happens to already exist on the machine running them."""
 
 from __future__ import annotations
 
@@ -11,10 +18,18 @@ from pathlib import Path
 
 import pytest
 
-from domain_brief import REPO_ROOT
+from domain_brief import REPO_ROOT, build_domain_brief, write_domain_brief
 from domain_edge_cases import load_domain_brief, surface_domain_edge_cases
 from nfr import nfr_check_full, nfr_check_quick
 from models import TaskSize
+
+
+@pytest.fixture(autouse=True)
+def _real_domain_brief():
+    """Regenerate state/domain-brief.json fresh from the real, committed
+    DECISIONS.md before each test -- never assume it already exists (it is
+    gitignored and absent in a fresh checkout/CI)."""
+    write_domain_brief(REPO_ROOT, build_domain_brief(REPO_ROOT))
 
 
 @pytest.fixture(autouse=True)
