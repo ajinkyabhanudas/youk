@@ -33,6 +33,15 @@ to SubClaim (asserted / internally_checked / externally_verified) --
 evidence strength, orthogonal to status (pass/fail). See
 migrate_claim_file_add_verification_level for the on-disk migration path for
 claim files CIR-154/155/156 wrote before this field existed.
+
+CIR-160 (Phase 3) adds retrieve_similar_patterns: a lightweight, stdlib-only
+(difflib.SequenceMatcher, no embeddings/vector DB) retrieval pass over the
+real pattern library (pattern_library_path) that generate_sub_claims uses to
+surface a `pattern_hint` on a sub_claim when a structurally similar past
+claim previously missed that exact (mechanism, host) pair. A RAG-shaped
+complement to the research agents elsewhere in this pipeline, not a
+replacement -- see retrieve_similar_patterns' own docstring for why nothing
+heavier is warranted at this corpus's real size.
 """
 from __future__ import annotations
 
@@ -40,6 +49,7 @@ import json
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime
+from difflib import SequenceMatcher
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -159,6 +169,11 @@ class SubClaim:
     status: SubClaimStatus
     evidence: str | None = None
     verification_level: VerificationLevel = "asserted"
+    # CIR-160 (Phase 3): set by generate_sub_claims when a real pattern-
+    # library entry (retrieve_similar_patterns) names this exact sub_claim
+    # id as one a structurally similar past claim previously missed. None
+    # for every sub_claim with no genuinely similar precedent.
+    pattern_hint: str | None = None
 
 
 @dataclass
@@ -266,22 +281,55 @@ def _walk_forward_to(
     return claim
 
 
-def generate_sub_claims(dimension: str, graph: dict) -> list[SubClaim]:
+def generate_sub_claims(
+    dimension: str,
+    graph: dict,
+    *,
+    claim_statement: str | None = None,
+    root: Path | None = None,
+) -> list[SubClaim]:
     """One sub_claim per (mechanism, host) pair present in the scanner's
     graph for this dimension. The graph decides how many sub_claims exist —
     not the claim's author. wired=True -> "verified" (real evidence the
     mechanism reaches this host); wired=False -> "failed" (the scanner looked
     and found no such evidence, a positive finding of absence, not mere
-    ignorance — hence "failed" rather than "unverified")."""
+    ignorance — hence "failed" rather than "unverified").
+
+    CIR-160 (Phase 3): when `claim_statement` and `root` are both given,
+    also checks the real pattern library (retrieve_similar_patterns) for
+    structurally similar past claims that previously missed a sub_claim —
+    and if this decomposition reproduces that exact (mechanism, host) pair,
+    attaches a `pattern_hint` naming the precedent. Both default to None so
+    every existing caller that only cares about the mechanical scan (no
+    pattern-library lookup) is unaffected."""
     if dimension != "host":
         raise ValueError(f"unsupported claim dimension: {dimension!r}")
+
+    hints_by_sub_claim_id: dict[str, dict] = {}
+    if claim_statement is not None and root is not None:
+        for hint in retrieve_similar_patterns(root, claim_statement, dimension):
+            # First (highest-similarity) hit per id wins — retrieve_similar_
+            # patterns already returns highest-similarity first.
+            hints_by_sub_claim_id.setdefault(hint["missed_sub_claim"], hint)
+
     sub_claims: list[SubClaim] = []
     for mechanism, entry in sorted(graph.items()):
         for host, info in sorted(entry.get("hosts", {}).items()):
             wired = info.get("wired")
             status: SubClaimStatus = "verified" if wired else "failed"
+            sub_claim_id = f"{mechanism}:{host}"
+            hint = hints_by_sub_claim_id.get(sub_claim_id)
+            pattern_hint = None
+            if hint is not None:
+                pattern_hint = (
+                    f"pattern library: a structurally similar past claim "
+                    f"({hint['claim_shape']!r}, similarity {hint['similarity']}) "
+                    f"missed this exact sub_claim before — found via "
+                    f"{hint.get('how_found', 'unknown')} on "
+                    f"{hint.get('date', 'an unknown date')}."
+                )
             sub_claims.append(SubClaim(
-                id=f"{mechanism}:{host}",
+                id=sub_claim_id,
                 mechanism=mechanism,
                 host=host,
                 status=status,
@@ -290,13 +338,16 @@ def generate_sub_claims(dimension: str, graph: dict) -> list[SubClaim]:
                 # never leaves the codebase -- internally_checked, not
                 # externally_verified (CIR-157).
                 verification_level="internally_checked",
+                pattern_hint=pattern_hint,
             ))
     return sub_claims
 
 
-def build_claim(statement: str, dimension: str, graph: dict) -> Claim:
+def build_claim(statement: str, dimension: str, graph: dict, root: Path | None = None) -> Claim:
     return Claim(statement=statement, dimension=dimension,
-                 sub_claims=generate_sub_claims(dimension, graph))
+                 sub_claims=generate_sub_claims(
+                     dimension, graph, claim_statement=statement, root=root,
+                 ))
 
 
 def _slug(statement: str) -> str:
@@ -309,6 +360,56 @@ def claims_dir(root: Path) -> Path:
 
 def pattern_library_path(root: Path) -> Path:
     return root / "state" / "verification-pattern-library.jsonl"
+
+
+def retrieve_similar_patterns(
+    root: Path,
+    claim_statement: str,
+    dimension: str,
+    *,
+    threshold: float = 0.6,
+    top_n: int = 3,
+) -> list[dict]:
+    """Lightweight retrieval over the real pattern library (CIR-160, Phase
+    3) -- no embeddings, no vector DB. The real corpus is a handful of rows
+    (state/verification-pattern-library.jsonl); at that size a stdlib
+    difflib.SequenceMatcher pass over each row's `claim_shape` string is the
+    whole job, and standing up anything heavier would be infra built ahead
+    of real need that sits unexercised (see append_pattern_library_entries,
+    which already writes `claim_shape` as `f"{dimension}-dimension:
+    {statement}"` -- this reuses that exact shape rather than inventing a
+    second one).
+
+    Only rows for the same `dimension` are considered (same claim_shape
+    prefix) -- comparing claim shapes across dimensions isn't meaningful at
+    this corpus size. Returns entries scoring >= `threshold` similarity,
+    highest first, capped at `top_n`, each augmented with its `similarity`
+    score. Empty list if the pattern library doesn't exist yet or nothing
+    clears the threshold -- this is a hint source, never a hard gate."""
+    library_path = pattern_library_path(root)
+    if not library_path.exists():
+        return []
+
+    prefix = f"{dimension}-dimension: "
+    new_shape = f"{prefix}{claim_statement}"
+
+    scored: list[tuple[float, dict]] = []
+    for line in library_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        past_shape = row.get("claim_shape", "")
+        if not past_shape.startswith(prefix):
+            continue
+        ratio = SequenceMatcher(None, new_shape, past_shape).ratio()
+        if ratio >= threshold:
+            scored.append((ratio, {**row, "similarity": round(ratio, 3)}))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [entry for _, entry in scored[:top_n]]
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -507,8 +608,9 @@ def run_checker(root: Path, statement: str, dimension: str, graph: dict, how_fou
     regardless of the real work that already happened. ABSTRACT/BOUND/
     RESEARCH/DIFF are not run by this entrypoint, so the claim starts at
     DECOMPOSE directly rather than faking a walk through stages that never
-    ran."""
-    claim = build_claim(statement, dimension, graph)
+    ran. CIR-160: build_claim is given `root` so pattern_hint lookups are
+    populated from the real pattern library too."""
+    claim = build_claim(statement, dimension, graph, root=root)
     claim_id = _slug(statement)
     claim.stage = Stage.DECOMPOSE
     advance(claim, Stage.VERIFY, root=root, claim_id=claim_id)

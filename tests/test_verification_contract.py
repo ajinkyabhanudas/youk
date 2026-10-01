@@ -28,6 +28,7 @@ from verification_contract import (
     migrate_claim_file_add_verification_level,
     migrate_claims_dir,
     pattern_library_path,
+    retrieve_similar_patterns,
     rework,
     run_checker,
     run_rework_loop,
@@ -154,6 +155,73 @@ class TestPatternLibrary:
         entries = append_pattern_library_entries(tmp_path, claim, "test run")
         assert entries == []
         assert not pattern_library_path(tmp_path).exists()
+
+
+class TestPatternLibraryRetrieval:
+    """CIR-160 (Phase 3): lightweight stdlib retrieval over the pattern
+    library -- difflib.SequenceMatcher token-level similarity, no
+    embeddings or vector DB (see retrieve_similar_patterns' own docstring
+    for why nothing heavier is warranted at this corpus's real size)."""
+
+    def test_retrieves_the_real_entry_for_a_structurally_similar_new_claim(self, tmp_path):
+        # Seed the library the same way a real run does: build a claim,
+        # let append_pattern_library_entries write its one real failure.
+        seed_claim = build_claim("youk is agnostic across host", "host", _FAKE_GRAPH)
+        append_pattern_library_entries(tmp_path, seed_claim, "test run")
+
+        hits = retrieve_similar_patterns(
+            tmp_path, "youk is agnostic across every host", "host",
+        )
+        assert len(hits) == 1
+        assert hits[0]["missed_sub_claim"] == "pre_tool_guard:codex"
+        assert hits[0]["claim_shape"] == "host-dimension: youk is agnostic across host"
+        assert hits[0]["similarity"] >= 0.6
+
+    def test_genuinely_dissimilar_claim_returns_nothing(self, tmp_path):
+        seed_claim = build_claim("youk is agnostic across host", "host", _FAKE_GRAPH)
+        append_pattern_library_entries(tmp_path, seed_claim, "test run")
+
+        hits = retrieve_similar_patterns(
+            tmp_path, "the deploy pipeline retries failed jobs three times", "host",
+        )
+        assert hits == []
+
+    def test_no_pattern_library_file_on_disk_returns_nothing(self, tmp_path):
+        assert retrieve_similar_patterns(tmp_path, "anything at all", "host") == []
+
+    def test_generate_sub_claims_surfaces_the_hint_on_only_the_matching_sub_claim(self, tmp_path):
+        seed_claim = build_claim("youk is agnostic across host", "host", _FAKE_GRAPH)
+        append_pattern_library_entries(tmp_path, seed_claim, "first run")
+
+        sub_claims = generate_sub_claims(
+            "host", _FAKE_GRAPH,
+            claim_statement="youk is agnostic across every host",
+            root=tmp_path,
+        )
+        hints = {sc.id: sc.pattern_hint for sc in sub_claims}
+        assert hints["pre_tool_guard:codex"] is not None
+        assert "youk is agnostic across host" in hints["pre_tool_guard:codex"]
+        # Only the sub_claim the pattern library actually named gets a hint.
+        assert hints["pre_tool_guard:claude-code"] is None
+        assert hints["compaction_context:claude-code"] is None
+        assert hints["compaction_context:codex"] is None
+
+    def test_generate_sub_claims_without_root_or_statement_has_no_hints(self):
+        """Backward compat: every pre-CIR-160 caller (including the other
+        tests in this file) omits claim_statement/root and must see no
+        behavior change."""
+        sub_claims = generate_sub_claims("host", _FAKE_GRAPH)
+        assert all(sc.pattern_hint is None for sc in sub_claims)
+
+    def test_build_claim_wires_root_through_to_surface_hints_end_to_end(self, tmp_path):
+        seed_claim = build_claim("youk is agnostic across host", "host", _FAKE_GRAPH)
+        append_pattern_library_entries(tmp_path, seed_claim, "first run")
+
+        claim = build_claim(
+            "youk is agnostic across every host", "host", _FAKE_GRAPH, root=tmp_path,
+        )
+        hinted = next(sc for sc in claim.sub_claims if sc.id == "pre_tool_guard:codex")
+        assert hinted.pattern_hint is not None
 
 
 class TestRunChecker:
