@@ -18,6 +18,7 @@ from verification_contract import (
     append_pattern_library_entries,
     build_claim,
     claims_dir,
+    events_log_path,
     gate_all_claims,
     gate_claim_done,
     generate_sub_claims,
@@ -414,6 +415,83 @@ class TestReworkLoop:
         )
         assert outcome.cap_hit is True
         assert outcome.message == "still unresolved after 2 rounds: mechanism_x:host-2"
+
+
+class TestStagePersistence:
+    """CIR-159: before this, run_rework_loop's `claim` was the only object
+    that ever tracked real stage/stage_history/rework_log, but the object
+    actually written to the claim's JSON file each round was `checked` --
+    a brand-new Claim run_checker builds fresh every time, permanently stuck
+    at stage="intake" with stage_history=[]. advance()/rework() now accept
+    `root` and self-persist (file + events.jsonl) on every real transition,
+    and run_rework_loop now re-writes the real `claim` after merging each
+    round's sub_claims, so the file on disk reflects what actually ran."""
+
+    def test_advance_with_root_writes_stage_and_history_to_the_claim_file(self, tmp_path):
+        claim = Claim(statement="x advances", dimension="host", stage=Stage.INTAKE)
+        write_claim(tmp_path, claim)
+        advance(claim, Stage.ABSTRACT, root=tmp_path)
+
+        on_disk = json.loads((claims_dir(tmp_path) / "x-advances.json").read_text())
+        assert on_disk["stage"] == "abstract"
+        assert on_disk["stage_history"] == ["intake"]
+
+    def test_advance_without_root_never_touches_disk(self, tmp_path):
+        claim = Claim(statement="x stays in memory", dimension="host", stage=Stage.INTAKE)
+        advance(claim, Stage.ABSTRACT)
+        assert not (claims_dir(tmp_path) / "x-stays-in-memory.json").exists()
+
+    def test_advance_with_root_appends_one_event_line(self, tmp_path):
+        claim = Claim(statement="x events", dimension="host", stage=Stage.INTAKE)
+        advance(claim, Stage.ABSTRACT, root=tmp_path)
+
+        lines = events_log_path(tmp_path).read_text().splitlines()
+        assert len(lines) == 1
+        event = json.loads(lines[0])
+        assert event["claim_id"] == "x-events"
+        assert event["from_stage"] == "intake"
+        assert event["stage"] == "abstract"
+        assert event["outcome"] == "advance"
+
+    def test_rework_with_root_appends_an_event_naming_the_reason(self, tmp_path):
+        claim = Claim(statement="x reworks", dimension="host", stage=Stage.VERIFY)
+        rework(claim, Stage.DECOMPOSE, reason="decomposition missed it", root=tmp_path)
+
+        lines = events_log_path(tmp_path).read_text().splitlines()
+        assert len(lines) == 1
+        event = json.loads(lines[0])
+        assert event["outcome"] == "rework"
+        assert event["from_stage"] == "verify"
+        assert event["stage"] == "decompose"
+        assert event["reason"] == "decomposition missed it"
+
+    def test_rework_loop_persists_real_multi_transition_history_not_intake(self, tmp_path):
+        """The exact real scenario test_stabilizing_without_full_resolution
+        already exercises in memory (one genuine VERIFY -> DECOMPOSE rework,
+        then DECOMPOSE -> VERIFY forward) -- this asserts both the claim's
+        own JSON file and the shared events.jsonl independently show it,
+        read back from disk after the real run, not asserted against the
+        in-memory ReworkOutcome alone."""
+        outcome = run_rework_loop(
+            tmp_path, "youk is agent-agnostic", "host",
+            graph_fn=lambda: _FAKE_GRAPH, how_found="test",
+        )
+        assert outcome.claim.rework_rounds == 1  # sanity: this really reworked once
+
+        on_disk = json.loads((claims_dir(tmp_path) / "youk-is-agent-agnostic.json").read_text())
+        assert on_disk["stage"] == "verify"
+        assert on_disk["stage_history"] == ["verify", "decompose"]
+        assert len(on_disk["rework_log"]) == 1
+        assert on_disk["rework_log"][0] == {
+            "from": "verify", "to": "decompose",
+            "reason": "round 1 new findings: ['pre_tool_guard:codex']", "round": 1,
+        }
+
+        events = [json.loads(ln) for ln in events_log_path(tmp_path).read_text().splitlines()]
+        assert len(events) == 2
+        assert [e["outcome"] for e in events] == ["rework", "advance"]
+        assert [e["stage"] for e in events] == ["decompose", "verify"]
+        assert all(e["claim_id"] == "youk-is-agent-agnostic" for e in events)
 
 
 class TestVerificationLevel:

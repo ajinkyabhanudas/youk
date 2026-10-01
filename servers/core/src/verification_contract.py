@@ -39,7 +39,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -170,26 +170,40 @@ class Claim:
         }
 
 
-def advance(claim: Claim, to_stage: Stage) -> Claim:
+def advance(claim: Claim, to_stage: Stage, root: Path | None = None) -> Claim:
     """Forward transition. Raises InvalidStageTransition if `to_stage` is not
-    a declared forward edge from the claim's current stage."""
+    a declared forward edge from the claim's current stage.
+
+    CIR-159: when `root` is given, this is a *real* transition against a
+    claim that's actually persisted — write the claim's new stage/
+    stage_history back to its JSON file and append one line to the
+    append-only event log, right here, at the one place every forward
+    transition passes through. `root=None` (the default, and every call site
+    inside this module's own tests) keeps the old in-memory-only behavior —
+    nothing to persist for a claim that was never written to disk."""
     if to_stage not in FORWARD_EDGES.get(claim.stage, frozenset()):
         raise InvalidStageTransition(
             f"{claim.stage.value} -> {to_stage.value} is not a declared forward edge"
         )
+    from_stage = claim.stage
     claim.stage_history.append(claim.stage.value)
     claim.stage = to_stage
+    if root is not None:
+        write_claim(root, claim)
+        _append_event(root, claim, from_stage, outcome="advance")
     return claim
 
 
-def rework(claim: Claim, to_stage: Stage, reason: str) -> Claim:
+def rework(claim: Claim, to_stage: Stage, reason: str, root: Path | None = None) -> Claim:
     """Backward transition triggered by VERIFY/DIFF/GATE finding a gap.
     Raises InvalidStageTransition if `to_stage` is not a declared rework
-    edge from the claim's current stage."""
+    edge from the claim's current stage. `root` behaves exactly as in
+    `advance` above (CIR-159)."""
     if to_stage not in REWORK_EDGES.get(claim.stage, frozenset()):
         raise InvalidStageTransition(
             f"{claim.stage.value} -> {to_stage.value} is not a declared rework edge"
         )
+    from_stage = claim.stage
     claim.rework_rounds += 1
     claim.stage_history.append(claim.stage.value)
     claim.rework_log.append({
@@ -199,10 +213,13 @@ def rework(claim: Claim, to_stage: Stage, reason: str) -> Claim:
         "round": claim.rework_rounds,
     })
     claim.stage = to_stage
+    if root is not None:
+        write_claim(root, claim)
+        _append_event(root, claim, from_stage, outcome="rework", reason=reason)
     return claim
 
 
-def _walk_forward_to(claim: Claim, target: Stage) -> Claim:
+def _walk_forward_to(claim: Claim, target: Stage, root: Path | None = None) -> Claim:
     """Advance claim forward, one declared edge at a time, from its current
     stage to `target`. Used after a rework edge sends a claim backward: the
     pipeline re-traverses every intervening stage rather than teleporting,
@@ -210,7 +227,10 @@ def _walk_forward_to(claim: Claim, target: Stage) -> Claim:
     this transition bookkeeping. Raises InvalidStageTransition if any stage
     on the path has zero or more than one outgoing forward edge (today's
     chain is linear by construction; a future branch should fail loud here
-    rather than guess which successor to take)."""
+    rather than guess which successor to take). `root`, when given, is
+    forwarded to every `advance()` hop so each intervening stage the walk
+    passes through gets its own persisted write + event (CIR-159) — not just
+    the final stage reached."""
     guard = 0
     while claim.stage != target:
         guard += 1
@@ -224,7 +244,7 @@ def _walk_forward_to(claim: Claim, target: Stage) -> Claim:
                 f"cannot auto-walk forward from {claim.stage.value}: "
                 f"{len(next_stages)} outgoing edges, not 1"
             )
-        advance(claim, next(iter(next_stages)))
+        advance(claim, next(iter(next_stages)), root=root)
     return claim
 
 
@@ -271,6 +291,38 @@ def claims_dir(root: Path) -> Path:
 
 def pattern_library_path(root: Path) -> Path:
     return root / "state" / "verification-pattern-library.jsonl"
+
+
+def events_log_path(root: Path) -> Path:
+    """CIR-159: real, append-only log of every real stage transition any
+    claim under this root has actually gone through — distinct from
+    stage_history on the claim itself (which lives in one claim's own JSON
+    file and only ever shows that claim's path). One line per transition,
+    never backfilled for transitions that happened before this existed."""
+    return root / "state" / "verification-pipeline" / "events.jsonl"
+
+
+def _append_event(
+    root: Path, claim: Claim, from_stage: Stage, *, outcome: str, reason: str | None = None,
+) -> None:
+    """Append one event line for a real transition `claim` just made, from
+    `from_stage` to its now-current `claim.stage`. Called only from inside
+    `advance`/`rework` when they're given a `root` — i.e. only for
+    transitions that are actually real, against a claim actually persisted
+    to disk, never speculatively."""
+    path = events_log_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    event = {
+        "claim_id": _slug(claim.statement),
+        "stage": claim.stage.value,
+        "from_stage": from_stage.value,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "outcome": outcome,
+    }
+    if reason is not None:
+        event["reason"] = reason
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event, sort_keys=True) + "\n")
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -509,7 +561,19 @@ def run_rework_loop(
     Hard cap: MAX_REWORK_ROUNDS (5), matching stress-test's own emergency
     brake. On cap hit, returns cap_hit=True with an explicit
     "still unresolved after 5 rounds: <specifics>" message — never loops
-    silently and never declares the claim done anyway."""
+    silently and never declares the claim done anyway.
+
+    CIR-159: `claim` here is the one object that actually tracks real
+    stage/stage_history/rework_log across rounds — but until now, the only
+    thing ever written to disk each round was `checked`, a throwaway claim
+    `run_checker` builds fresh from scratch (stage reset to INTAKE, empty
+    history) every time. The file on disk was never the object with real
+    history on it. Each round now re-persists `claim` itself (sub_claims
+    refreshed from `checked`, stage/history exactly as this loop has
+    actually driven it) immediately after merging in the fresh scan, so the
+    rework()/​_walk_forward_to() transitions below — which already pass
+    `root` through and self-persist on every hop — land on top of a file
+    that reflects the real round-by-round history, not stage="intake"."""
     claim = Claim(statement=statement, dimension=dimension, stage=Stage.VERIFY)
     previous_unresolved: set[str] = set()
     rounds: list[ReworkRound] = []
@@ -518,6 +582,7 @@ def run_rework_loop(
         graph = graph_fn()
         checked = run_checker(root, statement, dimension, graph, how_found)
         claim.sub_claims = checked.sub_claims
+        write_claim(root, claim)
         current_unresolved = {sc.id for sc in claim.unresolved()}
         new_findings = sorted(current_unresolved - previous_unresolved)
         rounds.append(ReworkRound(
@@ -532,8 +597,8 @@ def run_rework_loop(
         if round_number == max_rounds:
             break
 
-        rework(claim, rework_target, reason=f"round {round_number} new findings: {new_findings}")
-        _walk_forward_to(claim, Stage.VERIFY)
+        rework(claim, rework_target, reason=f"round {round_number} new findings: {new_findings}", root=root)
+        _walk_forward_to(claim, Stage.VERIFY, root=root)
         previous_unresolved = current_unresolved
 
     specifics = ", ".join(sorted(current_unresolved)) or "no unresolved sub_claims recorded"
