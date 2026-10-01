@@ -246,6 +246,15 @@ class CodexHost:
 _HOSTS = {"claude-code": ClaudeCodeHost.capabilities, "codex": CodexHost.capabilities}
 
 
+def all_host_ids() -> frozenset[str]:
+    """Every host adapter currently registered. The declaration-completeness
+    ledger (CIR-156, servers/shared/capability_ledger.py) enumerates its
+    domain from this registry rather than a hardcoded list, so a newly
+    added host is covered automatically — same discipline host_inventory.py's
+    scanner already applies to mechanisms."""
+    return frozenset(_HOSTS)
+
+
 def select_host(runtime_hosts: frozenset[str], configured_host: str | None = None) -> HostSelection:
     """Choose a host only from explicit config or unambiguous runtime evidence."""
     selected = configured_host or (next(iter(runtime_hosts)) if len(runtime_hosts) == 1 else "")

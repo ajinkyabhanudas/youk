@@ -6,6 +6,14 @@ import json
 import pytest
 from host_inventory import scan as scan_host_graph
 from verification_contract import (
+    FORWARD_EDGES,
+    MAX_REWORK_ROUNDS,
+    REWORK_EDGES,
+    Claim,
+    InvalidStageTransition,
+    Stage,
+    _walk_forward_to,
+    advance,
     append_pattern_library_entries,
     build_claim,
     claims_dir,
@@ -13,7 +21,9 @@ from verification_contract import (
     gate_claim_done,
     generate_sub_claims,
     pattern_library_path,
+    rework,
     run_checker,
+    run_rework_loop,
     write_claim,
 )
 
@@ -173,3 +183,216 @@ class TestRealAgentAgnosticClaimAgainstTheRealScanner:
 
         verdict = gate_all_claims(tmp_path)
         assert verdict is None
+
+    def test_agent_agnostic_claim_through_the_generalized_stage_model_is_still_8_of_8(self, tmp_path):
+        """CIR-156 regression: re-running the exact same real claim, this
+        time through run_rework_loop's stage-aware machinery instead of a
+        single bare run_checker call, must still produce the same real,
+        correct result -- the generalization must not change the answer."""
+        outcome = run_rework_loop(
+            tmp_path,
+            "youk is agent-agnostic",
+            "host",
+            graph_fn=scan_host_graph,
+            how_found="CIR-156 stage-model regression",
+        )
+
+        assert outcome.dry is True
+        assert outcome.cap_hit is False
+        assert outcome.message is None
+        assert outcome.claim.all_verified() is True
+        assert len(outcome.claim.sub_claims) == 8
+        assert outcome.rounds[0].round_number == 1
+        assert outcome.rounds[0].unresolved == []
+        # Fully verified on round 1 -- no rework transition should have
+        # fired at all for the real, already-fixed codebase.
+        assert outcome.claim.rework_rounds == 0
+        assert outcome.claim.stage == Stage.VERIFY
+
+        verdict = gate_all_claims(tmp_path)
+        assert verdict is None
+
+
+class TestStageGraph:
+    def test_every_stage_is_reserved(self):
+        expected = {
+            "intake", "abstract", "bound", "research", "diff",
+            "decompose", "verify", "pattern_capture", "gate", "retrieve",
+        }
+        assert {s.value for s in Stage} == expected
+
+    def test_forward_chain_reaches_gate_from_intake(self):
+        claim = Claim(statement="x", dimension="host")
+        for target in [
+            Stage.ABSTRACT, Stage.BOUND, Stage.RESEARCH, Stage.DECOMPOSE,
+            Stage.VERIFY, Stage.PATTERN_CAPTURE, Stage.GATE,
+        ]:
+            advance(claim, target)
+        assert claim.stage == Stage.GATE
+        assert claim.stage_history == [
+            "intake", "abstract", "bound", "research", "decompose", "verify", "pattern_capture",
+        ]
+
+    def test_advance_rejects_an_edge_not_in_forward_edges(self):
+        claim = Claim(statement="x", dimension="host")
+        with pytest.raises(InvalidStageTransition):
+            advance(claim, Stage.GATE)
+
+    def test_verify_rework_to_bound_is_valid(self):
+        claim = Claim(statement="x", dimension="host", stage=Stage.VERIFY)
+        rework(claim, Stage.BOUND, reason="domain incomplete")
+        assert claim.stage == Stage.BOUND
+        assert claim.rework_rounds == 1
+        assert claim.rework_log[0] == {
+            "from": "verify", "to": "bound", "reason": "domain incomplete", "round": 1,
+        }
+
+    def test_verify_rework_to_decompose_is_valid(self):
+        """Both BOUND and DECOMPOSE must be valid rework targets from
+        VERIFY -- the caller's choice, not a fixed single target."""
+        claim = Claim(statement="x", dimension="host", stage=Stage.VERIFY)
+        rework(claim, Stage.DECOMPOSE, reason="decomposition missed it")
+        assert claim.stage == Stage.DECOMPOSE
+
+    def test_verify_rework_to_an_undeclared_target_is_rejected(self):
+        claim = Claim(statement="x", dimension="host", stage=Stage.VERIFY)
+        with pytest.raises(InvalidStageTransition):
+            rework(claim, Stage.RESEARCH, reason="not a declared VERIFY rework edge")
+
+    def test_diff_reserves_a_rework_edge_back_to_research(self):
+        """DIFF itself has no logic yet (Phase 2), but its rework edge is
+        reserved now per CIR-156's explicit ask."""
+        claim = Claim(statement="x", dimension="host", stage=Stage.DIFF)
+        rework(claim, Stage.RESEARCH, reason="diff disagreement")
+        assert claim.stage == Stage.RESEARCH
+
+    def test_gate_reserves_rework_edges_mirroring_verify(self):
+        assert REWORK_EDGES[Stage.GATE] == REWORK_EDGES[Stage.VERIFY] == frozenset(
+            {Stage.BOUND, Stage.DECOMPOSE}
+        )
+
+    def test_reserved_stages_have_no_forward_edges_yet(self):
+        assert FORWARD_EDGES[Stage.DIFF] == frozenset()
+        assert FORWARD_EDGES[Stage.RETRIEVE] == frozenset()
+
+    def test_walk_forward_to_retraverses_every_intervening_stage(self):
+        claim = Claim(statement="x", dimension="host", stage=Stage.BOUND)
+        _walk_forward_to(claim, Stage.VERIFY)
+        assert claim.stage == Stage.VERIFY
+        assert claim.stage_history == ["bound", "research", "decompose"]
+
+    def test_walk_forward_to_from_decompose_is_a_single_hop(self):
+        claim = Claim(statement="x", dimension="host", stage=Stage.DECOMPOSE)
+        _walk_forward_to(claim, Stage.VERIFY)
+        assert claim.stage == Stage.VERIFY
+        assert claim.stage_history == ["decompose"]
+
+    def test_gate_claim_done_names_the_stage_it_routes_back_to(self, tmp_path):
+        claim = build_claim("youk is agent-agnostic", "host", _FAKE_GRAPH)
+        path = write_claim(tmp_path, claim)
+        verdict = gate_claim_done(path)
+        assert verdict["stage"] == "gate"
+        assert verdict["routed_to"] == "decompose"
+        assert "Routing back to decompose" in verdict["message"]
+
+    def test_gate_claim_done_honors_a_preferred_rework_stage(self, tmp_path):
+        claim = build_claim("youk is agent-agnostic", "host", _FAKE_GRAPH)
+        path = write_claim(tmp_path, claim)
+        verdict = gate_claim_done(path, preferred_rework_stage=Stage.BOUND)
+        assert verdict["routed_to"] == "bound"
+
+    def test_gate_claim_done_rejects_a_preferred_stage_outside_its_rework_edges(self, tmp_path):
+        claim = build_claim("youk is agent-agnostic", "host", _FAKE_GRAPH)
+        path = write_claim(tmp_path, claim)
+        with pytest.raises(InvalidStageTransition):
+            gate_claim_done(path, preferred_rework_stage=Stage.RESEARCH)
+
+
+class TestReworkLoop:
+    def test_fully_verified_on_first_round_exits_dry_with_no_rework(self, tmp_path):
+        graph = {"compaction_context": _FAKE_GRAPH["compaction_context"]}
+        outcome = run_rework_loop(
+            tmp_path, "compaction works everywhere", "host",
+            graph_fn=lambda: graph, how_found="test",
+        )
+        assert outcome.dry is True
+        assert outcome.cap_hit is False
+        assert outcome.message is None
+        assert outcome.claim.all_verified() is True
+        assert outcome.claim.rework_rounds == 0
+        assert len(outcome.rounds) == 1
+
+    def test_stabilizing_without_full_resolution_exits_dry_and_lets_gate_block(self, tmp_path):
+        """A round that reproduces the same unresolved set as the round
+        before it has stabilized -- the loop exits (zero NEW findings),
+        even though the claim is not fully verified. GATE still blocks
+        "done" normally; the rework loop's job is only to stop churning."""
+        outcome = run_rework_loop(
+            tmp_path, "youk is agent-agnostic", "host",
+            graph_fn=lambda: _FAKE_GRAPH, how_found="test",
+        )
+        assert outcome.dry is True
+        assert outcome.cap_hit is False
+        assert outcome.claim.all_verified() is False
+        assert outcome.rounds[0].unresolved == ["pre_tool_guard:codex"]
+        assert outcome.rounds[0].new_findings == ["pre_tool_guard:codex"]
+        # Round 2 reproduces the identical unresolved set -> zero new findings -> exit.
+        assert len(outcome.rounds) == 2
+        assert outcome.rounds[1].new_findings == []
+        assert outcome.claim.rework_rounds == 1
+
+    def test_cap_hit_surfaces_explicit_message_and_never_declares_done(self, tmp_path):
+        """A domain that keeps producing a genuinely new failing sub_claim
+        every round never stabilizes -- the hard cap must stop the loop
+        with an explicit message, not loop silently or claim success."""
+        call_count = {"n": 0}
+
+        def ever_growing_graph():
+            call_count["n"] += 1
+            hosts = {f"host-{i}": {"wired": False, "evidence": None} for i in range(call_count["n"])}
+            return {"mechanism_x": {"mechanism": "mechanism_x", "hosts": hosts}}
+
+        outcome = run_rework_loop(
+            tmp_path, "ever growing claim", "host",
+            graph_fn=ever_growing_graph, how_found="test",
+            max_rounds=MAX_REWORK_ROUNDS,
+        )
+
+        assert outcome.cap_hit is True
+        assert outcome.dry is False
+        assert outcome.message is not None
+        assert outcome.message.startswith(f"still unresolved after {MAX_REWORK_ROUNDS} rounds:")
+        assert len(outcome.rounds) == MAX_REWORK_ROUNDS
+        assert outcome.claim.all_verified() is False
+
+    def test_rework_target_is_the_callers_choice(self, tmp_path):
+        """A caller who believes the domain itself is incomplete (not just
+        decomposition) can route rework to BOUND instead of the default
+        DECOMPOSE -- both are valid per REWORK_EDGES[Stage.VERIFY]."""
+        outcome = run_rework_loop(
+            tmp_path, "youk is agent-agnostic", "host",
+            graph_fn=lambda: _FAKE_GRAPH, how_found="test",
+            rework_target=Stage.BOUND,
+        )
+        assert outcome.claim.rework_log[0]["to"] == "bound"
+
+    def test_cap_hit_message_names_the_actual_unresolved_specifics(self, tmp_path):
+        round_counter = {"n": 0}
+
+        def graph_fn():
+            round_counter["n"] += 1
+            return {
+                "mechanism_x": {
+                    "mechanism": "mechanism_x",
+                    "hosts": {
+                        f"host-{round_counter['n']}": {"wired": False, "evidence": None},
+                    },
+                }
+            }
+
+        outcome = run_rework_loop(
+            tmp_path, "distinct new failure claim", "host",
+            graph_fn=graph_fn, how_found="test", max_rounds=2,
+        )
+        assert outcome.cap_hit is True
+        assert outcome.message == "still unresolved after 2 rounds: mechanism_x:host-2"
