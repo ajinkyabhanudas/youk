@@ -21,12 +21,24 @@ Two independent jobs:
    mechanism (uses `git diff`, not `git stash` — diff works correctly mid-merge,
    stash does not) and scripts/revert_checkpoint.py for the restore path.
 
-2. Edit/Write: this IS a permission gate. CIR-150 (youk vs. its stated end-goal)
-   found that every M+ enforcement rule in CLAUDE.md was prose the model could
-   skip under time pressure, with zero technical backstop — a model that never
-   called route_task could Edit/Write freely. See
-   youk_hook_utils.check_m_plus_write_gate for the actual gate logic; this hook
-   denies the call outright when it returns non-None.
+2. Edit/Write (and Codex's equivalent, apply_patch): this IS a permission gate.
+   CIR-150 (youk vs. its stated end-goal) found that every M+ enforcement rule
+   in CLAUDE.md was prose the model could skip under time pressure, with zero
+   technical backstop — a model that never called route_task could Edit/Write
+   freely. See youk_hook_utils.check_m_plus_write_gate for the actual gate
+   logic; this hook denies the call outright when it returns non-None.
+
+   CIR-155: this same script is also the real Codex-reachable PreToolUse
+   boundary agent_host.py's CodexHost declared but left unwired. Codex's own
+   PreToolUse hook contract (confirmed against developers.openai.com/codex/hooks,
+   2026) uses the identical stdin shape (tool_name, tool_input, cwd) and the
+   identical deny envelope ({"hookSpecificOutput": {"hookEventName":
+   "PreToolUse", "permissionDecision": "deny", ...}}) Claude Code uses — see
+   deny() below — so no Codex-specific branch is needed here, only recognizing
+   "apply_patch" (Codex's canonical file-edit tool name) alongside Edit/Write.
+   Register this script as a Codex PreToolUse hook matching "apply_patch" in
+   ~/.codex/hooks.json — see docs/getting-started.md's "Codex PreToolUse hook"
+   section.
 
 3. Any mcp__youk-core__* / mcp__youk-code__* tool call: the deploy-freshness
    consequence gate (CIR-153). session_start's own freshness check (see
@@ -96,7 +108,11 @@ def main() -> None:
         ok_no_output()
         return
 
-    if tool_name in ("Edit", "Write"):
+    # "apply_patch" is Codex's canonical file-edit tool name (confirmed against
+    # Codex's own PreToolUse hook contract) -- this is the real Codex-reachable
+    # boundary for check_m_plus_write_gate once this script is registered as a
+    # Codex PreToolUse hook (docs/getting-started.md, "Codex PreToolUse hook").
+    if tool_name in ("Edit", "Write", "apply_patch"):
         root = youk_root()
         if root is not None:
             slug = slug_from_cwd(cwd)

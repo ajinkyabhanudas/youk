@@ -334,6 +334,25 @@ class TestMPlusWriteGate:
         )
         assert out == {"continue": True}
 
+    def test_apply_patch_is_gated_identically_to_edit_write_cir_155(self, tmp_path):
+        """CIR-155: Codex's canonical file-edit tool name is "apply_patch", not
+        Edit/Write. Real proof the fix actually blocks something, not just that
+        the structural scanner found a code line — same M-size-no-skill setup as
+        test_m_size_session_with_no_skill_logged_is_denied, tool_name swapped."""
+        root = self._youk_root(tmp_path)
+        project = self._project(tmp_path)
+        slug_dir = self._open_session(root, "myproject")
+        (slug_dir / "route-task-ran.json").write_text(json.dumps([
+            {"slug": "myproject", "task": "add auth", "size": "M"},
+        ]))
+
+        out = _run_hook(
+            {"tool_name": "apply_patch", "tool_input": {"command": "*** Begin Patch"}, "cwd": str(project)},
+            env={"YOUK_ROOT": str(root)},
+        )
+        assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert "route_task" in out["hookSpecificOutput"]["permissionDecisionReason"]
+
     def test_xs_size_session_is_never_gated(self, tmp_path):
         """Sub-M sizes were never in scope for this gate — only M/L/XL."""
         root = self._youk_root(tmp_path)

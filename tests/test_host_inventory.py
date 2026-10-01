@@ -32,31 +32,38 @@ def test_pre_tool_guard_is_wired_for_claude_code_via_hooks_json():
     graph = scan()
     hosts = graph["pre_tool_guard"]["hosts"]
     assert hosts["claude-code"]["wired"] is True
-    assert hosts["claude-code"]["evidence"] == "plugin/hooks/hooks.json:26"
+    assert hosts["claude-code"]["evidence"] == "plugin/hooks/hooks.json:37"
 
 
-def test_pre_tool_guard_is_not_wired_for_codex_this_is_the_cir_152_gap():
-    """The exact real gap CIR-154 exists to make mechanical: agent_host.py's
-    CodexHost declares PRE_TOOL_GUARD supported, but nothing in the codebase
-    calls check_m_plus_write_gate from any Codex-reachable boundary. The
-    founder found this by asking directly; this scanner must find it by
-    reading the code."""
+def test_pre_tool_guard_is_now_wired_for_codex_cir_155_closed_the_cir_152_gap():
+    """CIR-152's original gap: agent_host.py's CodexHost declared PRE_TOOL_GUARD
+    supported, but nothing in the codebase called check_m_plus_write_gate from any
+    Codex-reachable boundary. CIR-155 confirmed Codex's own PreToolUse hook contract
+    (developers.openai.com/codex/hooks, 2026) uses the identical stdin shape and the
+    identical deny envelope ({"hookSpecificOutput": {"permissionDecision": "deny",
+    ...}}) Claude Code's hook already uses, and wired Codex's canonical file-edit
+    tool name ("apply_patch") into the same plugin/scripts/pre_tool_use.py gate --
+    same script, same check_m_plus_write_gate call, no Codex-specific code path."""
     graph = scan()
     hosts = graph["pre_tool_guard"]["hosts"]
     assert "codex" in hosts, "codex declares pre_tool_guard supported and must appear as a row"
-    assert hosts["codex"]["wired"] is False
-    assert hosts["codex"]["evidence"] is None
+    assert hosts["codex"]["wired"] is True
+    assert hosts["codex"]["evidence"] is not None
 
 
-def test_declaring_a_capability_in_a_docstring_is_not_wiring_evidence():
+def test_pre_tool_guard_codex_evidence_comes_from_real_wiring_not_the_declaring_docstring():
     """agent_host.py's CodexHost docstring literally contains the string
-    "PreToolUse" while explicitly disclaiming real wiring ("not a claim that
-    Codex's own hook wiring has been exercised live"). A scanner that treats
-    prose mentioning a mechanism as evidence of that mechanism being wired
-    would silently launder the exact gap it exists to catch back into a false
-    "wired": true. Regression guard for that specific failure mode."""
+    "PreToolUse" while explicitly disclaiming real wiring at the time it was
+    written. A scanner that treated that prose as evidence would launder a mere
+    declaration into a false "wired": true without any real wiring existing.
+    Regression guard: the evidence this scanner reports must point at the real
+    wiring site CIR-155 added (plugin/scripts/pre_tool_use.py), never at
+    agent_host.py's own docstring."""
     graph = scan()
-    assert graph["pre_tool_guard"]["hosts"]["codex"]["wired"] is False
+    evidence = graph["pre_tool_guard"]["hosts"]["codex"]["evidence"]
+    assert evidence is not None
+    assert "agent_host.py" not in evidence
+    assert "pre_tool_use.py" in evidence
 
 
 def test_compaction_context_is_genuinely_wired_for_both_hosts():
@@ -69,6 +76,22 @@ def test_compaction_context_is_genuinely_wired_for_both_hosts():
     assert hosts["claude-code"]["wired"] is True
     assert hosts["codex"]["wired"] is True
     assert hosts["codex"]["evidence"] is not None
+
+
+def test_session_context_is_now_wired_for_claude_code_cir_155_closed_the_gap():
+    """Before CIR-155, hooks.json had no SessionStart key at all -- the only
+    thing delivering session context to Claude Code was a CLAUDE.md instruction
+    the model could skip, same prose-not-a-backstop shape CIR-150 closed for
+    Edit/Write. CIR-155 added a real SessionStart hook (plugin/scripts/
+    session_start.py) that calls the already-running youk-core server's
+    /session-start-hook route directly over plain HTTP (Claude Code's own
+    mcp_tool hook type is documented inert at SessionStart, so this bypasses
+    that restriction rather than fighting it)."""
+    graph = scan()
+    hosts = graph["session_context"]["hosts"]
+    assert hosts["claude-code"]["wired"] is True
+    assert hosts["claude-code"]["evidence"] is not None
+    assert hosts["claude-code"]["evidence"].startswith("plugin/hooks/hooks.json:")
 
 
 def test_prompt_context_has_no_codex_row_because_codex_never_declared_it():

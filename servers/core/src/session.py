@@ -176,6 +176,36 @@ def _save_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
+_DUPLICATE_SESSION_START_WINDOW_SECONDS = 90.0
+
+
+def _is_recent_duplicate_session_start(slug: str, window_seconds: float = _DUPLICATE_SESSION_START_WINDOW_SECONDS) -> bool:
+    """True when this slug's open.json was written inside window_seconds of now.
+
+    CIR-155: plugin/scripts/session_start.py now calls start_session() from a real
+    Claude Code SessionStart hook, in parallel with any project's own CLAUDE.md still
+    instructing a manual `youk-core.session_start` tool call (docs/claude-md-template.md's
+    prior wording, or an already-installed CLAUDE.md predating this change). Both paths
+    funnel through this same function; without this guard the second call in the same
+    real-world session double-increments session_counter and re-runs deploy-freshness
+    against a last_head the first call already overwrote. 90s comfortably covers the gap
+    between a hook finishing and the model's first tool call, while remaining far shorter
+    than any real gap between two genuinely separate sessions.
+    """
+    try:
+        path = _slug_state_dir(slug) / "open.json"
+        if not path.exists():
+            return False
+        payload = json.loads(path.read_text())
+        written_at = payload.get("written_at")
+        if not isinstance(written_at, (int, float)):
+            return False
+        import time as _time
+        return (_time.time() - written_at) <= window_seconds
+    except Exception:
+        return False
+
+
 def _find_stale_decisions(slug: str, threshold_days: int = 90) -> list[tuple[str, int]]:
     """Return (heading, age_days) for decisions.md entries older than threshold_days.
     Only returns entries with a parseable date in the heading (## YYYY-MM-DD: ...)."""
@@ -1376,26 +1406,33 @@ def start_session(project_dir: str) -> SessionState:
     # session_start itself fails partway through.
     _merge_stale_checkpoint()
 
-    state = _load_state()
-    # Deployment-freshness gate: capture the HEAD recorded at the END of the prior session
-    # BEFORE we overwrite it, so we can detect merges that landed since then. merged ≠ in
-    # effect — a schema/gate commit merged but not restarted into the running server would
-    # otherwise make next_task silently mispoint. See deploy_freshness.py.
-    _prior_head = state.get("last_head")
-    _freshness = _check_deploy_freshness(project_dir, _prior_head)
-    state["session_counter"] = state.get("session_counter", 0) + 1
-    state["last_project"] = project_dir
-    state["last_session"] = datetime.utcnow().isoformat()
-    # Record current HEAD as the baseline the NEXT session will diff against.
-    state["last_head"] = _current_project_head(project_dir)
-    stack_ctx = _detect_stack_context(project_dir)
-    state["stack"] = stack_ctx["stack"]
-    state["framework"] = stack_ctx["framework"]
-    state["domain"] = stack_ctx["domain"]
-    state["project_purpose"] = _detect_project_purpose(project_dir)
-    _save_state(state)
-
     slug = _slug(project_dir)
+    state = _load_state()
+    # CIR-155: a real SessionStart hook and a project's own CLAUDE.md instruction can
+    # both reach this function for the same real-world session. On the duplicate call,
+    # skip the mutating block below (counter bump, freshness check, state save) entirely
+    # and fall through to re-render the brief from already-current state.
+    if not _is_recent_duplicate_session_start(slug):
+        # Deployment-freshness gate: capture the HEAD recorded at the END of the prior session
+        # BEFORE we overwrite it, so we can detect merges that landed since then. merged ≠ in
+        # effect — a schema/gate commit merged but not restarted into the running server would
+        # otherwise make next_task silently mispoint. See deploy_freshness.py.
+        _prior_head = state.get("last_head")
+        _freshness = _check_deploy_freshness(project_dir, _prior_head)
+        state["session_counter"] = state.get("session_counter", 0) + 1
+        state["last_project"] = project_dir
+        state["last_session"] = datetime.utcnow().isoformat()
+        # Record current HEAD as the baseline the NEXT session will diff against.
+        state["last_head"] = _current_project_head(project_dir)
+        stack_ctx = _detect_stack_context(project_dir)
+        state["stack"] = stack_ctx["stack"]
+        state["framework"] = stack_ctx["framework"]
+        state["domain"] = stack_ctx["domain"]
+        state["project_purpose"] = _detect_project_purpose(project_dir)
+        _save_state(state)
+    else:
+        _freshness = None
+
     project_type = _detect_project_type(project_dir)
     git_log = _read_git_log(project_dir)
     today = datetime.utcnow().strftime("%Y-%m-%d")

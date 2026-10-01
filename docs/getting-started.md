@@ -372,5 +372,53 @@ Add the hook once in either `~/.codex/hooks.json` or `~/.codex/config.toml`, aft
 configuring `youk-core` as a Codex MCP server. Review and trust it with `/hooks`;
 Codex does not run an untrusted hook.
 
+### Codex PreToolUse hook
+
+Codex supports a real PreToolUse hook with the same deny contract Claude Code's
+plugin hook uses (`hookSpecificOutput.permissionDecision: "deny"`), so the M+
+write gate (`check_m_plus_write_gate`, same one that blocks Claude Code's
+Edit/Write) can run unmodified for Codex -- it only needed Codex's canonical
+file-edit tool name, `apply_patch`, added alongside `Edit`/`Write` in
+`plugin/scripts/pre_tool_use.py`.
+
+Register it once in `~/.codex/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/youk/plugin/scripts/pre_tool_use.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Adjust the path if youk is installed somewhere other than the default
+`~/.claude/youk`. Review and trust it with `/hooks`, same as the SessionStart
+hook above.
+
+### Claude Code SessionStart hook
+
+Session context for Claude Code is delivered by a real `SessionStart` hook
+(`plugin/hooks/hooks.json`, `type: "command"`, running
+`plugin/scripts/session_start.py`) -- not by relying on a CLAUDE.md
+instruction alone. Claude Code's SessionStart event fires before MCP servers
+are available, so the hook calls `start_session()` directly (the same
+function `youk-core.session_start` wraps) and prints the resulting brief as
+plain stdout, which Claude Code adds to context automatically. A manual
+`youk-core.session_start` call (if a project's CLAUDE.md still has one) is
+safe alongside it: `start_session()` recognizes a same-session duplicate call
+within 90 seconds and skips re-running its mutating bookkeeping on the second
+call.
+
 This is why routing matters even for work you could do without it: the routing call is
 what leaves the breadcrumb.

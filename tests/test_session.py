@@ -1462,6 +1462,52 @@ class TestColdStart:
         assert state.kill_criterion_decision_packet is None
 
 
+class TestDuplicateSessionStartWithinWindow:
+    """CIR-155: plugin/scripts/session_start.py's new SessionStart hook and any
+    project's own CLAUDE.md "call youk-core.session_start" instruction can both
+    reach start_session() for the same real-world session. The second call must
+    not double-increment session_counter or re-run deploy-freshness against a
+    last_head the first call already overwrote."""
+
+    @pytest.fixture(autouse=True)
+    def patch_claude_root(self, tmp_path, monkeypatch, youk_root):
+        import session
+        claude_root = tmp_path / "claude"
+        (claude_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        return claude_root
+
+    def test_second_call_within_window_does_not_bump_session_counter(self, youk_root, tmp_path):
+        import session
+
+        project_dir = tmp_path / "dup-call-project"
+        project_dir.mkdir()
+
+        first = session.start_session(str(project_dir))
+        second = session.start_session(str(project_dir))
+
+        assert second.session_counter == first.session_counter
+
+    def test_call_outside_window_bumps_session_counter_normally(self, youk_root, tmp_path, monkeypatch):
+        import session
+
+        project_dir = tmp_path / "separate-sessions-project"
+        project_dir.mkdir()
+
+        first = session.start_session(str(project_dir))
+        monkeypatch.setattr(
+            session, "_is_recent_duplicate_session_start", lambda slug, window_seconds=90.0: False
+        )
+        second = session.start_session(str(project_dir))
+
+        assert second.session_counter == first.session_counter + 1
+
+    def test_duplicate_detector_false_when_no_open_json_exists(self, youk_root, tmp_path):
+        import session
+
+        assert session._is_recent_duplicate_session_start("no-such-slug") is False
+
+
 class TestKillCriterionDecisionPacket:
     """CIR-150 item 4 / CIR-151: session_start must surface a triggered
     kill_criterion as a real decision packet, not silently continue."""

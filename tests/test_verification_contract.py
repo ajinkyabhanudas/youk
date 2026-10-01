@@ -151,21 +151,25 @@ class TestRealAgentAgnosticClaimAgainstTheRealScanner:
     """The concrete demonstration CIR-154's DONE-MEANS requires: re-running
     the checker today, against the real scanner's output for the real
     codebase, must surface the enforcement-layer gap automatically -- with
-    nobody having to think to ask about it."""
+    nobody having to think to ask about it.
 
-    def test_agent_agnostic_claim_surfaces_the_real_pre_tool_guard_codex_gap(self, tmp_path):
+    CIR-155 closed the two gaps CIR-154 found live (pre_tool_guard:codex and
+    session_context:claude-code) -- see plugin/scripts/pre_tool_use.py's
+    apply_patch handling and plugin/scripts/session_start.py respectively.
+    This test now asserts the claim is fully verified -- the updated live
+    proof CIR-155's own DONE-MEANS requires."""
+
+    def test_agent_agnostic_claim_is_now_fully_verified_after_cir_155(self, tmp_path):
         graph = scan_host_graph()
         claim = run_checker(tmp_path, "youk is agent-agnostic", "host", graph,
-                             "CIR-154 automated regression")
+                             "CIR-155 automated regression")
 
-        assert claim.all_verified() is False
-        unresolved_ids = {sc.id for sc in claim.unresolved()}
-        assert "pre_tool_guard:codex" in unresolved_ids
+        assert claim.all_verified() is True
 
         by_id = {sc.id: sc for sc in claim.sub_claims}
-        assert by_id["pre_tool_guard:codex"].status == "failed"
+        assert by_id["pre_tool_guard:codex"].status == "verified"
         assert by_id["pre_tool_guard:claude-code"].status == "verified"
+        assert by_id["session_context:claude-code"].status == "verified"
 
         verdict = gate_all_claims(tmp_path)
-        assert verdict is not None
-        assert "pre_tool_guard:codex" in verdict["message"]
+        assert verdict is None

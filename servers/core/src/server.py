@@ -20,6 +20,7 @@ from health import (
 )
 from guardrails import check_knowledge_write, check_destructive_command, HardRuleViolation
 from agent_host import (
+    ClaudeCodeHost,
     CodexHost,
     HostCapability,
     HostSelectionStatus,
@@ -264,6 +265,41 @@ def session_start_hook(project_dir: str) -> dict:
     return CodexHost.render_session_context(
         result.get("brief", ""), result.get("verbatim_lines", [])
     )
+
+
+@mcp.custom_route("/session-start-hook", methods=["GET"])
+async def session_start_hook_http(request: Request) -> JSONResponse:
+    """
+    Plain-HTTP equivalent of session_start_hook, for Claude Code's SessionStart hook
+    (CIR-155). Claude Code's own `mcp_tool` hook type is documented as inert at
+    SessionStart ("fire before the session's MCP servers are available to hooks ...
+    Claude Code skips their mcp_tool hooks without calling the tool"), but a
+    `type:"command"` hook can make a plain HTTP request to this already-running
+    server directly — same no-MCP-handshake precedent as /agent-guards above — so
+    session context delivery stops depending solely on a CLAUDE.md instruction the
+    model could skip under time pressure (the same prose-vs-technical-backstop gap
+    CIR-150 closed for Edit/Write). See plugin/scripts/session_start.py, the
+    SessionStart hook script that calls this endpoint.
+
+    Query param: project_dir (required). Returns {"brief": str} — the exact brief
+    the session_start tool itself returns, via the same start_session() call, not a
+    second implementation.
+    """
+    project_dir = request.query_params.get("project_dir", "")
+    if not project_dir:
+        return JSONResponse({"error": "project_dir query param required"}, status_code=400)
+    configuration = load_host_configuration(YOUK_ROOT / "state" / "agent-host.json")
+    selected = select_host(
+        frozenset({"claude-code"}), configuration.host_id if configuration else None
+    )
+    if selected.status is not HostSelectionStatus.SELECTED or selected.host_id != "claude-code":
+        return JSONResponse(
+            {"error": f"Claude Code SessionStart hook blocked: {selected.reason}"},
+            status_code=409,
+        )
+    require_capability(ClaudeCodeHost.capabilities, HostCapability.SESSION_CONTEXT)
+    result = session_start(project_dir)
+    return JSONResponse({"brief": result.get("brief", "")})
 
 
 @mcp.tool()
