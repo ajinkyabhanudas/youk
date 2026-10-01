@@ -7,6 +7,7 @@ sys.path.insert(0, "/shared")
 
 from models import NFRBlock, TaskSize
 from skill_loader import load_skill, load_skill_reference
+from domain_edge_cases import surface_domain_edge_cases
 
 _FAST_PATH_QUESTIONS = [
     "Does this touch an external API, DB write, or auth path?",
@@ -92,6 +93,16 @@ _FUNCTIONAL_EDGE_CASE_INSTRUCTION = (
 )
 
 
+_DOMAIN_EDGE_CASE_INSTRUCTION = (
+    "CIR-163: domain-specific candidates below (if any) are DISTINCT from the generic "
+    "functional edge-case questions above — each one is filtered against this project's "
+    "actual Domain Brief (state/domain-brief.json) and names the real invariant/ADR that "
+    "made it relevant, so treat each as a real, checkable claim, not a generic prompt. An "
+    "empty list here is the correct, honest answer when nothing in the Domain Brief is "
+    "genuinely relevant to this task — never force one."
+)
+
+
 def nfr_check_quick(task: str, autonomy_mode: str = "standard") -> dict:
     """
     4-question NFR context for M tasks — returns in_session dict for Claude Code to answer.
@@ -117,6 +128,8 @@ def nfr_check_quick(task: str, autonomy_mode: str = "standard") -> dict:
         "instruction": _VALIDATE_MODE_INSTRUCTION if validate else _STANDARD_MODE_INSTRUCTION,
         "functional_edge_case_questions": load_functional_edge_case_questions(),
         "functional_edge_case_instruction": _FUNCTIONAL_EDGE_CASE_INSTRUCTION,
+        "domain_edge_case_candidates": surface_domain_edge_cases(task, root=YOUK_ROOT),
+        "domain_edge_case_instruction": _DOMAIN_EDGE_CASE_INSTRUCTION,
     }
 
 
@@ -134,6 +147,8 @@ def nfr_check_full(task: str, size: TaskSize) -> dict:
         "questions": _QUICK_4Q_QUESTIONS,
         "functional_edge_case_questions": load_functional_edge_case_questions(),
         "functional_edge_case_instruction": _FUNCTIONAL_EDGE_CASE_INSTRUCTION,
+        "domain_edge_case_candidates": surface_domain_edge_cases(task, root=YOUK_ROOT),
+        "domain_edge_case_instruction": _DOMAIN_EDGE_CASE_INSTRUCTION,
         "instruction": (
             f"Run the full nfr-check skill (all phases) for this {size.value} task. "
             "Output the complete NFR DECISION BLOCK and CONNECTIONS section. "
