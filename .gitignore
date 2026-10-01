@@ -20,6 +20,11 @@ htmlcov/
 # Runtime state (local only, not committed — state/.gitkeep IS committed for fresh clones)
 state/*
 !state/.gitkeep
+# Declaration-completeness ledger (CIR-156): committed deliberately, unlike
+# the rest of state/ — it must exist in every clone so CI can assert every
+# existing (host, capability) pair has an investigation record, and only
+# fail when a *new* one is added without one.
+!state/capability-investigation-ledger.jsonl
 
 # Generated dashboard reports (local only — regenerate with make report)
 reports/
