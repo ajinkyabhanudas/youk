@@ -406,6 +406,42 @@ Adjust the path if youk is installed somewhere other than the default
 `~/.claude/youk`. Review and trust it with `/hooks`, same as the SessionStart
 hook above.
 
+### Codex UserPromptSubmit hook
+
+Codex supports a real `UserPromptSubmit` hook (developers.openai.com/codex/hooks,
+2026), firing before every submitted prompt with the identical stdin shape
+(`session_id`, `transcript_path`, `cwd`, `hook_event_name`, and a `prompt` field
+carrying the text) and the identical `{"hookSpecificOutput": {"hookEventName":
+..., "additionalContext": ...}}` envelope Claude Code's own `UserPromptSubmit`
+hook already uses. `plugin/scripts/user_prompt_submit.py` runs unmodified for
+Codex -- no Codex-specific code path was needed, only fixing a pre-existing bug
+where the script read a `user_prompt` stdin field that neither host actually
+sends (both send `prompt`).
+
+Register it once in `~/.codex/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/youk/plugin/scripts/user_prompt_submit.py\"",
+            "timeout": 8
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Adjust the path if youk is installed somewhere other than the default
+`~/.claude/youk`. Review and trust it with `/hooks`, same as the other Codex
+hooks above.
+
 ### Claude Code SessionStart hook
 
 Session context for Claude Code is delivered by a real `SessionStart` hook

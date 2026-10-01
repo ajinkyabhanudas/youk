@@ -22,10 +22,18 @@ def test_claude_code_declares_every_known_capability():
     }
 
 
-def test_codex_declares_a_strict_subset_excluding_prompt_context():
+def test_codex_declares_every_known_capability_cir_155_closed_the_prompt_context_gap():
+    """Before this, CodexHost's declared set silently excluded prompt_context
+    entirely -- not declared-and-unwired (CIR-152's shape), but never claimed
+    at all, so the scanner never even generated a prompt_context:codex row for
+    the checker to evaluate. CIR-155 confirmed Codex has a real
+    UserPromptSubmit hook (developers.openai.com/codex/hooks) with the same
+    stdin field ("prompt") and response envelope Claude Code's hook already
+    uses, so the declaration now matches a real, wired capability."""
     declared = extract_declared_capabilities()
-    assert declared["codex"] == {"session_context", "compaction_context", "pre_tool_guard"}
-    assert "prompt_context" not in declared["codex"]
+    assert declared["codex"] == {
+        "session_context", "compaction_context", "pre_tool_guard", "prompt_context",
+    }
 
 
 def test_pre_tool_guard_is_wired_for_claude_code_via_hooks_json():
@@ -94,11 +102,21 @@ def test_session_context_is_now_wired_for_claude_code_cir_155_closed_the_gap():
     assert hosts["claude-code"]["evidence"].startswith("plugin/hooks/hooks.json:")
 
 
-def test_prompt_context_has_no_codex_row_because_codex_never_declared_it():
-    """codex doesn't claim prompt_context support at all, so there is nothing
-    to check — this must not be confused with a declared-but-unwired gap."""
+def test_prompt_context_is_now_wired_for_codex_cir_155_closed_the_declaration_gap():
+    """CIR-155 (second finding): prompt_context:codex didn't fail the checker --
+    it was structurally absent, because the scanner only ever generates a row
+    for a (mechanism, host) pair that agent_host.py already declares. A host
+    that could support a mechanism but never claimed it was invisible to the
+    checker entirely. Now that CodexHost declares prompt_context and
+    plugin/scripts/user_prompt_submit.py (reused unmodified, see
+    youk_hook_utils.ok()'s hookEventName) is registered as Codex's own
+    UserPromptSubmit hook, the row exists and is genuinely wired."""
     graph = scan()
-    assert "codex" not in graph["prompt_context"]["hosts"]
+    hosts = graph["prompt_context"]["hosts"]
+    assert "codex" in hosts
+    assert hosts["codex"]["wired"] is True
+    assert hosts["codex"]["evidence"] is not None
+    assert "agent_host.py" not in hosts["codex"]["evidence"]
 
 
 def test_host_conditional_branches_finds_real_claude_plugin_root_usage():

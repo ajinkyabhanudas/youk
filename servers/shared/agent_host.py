@@ -181,6 +181,22 @@ class CodexHost:
     mechanism's design, not a claim that Codex's own hook wiring has been
     exercised live — that verification is explicitly out of scope for this
     change (see CIR-151's SCOPE-OUT: no Codex usage authorized this session).
+
+    PROMPT_CONTEXT (CIR-155, second finding): PROMPT_CONTEXT was absent from
+    this set entirely until now — not declared-and-unwired like PRE_TOOL_GUARD
+    once was, but never claimed at all, which meant the structural scanner
+    (scripts/host_inventory.py) never generated a prompt_context:codex row for
+    the verification checker to even evaluate. Confirmed against Codex's own
+    UserPromptSubmit hook (developers.openai.com/codex/hooks, 2026): it fires
+    before every submitted prompt, with the same {"hookSpecificOutput":
+    {"hookEventName": ..., "additionalContext": ...}} envelope Claude Code's
+    UserPromptSubmit hook already uses, and the same stdin shape (session_id,
+    transcript_path, cwd, hook_event_name, plus a "prompt" field carrying the
+    submitted text). Declared here because the real mechanism exists and is
+    wired — see plugin/scripts/user_prompt_submit.py, registered as a Codex
+    UserPromptSubmit hook per docs/getting-started.md's "Codex
+    UserPromptSubmit hook" section — not asserted speculatively the way
+    PRE_TOOL_GUARD once was.
     """
 
     capabilities = HostCapabilities(
@@ -190,6 +206,7 @@ class CodexHost:
             HostCapability.SESSION_CONTEXT,
             HostCapability.COMPACTION_CONTEXT,
             HostCapability.PRE_TOOL_GUARD,
+            HostCapability.PROMPT_CONTEXT,
         }),
     )
 
