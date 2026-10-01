@@ -8,7 +8,7 @@
 [![MCP](https://img.shields.io/badge/protocol-MCP-8B5CF6)](https://modelcontextprotocol.io)
 [![License](https://img.shields.io/badge/license-MIT-22C55E)](LICENSE)
 
-**youk makes your AI coding agent get better at your work the longer you use it. It also checks its own work, so it can tell you whether that's actually happening.**
+**youk makes your AI coding agent get better at your work the longer you use it, and holds it to evidence before it calls anything done.**
 
 </div>
 
@@ -20,6 +20,7 @@ A normal AI agent gets sharper as a conversation goes — you correct it, it ada
 
 - **It builds what it's missing.** Hit a task youk has no skill for, and it writes one from what you were actually doing. When a skill trips up during a session, youk fixes that skill before the session ends.
 - **It treats a typo differently from a rewrite.** Bigger changes go through gates first — scope, non-functional requirements, a review pass — before any code gets written.
+- **It proves its claims instead of just making them.** "Agent-agnostic," "works across hosts," "handles the edge case" — these are claims, and youk decomposes each one into the specific sub-claims that would have to be true, checks every sub-claim against real evidence (a grep hit, a test run, a live call), and grades how strong that evidence is. A claim with any sub-claim left unresolved can't be reported done — that's enforced at the tool boundary, the same one on every host, not left to a model remembering to check.
 - **It watches its own health.** Every session, youk checks whether the things it built are actually wired into the real loop and being used. Run `/health` for a score and a trend.
 
 Underneath all that is plain memory: your working agreements, decisions, and resume point saved to files that survive a `git clone`. Plenty of tools remember context now. The part worth having is what youk does on top of it.
@@ -45,6 +46,7 @@ You don't change how you work. You just install it.
 | Learns within a session, forgets at the end | Carries the progress into the next session |
 | Handles every task the same way | Sizes the work and gates the risky parts |
 | Forgets the correction you made last week | Patches the skill that got it wrong |
+| Reports "done" because it finished generating | Decomposes the claim, checks every piece against evidence, blocks "done" until each one verifies |
 | Can't tell you if it's helping | Shows you a score and a direction |
 | Remembers your context | Remembers, and builds skills on top of it |
 
@@ -106,7 +108,7 @@ Full platform-by-platform walkthrough: **[docs/getting-started.md](docs/getting-
 
 ---
 
-## What youk does, in four ideas
+## What youk does, in five ideas
 
 youk exists so your ability **compounds** rather than resetting each session. A session
 that invokes no capability skill and never closes teaches it nothing, which is why the
@@ -120,7 +122,9 @@ it learned, and closed properly. Sessions that close this way are what the score
 
 3. **It checks itself.** Every session, youk reports an `org_score` (0–10) you can watch over time. The score is driven primarily by `capability_skill_rate` (weight 2.0) and session close rate (0.5), with bonuses for autonomy, challenge loop quality, and outcomes. Those are behavioural rates, so they are capped by a structural check: if a skill youk routes to will not load, or a repo skill is unreachable at runtime, the score is held at 6.5 or 8.0 and the reason is the first finding. That ceiling exists because behavioural rates cannot see a broken capability — a skill that never loads is simply never invoked, which looks like developer choice. Three consecutive sessions with no capability skills also cap the score at 6.5. Full formula: [docs/well-architected.md](docs/well-architected.md). That check is what stops youk from quietly turning into the tech debt it's meant to save you from.
 
-4. **It remembers.** Your agreements, decisions, and resume point live in files that reload each session and survive a `git clone`. Groundwork for the three above.
+4. **It verifies its own claims.** `org_score` watches youk's behaviour; this watches the correctness of what any given task produced. A claim ("this works across hosts," "the gate is wired," "the fix handles the edge case") gets decomposed into the specific sub-claims that make it true, each one checked against real evidence — a grep hit against the actual code, a real test run, a live call — and graded by how strong that evidence is (seen-in-the-repo vs. independently confirmed outside it). A claim with any sub-claim left unresolved is blocked from being reported done, at the same tool boundary on every host, so this can't be skipped by a model that forgot to check or chose not to. When a check turns up a gap it missed before, that gap is logged to a real pattern library so the same shape of claim gets checked against it next time.
+
+5. **It remembers.** Your agreements, decisions, and resume point live in files that reload each session and survive a `git clone`. Groundwork for the four above.
 
 Deeper on any of these: **[docs/well-architected.md](docs/well-architected.md)** · **[PHILOSOPHY.md](PHILOSOPHY.md)** · [Wiki](https://github.com/ajinkyabhanudas/youk/wiki).
 
