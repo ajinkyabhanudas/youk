@@ -21,6 +21,18 @@ live proof.
 CIR-156 generalizes Claim.stage from an implicit linear string
 (scanning -> decomposing -> checking -> done) to a real graph with named
 backward (rework) edges — see Stage/FORWARD_EDGES/REWORK_EDGES below.
+
+CIR-157 (Phase 2) wires real logic behind two of the stages CIR-156 only
+reserved: ABSTRACT (abstract_claim, verification_research.py -- strip
+proprietary specifics before anything goes external) and RESEARCH/DIFF
+(run_dual_pass_research + diff_fact_sets, same module -- two independent
+research passes over the abstracted question, agreement promotes a fact to
+externally_verified evidence, disagreement routes to Stage.DIFF named
+explicitly rather than silently resolved). It also adds verification_level
+to SubClaim (asserted / internally_checked / externally_verified) --
+evidence strength, orthogonal to status (pass/fail). See
+migrate_claim_file_add_verification_level for the on-disk migration path for
+claim files CIR-154/155/156 wrote before this field existed.
 """
 from __future__ import annotations
 
@@ -33,6 +45,19 @@ from pathlib import Path
 from typing import Literal
 
 SubClaimStatus = Literal["unverified", "verified", "failed"]
+
+# Evidence strength, orthogonal to SubClaimStatus (pass/fail). "asserted" is
+# the dataclass-level floor for a sub_claim constructed with no mechanical
+# check behind it at all (reserved for a future bare-declaration path --
+# nothing in this file produces one today). "internally_checked" is what
+# generate_sub_claims actually produces: real grep/AST evidence against our
+# own repo, but never leaving the codebase to confirm against anything
+# external. "externally_verified" is earned only two ways (CIR-157
+# DONE-MEANS): the dual-pass research+diff below confirming agreement across
+# two independent external sources, or a human (the founder) stating the
+# fact directly -- a founder statement is independent of the codebase, same
+# as two external sources, so it counts as external, not internal.
+VerificationLevel = Literal["asserted", "internally_checked", "externally_verified"]
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -62,16 +87,20 @@ FORWARD_EDGES: dict[Stage, frozenset[Stage]] = {
     Stage.INTAKE: frozenset({Stage.ABSTRACT}),
     Stage.ABSTRACT: frozenset({Stage.BOUND}),
     Stage.BOUND: frozenset({Stage.RESEARCH}),
-    Stage.RESEARCH: frozenset({Stage.DECOMPOSE}),
+    # CIR-157 (Phase 2): RESEARCH now runs the dual-pass research+diff below,
+    # so it feeds DIFF, not DECOMPOSE, directly. DIFF only continues forward
+    # to DECOMPOSE once diff_stage_outcome (verification_research.py) finds
+    # no disagreement between the two passes; a disagreement reworks back to
+    # RESEARCH instead (REWORK_EDGES[Stage.DIFF] below, reserved since
+    # CIR-156).
+    Stage.RESEARCH: frozenset({Stage.DIFF}),
+    Stage.DIFF: frozenset({Stage.DECOMPOSE}),
     Stage.DECOMPOSE: frozenset({Stage.VERIFY}),
     Stage.VERIFY: frozenset({Stage.PATTERN_CAPTURE}),
     Stage.PATTERN_CAPTURE: frozenset({Stage.GATE}),
     Stage.GATE: frozenset(),
-    # Reserved, no forward wiring yet: Phase 2 inserts DIFF after a dual-pass
-    # RESEARCH; Phase 3 wires RETRIEVE in ahead of BOUND/RESEARCH as RAG over
-    # the pattern library. Naming the states now means Phase 2/3 only add
-    # edges, never rename or re-plumb what Phase 1 already shipped.
-    Stage.DIFF: frozenset(),
+    # Reserved, no forward wiring yet: Phase 3 wires RETRIEVE in ahead of
+    # BOUND/RESEARCH as RAG over the pattern library.
     Stage.RETRIEVE: frozenset(),
 }
 
@@ -83,9 +112,10 @@ REWORK_EDGES: dict[Stage, frozenset[Stage]] = {
     # (DECOMPOSE). Both are valid rework targets; nothing here picks for
     # the caller.
     Stage.VERIFY: frozenset({Stage.BOUND, Stage.DECOMPOSE}),
-    # DIFF (Phase 2, not yet built) disagreeing routes back to RESEARCH.
-    # Edge reserved now so Phase 2 only has to make DIFF reachable, not
-    # invent its rework behavior.
+    # DIFF disagreeing routes back to RESEARCH -- live as of CIR-157 via
+    # diff_stage_outcome (verification_research.py), which calls this edge
+    # when diff_fact_sets finds a named disagreement between the two
+    # independent research passes.
     Stage.DIFF: frozenset({Stage.RESEARCH}),
     # GATE blocking "done" is the same shape of gap VERIFY would have
     # found — mirrors VERIFY's own rework targets so a gate denial can
@@ -108,6 +138,7 @@ class SubClaim:
     host: str
     status: SubClaimStatus
     evidence: str | None = None
+    verification_level: VerificationLevel = "asserted"
 
 
 @dataclass
@@ -217,6 +248,10 @@ def generate_sub_claims(dimension: str, graph: dict) -> list[SubClaim]:
                 host=host,
                 status=status,
                 evidence=info.get("evidence"),
+                # grep/AST against our own repo is real evidence, but it
+                # never leaves the codebase -- internally_checked, not
+                # externally_verified (CIR-157).
+                verification_level="internally_checked",
             ))
     return sub_claims
 
@@ -316,6 +351,66 @@ def gate_all_claims(root: Path) -> dict | None:
         "reason": "unverified_sub_claims",
         "message": "[YOUK] cannot report done — unresolved verification claims:\n" + "\n".join(messages),
     }
+
+
+def _find_sub_claim(claim: Claim, sub_claim_id: str) -> SubClaim:
+    sub = next((sc for sc in claim.sub_claims if sc.id == sub_claim_id), None)
+    if sub is None:
+        raise KeyError(f"no sub_claim with id {sub_claim_id!r} on this claim")
+    return sub
+
+
+def mark_externally_verified(claim: Claim, sub_claim_id: str) -> SubClaim:
+    """Promote one sub_claim's verification_level to externally_verified.
+    Callers are the two real paths CIR-157's DONE-MEANS names: a diff that
+    found agreement across two independent external research passes
+    (verification_research.diff_fact_sets), or mark_founder_confirmed below.
+    Never touches `status` — verification_level is evidence strength,
+    orthogonal to pass/fail. Raises KeyError if sub_claim_id isn't on this
+    claim."""
+    sub = _find_sub_claim(claim, sub_claim_id)
+    sub.verification_level = "externally_verified"
+    return sub
+
+
+def mark_founder_confirmed(claim: Claim, sub_claim_id: str) -> SubClaim:
+    """A human (the founder) stating a fact directly counts as external
+    verification, same as two independent external sources agreeing — both
+    are independent of the codebase, which is what internally_checked never
+    is (CIR-157 DONE-MEANS)."""
+    return mark_externally_verified(claim, sub_claim_id)
+
+
+def migrate_claim_file_add_verification_level(path: Path) -> bool:
+    """One-off migration for claim files CIR-154/155/156 wrote to disk before
+    verification_level existed. Every sub_claim already on disk came from
+    generate_sub_claims' grep/AST scanner — real evidence, but never checked
+    against anything external — so the sane default is internally_checked,
+    the same value generate_sub_claims assigns going forward (not the
+    dataclass's own conservative `asserted` floor, which is for a
+    bare-declaration path nothing on disk actually used).
+
+    Returns True if the file was rewritten (at least one sub_claim was
+    missing the field), False if it already had it on every sub_claim
+    (idempotent — safe to re-run)."""
+    data = load_claim(path)
+    changed = False
+    for sub in data.get("sub_claims", []):
+        if "verification_level" not in sub:
+            sub["verification_level"] = "internally_checked"
+            changed = True
+    if changed:
+        _atomic_write(path, json.dumps(data, indent=2, sort_keys=True))
+    return changed
+
+
+def migrate_claims_dir(root: Path) -> list[Path]:
+    """Run migrate_claim_file_add_verification_level over every claim file
+    under claims_dir(root). Returns the paths actually rewritten."""
+    cdir = claims_dir(root)
+    if not cdir.exists():
+        return []
+    return [p for p in sorted(cdir.glob("*.json")) if migrate_claim_file_add_verification_level(p)]
 
 
 def append_pattern_library_entries(root: Path, claim: Claim, how_found: str) -> list[dict]:
@@ -451,7 +546,7 @@ def main() -> int:
     import sys
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("statement", help='e.g. "youk is agent-agnostic"')
+    parser.add_argument("statement", nargs="?", help='e.g. "youk is agent-agnostic"')
     parser.add_argument("--dimension", default="host")
     parser.add_argument("--how-found", default="verification_contract checker run")
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
@@ -461,7 +556,23 @@ def main() -> int:
         help="Path to a scanner graph JSON. Defaults to "
              "<root>/state/verification-contracts/host-inventory-graph.json.",
     )
+    parser.add_argument(
+        "--migrate-verification-level", action="store_true",
+        help="One-off: add verification_level=internally_checked to every "
+             "claim file on disk under --root that predates the field "
+             "(CIR-157), then exit. Ignores `statement`.",
+    )
     args = parser.parse_args()
+
+    if args.migrate_verification_level:
+        migrated = migrate_claims_dir(args.root)
+        for path in migrated:
+            print(f"migrated: {path}")
+        print(f"{len(migrated)} claim file(s) migrated.")
+        return 0
+
+    if not args.statement:
+        parser.error("statement is required unless --migrate-verification-level is passed")
 
     graph_path = args.graph or (args.root / "state" / "verification-contracts" / "host-inventory-graph.json")
     graph = json.loads(graph_path.read_text(encoding="utf-8"))
