@@ -5,6 +5,7 @@ from pathlib import Path
 YOUK_ROOT = Path("/youk")
 sys.path.insert(0, "/shared")
 
+from domain_edge_cases import domain_edge_case_candidates
 from models import NFRBlock, TaskSize
 from skill_loader import load_skill, load_skill_reference
 
@@ -91,6 +92,16 @@ _FUNCTIONAL_EDGE_CASE_INSTRUCTION = (
     "actually decide."
 )
 
+_DOMAIN_EDGE_CASE_INSTRUCTION = (
+    "CIR-163 Phase 2 — distinct from the generic functional edge-case bank above: "
+    "each domain edge-case candidate below (if any) names a real invariant from "
+    "this project's own Domain Brief (state/domain-brief.json) that matched the "
+    "task text by name or vocabulary. Check the task against each cited invariant "
+    "specifically — don't restate the generic bank. An empty list means no real "
+    "invariant on record matched this task; that is a true negative, not a gap "
+    "in coverage, so do not invent a domain concern to fill it."
+)
+
 
 def nfr_check_quick(task: str, autonomy_mode: str = "standard") -> dict:
     """
@@ -117,6 +128,8 @@ def nfr_check_quick(task: str, autonomy_mode: str = "standard") -> dict:
         "instruction": _VALIDATE_MODE_INSTRUCTION if validate else _STANDARD_MODE_INSTRUCTION,
         "functional_edge_case_questions": load_functional_edge_case_questions(),
         "functional_edge_case_instruction": _FUNCTIONAL_EDGE_CASE_INSTRUCTION,
+        "domain_edge_case_candidates": domain_edge_case_candidates(task),
+        "domain_edge_case_instruction": _DOMAIN_EDGE_CASE_INSTRUCTION,
     }
 
 
@@ -134,6 +147,8 @@ def nfr_check_full(task: str, size: TaskSize) -> dict:
         "questions": _QUICK_4Q_QUESTIONS,
         "functional_edge_case_questions": load_functional_edge_case_questions(),
         "functional_edge_case_instruction": _FUNCTIONAL_EDGE_CASE_INSTRUCTION,
+        "domain_edge_case_candidates": domain_edge_case_candidates(task),
+        "domain_edge_case_instruction": _DOMAIN_EDGE_CASE_INSTRUCTION,
         "instruction": (
             f"Run the full nfr-check skill (all phases) for this {size.value} task. "
             "Output the complete NFR DECISION BLOCK and CONNECTIONS section. "
