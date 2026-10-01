@@ -38,6 +38,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from verification_contract import Claim, InvalidStageTransition, Stage, advance, rework
 
@@ -258,12 +259,16 @@ def diff_fact_sets(
     return result
 
 
-def diff_stage_outcome(claim: Claim, diff_result: DiffResult) -> Claim:
+def diff_stage_outcome(claim: Claim, diff_result: DiffResult, root: Path | None = None) -> Claim:
     """Drive a claim at Stage.DIFF forward once the dual-pass diff has run.
     No disagreement -> advance to DECOMPOSE (the real FORWARD_EDGES wiring
     CIR-157 adds). Any disagreement -> rework back to RESEARCH, naming every
     disagreement explicitly in the rework reason -- never resolved by
-    picking a side."""
+    picking a side. `root`, when given, is forwarded to advance()/rework()
+    so this transition is persisted + event-logged the same as every other
+    real transition (CIR-159) -- None by default since no production caller
+    drives this stage yet (SCOPE NOTE above: live dual-search is a scoped-out
+    follow-up)."""
     if claim.stage != Stage.DIFF:
         raise InvalidStageTransition(
             f"diff_stage_outcome called with claim at stage "
@@ -271,5 +276,5 @@ def diff_stage_outcome(claim: Claim, diff_result: DiffResult) -> Claim:
         )
     if diff_result.disagreements:
         reason = "; ".join(d.describe() for d in diff_result.disagreements)
-        return rework(claim, Stage.RESEARCH, reason=f"diff disagreement: {reason}")
-    return advance(claim, Stage.DECOMPOSE)
+        return rework(claim, Stage.RESEARCH, reason=f"diff disagreement: {reason}", root=root)
+    return advance(claim, Stage.DECOMPOSE, root=root)
