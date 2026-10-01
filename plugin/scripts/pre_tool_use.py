@@ -21,12 +21,24 @@ Two independent jobs:
    mechanism (uses `git diff`, not `git stash` — diff works correctly mid-merge,
    stash does not) and scripts/revert_checkpoint.py for the restore path.
 
-2. Edit/Write: this IS a permission gate. CIR-150 (youk vs. its stated end-goal)
-   found that every M+ enforcement rule in CLAUDE.md was prose the model could
-   skip under time pressure, with zero technical backstop — a model that never
-   called route_task could Edit/Write freely. See
-   youk_hook_utils.check_m_plus_write_gate for the actual gate logic; this hook
-   denies the call outright when it returns non-None.
+2. Edit/Write (and Codex's equivalent, apply_patch): this IS a permission gate.
+   CIR-150 (youk vs. its stated end-goal) found that every M+ enforcement rule
+   in CLAUDE.md was prose the model could skip under time pressure, with zero
+   technical backstop — a model that never called route_task could Edit/Write
+   freely. See youk_hook_utils.check_m_plus_write_gate for the actual gate
+   logic; this hook denies the call outright when it returns non-None.
+
+   CIR-155: this same script is also the real Codex-reachable PreToolUse
+   boundary agent_host.py's CodexHost declared but left unwired. Codex's own
+   PreToolUse hook contract (confirmed against developers.openai.com/codex/hooks,
+   2026) uses the identical stdin shape (tool_name, tool_input, cwd) and the
+   identical deny envelope ({"hookSpecificOutput": {"hookEventName":
+   "PreToolUse", "permissionDecision": "deny", ...}}) Claude Code uses — see
+   deny() below — so no Codex-specific branch is needed here, only recognizing
+   "apply_patch" (Codex's canonical file-edit tool name) alongside Edit/Write.
+   Register this script as a Codex PreToolUse hook matching "apply_patch" in
+   ~/.codex/hooks.json — see docs/getting-started.md's "Codex PreToolUse hook"
+   section.
 
 3. Any mcp__youk-core__* / mcp__youk-code__* tool call: the deploy-freshness
    consequence gate (CIR-153). session_start's own freshness check (see
@@ -38,6 +50,13 @@ Two independent jobs:
    running container's actual boot time (Docker) to the latest commit touching
    runtime-sensitive paths, and auto-restarts (or denies) when it's stale —
    see server_freshness.enforce.
+
+4. mcp__youk-core__session_end with close_cluster=True: the verification-
+   contract gate. Reuses this same PreToolUse boundary and deny-outright
+   precedent as the M+ write gate above, but for claims: any claim on record
+   under state/verification-contracts/claims/ with an unresolved
+   (non-"verified") sub_claim blocks the session from being reported done.
+   See servers/core/src/verification_contract.gate_all_claims.
 """
 from __future__ import annotations
 import re
@@ -45,6 +64,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "servers" / "core" / "src"))
 from youk_hook_utils import (
     read_stdin,
     is_destructive_command,
@@ -57,6 +77,7 @@ from youk_hook_utils import (
     deny,
 )
 from server_freshness import enforce as enforce_deploy_freshness
+from verification_contract import gate_all_claims
 
 _MCP_YOUK_TOOL_RE = re.compile(r"^mcp__(youk-core|youk-code)__")
 
@@ -71,6 +92,11 @@ def main() -> None:
     if mcp_match:
         root = youk_root()
         if root is not None:
+            if tool_name.endswith("__session_end") and tool_input.get("close_cluster"):
+                claim_verdict = gate_all_claims(root)
+                if claim_verdict is not None:
+                    deny(claim_verdict["message"])
+                    return
             verdict = enforce_deploy_freshness(root, mcp_match.group(1))
             if verdict["action"] == "deny":
                 deny(verdict["message"])
@@ -82,7 +108,11 @@ def main() -> None:
         ok_no_output()
         return
 
-    if tool_name in ("Edit", "Write"):
+    # "apply_patch" is Codex's canonical file-edit tool name (confirmed against
+    # Codex's own PreToolUse hook contract) -- this is the real Codex-reachable
+    # boundary for check_m_plus_write_gate once this script is registered as a
+    # Codex PreToolUse hook (docs/getting-started.md, "Codex PreToolUse hook").
+    if tool_name in ("Edit", "Write", "apply_patch"):
         root = youk_root()
         if root is not None:
             slug = slug_from_cwd(cwd)

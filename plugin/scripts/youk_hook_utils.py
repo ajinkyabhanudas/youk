@@ -1204,12 +1204,22 @@ def write_pre_destructive_checkpoint(cwd: str, command: str) -> str | None:
 # ── Output helpers ────────────────────────────────────────────────────────────
 
 def ok(system_message: str = "", additional_context: str = "") -> None:
-    """Emit a successful hook response and exit 0."""
+    """Emit a successful hook response and exit 0.
+
+    additional_context's hookEventName is hardcoded to "UserPromptSubmit"
+    because that is this helper's only caller for that field (user_prompt_
+    submit.py) -- Codex's documented UserPromptSubmit response shape
+    (developers.openai.com/codex/hooks, CIR-155) includes hookEventName in
+    the envelope; Claude Code's hook already tolerates it being present.
+    """
     out: dict = {"continue": True}
     if system_message:
         out["systemMessage"] = system_message
     if additional_context:
-        out["hookSpecificOutput"] = {"additionalContext": additional_context}
+        out["hookSpecificOutput"] = {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": additional_context,
+        }
     print(json.dumps(out))
     sys.exit(0)
 

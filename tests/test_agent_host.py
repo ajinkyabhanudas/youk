@@ -34,10 +34,24 @@ def test_hosts_share_the_same_capability_contract_version():
 
 
 def test_missing_advisory_capability_is_explicitly_degraded():
-    decision = evaluate_capability(CodexHost.capabilities, HostCapability.PROMPT_CONTEXT)
+    host = HostCapabilities(
+        "bare-host", CAPABILITY_SCHEMA_VERSION, frozenset({HostCapability.SESSION_CONTEXT})
+    )
+    decision = evaluate_capability(host, HostCapability.PROMPT_CONTEXT)
     assert decision.requirement is CapabilityRequirement.ADVISORY
     assert decision.status is CapabilityStatus.DEGRADED
     assert decision.reason == "advisory capability is unavailable"
+
+
+def test_codex_declares_prompt_context():
+    """CIR-155 (second finding): PROMPT_CONTEXT was absent from CodexHost's
+    declared set entirely until now, not declared-and-unwired -- confirmed
+    Codex has a real UserPromptSubmit hook (developers.openai.com/codex/hooks)
+    using the same stdin field ("prompt") and response envelope Claude Code's
+    hook already uses."""
+    decision = evaluate_capability(CodexHost.capabilities, HostCapability.PROMPT_CONTEXT)
+    assert decision.requirement is CapabilityRequirement.ADVISORY
+    assert decision.status is CapabilityStatus.AVAILABLE
 
 
 def test_codex_declares_pre_tool_guard():

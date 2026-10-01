@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-UserPromptSubmit hook — fires before Claude processes every user message.
+UserPromptSubmit hook — fires before Claude (or Codex, see CIR-155) processes
+every user message.
 
 Three jobs:
 1. Inject an intent-gated brief (~100-150 tokens) so the right contracts
@@ -9,6 +10,18 @@ Three jobs:
    when approaching the threshold where auto-compaction would fire.
 3. Ambient intelligence: detect M+ tasks and session-end signals in natural
    language so /build and /done fire without requiring the user to type them.
+
+CIR-155: confirmed Codex has a real UserPromptSubmit hook (developers.openai.
+com/codex/hooks, 2026) using the identical stdin field name ("prompt") and
+response envelope ({"hookSpecificOutput": {"hookEventName": ...,
+"additionalContext": ...}}) Claude Code's hook already uses, so this same
+script is the real Codex-reachable wiring too — register it as a Codex
+UserPromptSubmit hook in ~/.codex/hooks.json, see docs/getting-started.md's
+"Codex UserPromptSubmit hook" section. No Codex-specific code path needed:
+the stdin field read below was "user_prompt", which exists on neither host's
+real payload (both send "prompt") -- a pre-existing bug found while
+confirming Codex's payload shape, fixed here because it is what makes this
+genuinely wired for both hosts, not just Codex.
 
 Pressure thresholds (chars in transcript, ÷4 ≈ tokens):
   - < 40k tokens (~160k chars): normal — inject intent brief only
@@ -128,7 +141,10 @@ def main() -> None:
     data = read_stdin()
     cwd = data.get("cwd", "")
     transcript_path = data.get("transcript_path", "")
-    user_prompt = data.get("user_prompt", "")
+    # "prompt" is the real stdin field on both Claude Code's and Codex's
+    # UserPromptSubmit payload (confirmed CIR-155) -- this previously read
+    # "user_prompt", which neither host ever sends.
+    user_prompt = data.get("prompt", "")
 
     root = youk_root()
     if root is None:
