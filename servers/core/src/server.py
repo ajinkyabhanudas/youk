@@ -90,6 +90,7 @@ from skill_signals import (
     record_arm_reward as _record_arm_reward,
     mark_proposal_applied as _mark_proposal_applied,
 )
+from verification_contract import gate_all_claims as _gate_all_claims
 
 import argparse as _argparse
 _p = _argparse.ArgumentParser(add_help=False)
@@ -2702,6 +2703,45 @@ async def report_agent_gap(request: Request) -> JSONResponse:
     # FILE_CREATE/REFERENCE_ADD results for the exact same reason.
     path_relative = str(audit_file).removeprefix(str(CLAUDE_ROOT)).lstrip("/")
     return JSONResponse({"logged": True, "path": str(audit_file), "path_relative": path_relative})
+
+
+@mcp.custom_route("/gate-claims", methods=["POST"])
+async def gate_claims_http(request: Request) -> JSONResponse:
+    """
+    Plain-HTTP equivalent of verification_contract.gate_all_claims, for callers that
+    cannot do an MCP handshake — same no-MCP-handshake precedent as /agent-guards and
+    /session-start-hook above.
+
+    CIR-158 (Phase 4): headless `claude_local` Paperclip agent runs invoke `claude
+    --print --output-format stream-json` directly (confirmed in
+    packages/adapters/claude-local/src/server/execute.ts — no `--settings`/`--plugin`
+    flag is ever passed, no PTY is allocated) and so never go through the youk plugin's
+    PreToolUse boundary that already gates session_end(close_cluster=True) on this same
+    check for interactive Claude Code sessions (plugin/scripts/pre_tool_use.py). That
+    boundary simply does not fire for this host. Paperclip's own server-side "done"
+    transition (circaid-paperclip-pilot's server/src/routes/issues.ts, the same boundary
+    assertShippedGate already runs at) is the one real enforcement point every
+    Paperclip agent run passes through regardless of adapter — this route lets that
+    boundary ask gate_all_claims the same question pre_tool_use.py already asks for
+    Claude Code.
+
+    Body (optional JSON): {"root": "<path>"} — overrides YOUK_ROOT for test isolation
+    only (a real caller omits this and is checked against the one real global claims
+    ledger, same as pre_tool_use.py's own call). No auth: this reflects claim state,
+    not privileged data, same trust level as /agent-guards.
+
+    Returns: {"blocked": bool, "reason": str|null, "message": str|null}.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    root_override = body.get("root") if isinstance(body, dict) else None
+    root = Path(root_override) if root_override else YOUK_ROOT
+    verdict = _gate_all_claims(root)
+    if verdict is None:
+        return JSONResponse({"blocked": False, "reason": None, "message": None})
+    return JSONResponse({"blocked": True, "reason": verdict["reason"], "message": verdict["message"]})
 
 
 if __name__ == "__main__":
