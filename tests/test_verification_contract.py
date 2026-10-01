@@ -13,6 +13,7 @@ from verification_contract import (
     InvalidStageTransition,
     Stage,
     SubClaim,
+    _slug,
     _walk_forward_to,
     advance,
     append_pattern_library_entries,
@@ -26,6 +27,7 @@ from verification_contract import (
     migrate_claim_file_add_verification_level,
     migrate_claims_dir,
     pattern_library_path,
+    retrieve_similar_patterns,
     rework,
     run_checker,
     run_rework_loop,
@@ -497,3 +499,107 @@ class TestVerificationLevelMigration:
 
     def test_migrate_claims_dir_none_when_no_claims_directory_exists(self, tmp_path):
         assert migrate_claims_dir(tmp_path) == []
+
+
+class TestPatternRetrieval:
+    """CIR-160 (Phase 3): retrieve_similar_patterns is a real, right-sized
+    retrieval function over the real pattern library (6 rows today) --
+    stdlib difflib similarity, no embeddings/vector DB. These entries
+    mirror the real shapes on disk (state/verification-pattern-library.jsonl)
+    rather than inventing an unrelated fixture, so the match/no-match
+    behavior is proven against the actual corpus shape."""
+
+    def _seed_library(self, tmp_path):
+        entries = [
+            {"claim_shape": "X-agnostic across host", "missed_sub_claim": "enforcement-layer parity",
+             "how_found": "founder asked directly", "date": "2026-09-30"},
+            {"claim_shape": "host-dimension: youk is agent-agnostic", "missed_sub_claim": "pre_tool_guard:codex",
+             "how_found": "verification_contract checker run", "date": "2026-09-30"},
+            {"claim_shape": "host-dimension: youk is agent-agnostic", "missed_sub_claim": "session_context:claude-code",
+             "how_found": "verification_contract checker run", "date": "2026-09-30"},
+        ]
+        path = pattern_library_path(tmp_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+        return entries
+
+    def test_matches_a_structurally_similar_claim_shape(self, tmp_path):
+        self._seed_library(tmp_path)
+
+        hits = retrieve_similar_patterns("youk is agent-agnostic (Claude <-> Codex)", "host", tmp_path)
+
+        assert len(hits) >= 1
+        assert {h["missed_sub_claim"] for h in hits} == {
+            "pre_tool_guard:codex", "session_context:claude-code",
+        }
+        assert all(h["similarity"] >= 0.6 for h in hits)
+
+    def test_returns_nothing_for_a_genuinely_dissimilar_claim(self, tmp_path):
+        self._seed_library(tmp_path)
+
+        hits = retrieve_similar_patterns(
+            "the weekly client-report pipeline sends a correctly formatted invoice", "cost", tmp_path,
+        )
+
+        assert hits == []
+
+    def test_returns_empty_when_no_library_exists_yet(self, tmp_path):
+        assert retrieve_similar_patterns("anything", "host", tmp_path) == []
+
+    def test_respects_top_n(self, tmp_path):
+        self._seed_library(tmp_path)
+
+        hits = retrieve_similar_patterns("youk is agent-agnostic", "host", tmp_path, top_n=1)
+
+        assert len(hits) == 1
+
+    def test_highest_similarity_first(self, tmp_path):
+        self._seed_library(tmp_path)
+
+        hits = retrieve_similar_patterns("youk is agent-agnostic", "host", tmp_path, top_n=2)
+
+        assert hits == sorted(hits, key=lambda h: h["similarity"], reverse=True)
+
+
+class TestPatternRetrievalWiredIntoDecomposition:
+    """build_claim (the real decomposition step run_checker drives) surfaces
+    pattern_hints when given `root` -- never when it isn't, so every
+    existing in-memory-only caller is unaffected."""
+
+    def test_build_claim_without_root_has_no_pattern_hints(self):
+        claim = build_claim("youk is agent-agnostic", "host", _FAKE_GRAPH)
+        assert claim.pattern_hints == []
+
+    def test_build_claim_with_root_surfaces_a_real_hint(self, tmp_path):
+        path = pattern_library_path(tmp_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "claim_shape": "host-dimension: youk is agent-agnostic",
+            "missed_sub_claim": "pre_tool_guard:codex",
+            "how_found": "verification_contract checker run",
+            "date": "2026-09-30",
+        }) + "\n")
+
+        claim = build_claim("youk is agent-agnostic", "host", _FAKE_GRAPH, root=tmp_path)
+
+        assert len(claim.pattern_hints) == 1
+        assert claim.pattern_hints[0]["missed_sub_claim"] == "pre_tool_guard:codex"
+
+    def test_run_checker_persists_pattern_hints_to_the_claim_file(self, tmp_path):
+        path = pattern_library_path(tmp_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "claim_shape": "host-dimension: youk is agent-agnostic",
+            "missed_sub_claim": "pre_tool_guard:codex",
+            "how_found": "verification_contract checker run",
+            "date": "2026-09-30",
+        }) + "\n")
+
+        claim = run_checker(tmp_path, "youk is agent-agnostic (variant)", "host", _FAKE_GRAPH, how_found="test")
+
+        path = claims_dir(tmp_path) / f"{_slug(claim.statement)}.json"
+        on_disk = json.loads(path.read_text())
+        assert on_disk["pattern_hints"]
+        assert on_disk["pattern_hints"][0]["missed_sub_claim"] == "pre_tool_guard:codex"

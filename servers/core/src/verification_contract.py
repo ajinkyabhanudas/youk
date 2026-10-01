@@ -36,6 +36,7 @@ claim files CIR-154/155/156 wrote before this field existed.
 """
 from __future__ import annotations
 
+import difflib
 import json
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -150,6 +151,12 @@ class Claim:
     stage_history: list[str] = field(default_factory=list)
     rework_rounds: int = 0
     rework_log: list[dict] = field(default_factory=list)
+    # CIR-160 (Phase 3): past pattern-library entries whose claim_shape was
+    # genuinely similar to this claim's, surfaced as a hint during
+    # decomposition -- empty unless build_claim was given `root`. Never a
+    # replacement for real research, a cheap warning that this shape bit us
+    # before.
+    pattern_hints: list[dict] = field(default_factory=list)
 
     def all_verified(self) -> bool:
         return all(sc.status == "verified" for sc in self.sub_claims)
@@ -167,6 +174,7 @@ class Claim:
             "stage_history": list(self.stage_history),
             "rework_rounds": self.rework_rounds,
             "rework_log": list(self.rework_log),
+            "pattern_hints": list(self.pattern_hints),
         }
 
 
@@ -256,9 +264,17 @@ def generate_sub_claims(dimension: str, graph: dict) -> list[SubClaim]:
     return sub_claims
 
 
-def build_claim(statement: str, dimension: str, graph: dict) -> Claim:
-    return Claim(statement=statement, dimension=dimension,
-                 sub_claims=generate_sub_claims(dimension, graph))
+def build_claim(statement: str, dimension: str, graph: dict, *, root: Path | None = None) -> Claim:
+    """Decompose a claim against the scanner's graph. CIR-160: when `root`
+    is given, also retrieves genuinely similar past pattern-library entries
+    as a hint on the freshly-decomposed claim -- `root` is optional so
+    existing in-memory-only callers (tests, scratch use) are unaffected and
+    get an empty pattern_hints list, same as before this field existed."""
+    claim = Claim(statement=statement, dimension=dimension,
+                  sub_claims=generate_sub_claims(dimension, graph))
+    if root is not None:
+        claim.pattern_hints = retrieve_similar_patterns(statement, dimension, root)
+    return claim
 
 
 def _slug(statement: str) -> str:
@@ -271,6 +287,48 @@ def claims_dir(root: Path) -> Path:
 
 def pattern_library_path(root: Path) -> Path:
     return root / "state" / "verification-pattern-library.jsonl"
+
+
+def _claim_shape(statement: str, dimension: str) -> str:
+    return f"{dimension}-dimension: {statement}"
+
+
+def retrieve_similar_patterns(
+    claim_statement: str, dimension: str, root: Path, *,
+    threshold: float = 0.6, top_n: int = 3,
+) -> list[dict]:
+    """Real, right-sized retrieval over the pattern library (CIR-160, Phase
+    3) -- a complement to research agents, not a replacement. The real
+    corpus is 6 rows today: no embeddings, no vector DB, that infra would
+    sit unexercised at this size. stdlib difflib.SequenceMatcher similarity
+    against past claim_shape strings is proportionate to it instead, and
+    good enough to tell a near-duplicate claim shape from an unrelated one
+    at six rows -- see this module's tests for a real match and a real
+    non-match against the actual shapes on record.
+
+    Returns at most `top_n` past entries scoring >= `threshold` against
+    this claim's own shape, highest similarity first, each augmented with
+    a `similarity` field so a caller can see why it matched. Empty list
+    when the library doesn't exist yet or nothing clears the threshold --
+    never every call, only a genuinely similar one."""
+    library_path = pattern_library_path(root)
+    if not library_path.exists():
+        return []
+    shape = _claim_shape(claim_statement, dimension)
+    scored: list[tuple[float, dict]] = []
+    for line in library_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        past_shape = entry.get("claim_shape", "")
+        score = difflib.SequenceMatcher(None, shape, past_shape).ratio()
+        if score >= threshold:
+            scored.append((score, entry))
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [{**entry, "similarity": round(score, 4)} for score, entry in scored[:top_n]]
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -430,7 +488,7 @@ def append_pattern_library_entries(root: Path, claim: Claim, how_found: str) -> 
                 continue
             existing.add((row.get("claim_shape"), row.get("missed_sub_claim")))
 
-    claim_shape = f"{claim.dimension}-dimension: {claim.statement}"
+    claim_shape = _claim_shape(claim.statement, claim.dimension)
     new_entries: list[dict] = []
     for sc in claim.sub_claims:
         if sc.status == "verified":
@@ -460,7 +518,7 @@ def run_checker(root: Path, statement: str, dimension: str, graph: dict, how_fou
     (WRITE PATH requirement: live, not buffered to a final report), and
     record any newly-found failure in the pattern library. The single
     entrypoint meant for real use."""
-    claim = build_claim(statement, dimension, graph)
+    claim = build_claim(statement, dimension, graph, root=root)
     write_claim(root, claim)
     append_pattern_library_entries(root, claim, how_found)
     return claim
