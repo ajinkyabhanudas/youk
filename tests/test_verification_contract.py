@@ -12,6 +12,7 @@ from verification_contract import (
     Claim,
     InvalidStageTransition,
     Stage,
+    SubClaim,
     _walk_forward_to,
     advance,
     append_pattern_library_entries,
@@ -20,6 +21,10 @@ from verification_contract import (
     gate_all_claims,
     gate_claim_done,
     generate_sub_claims,
+    mark_externally_verified,
+    mark_founder_confirmed,
+    migrate_claim_file_add_verification_level,
+    migrate_claims_dir,
     pattern_library_path,
     rework,
     run_checker,
@@ -224,13 +229,14 @@ class TestStageGraph:
     def test_forward_chain_reaches_gate_from_intake(self):
         claim = Claim(statement="x", dimension="host")
         for target in [
-            Stage.ABSTRACT, Stage.BOUND, Stage.RESEARCH, Stage.DECOMPOSE,
+            Stage.ABSTRACT, Stage.BOUND, Stage.RESEARCH, Stage.DIFF, Stage.DECOMPOSE,
             Stage.VERIFY, Stage.PATTERN_CAPTURE, Stage.GATE,
         ]:
             advance(claim, target)
         assert claim.stage == Stage.GATE
         assert claim.stage_history == [
-            "intake", "abstract", "bound", "research", "decompose", "verify", "pattern_capture",
+            "intake", "abstract", "bound", "research", "diff", "decompose", "verify",
+            "pattern_capture",
         ]
 
     def test_advance_rejects_an_edge_not_in_forward_edges(self):
@@ -259,27 +265,39 @@ class TestStageGraph:
         with pytest.raises(InvalidStageTransition):
             rework(claim, Stage.RESEARCH, reason="not a declared VERIFY rework edge")
 
-    def test_diff_reserves_a_rework_edge_back_to_research(self):
-        """DIFF itself has no logic yet (Phase 2), but its rework edge is
-        reserved now per CIR-156's explicit ask."""
+    def test_diff_rework_edge_back_to_research_is_live(self):
+        """CIR-157: DIFF's rework edge (reserved since CIR-156) is now driven
+        for real by diff_stage_outcome in verification_research.py."""
         claim = Claim(statement="x", dimension="host", stage=Stage.DIFF)
         rework(claim, Stage.RESEARCH, reason="diff disagreement")
         assert claim.stage == Stage.RESEARCH
+
+    def test_diff_forward_edge_to_decompose_is_live(self):
+        """CIR-157: a dual-pass diff with no disagreement continues the
+        pipeline from DIFF to DECOMPOSE, not DIFF staying a dead end."""
+        claim = Claim(statement="x", dimension="host", stage=Stage.DIFF)
+        advance(claim, Stage.DECOMPOSE)
+        assert claim.stage == Stage.DECOMPOSE
 
     def test_gate_reserves_rework_edges_mirroring_verify(self):
         assert REWORK_EDGES[Stage.GATE] == REWORK_EDGES[Stage.VERIFY] == frozenset(
             {Stage.BOUND, Stage.DECOMPOSE}
         )
 
-    def test_reserved_stages_have_no_forward_edges_yet(self):
-        assert FORWARD_EDGES[Stage.DIFF] == frozenset()
+    def test_retrieve_is_still_reserved_with_no_forward_edge_yet(self):
+        """RETRIEVE (Phase 3, RAG over the pattern library) is the only
+        stage still with no real wiring — DIFF got its forward edge in
+        CIR-157."""
         assert FORWARD_EDGES[Stage.RETRIEVE] == frozenset()
 
     def test_walk_forward_to_retraverses_every_intervening_stage(self):
+        """CIR-157: RESEARCH now feeds DIFF before DECOMPOSE, so the walk
+        from BOUND to VERIFY passes through one more real stage than before
+        DIFF had forward wiring."""
         claim = Claim(statement="x", dimension="host", stage=Stage.BOUND)
         _walk_forward_to(claim, Stage.VERIFY)
         assert claim.stage == Stage.VERIFY
-        assert claim.stage_history == ["bound", "research", "decompose"]
+        assert claim.stage_history == ["bound", "research", "diff", "decompose"]
 
     def test_walk_forward_to_from_decompose_is_a_single_hop(self):
         claim = Claim(statement="x", dimension="host", stage=Stage.DECOMPOSE)
@@ -396,3 +414,86 @@ class TestReworkLoop:
         )
         assert outcome.cap_hit is True
         assert outcome.message == "still unresolved after 2 rounds: mechanism_x:host-2"
+
+
+class TestVerificationLevel:
+    def test_generate_sub_claims_sets_internally_checked_not_asserted(self):
+        """The scanner's grep/AST evidence is real but never leaves the
+        codebase -- internally_checked, not the dataclass's own asserted
+        floor and not externally_verified (CIR-157)."""
+        sub_claims = generate_sub_claims("host", _FAKE_GRAPH)
+        assert all(sc.verification_level == "internally_checked" for sc in sub_claims)
+
+    def test_bare_sub_claim_defaults_to_asserted(self):
+        """A SubClaim constructed with no mechanical check behind it at all
+        gets the dataclass's own conservative floor."""
+        sub = SubClaim(id="x:y", mechanism="x", host="y", status="unverified")
+        assert sub.verification_level == "asserted"
+
+    def test_mark_externally_verified_promotes_without_touching_status(self):
+        claim = build_claim("youk is agent-agnostic", "host", _FAKE_GRAPH)
+        target = next(sc for sc in claim.sub_claims if sc.id == "pre_tool_guard:codex")
+        assert target.verification_level == "internally_checked"
+        assert target.status == "failed"
+
+        mark_externally_verified(claim, "pre_tool_guard:codex")
+
+        assert target.verification_level == "externally_verified"
+        assert target.status == "failed"  # status is orthogonal, untouched
+
+    def test_mark_externally_verified_raises_for_unknown_sub_claim_id(self):
+        claim = build_claim("youk is agent-agnostic", "host", _FAKE_GRAPH)
+        with pytest.raises(KeyError):
+            mark_externally_verified(claim, "no-such-id")
+
+    def test_mark_founder_confirmed_also_promotes_to_externally_verified(self):
+        """A founder stating a fact directly is independent of the codebase,
+        same as two external research sources agreeing -- external, not
+        internal (CIR-157 DONE-MEANS)."""
+        claim = build_claim("youk is agent-agnostic", "host", _FAKE_GRAPH)
+        mark_founder_confirmed(claim, "pre_tool_guard:codex")
+        target = next(sc for sc in claim.sub_claims if sc.id == "pre_tool_guard:codex")
+        assert target.verification_level == "externally_verified"
+
+
+class TestVerificationLevelMigration:
+    def _write_legacy_claim_file(self, tmp_path) -> "Path":
+        """A claim file shaped exactly like CIR-154/155/156's real claim
+        files on disk before verification_level existed -- no key at all on
+        any sub_claim."""
+        claim = build_claim("compaction works everywhere", "host",
+                             {"compaction_context": _FAKE_GRAPH["compaction_context"]})
+        path = write_claim(tmp_path, claim)
+        data = json.loads(path.read_text())
+        for sc in data["sub_claims"]:
+            del sc["verification_level"]
+        path.write_text(json.dumps(data, indent=2, sort_keys=True))
+        return path
+
+    def test_migrate_adds_internally_checked_to_every_legacy_sub_claim(self, tmp_path):
+        path = self._write_legacy_claim_file(tmp_path)
+        changed = migrate_claim_file_add_verification_level(path)
+        assert changed is True
+
+        data = json.loads(path.read_text())
+        assert all(sc["verification_level"] == "internally_checked" for sc in data["sub_claims"])
+
+    def test_migrate_is_idempotent(self, tmp_path):
+        path = self._write_legacy_claim_file(tmp_path)
+        migrate_claim_file_add_verification_level(path)
+        changed_again = migrate_claim_file_add_verification_level(path)
+        assert changed_again is False
+
+    def test_migrate_claims_dir_migrates_every_file_and_returns_the_changed_paths(self, tmp_path):
+        legacy_path = self._write_legacy_claim_file(tmp_path)
+        already_current = write_claim(
+            tmp_path, build_claim("other claim", "host", _FAKE_GRAPH)
+        )
+
+        migrated = migrate_claims_dir(tmp_path)
+
+        assert legacy_path in migrated
+        assert already_current not in migrated
+
+    def test_migrate_claims_dir_none_when_no_claims_directory_exists(self, tmp_path):
+        assert migrate_claims_dir(tmp_path) == []
