@@ -13,11 +13,13 @@ from verification_contract import (
     InvalidStageTransition,
     Stage,
     SubClaim,
+    _slug,
     _walk_forward_to,
     advance,
     append_pattern_library_entries,
     build_claim,
     claims_dir,
+    events_log_path,
     gate_all_claims,
     gate_claim_done,
     generate_sub_claims,
@@ -565,3 +567,98 @@ class TestVerificationLevelMigration:
 
     def test_migrate_claims_dir_none_when_no_claims_directory_exists(self, tmp_path):
         assert migrate_claims_dir(tmp_path) == []
+
+
+class TestStagePersistenceAndEventLog:
+    """CIR-159: a claim's real stage transitions were tracked in memory
+    (stage_history.append / rework_log.append) but never reached the claim
+    JSON file on disk, and no event log existed at all. These tests read
+    the real files back off disk after a real run -- not the in-memory
+    return value -- the same independent-confirmation discipline the
+    ticket's DONE-MEANS requires."""
+
+    def test_run_checker_persists_real_stage_and_stage_history_to_disk(self, tmp_path):
+        run_checker(tmp_path, "compaction works everywhere", "host",
+                    {"compaction_context": _FAKE_GRAPH["compaction_context"]},
+                    how_found="test")
+
+        path = claims_dir(tmp_path) / f"{_slug('compaction works everywhere')}.json"
+        on_disk = json.loads(path.read_text())
+
+        assert on_disk["stage"] == "pattern_capture"
+        assert on_disk["stage_history"] == ["decompose", "verify"]
+
+    def test_run_checker_appends_one_event_per_real_transition(self, tmp_path):
+        run_checker(tmp_path, "compaction works everywhere", "host",
+                    {"compaction_context": _FAKE_GRAPH["compaction_context"]},
+                    how_found="test")
+
+        lines = events_log_path(tmp_path).read_text().splitlines()
+        events = [json.loads(line) for line in lines]
+
+        assert len(events) == 2
+        claim_id = _slug("compaction works everywhere")
+        assert all(e["claim_id"] == claim_id for e in events)
+        assert [e["stage"] for e in events] == ["verify", "pattern_capture"]
+        assert all(e["timestamp"] for e in events)
+
+    def test_run_checker_never_touches_the_event_log_when_root_not_given_to_advance(self, tmp_path):
+        """advance()/rework() called with no `root` (existing in-memory-only
+        callers, e.g. the unit tests above) must not create an event log at
+        all -- the event log is additive, not a silent new requirement on
+        every caller."""
+        claim = Claim(statement="x", dimension="host", stage=Stage.INTAKE)
+        advance(claim, Stage.ABSTRACT)
+        assert not events_log_path(tmp_path).exists()
+
+    def test_run_rework_loop_persists_real_rework_history_to_the_claim_file_on_disk(self, tmp_path):
+        """The exact gap named in CIR-159: run_rework_loop's rework()/
+        _walk_forward_to() calls build real stage_history/rework_log on its
+        `claim`, but the file on disk used to come from a separate, freshly
+        reset Claim inside run_checker every round. Read the file back
+        independently and confirm it carries the real rework history, not a
+        reset-to-INTAKE snapshot."""
+        outcome = run_rework_loop(
+            tmp_path, "youk is agent-agnostic", "host",
+            graph_fn=lambda: _FAKE_GRAPH, how_found="test",
+        )
+        assert outcome.claim.rework_rounds == 1  # sanity: a real rework round happened
+
+        path = claims_dir(tmp_path) / f"{_slug('youk is agent-agnostic')}.json"
+        on_disk = json.loads(path.read_text())
+
+        assert on_disk["rework_rounds"] == 1
+        assert len(on_disk["rework_log"]) == 1
+        assert on_disk["rework_log"][0]["to"] == "decompose"
+        assert len(on_disk["stage_history"]) >= 2
+
+    def test_run_rework_loop_appends_events_for_every_real_transition(self, tmp_path):
+        run_rework_loop(
+            tmp_path, "youk is agent-agnostic", "host",
+            graph_fn=lambda: _FAKE_GRAPH, how_found="test",
+        )
+
+        lines = events_log_path(tmp_path).read_text().splitlines()
+        events = [json.loads(line) for line in lines]
+        claim_id = _slug("youk is agent-agnostic")
+
+        assert len(events) >= 2
+        assert all(e["claim_id"] == claim_id for e in events)
+        assert any(e["outcome"].startswith("rework:") for e in events)
+        assert any(e["outcome"] == "advance" for e in events)
+
+    def test_a_dissimilar_claim_gets_its_own_independent_event_log_entries(self, tmp_path):
+        """Two different claims in the same run log distinct claim_ids --
+        the event log is never a single undifferentiated stream."""
+        run_checker(tmp_path, "compaction works everywhere", "host",
+                    {"compaction_context": _FAKE_GRAPH["compaction_context"]},
+                    how_found="test")
+        run_checker(tmp_path, "youk is agent-agnostic", "host", _FAKE_GRAPH,
+                    how_found="test")
+
+        events = [json.loads(line) for line in events_log_path(tmp_path).read_text().splitlines()]
+        claim_ids = {e["claim_id"] for e in events}
+        assert claim_ids == {
+            _slug("compaction works everywhere"),
+            _slug("youk is agent-agnostic"),
+        }
