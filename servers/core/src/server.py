@@ -2609,6 +2609,65 @@ def log_skill_invocation(skill: str) -> dict:
 
 
 @mcp.tool()
+def log_domain_edge_case_disposition(
+    project: str,
+    task: str,
+    bounded_context: str,
+    source_file: str,
+    source_id: str,
+    disposition: str,
+) -> dict:
+    """
+    Persist what actually happened to one Domain Brief edge-case candidate
+    surfaced by nfr-check's CLASSIFY phase: accepted, dismissed, or ignored.
+    Phase B of docs/pattern-learning-architecture-design.md -- this is the
+    measurement layer Phase C's reversal check and Phase D's promotion path
+    both depend on.
+
+    Exists here, not in youk-code, for the same reason as log_ab_exposure:
+    nfr_check runs in youk-code, which mounts YOUK_ROOT read-only by design.
+    This is the write-authorized half, called by the orchestrating session
+    once per reviewed candidate, right after it decides that candidate's
+    real disposition.
+
+    project: current project slug (the one the Domain Brief was built for).
+    task: the task text nfr-check ran against.
+    bounded_context / source_file / source_id: carried through unchanged
+    from the candidate dict nfr_check returned in domain_edge_case_candidates.
+    disposition: "accepted" (plan changed because of it), "dismissed"
+    (explicitly judged irrelevant to this task), or "ignored" (surfaced, no
+    explicit call either way -- log this too, never silently omit it).
+
+    candidate_id is computed deterministically from (project, bounded_context,
+    source_id, task) -- never a random uuid -- so the same real candidate
+    surfaced again for a similar task can be correlated later.
+
+    Returns: {"logged": bool, "path": str, "candidate_id": str}
+    """
+    from disposition_event import DispositionValidationError, append_disposition_event
+
+    try:
+        event = append_disposition_event(
+            project=project,
+            task=task,
+            bounded_context=bounded_context,
+            source_file=source_file,
+            source_id=source_id,
+            disposition=disposition,
+            log_path=YOUK_ROOT / "state" / "disposition-log.jsonl",
+        )
+        return {
+            "logged": True,
+            "path": str(YOUK_ROOT / "state" / "disposition-log.jsonl"),
+            "candidate_id": event.candidate_id,
+        }
+    except DispositionValidationError as exc:
+        return {"logged": False, "error": str(exc), "error_type": "BUSINESS_RULE"}
+    except Exception as exc:
+        return {"logged": False, "error": str(exc), "error_type": "SYSTEM"}
+
+
+@mcp.tool()
 def check_ab_pilot_status(experiment: str = "rationale_terseness", threshold: int = 20) -> dict:
     """
     Report exposure counts against the pre-registered stop threshold. Not a readout.

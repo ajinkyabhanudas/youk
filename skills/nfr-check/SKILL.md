@@ -190,6 +190,22 @@ exists rather than attacked after one does. Output:
 {question} → {inferred answer from task text, or "OPEN — needs plan-time decision"}
 ```
 
+**Domain edge-case disposition (CIR-170 Phase B):** for each non-empty entry in
+`domain_edge_case_candidates`, after judging it against the task per the
+`domain_edge_case_instruction` field above, decide and log its real disposition —
+`accepted` (the plan changed because of it), `dismissed` (explicitly judged
+irrelevant to this task), or `ignored` (surfaced, no explicit call made either
+way — log this too, never silently omit it). Call
+`youk-core.log_domain_edge_case_disposition(project, task, bounded_context,
+source_file, source_id, disposition)` once per candidate, using that candidate's
+own `bounded_context` / `source_file` / `source_id` fields unchanged and the
+current project slug for `project`. This exists in youk-core, not youk-code, for
+the same read-only-mount reason as `log_ab_exposure` — nfr-check itself cannot
+persist the write. This is the measurement layer Phase C's reversal check and
+Phase D's promotion path both depend on (see docs/pattern-learning-architecture-
+design.md's "DispositionEvent" schema section): a candidate that is reviewed but
+never logged produces no evidence either way, confirmed or not.
+
 **Domain Brief fallback (CIR-168):** if `domain_edge_case_candidates` is empty, that is
 usually a true negative (CIR-163's own instruction above) — nothing in a populated Domain
 Brief matched this task's vocabulary. But it can also mean the Domain Brief has nothing to
