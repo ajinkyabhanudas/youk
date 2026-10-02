@@ -190,6 +190,51 @@ exists rather than attacked after one does. Output:
 {question} → {inferred answer from task text, or "OPEN — needs plan-time decision"}
 ```
 
+**Domain Brief fallback (CIR-168):** if `domain_edge_case_candidates` is empty, that is
+usually a true negative (CIR-163's own instruction above) — nothing in a populated Domain
+Brief matched this task's vocabulary. But it can also mean the Domain Brief has nothing to
+match against at all, which is a different problem needing a different response. Tell the
+two apart by reading `state/domain-brief.json` directly (or noting its absence) before
+moving on:
+
+- **True negative, do nothing:** the file exists and at least one entry in its `sources`
+  list shows `"format_recognized": true` (equivalently, `bounded_contexts` is non-empty) —
+  some real decision record parsed, it just didn't match this task. Proceed as normal.
+- **Fallback case — this is where the gap actually is:** the file is missing entirely, OR
+  every entry in `sources` shows `"format_recognized": false` or `null` — no known
+  decision-doc dialect produced a single real bounded context anywhere in this project. The
+  extractor genuinely has nothing to work with; this is not "nothing matched," it's "there
+  was nothing to try matching against." In that case:
+
+  1. Examine the actual codebase: top-level directory structure (and one level into any
+     `src`/`app`/`packages`/`lib` dir), key module or file names, what the README says the
+     project does in its own words, and any config file naming real subsystems (package.json
+     workspaces, pyproject.toml packages, docker-compose service names).
+  2. State 2-4 inferred bounded contexts, each a short name plus one sentence tying it to
+     something you actually read — a directory, a module, a README line, a service name.
+     A generic guess with nothing cited ("User management," unsupported) does not count; a
+     cited one does ("Auth — `src/auth/` owns login/session/token issuance, confirmed by
+     `routes/auth.py`").
+  3. Tag every one of these `source_file: inferred-from-codebase` (never a real file path)
+     and `source_id:` naming what was examined (e.g. `src/orders/, README.md:1`). This must
+     never be presented, logged, or cited as if it were a real decision-record citation — it
+     is a lower-confidence, session-local hypothesis for this task's review, not a fact to
+     add back into `state/domain-brief.json` itself (that file stays exactly what
+     `build_domain_brief` actually extracted; nothing inferred here is written back to it).
+
+  **Worked example — a fresh repo with no `DECISIONS.md` at all:** a new API service with
+  `src/orders/`, `src/billing/`, `src/notifications/`, a `README.md` opening "handles order
+  lifecycle and payment capture for the storefront," and a `docker-compose.yml` naming
+  services `api`, `postgres`, `redis`. `sources` shows both entries `"present": false`,
+  `"format_recognized": null` — there's nothing to parse, full stop. Codebase examination
+  infers: **Orders** — `src/orders/` plus the README's "order lifecycle" phrase
+  (`source_file: inferred-from-codebase`, `source_id: src/orders/, README.md:1`); **Billing**
+  — `src/billing/` plus "payment capture" in the same README line (`source_id: src/billing/,
+  README.md:1`); **Notifications** — `src/notifications/` alone, flagged as the weakest of
+  the three since nothing else in the repo corroborates it. Three contexts, each tied to
+  something real that was actually read — not four padded in to hit a round number, and
+  none of them treated as equivalent in confidence to a real `DECIDED`/`WHY` citation.
+
 ---
 
 ### Phase 2 — PROBE
