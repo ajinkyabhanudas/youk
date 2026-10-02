@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://youk.dev/schemas/pattern-entry.schema.json",
+  "title": "PatternEntry",
+  "type": "object",
+  "required": ["id", "schema_version", "scope", "domain", "sub_domain",
+               "statement", "evidence_level", "provenance", "status",
+               "created_at"],
+  "properties": {
+    "id": {"type": "string"},
+    "schema_version": {"type": "string", "const": "1.0"},
+    "scope": {"type": "string", "enum": ["local", "global"]},
+    "domain": {"type": "string"},
+    "sub_domain": {"type": "string"},
+    "constraint_set": {
+      "type": "array", "items": {"type": "string"},
+      "description": "The conditions this pattern is actually known to apply under -- e.g. ['python', 'docker-multi-container']. Empty means unconstrained, stated explicitly, never implied by omission."
+    },
+    "statement": {"type": "string"},
+    "evidence_level": {
+      "type": "string",
+      "enum": ["asserted", "internally_checked", "externally_verified"],
+      "description": "Same vocabulary as verification_contract.py's SubClaim -- reused, not reinvented."
+    },
+    "provenance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["project", "abstracted"],
+        "properties": {
+          "project": {"type": "string"},
+          "source_file": {"type": "string"},
+          "source_id": {"type": "string"},
+          "abstracted": {
+            "type": "boolean",
+            "description": "True once abstract_claim() has stripped proprietary specifics. A global-scope entry with any provenance row abstracted=false is invalid -- enforced, not just documented."
+          }
+        }
+      }
+    },
+    "confirmed_count": {"type": "integer", "minimum": 0},
+    "status": {
+      "type": "string",
+      "enum": ["candidate", "confirmed", "promoted", "retired"],
+      "description": "candidate: surfaced, no disposition yet. confirmed: a real reversal proved it mattered. promoted: confirmed in >=2 distinct projects, abstracted, eligible for global scope. retired: superseded or proven wrong -- kept, never deleted, for the same reason nothing in this codebase deletes a real record."
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"}
+  }
+}
