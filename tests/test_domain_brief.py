@@ -1,4 +1,5 @@
-"""Tests for servers/core/src/domain_brief.py (CIR-162, Phase 1).
+"""Tests for servers/core/src/domain_brief.py (CIR-162, Phase 1; CIR-168
+generalized DECISIONS.md parsing across real dialects).
 
 The DECISIONS.md tests run against the real, committed file in this repo --
 not a mock -- so a passing test is proof the extractor works against actual
@@ -8,10 +9,20 @@ universally applicable"), so it is never present in this checkout or in CI;
 its parser (_parse_adr_log) is instead exercised against a verbatim fixture
 copied from the real file, so the parsing logic is still proven against
 real ADR text rather than an invented shape.
+
+CIR-168's cross-project tests below read two OTHER real, existing projects'
+real DECISIONS.md files directly from their real, absolute location on this
+machine -- never copied into this repo -- the same real-data discipline as
+the in-repo test above, extended across projects. They are skipped (not
+failed) on a machine/CI where those paths don't exist, same resilience
+discipline as the instance-local ADR log test below.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 
 from domain_brief import (
     REPO_ROOT,
@@ -21,6 +32,11 @@ from domain_brief import (
     _parse_adr_log,
     _parse_decisions_md,
 )
+
+# Real, existing projects used to prove DECISIONS.md parsing generalizes
+# beyond youk's own dialect (CIR-168) -- read-only, at their real location.
+_CIRCAID_DECISIONS = Path("/Users/ajinkya/Desktop/circaid/DECISIONS.md")
+_CANOPY_DECISIONS = Path("/Users/ajinkya/Desktop/Jocotoco/canopy/DECISIONS.md")
 
 # Verbatim excerpt of knowledge/projects/youk/decisions.md (ADR-001, ADR-002's
 # PENDING-shaped rejected alternative removed for brevity, and the PENDING
@@ -171,3 +187,139 @@ def test_domain_brief_to_dict_round_trips_nested_dataclasses():
     d = brief.to_dict()
     assert isinstance(d["bounded_contexts"], list)
     assert isinstance(d["bounded_contexts"][0]["invariants"][0]["statement"], str)
+
+
+# --- CIR-168: generalized parsing against real external dialects -----------
+
+
+@pytest.mark.skipif(
+    not _CIRCAID_DECISIONS.exists(), reason="circaid repo not present on this machine"
+)
+def test_extract_decisions_md_against_real_circaid_file():
+    """circaid's real DECISIONS.md: `## ADR-Cxxx — Title` headers, bold-
+    markdown `**Decided:**`/`**Rejected:**`/`**Why:**` fields -- a different
+    dialect from youk's own dated-bracket/plain-field DECISIONS.md."""
+    text = _CIRCAID_DECISIONS.read_text(encoding="utf-8")
+    contexts = _parse_decisions_md(text, "DECISIONS.md")
+
+    assert len(contexts) > 0
+    by_name = {c.name: c for c in contexts}
+    assert "Client scope is a path level above session slug" in by_name
+
+    ctx = by_name["Client scope is a path level above session slug"]
+    assert len(ctx.invariants) == 1
+    inv = ctx.invariants[0]
+    assert inv.source_file == "DECISIONS.md"
+    assert inv.source_id == "ADR-C002"
+    # Real content pulled from circaid's own **Decided:** / **Why:** fields.
+    assert "state_paths.py" in inv.statement
+    assert "task-graph.db" in inv.statement
+    assert "dangerous to retrofit" in inv.statement
+
+
+@pytest.mark.skipif(
+    not _CANOPY_DECISIONS.exists(), reason="canopy repo not present on this machine"
+)
+def test_extract_decisions_md_against_real_canopy_file():
+    """canopy's real DECISIONS.md: `### Sx — Title` headers nested under a
+    `## Security & Privacy`-style section header (which must NOT itself be
+    treated as a decision entry), bold-markdown `**Decision:**` (singular,
+    a different synonym than circaid's `**Decided:**`) / `**Why:**` /
+    `**Alternatives considered:**` (a different synonym than circaid's
+    `**Rejected:**`) fields."""
+    text = _CANOPY_DECISIONS.read_text(encoding="utf-8")
+    contexts = _parse_decisions_md(text, "DECISIONS.md")
+
+    assert len(contexts) > 0
+    by_name = {c.name: c for c in contexts}
+    assert "Architecture boundary" in by_name
+    # The grouping section header above it must never become a fake entry.
+    assert "Security & Privacy" not in by_name
+
+    ctx = by_name["Architecture boundary"]
+    assert len(ctx.invariants) == 1
+    inv = ctx.invariants[0]
+    assert inv.source_file == "DECISIONS.md"
+    assert inv.source_id == "S1"
+    # Real content pulled from canopy's own **Decision:** / **Why:** fields.
+    assert "direct database access" in inv.statement
+    assert "OWASP" in inv.statement
+
+
+def test_decisions_md_recognizes_adr_dash_header_shape():
+    """A minimal, synthetic circaid-shaped entry proves the `adr-dash`
+    _HeaderPattern in isolation, independent of the real-file tests above
+    (which prove it against actual production text)."""
+    text = """\
+## ADR-C099 — Example synthetic decision for header-shape coverage
+
+**Decided:** Use approach X.
+
+**Rejected:**
+- Approach Y — too slow.
+
+**Why:** X is faster and simpler.
+"""
+    contexts = _parse_decisions_md(text, "DECISIONS.md")
+    assert len(contexts) == 1
+    ctx = contexts[0]
+    assert ctx.name == "Example synthetic decision for header-shape coverage"
+    assert ctx.invariants[0].source_id == "ADR-C099"
+    assert "Use approach X" in ctx.invariants[0].statement
+    assert "X is faster and simpler" in ctx.invariants[0].statement
+
+
+def test_decisions_md_recognizes_section_id_dash_header_shape():
+    """A minimal, synthetic canopy-shaped entry proves the
+    `section-id-dash` _HeaderPattern in isolation, and that a non-matching
+    `##` section header above it is correctly ignored rather than forced
+    into an entry."""
+    text = """\
+## Security & Privacy
+
+### S9 — Example synthetic decision for header-shape coverage
+
+**Decision:** Use approach X.
+
+**Why:** X is faster and simpler.
+
+**Alternatives considered:** Approach Y, rejected as too slow.
+"""
+    contexts = _parse_decisions_md(text, "DECISIONS.md")
+    names = {c.name for c in contexts}
+    assert "Security & Privacy" not in names
+    assert "Example synthetic decision for header-shape coverage" in names
+    ctx = next(c for c in contexts if c.name == "Example synthetic decision for header-shape coverage")
+    assert ctx.invariants[0].source_id == "S9"
+    assert "Use approach X" in ctx.invariants[0].statement
+    assert "X is faster and simpler" in ctx.invariants[0].statement
+
+
+def test_sources_format_recognized_distinguishes_absent_from_unrecognized(tmp_path):
+    """CIR-168 item 2: `sources[].format_recognized` must tell "no file
+    there" (None) apart from "a real file is there and nothing matched it"
+    (False) -- today's `present`/`entries_parsed` pair alone can't."""
+    # Case 1: no DECISIONS.md at all.
+    brief_absent = build_domain_brief(tmp_path, project="absent-case")
+    by_path = {s["path"]: s for s in brief_absent.sources}
+    decisions_source = by_path["DECISIONS.md"]
+    assert decisions_source["present"] is False
+    assert decisions_source["entries_parsed"] == 0
+    assert decisions_source["format_recognized"] is None
+
+    # Case 2: DECISIONS.md exists but matches none of the known header shapes.
+    (tmp_path / "DECISIONS.md").write_text(
+        "# Decision log\n\nJust some prose with no recognized heading shape at all.\n",
+        encoding="utf-8",
+    )
+    brief_unrecognized = build_domain_brief(tmp_path, project="unrecognized-case")
+    by_path = {s["path"]: s for s in brief_unrecognized.sources}
+    decisions_source = by_path["DECISIONS.md"]
+    assert decisions_source["present"] is True
+    assert decisions_source["entries_parsed"] == 0
+    assert decisions_source["format_recognized"] is False
+
+    # Case 3 (regression guard): a real, recognized file still reports True.
+    brief_real = build_domain_brief(REPO_ROOT)
+    by_path = {s["path"]: s for s in brief_real.sources}
+    assert by_path["DECISIONS.md"]["format_recognized"] is True
