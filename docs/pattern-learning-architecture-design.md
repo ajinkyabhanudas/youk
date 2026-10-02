@@ -161,6 +161,62 @@ candidate`; a reactive pattern-library hit is the same shape at
 `status: promoted`. One schema, three lifecycle points -- not three
 different ad hoc dict shapes that have to be kept in sync by hand.
 
+### DispositionEvent -- a deliberately separate, lighter schema
+
+Phase B needs to log what happens to a surfaced candidate (accepted /
+dismissed / ignored) every time `nfr-check` surfaces one. This is NOT a
+`PatternEntry` -- forcing it into that shape would mean inventing fake
+`domain`/`sub_domain`/`evidence_level`/`provenance` values for something
+that is, at the moment it's logged, just "a thing got shown and a human (or
+the session) reacted to it." A `PatternEntry` is reserved for something
+that has already cleared a real bar (confirmed by a reversal, or promoted
+across projects); a `DispositionEvent` is the raw material that might one
+day produce one.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://youk.dev/schemas/disposition-event.schema.json",
+  "title": "DispositionEvent",
+  "type": "object",
+  "required": ["candidate_id", "project", "task", "bounded_context",
+               "source_file", "source_id", "disposition", "timestamp"],
+  "properties": {
+    "candidate_id": {
+      "type": "string",
+      "description": "Deterministic, derived from (project, bounded_context, source_id, task) -- NOT a random uuid, so the same real candidate surfaced again for a similar task can be correlated without a lookup table."
+    },
+    "project": {"type": "string"},
+    "task": {"type": "string"},
+    "bounded_context": {"type": "string"},
+    "source_file": {"type": "string"},
+    "source_id": {"type": "string"},
+    "disposition": {
+      "type": "string",
+      "enum": ["accepted", "dismissed", "ignored"],
+      "description": "accepted: plan changed because of it. dismissed: explicitly judged irrelevant to this task. ignored: surfaced, no explicit call either way -- the default when nothing says otherwise, logged as its own real value, never silently omitted."
+    },
+    "timestamp": {"type": "string", "format": "date-time"}
+  }
+}
+```
+
+The relationship to `PatternEntry`, decided: a `DispositionEvent` with
+`disposition: dismissed` is the thing Phase C's reversal check watches.
+When a later real incident (a new decision/post-mortem entry Domain Brief's
+own extractor picks up on its next run) proves that dismissal wrong, Phase
+C constructs a REAL `PatternEntry` at that point -- `scope: local`,
+`status: confirmed`, with `provenance` pointing at both the original
+decision and the new incident entry -- and writes it into the existing
+reactive pattern-library. The `DispositionEvent` itself is never promoted
+or converted in place; it stays a flat, append-only record of what
+happened, same discipline as every other append-only log in this codebase
+(`events.jsonl`, the pattern-library itself).
+
+Storage: `state/disposition-log.jsonl`, append-only, one real event per
+line, never backfilled -- same precedent as every other JSONL file in this
+initiative.
+
 ## A2A: relevant to design for, not to build
 
 youk is public, MIT, domain-neutral (circaid's own ADR-C001 pins exactly
@@ -209,9 +265,10 @@ that reason.
 - Phase A: the schema file + the dataclass + validation, with real tests
   proving the guardrails actually raise (malformed global entry, promotion
   below 2 projects, Pydantic absent).
-- Phase B: the disposition log itself -- append-only, real events only,
-  wired to where Domain Brief candidates are actually surfaced
-  (`domain_edge_cases.py` / `nfr-check`'s CLASSIFY phase).
+- Phase B: the disposition log itself, per the `DispositionEvent` schema
+  above -- append-only, real events only, wired to where Domain Brief
+  candidates are actually surfaced (`domain_edge_cases.py` / `nfr-check`'s
+  CLASSIFY phase). Not a `PatternEntry` -- see the schema section for why.
 - Phase C: the periodic reversal check -- re-run Domain Brief's own
   extractor, diff new entries against open `candidate`/`dismissed` rows,
   promote a real match to `confirmed` in the existing reactive
