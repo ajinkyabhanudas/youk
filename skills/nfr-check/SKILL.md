@@ -190,6 +190,27 @@ exists rather than attacked after one does. Output:
 {question} → {inferred answer from task text, or "OPEN — needs plan-time decision"}
 ```
 
+**Domain scope (problem-space-modeling Phase 5 / CIR-165):** before moving to Phase 2,
+also answer fresh — every M/L/XL call, never cached or reused from a prior task's answer
+— "which 2-4 knowledge domains, beyond generic software engineering, are actually
+relevant to THIS task's assumptions, and why?" A billing feature needs financial-
+regulation + security; a chat UI needs UX + cognitive-science; a data pipeline needs
+statistics. This is a judgment call made by reading the actual task text, not a lookup —
+do not consult or produce a fixed domain table (`if "payment" in task: return
+["finance"]` is exactly the mistake this step exists to prevent). Output:
+
+```
+[DOMAIN SCOPE]
+{domain} — {one-sentence reason this domain's assumptions matter to this specific task}
+(2-4 domains)
+```
+
+Then call `youk-core.build_domain_research_invocation(domains, task)` and run the
+returned `invocation` (youk-research's existing WebSearch → extract → propose loop,
+`/research [topic]` scoped to these domains — reuse it, do not build a second search
+loop). Carry whatever it finds forward as external evidence for `challenge`'s Lens 3
+(hidden assumptions) on this task.
+
 ---
 
 ### Phase 2 — PROBE

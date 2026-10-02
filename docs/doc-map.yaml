@@ -20,6 +20,7 @@ mcp_tools:
     - {tool: check_command, refs: [README.md]}
     - {tool: save_contract, refs: [README.md, docs/claude-md-template.md]}
     - {tool: self_heal, refs: [README.md, docs/claude-md-template.md]}
+    - {tool: build_domain_research_invocation, refs: [skills/nfr-check/SKILL.md, docs/problem-space-modeling-design.md]}
     - {tool: add_proposal, refs: [README.md]}
     - {tool: get_proposals, refs: [README.md]}
     - {tool: apply_proposal, refs: [README.md]}

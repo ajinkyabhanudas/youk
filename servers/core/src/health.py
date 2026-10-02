@@ -3214,6 +3214,45 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     return base
 
 
+def build_domain_research_invocation(domains: list[str], task: str) -> dict:
+    """
+    Build the youk-research invocation for a per-task domain scope (problem-space-modeling
+    Phase 5 / CIR-165). Takes the 2-4 knowledge domains named fresh for THIS task (by
+    nfr-check's Phase 1 CLASSIFY, never cached from a prior task) and returns the real
+    `/research [topic]` call scoped to them.
+
+    Zero-API, same as run_health_check_with_skill_signals(research_mode=True)'s
+    research_topics: this function never performs web research itself, it only constructs
+    the correct invocation of youk-research's existing WebSearch -> extract -> propose
+    loop. The caller (the session running nfr-check) runs the returned invocation, then
+    carries whatever youk-research finds into challenge's Lens 3.
+
+    Raises ValueError if domains is empty or has more than 4 entries — domain scope is
+    a stated judgment call (2-4 domains), not a dumping ground.
+    """
+    cleaned = [d.strip() for d in domains if d and d.strip()]
+    if not cleaned:
+        raise ValueError("build_domain_research_invocation requires at least 1 domain")
+    if len(cleaned) > 4:
+        raise ValueError(
+            f"build_domain_research_invocation got {len(cleaned)} domains, max 4 — "
+            "domain scope must stay a judgment call, not a fixed table"
+        )
+
+    topics = ", ".join(cleaned)
+    task_summary = task.strip()[:100]
+    return {
+        "topics": topics,
+        "invocation": f"/research {topics}",
+        "note": (
+            f"Domain-scoped research for this task ({task_summary}): run `/research {topics}` "
+            "— youk-research's existing WebSearch -> extract -> propose loop, scoped to these "
+            "domains. Feed findings into challenge's Lens 3 (hidden assumptions) as external "
+            "evidence."
+        ),
+    }
+
+
 def _run_convergence_check(sessions: list[dict], report: object) -> dict:
     """
     Multi-directional convergence check for youk itself.
