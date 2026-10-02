@@ -12,6 +12,7 @@ from session import start_session, end_session, task_checkpoint as _task_checkpo
 from routing import route_task as _route_task, write_scope_escalation as _write_scope_escalation
 from health import (
     run_health_check_with_skill_signals,
+    build_domain_research_invocation as _build_domain_research_invocation,
     add_proposal as _add_proposal,
     apply_proposal as _apply_proposal,
     _load_pending_proposals,
@@ -1307,6 +1308,26 @@ def self_heal(research_mode: bool = False) -> dict:
              research_topics (if research_mode=True and gaps exist).
     """
     return run_health_check_with_skill_signals(research_mode=research_mode)
+
+
+@mcp.tool()
+def build_domain_research_invocation(domains: list[str], task: str) -> dict:
+    """
+    Problem-space-modeling Phase 5 (CIR-165): turn the 2-4 knowledge domains nfr-check
+    named for THIS task into the real youk-research invocation, scoped to those domains.
+
+    Call this from nfr-check's Phase 1 CLASSIFY after naming domains fresh (never reused
+    from a prior task). Never performs web research itself — zero-API, same contract as
+    self_heal(research_mode=True)'s research_topics. Run the returned `invocation` (a
+    `/research [topic]` call) to trigger youk-research's existing WebSearch -> extract ->
+    propose loop, then carry what it finds into challenge's Lens 3 (hidden assumptions).
+
+    Raises ValueError if domains is empty or has more than 4 entries.
+
+    Returns: topics (comma-joined domain string), invocation (the /research command to
+             run), note (one-line summary for the session to act on).
+    """
+    return _build_domain_research_invocation(domains, task)
 
 
 @mcp.tool()

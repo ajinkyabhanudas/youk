@@ -987,6 +987,54 @@ class TestRunHealthCheckWithSkillSignals:
         assert "research_topics" not in result
 
 
+# ── build_domain_research_invocation (CIR-165, problem-space-modeling Phase 5) ────
+
+class TestBuildDomainResearchInvocation:
+    def test_builds_research_invocation_from_named_domains(self):
+        from health import build_domain_research_invocation
+        result = build_domain_research_invocation(
+            domains=["financial regulation", "security"],
+            task="Add a billing feature that stores card tokens",
+        )
+        assert result["topics"] == "financial regulation, security"
+        assert result["invocation"] == "/research financial regulation, security"
+        assert "billing feature" in result["note"]
+
+    def test_strips_blank_and_whitespace_only_domains(self):
+        from health import build_domain_research_invocation
+        result = build_domain_research_invocation(
+            domains=["UX", "  ", "", "cognitive science"],
+            task="Redesign the chat UI",
+        )
+        assert result["topics"] == "UX, cognitive science"
+
+    def test_raises_on_empty_domain_list(self):
+        from health import build_domain_research_invocation
+        import pytest
+        with pytest.raises(ValueError):
+            build_domain_research_invocation(domains=[], task="Some task")
+
+    def test_raises_on_more_than_four_domains(self):
+        from health import build_domain_research_invocation
+        import pytest
+        with pytest.raises(ValueError):
+            build_domain_research_invocation(
+                domains=["a", "b", "c", "d", "e"],
+                task="Some task",
+            )
+
+    def test_never_calls_a_search_api_itself(self, monkeypatch):
+        # Zero-API contract: the function only builds the /research invocation string,
+        # it must not import or call any network/search primitive directly.
+        from health import build_domain_research_invocation
+        import health
+        assert not hasattr(health, "WebSearch")
+        result = build_domain_research_invocation(
+            domains=["statistics"], task="Build a data pipeline"
+        )
+        assert result["invocation"].startswith("/research ")
+
+
 # ── _archive_applied_proposals ────────────────────────────────────────────────
 
 class TestArchiveAppliedProposals:
