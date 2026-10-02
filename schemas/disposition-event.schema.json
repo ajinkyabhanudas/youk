@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://youk.dev/schemas/disposition-event.schema.json",
+  "title": "DispositionEvent",
+  "type": "object",
+  "required": ["candidate_id", "project", "task", "bounded_context",
+               "source_file", "source_id", "disposition", "timestamp"],
+  "properties": {
+    "candidate_id": {
+      "type": "string",
+      "description": "Deterministic, derived from (project, bounded_context, source_id, task) -- NOT a random uuid, so the same real candidate surfaced again for a similar task can be correlated without a lookup table."
+    },
+    "project": {"type": "string"},
+    "task": {"type": "string"},
+    "bounded_context": {"type": "string"},
+    "source_file": {"type": "string"},
+    "source_id": {"type": "string"},
+    "disposition": {
+      "type": "string",
+      "enum": ["accepted", "dismissed", "ignored"],
+      "description": "accepted: plan changed because of it. dismissed: explicitly judged irrelevant to this task. ignored: surfaced, no explicit call either way -- the default when nothing says otherwise, logged as its own real value, never silently omitted."
+    },
+    "timestamp": {"type": "string", "format": "date-time"}
+  }
+}
