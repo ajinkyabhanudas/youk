@@ -317,9 +317,75 @@ old file's role is superseded, not merged into it.
    `evidence_level: internally_checked`, `provenance` citing both the
    original dismissed decision and the new reversing one) and appends it
    to `state/confirmed-patterns.jsonl`.
-- Phase D: the global store + the promotion function (>=2 projects,
-  abstraction-enforced) + the query function Domain Brief consults when
-  building any project's brief.
+- Phase D: see "Phase D, precisely" below -- two real gaps settled first,
+  same discipline as Phases B and C.
+
+### Phase D, precisely
+
+**Gap 1 -- `abstract_claim()`'s glossary is youk-specific.**
+`servers/core/src/verification_research.py`'s `GLOSSARY` is hand-curated
+for youk's own vocabulary (`claude code`, `mcp`, `paperclip`, ...). Calling
+it on a circaid or canopy confirmed entry's statement will not recognize
+their proprietary terms via the glossary -- but the function's own
+`_IDENTIFIER_PATTERN` fallback already catches any identifier-shaped token
+the glossary missed and sets `confident: False` rather than silently
+guessing. Decided: Phase D reuses `abstract_claim()` completely unmodified
+-- no glossary expansion, no second abstraction path -- and treats
+`confident: False` as a hard refusal to promote. A pattern that can't be
+abstracted with confidence stays `confirmed`, never reaches `promoted`.
+This is the same shape as Phase A's existing "no un-abstracted provenance
+row" guardrail, just enforced one step earlier.
+
+**Gap 2 -- "the same pattern across projects" needs an honest key, not
+invented similarity.** Two confirmed entries' `statement` text (real,
+project-specific prose) will essentially never text-match across
+projects even when they're conceptually the same gap -- inventing a
+similarity score here would be the same mistake as every other "no
+embeddings, no ML" decision already made in this initiative. Decided: the
+matching key is exact equality on `(domain, sub_domain)` -- the same two
+fields Phase C's skill-content step already requires a human/session to
+name with justification for every confirmed entry. Two confirmed entries
+from two distinct projects with the same `(domain, sub_domain)` pair are
+the candidate group; which project's own abstracted statement best
+represents the general pattern, when more than one is available, is
+itself a judgment call (same category as naming domain/sub_domain in the
+first place) -- not something a function should pick silently.
+
+**The real mechanical pieces (Phase D scope):**
+1. `find_promotion_candidates(root) -> list[dict]` -- reads
+   `state/confirmed-patterns.jsonl`, groups `status: confirmed` entries by
+   `(domain, sub_domain)`, keeps only groups spanning >=2 distinct
+   `project` values in their provenance, runs `abstract_claim()` on every
+   entry's `statement` in a group, and drops the whole group if any
+   result has `confident: False`. Returns real groups with their real
+   abstracted statements attached -- `[]` when nothing qualifies.
+2. A skill-content step (same home as Phase C's `reversal-confirmation.md`,
+   or a sibling reference -- implementer's call) that, for a real group
+   `find_promotion_candidates` returns, picks which abstracted statement
+   represents the pattern (trivial when there's only one distinct wording;
+   a real choice, stated with reasoning, when there's more than one) and
+   then calls `promote_group`.
+3. `promote_group(group: dict, chosen_statement: str) -> PatternEntry` --
+   builds the `provenance` list (every real entry in the group, each row's
+   `abstracted` set to `True`, now legitimately true because
+   `abstract_claim()` ran and was confident) and calls Phase A's existing
+   `promote_pattern()` to get the actual guardrail enforcement (`>=2`
+   distinct projects) for free, rather than re-checking it. Appends the
+   result to `state/global-patterns.jsonl` (new file, same precedent as
+   Phase C's `confirmed-patterns.jsonl` being separate from the old
+   pattern-library).
+4. `query_global_patterns(root, domain=None, sub_domain=None) ->
+   list[PatternEntry]` -- reads `global-patterns.jsonl`, optionally
+   filtered. Deliberately NOT wired into `DomainBrief`'s own dataclass
+   (that's an already-shipped, tested schema; adding a field to it now is
+   unnecessary risk for this phase). A caller gets global patterns as a
+   separate, clearly-labeled list -- never silently merged into a
+   project's own `bounded_contexts`, which are that project's own real
+   decisions and nothing else. Wiring this query into the actual
+   `nfr-check` candidate-surfacing flow (so a developer sees a labeled
+   "global" hit distinctly from a "local" one) is explicitly deferred to
+   a later integration step -- same honesty precedent as Phase C naming
+   its own deferred MCP-tool wiring instead of hiding it.
 - Phase E: end-to-end real test -- not a synthetic demo, the same
   discipline as every phase before this.
 
