@@ -386,7 +386,56 @@ first place) -- not something a function should pick silently.
    "global" hit distinctly from a "local" one) is explicitly deferred to
    a later integration step -- same honesty precedent as Phase C naming
    its own deferred MCP-tool wiring instead of hiding it.
-- Phase E: end-to-end real test -- not a synthetic demo, the same
-  discipline as every phase before this.
+- Phase E: see "Phase E, precisely" below.
+
+### Phase E, precisely
+
+Not a new mechanism -- every function Phase E needs already exists (Phases
+A-D). This phase's entire job is proving the full chain actually composes,
+using the real deployment shape rather than one isolated unit test per
+function.
+
+**The real deployment shape, stated explicitly because it matters for how
+the test is built:** one youk installation tracks multiple projects'
+Domain Briefs and confirmed patterns in the SAME root's `state/` directory
+-- `confirmed_patterns_path(root)` and `global_patterns_path(root)` are
+per-ROOT, not per-project; the `project` field on each row is what
+distinguishes them. So a real cross-project promotion test uses ONE
+shared `tmp_path` root with two real projects' `DECISIONS.md` copied into
+it under their own project labels (e.g. `youk` and `circaid`'s real files,
+copied, never fabricated prose) -- not two separate roots, which would
+never let `find_promotion_candidates` see both.
+
+**The full real chain to prove, in order:**
+1. Copy two real projects' actual `DECISIONS.md` files into a shared
+   `tmp_path`.
+2. For each project: `build_domain_brief`, then `find_domain_edge_case_candidates`
+   for a real task touching one of that project's real bounded contexts,
+   then `append_disposition_event` with `disposition="dismissed"`.
+3. Add a real-shaped reversing decision to BOTH projects' copied files
+   (same shape as Phase C's own `_REVERSING_ENTRY` fixture).
+4. `detect_reversals` for each project -- confirm each finds its real pair.
+5. `confirm_reversed_pattern` for each, naming the SAME `(domain,
+   sub_domain)` for both (the test's own deliberate choice, proving the
+   cross-project match condition) -- confirm both land in the one shared
+   `confirmed-patterns.jsonl`.
+6. `find_promotion_candidates` -- confirm it finds the real 2-project group.
+   `promote_group` -- confirm a real `PatternEntry` lands in
+   `global-patterns.jsonl`. `query_global_patterns` -- confirm it reads
+   back.
+
+**The adversarial half, non-optional -- Phases C and D's own real bugs
+were both found by testing the failure path, not the happy path:**
+7. A second, parallel run of the same chain where one of the two
+   reversing decisions contains a real proprietary-shaped identifier (same
+   style as the `PaymentGatewayRetryHandlerV3` case that exposed the
+   abstraction leak). Confirm `find_promotion_candidates` correctly
+   refuses the WHOLE group -- nothing reaches `global-patterns.jsonl` from
+   that run.
+8. A third check: run the identical chain twice end-to-end and confirm
+   idempotency -- the second run produces no duplicate rows anywhere
+   (ledger, confirmed-patterns, global-patterns), consistent with every
+   individual phase's own deterministic-id guarantee, now proven to hold
+   when the whole chain runs twice, not just one function in isolation.
 
 Real progress tracked in `state/pattern-learning-architecture/progress.json`.
