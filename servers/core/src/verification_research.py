@@ -68,11 +68,26 @@ _PATH_PATTERN = re.compile(
     r"\b[\w\-]+(?:/[\w\-.]+)+\.\w+\b"          # a/b/c.ext
     r"|\b[\w\-]+\.(?:py|json|md|toml|ya?ml|ts|tsx|js|sh)\b"  # bare file.ext
 )
-# Any underscore-joined lowercase token not already stripped above is treated
-# as a code identifier -- ordinary prose doesn't use underscores. Caught here
-# so an unrecognized internal mechanism name never leaks into the abstracted
-# output even when it isn't in GLOSSARY yet.
-_IDENTIFIER_PATTERN = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
+# Any underscore-joined lowercase token (ordinary prose doesn't use
+# underscores), OR a multi-hump PascalCase/camelCase compound (ordinary
+# prose doesn't glue two-or-more capitalized words together either -- a
+# real class/service name like "PaymentGatewayRetryHandler" does) not
+# already stripped above is treated as a code identifier. Caught here so
+# an unrecognized internal mechanism or proprietary class/service name
+# never leaks into the abstracted output even when it isn't in GLOSSARY
+# yet. The camelCase alternative requires at least two humps each
+# containing a lowercase letter, so plain acronyms (API, JSON, HTTP) --
+# which are capitals with no lowercase hump -- are deliberately not
+# flagged; a single capitalized word (a normal proper noun) isn't either,
+# since that needs only one hump. Found via Phase D of
+# docs/pattern-learning-architecture-design.md: "PaymentGatewayRetryHandlerV3
+# overwhelmed AcmeCorpBillingService" passed through this function
+# unflagged (confident=True) before this fix -- exactly the leak this
+# whole module exists to prevent.
+_IDENTIFIER_PATTERN = re.compile(
+    r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b"
+    r"|\b[a-z]?[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+\b"
+)
 
 
 @dataclass
