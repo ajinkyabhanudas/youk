@@ -65,7 +65,15 @@ SESSION_CAP:     [has self_heal() already run this session? yes → skip AUDIT]
 4. If `skill_gap_signals` is empty AND `skill_generation_pending` is empty:
    emit "No recurring gaps — org health nominal." and skip to CLOSE (no proposals, no apply).
 
-> Compact phase summary: org_score known, gap signals enumerated, generation candidates identified.
+5. **Pattern-learning reversal check (Phase C, periodic):** if the current project has a
+   real Domain Brief (`state/domain-brief.json` exists), call
+   `reversal_check.detect_reversals(project, root)`. Empty result → nothing to do, continue.
+   A non-empty result → read `skills/self-heal/references/reversal-confirmation.md` and
+   follow its required `[REVERSAL CONFIRMED]` judgment-call format for EACH pair before
+   calling `reversal_check.confirm_reversed_pattern(reversal, domain, sub_domain)` — never
+   skip straight to confirmation, domain/sub_domain are never inferred automatically.
+
+> Compact phase summary: org_score known, gap signals enumerated, generation candidates identified, reversal check run.
 
 ---
 
@@ -184,6 +192,7 @@ Call `youk-core.session_end("done", commits_made=False, close_cluster=True, skil
 |------|-------------|
 | `knowledge/SKILL-REGISTRY.md` | Phase 3 — dedup candidates against existing skill descriptions |
 | `servers/shared/models.py` | Phase 4 — understand Proposal fields before calling add_proposal |
+| `skills/self-heal/references/reversal-confirmation.md` | Phase 1 step 5 — required judgment-call format before any `confirm_reversed_pattern` call |
 
 ---
 
