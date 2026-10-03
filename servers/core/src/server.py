@@ -2668,6 +2668,51 @@ def log_domain_edge_case_disposition(
 
 
 @mcp.tool()
+def log_domain_scope_event(
+    task: str,
+    domains: list[dict],
+) -> dict:
+    """
+    Persist nfr-check's "Domain scope" judgment call (CIR-165): the 2-4
+    knowledge domains named fresh for this task, each with its one-sentence
+    reason. docs/system-observability-design.md Phase 1 (CIR-177) -- this is
+    the single heaviest LLM judgment call in the whole system, and until
+    this tool existed it wrote nothing durable: the decision happened
+    in-session and vanished, with no way to check later for drift or bias.
+
+    Exists here, not in youk-code, for the same reason as
+    log_domain_edge_case_disposition / log_ab_exposure: nfr_check runs in
+    youk-code, which mounts YOUK_ROOT read-only by design. This is the
+    write-authorized half, called by the orchestrating session right after
+    the [DOMAIN SCOPE] block is written -- never a cached/reused prior
+    answer.
+
+    task: the task text the domain-scope call was made against.
+    domains: the real list just named, e.g.
+    [{"domain": "financial-regulation", "reason": "..."}, {"domain":
+    "security", "reason": "..."}].
+
+    Returns: {"logged": bool, "path": str}
+    """
+    from domain_scope_event import DomainScopeValidationError, append_domain_scope_event
+
+    try:
+        append_domain_scope_event(
+            task=task,
+            domains=domains,
+            log_path=YOUK_ROOT / "state" / "domain-scope-log.jsonl",
+        )
+        return {
+            "logged": True,
+            "path": str(YOUK_ROOT / "state" / "domain-scope-log.jsonl"),
+        }
+    except DomainScopeValidationError as exc:
+        return {"logged": False, "error": str(exc), "error_type": "BUSINESS_RULE"}
+    except Exception as exc:
+        return {"logged": False, "error": str(exc), "error_type": "SYSTEM"}
+
+
+@mcp.tool()
 def check_ab_pilot_status(experiment: str = "rationale_terseness", threshold: int = 20) -> dict:
     """
     Report exposure counts against the pre-registered stop threshold. Not a readout.
