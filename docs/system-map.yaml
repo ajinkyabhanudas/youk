@@ -1,0 +1,261 @@
+# docs/system-map.yaml — the Stage Registry (Phase 2 of
+# docs/system-observability-design.md's Part 1).
+#
+# One real entry per real stage across the three subsystems built this
+# session (verification-pipeline, problem-space-modeling,
+# pattern-learning-architecture), plus the observability mechanism itself
+# (system-observability). Every entry was derived by reading its real
+# source module or skill-content file directly — never guessed from a
+# function or stage name. tests/test_system_map.py enforces the shape.
+#
+# `grounding`:
+#   deterministic — same input, same output, every time, no human/session
+#     judgment anywhere inside.
+#   llm_judgment  — a real, unforced human/session decision with no
+#     mechanical check behind it.
+#   hybrid        — a mechanical function whose OUTPUT depends on an
+#     upstream judgment call that fed it (the function itself is
+#     deterministic; the judgment lives one step upstream).
+#
+# Going forward: every new ticket's DONE-MEANS includes adding its real
+# stage(s) here (see the design doc's "Going forward" section).
+
+- name: claim_intake
+  grounding: deterministic
+  subsystem: verification-pipeline
+  triggers_on: "a Claim is constructed with no explicit stage (Claim dataclass default = Stage.INTAKE)"
+  reads: []
+  writes: []
+  real_log: null  # the default construction state is never itself event-logged; only transitions away from it are
+
+- name: abstract_claim
+  grounding: deterministic
+  subsystem: verification-pipeline
+  triggers_on: "a claim statement needs proprietary terms stripped (glossary + path/ticket-ID + identifier-pattern rules) before anything goes to external research"
+  reads: []
+  writes: []
+  real_log: null  # pure function; verification_contract.run_checker's docstring says ABSTRACT is not yet run by that entrypoint, so this stage has no wired event-log path today
+
+- name: bound
+  grounding: deterministic
+  subsystem: verification-pipeline
+  triggers_on: "advance()/rework() transitions a claim into Stage.BOUND — reserved for domain-enumeration, no real logic behind it yet beyond stage-transition bookkeeping (verification_contract.py's own docstring)"
+  reads: []
+  writes: [state/verification-pipeline/events.jsonl]
+  real_log: state/verification-pipeline/events.jsonl
+
+- name: run_dual_pass_research
+  grounding: hybrid
+  subsystem: verification-pipeline
+  triggers_on: "Stage.RESEARCH — an abstracted question needs two independent research passes before DIFF"
+  reads: []
+  writes: []
+  real_log: null  # run_dual_pass_research's fan-out (pass_a(question), pass_b(question)) is mechanical and deterministic every time, but the FactSet it produces is entirely a function of whatever real research passes are injected — in real use those are LLM-driven research, so the stage's actual output rides on an upstream judgment call it has zero mechanical check over. Classified hybrid, not deterministic, for that reason.
+
+- name: diff_fact_sets
+  grounding: deterministic
+  subsystem: verification-pipeline
+  triggers_on: "Stage.DIFF — two independently-produced FactSets from RESEARCH need comparing, topic by topic"
+  reads: []
+  writes: []
+  real_log: null  # diff_stage_outcome (the function that drives the real advance()/rework() transition off this result) is called with no `root` argument anywhere in this codebase, so neither the DIFF->DECOMPOSE advance nor the DIFF->RESEARCH rework it triggers is captured in events.jsonl today — a real, specific gap this registry surfaces rather than papering over
+
+- name: generate_sub_claims
+  grounding: deterministic
+  subsystem: verification-pipeline
+  triggers_on: "Stage.DECOMPOSE — a scanner graph (mechanism x host pairs) needs breaking into sub_claims; run_checker sets claim.stage = Stage.DECOMPOSE directly, bypassing advance(), so entry into this stage is itself not event-logged"
+  reads: [state/verification-pattern-library.jsonl]
+  writes: []
+  real_log: state/verification-contracts/claims/
+
+- name: verify
+  grounding: deterministic
+  subsystem: verification-pipeline
+  triggers_on: "Stage.VERIFY — every sub_claim's status is checked against 'verified' (Claim.all_verified / gate_claim_done's unresolved check) before PATTERN_CAPTURE/GATE"
+  reads: [state/verification-contracts/claims/]
+  writes: []
+  real_log: state/verification-pipeline/events.jsonl
+
+- name: append_pattern_library_entries
+  grounding: deterministic
+  subsystem: verification-pipeline
+  triggers_on: "Stage.PATTERN_CAPTURE — a claim's newly-found failed/unverified sub_claims need recording in the pattern library after VERIFY"
+  reads: [state/verification-pattern-library.jsonl]
+  writes: [state/verification-pattern-library.jsonl]
+  real_log: state/verification-pattern-library.jsonl
+
+- name: retrieve_similar_patterns
+  grounding: deterministic
+  subsystem: verification-pipeline
+  triggers_on: "Stage.RETRIEVE (reserved, no forward wiring in FORWARD_EDGES yet) — generate_sub_claims called with claim_statement+root runs a stdlib difflib pass over the pattern library for a pattern_hint"
+  reads: [state/verification-pattern-library.jsonl]
+  writes: []
+  real_log: null  # read-only retrieval; nothing persisted by this function itself
+
+- name: gate_claim_done
+  grounding: deterministic
+  subsystem: verification-pipeline
+  triggers_on: "Stage.GATE — one claim is checked for unresolved sub_claims before it may be reported done"
+  reads: [state/verification-contracts/claims/]
+  writes: []
+  real_log: null  # returns an in-memory deny dict; the claims it reads are the only durable record
+
+- name: gate_all_claims
+  grounding: deterministic
+  subsystem: verification-pipeline
+  triggers_on: "the real PreToolUse boundary for session_end(close_cluster=True) — aggregates gate_claim_done across every claim on record under YOUK_ROOT"
+  reads: [state/verification-contracts/claims/]
+  writes: []
+  real_log: null
+
+- name: run_checker
+  grounding: deterministic
+  subsystem: verification-pipeline
+  triggers_on: "the single real entrypoint for building, persisting, and gating a claim against a scanner graph in one pass (CLI or direct call)"
+  reads: [state/verification-contracts/host-inventory-graph.json]
+  writes: [state/verification-contracts/claims/, state/verification-pattern-library.jsonl, state/verification-pipeline/events.jsonl]
+  real_log: state/verification-pipeline/events.jsonl
+
+- name: run_rework_loop
+  grounding: deterministic
+  subsystem: verification-pipeline
+  triggers_on: "VERIFY needs re-running repeatedly (re-scanning via graph_fn each round) until a round surfaces zero NEW findings, capped at MAX_REWORK_ROUNDS=5"
+  reads: []
+  writes: [state/verification-contracts/claims/, state/verification-pattern-library.jsonl, state/verification-pipeline/events.jsonl]
+  real_log: state/verification-pipeline/events.jsonl
+
+- name: build_domain_brief
+  grounding: deterministic
+  subsystem: problem-space-modeling
+  triggers_on: "a project's Domain Brief needs (re)building from its real decision records — called directly (domain_brief.py's __main__), or by reversal_check.detect_reversals"
+  reads: [DECISIONS.md, knowledge/projects/youk/decisions.md]
+  writes: [state/domain-brief.json]
+  real_log: state/domain-brief.json
+
+- name: find_domain_edge_case_candidates
+  grounding: deterministic
+  subsystem: problem-space-modeling
+  triggers_on: "nfr-check Phase 1 (CLASSIFY-adjacent), M/L/XL task — task text keyword-matched against a project's real Domain Brief vocabulary"
+  reads: [state/domain-brief.json]
+  writes: []
+  real_log: null  # pure read + score; the disposition each candidate earns is logged separately by append_disposition_event
+
+- name: domain_edge_case_disposition_judgment
+  grounding: llm_judgment
+  subsystem: problem-space-modeling
+  triggers_on: "nfr-check Phase 1, for each non-empty domain_edge_case_candidates entry — judged against the task text and assigned accepted/dismissed/ignored"
+  reads: []
+  writes: []
+  real_log: null  # the judgment itself is session output ([no fixed block name] — logged via the separate append_disposition_event call, not persisted directly by this step
+
+- name: domain_brief_fallback
+  grounding: llm_judgment
+  subsystem: problem-space-modeling
+  triggers_on: "nfr-check Phase 1, domain_edge_case_candidates is empty AND state/domain-brief.json is missing or every source shows format_recognized false/null — codebase examined directly to infer 2-4 bounded contexts"
+  reads: [state/domain-brief.json]
+  writes: []
+  real_log: null  # deliberately never written back to state/domain-brief.json — a session-local, lower-confidence hypothesis by design (skills/nfr-check/SKILL.md's own instruction)
+
+- name: reframe_and_package_review
+  grounding: deterministic
+  subsystem: problem-space-modeling
+  triggers_on: "a Phase 2 domain edge-case candidate needs third-person reframing (reframe_candidate) and self-contained packaging (build_independent_review_request) before an independent review session sees it"
+  reads: []
+  writes: []
+  real_log: null  # pure in-memory transform/packaging; dispatching the package to a separate review session is left to the caller (module's own docstring)
+
+- name: domain_scope_naming
+  grounding: llm_judgment
+  subsystem: problem-space-modeling
+  triggers_on: "nfr-check CLASSIFY phase, M+ task — 2-4 knowledge domains beyond generic software engineering named fresh for this task, never cached from a prior answer"
+  reads: []
+  writes: []
+  real_log: null  # the [DOMAIN SCOPE] block is session output; the durable record is written by the separate append_domain_scope_event call
+
+- name: build_domain_research_invocation
+  grounding: deterministic
+  subsystem: problem-space-modeling
+  triggers_on: "immediately after domain_scope_naming logs 2-4 domains for this task — constructs the scoped /research invocation for youk-research's existing WebSearch -> extract -> propose loop"
+  reads: []
+  writes: []
+  real_log: null  # constructs an invocation string only; the research run itself produces no dedicated log file this function writes to
+
+- name: challenge_lens3_external_evidence
+  grounding: llm_judgment
+  subsystem: problem-space-modeling
+  triggers_on: "challenge Lens 3 (hidden assumptions), when nfr_check already named domain scope and ran domain research for this task — reads what that research found before asserting a hidden-assumption objection from internal reasoning alone"
+  reads: []
+  writes: []
+  real_log: null  # a no-op when no domain research ran for this task (S-task, or nfr_check hasn't fired); when it does run, the citation lands in the challenge's own output, not a separate persisted file
+
+- name: append_domain_scope_event
+  grounding: deterministic
+  subsystem: system-observability
+  triggers_on: "youk-core.log_domain_scope_event(task, domains) called immediately after domain_scope_naming names domains for this task"
+  reads: [schemas/domain-scope-event.schema.json]
+  writes: [state/domain-scope-log.jsonl]
+  real_log: state/domain-scope-log.jsonl
+
+- name: append_disposition_event
+  grounding: deterministic
+  subsystem: pattern-learning-architecture
+  triggers_on: "youk-core.log_domain_edge_case_disposition(...) called right after domain_edge_case_disposition_judgment decides a candidate's disposition"
+  reads: [schemas/disposition-event.schema.json]
+  writes: [state/disposition-log.jsonl]
+  real_log: state/disposition-log.jsonl
+
+- name: detect_reversals
+  grounding: deterministic
+  subsystem: pattern-learning-architecture
+  triggers_on: "self-heal AUDIT phase, once per project with a real Domain Brief — rebuilds the brief fresh, diffs it against the known-sources ledger for new entries, cross-references real dismissed DispositionEvents by bounded_context keyword overlap"
+  reads: [DECISIONS.md, knowledge/projects/youk/decisions.md, state/domain-brief-known-sources/, state/disposition-log.jsonl]
+  writes: [state/domain-brief-known-sources/]
+  real_log: null  # mechanical, no separate judgment log needed (the design doc's own example for this exact function)
+
+- name: reversal_domain_naming_judgment
+  grounding: llm_judgment
+  subsystem: pattern-learning-architecture
+  triggers_on: "detect_reversals returns a non-empty reversal list — domain/sub_domain named and justified before confirm_reversed_pattern is called"
+  reads: []
+  writes: []
+  real_log: null  # the [REVERSAL CONFIRMED] block is session output; the durable record is written by the separate confirm_reversed_pattern call
+
+- name: confirm_reversed_pattern
+  grounding: hybrid
+  subsystem: pattern-learning-architecture
+  triggers_on: "immediately after the [REVERSAL CONFIRMED] block names domain/sub_domain for a real reversal pair"
+  reads: []
+  writes: [state/confirmed-patterns.jsonl]
+  real_log: state/confirmed-patterns.jsonl
+
+- name: find_promotion_candidates
+  grounding: deterministic
+  subsystem: pattern-learning-architecture
+  triggers_on: "self-heal AUDIT phase, after the reversal check step, once per run across all projects' confirmed patterns — groups confirmed PatternEntry rows by (domain, sub_domain), keeps only groups spanning >=2 projects whose statements all abstract with confident=True"
+  reads: [state/confirmed-patterns.jsonl]
+  writes: []
+  real_log: null  # read-only grouping/filtering; the resulting group is not itself persisted
+
+- name: promotion_statement_selection_judgment
+  grounding: llm_judgment
+  subsystem: pattern-learning-architecture
+  triggers_on: "find_promotion_candidates returns a group with more than one distinct abstracted statement (the trivial single-wording case needs no real judgment)"
+  reads: []
+  writes: []
+  real_log: null  # the [PROMOTION CANDIDATE] block is session output; the durable record is written by the separate promote_group call
+
+- name: promote_group
+  grounding: hybrid
+  subsystem: pattern-learning-architecture
+  triggers_on: "after chosen_statement is settled (trivially, or via promotion_statement_selection_judgment's [PROMOTION CANDIDATE] block) for a real promotion-candidate group"
+  reads: []
+  writes: [state/global-patterns.jsonl]
+  real_log: state/global-patterns.jsonl
+
+- name: query_global_patterns
+  grounding: deterministic
+  subsystem: pattern-learning-architecture
+  triggers_on: "a caller needs promoted cross-project patterns, optionally filtered by domain and/or sub_domain"
+  reads: [state/global-patterns.jsonl]
+  writes: []
+  real_log: null  # read-only query
