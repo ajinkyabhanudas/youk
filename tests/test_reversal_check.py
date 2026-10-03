@@ -94,6 +94,20 @@ def test_detect_reversals_returns_empty_on_first_run_with_no_dismissals(tmp_path
     assert known_sources_path(tmp_path, _PROJECT).exists()
 
 
+def test_detect_reversals_cold_start_does_not_self_match_the_dismissed_entry(tmp_path):
+    """A dismissal gets logged BEFORE detect_reversals has ever run once for
+    this project (the ledger is genuinely empty, not pre-seeded by a
+    throwaway call) -- the dismissed event's own still-unchanged source
+    entry is trivially "new" on this first real run and must never be
+    reported as a reversal of itself."""
+    _write_decisions_md(tmp_path)
+    _log_dismissed_event(tmp_path)  # no detect_reversals call before this
+
+    reversals = detect_reversals(_PROJECT, tmp_path)
+
+    assert reversals == []
+
+
 def test_detect_reversals_returns_empty_when_nothing_changed(tmp_path):
     """A real dismissed event exists, but no new Domain Brief entry has
     appeared since the ledger was last written -- [] is the correct answer,

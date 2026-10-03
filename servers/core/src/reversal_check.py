@@ -155,28 +155,37 @@ def detect_reversals(project: str, root: Path) -> list[dict]:
     rows = _brief_invariant_rows(brief)
 
     known_source_ids = _load_known_source_ids(root, project)
+    is_first_ever_run = not known_source_ids
     new_rows = [r for r in rows if r["source_id"] not in known_source_ids]
 
     dismissed_events = _load_dismissed_events(root, project)
 
     reversals: list[dict] = []
-    for row in new_rows:
-        for event in dismissed_events:
-            matched = _matched_terms(event["bounded_context"], row)
-            if not matched:
-                continue
-            reversals.append(
-                {
-                    "dismissed_event": event,
-                    "new_invariant": {
-                        "bounded_context": row["bounded_context"],
-                        "statement": row["statement"],
-                        "source_file": row["source_file"],
-                        "source_id": row["source_id"],
-                        "matched_terms": matched,
-                    },
-                }
-            )
+    # On a genuinely first-ever run there is no real prior baseline: every
+    # entry in the brief is trivially "new" relative to an empty ledger, so
+    # "new" carries no real signal yet -- any dismissed event's own
+    # still-unchanged entry (or an unrelated entry sharing one keyword)
+    # would be reported as a false reversal. Seed the ledger below and
+    # report nothing until a real second run has something genuine to diff
+    # against.
+    if not is_first_ever_run:
+        for row in new_rows:
+            for event in dismissed_events:
+                matched = _matched_terms(event["bounded_context"], row)
+                if not matched:
+                    continue
+                reversals.append(
+                    {
+                        "dismissed_event": event,
+                        "new_invariant": {
+                            "bounded_context": row["bounded_context"],
+                            "statement": row["statement"],
+                            "source_file": row["source_file"],
+                            "source_id": row["source_id"],
+                            "matched_terms": matched,
+                        },
+                    }
+                )
 
     all_source_ids = known_source_ids | {r["source_id"] for r in rows}
     _write_known_source_ids(root, project, all_source_ids)
