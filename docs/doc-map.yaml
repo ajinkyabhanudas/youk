@@ -85,6 +85,8 @@ mcp_tools:
     - {tool: log_skill_invocation, refs: [README.md]}
     # pattern-learning architecture Phase B (CIR-170): disposition log
     - {tool: log_domain_edge_case_disposition, refs: [docs/pattern-learning-architecture-design.md]}
+    # system observability Phase 1 (CIR-177): domain-scope judgment-call log
+    - {tool: log_domain_scope_event, refs: [docs/system-observability-design.md]}
     - {tool: check_ab_pilot_status, refs: [README.md]}
     - {tool: scan_experiment_gaps, refs: [README.md]}
     - {tool: compare_youk_vs_no_youk, refs: [README.md]}

@@ -266,6 +266,14 @@ do not consult or produce a fixed domain table (`if "payment" in task: return
 (2-4 domains)
 ```
 
+Then call `youk-core.log_domain_scope_event(task, domains)` — `domains` is the
+real list of `{domain, reason}` pairs just named above, never a cached/reused
+prior answer (same discipline this step already requires). This is the
+single heaviest LLM judgment call in the whole system; logging it durably
+(`state/domain-scope-log.jsonl`) is what lets drift or bias in it be checked
+later instead of guessed at. Do this before moving on — the decision must not
+happen in-session and vanish.
+
 Then call `youk-core.build_domain_research_invocation(domains, task)` and run the
 returned `invocation` (youk-research's existing WebSearch → extract → propose loop,
 `/research [topic]` scoped to these domains — reuse it, do not build a second search
