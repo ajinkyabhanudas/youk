@@ -269,10 +269,54 @@ that reason.
   above -- append-only, real events only, wired to where Domain Brief
   candidates are actually surfaced (`domain_edge_cases.py` / `nfr-check`'s
   CLASSIFY phase). Not a `PatternEntry` -- see the schema section for why.
-- Phase C: the periodic reversal check -- re-run Domain Brief's own
-  extractor, diff new entries against open `candidate`/`dismissed` rows,
-  promote a real match to `confirmed` in the existing reactive
-  pattern-library.
+- Phase C: see "Phase C, precisely" below -- two real gaps had to be
+  settled first (where `domain`/`sub_domain` come from, and the existing
+  pattern-library's incompatible file shape), same discipline as
+  `DispositionEvent` before Phase B.
+
+### Phase C, precisely
+
+**Gap 1 -- `domain`/`sub_domain` have no mechanical source.**
+`DispositionEvent` doesn't carry them, and a diff between two Domain Brief
+snapshots can detect THAT something changed, never WHAT field of knowledge
+it belongs to -- that's a judgment call, same category as the per-task
+domain-scope naming in Phase 5 (CIR-165). Decided: Phase C's mechanical
+part only ever detects a reversal and surfaces it as plain data (no
+`PatternEntry` yet); naming `domain`/`sub_domain` and actually constructing
+the `PatternEntry` is a required skill-content reasoning step, not a
+Python function guessing at a categorization it has no real basis for.
+
+**Gap 2 -- the existing pattern-library file has the wrong shape.**
+`state/verification-pattern-library.jsonl`'s real rows today are
+`{claim_shape, missed_sub_claim, how_found, date}` -- not `PatternEntry`.
+Writing `PatternEntry` JSON into that file would mix two incompatible
+schemas in one JSONL, which defeats the entire point of Phase A (one
+schema serving every lifecycle point). Decided: that file stays exactly as
+it is, read-only, a historical record -- nothing in this codebase deletes
+a real record. A new file, `state/confirmed-patterns.jsonl`, is where every
+real `PatternEntry` at `status: confirmed` (from Phase C) or later
+`status: promoted` (from Phase D) actually gets written. This new file is
+"the reactive pattern-library" in `PatternEntry` terms going forward; the
+old file's role is superseded, not merged into it.
+
+**The real mechanical pieces (Phase C scope):**
+1. `state/domain-brief-known-sources/{project}.json` -- every `source_id`
+   Domain Brief has ever produced for that project, so a later run can
+   tell a genuinely NEW entry from one that was always there.
+2. `detect_reversals(project, root) -> list[dict]` -- rebuilds the brief
+   fresh, diffs against the ledger for new source_ids, cross-references
+   `disposition-log.jsonl`'s `dismissed` rows for that project by
+   `bounded_context` match (same term-matching style as
+   `domain_edge_cases.py`, reused, not reinvented), returns real
+   `{dismissed_event, new_invariant}` pairs. Updates the ledger after.
+   Returns `[]`, never a forced match, when nothing real changed.
+3. A real function `confirm_reversed_pattern(reversal: dict, domain: str,
+   sub_domain: str) -> PatternEntry` that the skill-content step calls once
+   a human/session has named the judgment-call fields -- constructs the
+   real `PatternEntry` (`scope: local`, `status: confirmed`,
+   `evidence_level: internally_checked`, `provenance` citing both the
+   original dismissed decision and the new reversing one) and appends it
+   to `state/confirmed-patterns.jsonl`.
 - Phase D: the global store + the promotion function (>=2 projects,
   abstraction-enforced) + the query function Domain Brief consults when
   building any project's brief.
