@@ -79,6 +79,29 @@ class TestAbstractClaim:
         assert result.confident is False
         assert "brand_new_subsystem" in result.flagged_reason
 
+    def test_unrecognized_pascal_case_identifier_is_flagged_not_guessed(self):
+        """Found via Phase D of docs/pattern-learning-architecture-design.md:
+        a multi-hump PascalCase class/service name (not snake_case, so the
+        underscore-only pattern missed it) passed through unflagged before
+        this was added -- exactly the proprietary-name leak abstract_claim
+        exists to prevent."""
+        result = abstract_claim(
+            "PaymentGatewayRetryHandlerV3 overwhelmed AcmeCorpBillingService during an outage"
+        )
+        assert "PaymentGatewayRetryHandlerV3" not in result.abstracted
+        assert "AcmeCorpBillingService" not in result.abstracted
+        assert result.confident is False
+        assert "PaymentGatewayRetryHandlerV3" in result.flagged_reason
+        assert "AcmeCorpBillingService" in result.flagged_reason
+
+    def test_plain_acronyms_are_not_falsely_flagged(self):
+        """All-caps acronyms (API, JSON, HTTP) have no lowercase-bearing
+        hump -- they must never trigger the PascalCase catch-all, or every
+        statement mentioning ordinary technical terms would be refused."""
+        result = abstract_claim("The API returns JSON over HTTP")
+        assert result.confident is True
+        assert "unspecified internal mechanism" not in result.abstracted
+
     def test_longest_glossary_term_wins_over_a_shorter_substring(self):
         """'claude code' and 'codex' must not clash: substituting the longer
         multi-word term first means 'codex' alone is still matched afterward
