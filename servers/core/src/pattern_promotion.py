@@ -34,7 +34,7 @@ from pathlib import Path
 
 from domain_brief import REPO_ROOT
 from pattern_entry import PatternEntry, promote_pattern
-from reversal_check import confirmed_patterns_path
+from reversal_check import _jsonl_has_id, confirmed_patterns_path
 from verification_research import abstract_claim
 
 
@@ -157,8 +157,9 @@ def promote_group(group: dict, chosen_statement: str, *, root: Path | None = Non
 
     path = global_patterns_path(resolved_root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(promoted.to_dict()) + "\n")
+    if not _jsonl_has_id(path, promoted.id):
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(promoted.to_dict()) + "\n")
 
     return promoted
 
