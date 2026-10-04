@@ -33,8 +33,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from domain_brief import REPO_ROOT
+from jsonl_lock import locked_append_if_id_absent
 from pattern_entry import PatternEntry, promote_pattern
-from reversal_check import _jsonl_has_id, confirmed_patterns_path
+from reversal_check import confirmed_patterns_path
 from verification_research import abstract_claim
 
 
@@ -156,10 +157,7 @@ def promote_group(group: dict, chosen_statement: str, *, root: Path | None = Non
     promoted = promote_pattern(base_entry, confirmed_in_projects=projects)
 
     path = global_patterns_path(resolved_root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not _jsonl_has_id(path, promoted.id):
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(promoted.to_dict()) + "\n")
+    locked_append_if_id_absent(path, promoted.id, json.dumps(promoted.to_dict()))
 
     return promoted
 

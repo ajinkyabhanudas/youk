@@ -29,6 +29,8 @@ from typing import Any
 
 import jsonschema
 
+from jsonl_lock import locked_jsonl_append
+
 _SCHEMA_PATH = Path(__file__).resolve().parent.parent.parent / "schemas" / "domain-scope-event.schema.json"
 _DEFAULT_LOG_PATH = Path(__file__).resolve().parent.parent.parent / "state" / "domain-scope-log.jsonl"
 
@@ -121,7 +123,5 @@ def append_domain_scope_event(
         domains=domains,
         timestamp=datetime.now(UTC).isoformat(),
     )
-    resolved_log_path.parent.mkdir(parents=True, exist_ok=True)
-    with resolved_log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(event.to_dict()) + "\n")
+    locked_jsonl_append(resolved_log_path, json.dumps(event.to_dict()))
     return event

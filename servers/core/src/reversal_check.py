@@ -41,6 +41,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from domain_brief import DomainBrief, REPO_ROOT, build_domain_brief
+from jsonl_lock import locked_append_if_id_absent
 from pattern_entry import PatternEntry
 
 # Same regex + lowercase-and-intersect style as
@@ -63,27 +64,6 @@ def disposition_log_path(root: Path) -> Path:
 
 def confirmed_patterns_path(root: Path) -> Path:
     return root / "state" / "confirmed-patterns.jsonl"
-
-
-def _jsonl_has_id(path: Path, entry_id: str) -> bool:
-    """True if an append-only JSONL file already has a row with this real,
-    deterministic id. Re-confirming the same real reversal (or re-promoting
-    the same real group) must never grow the file -- deterministic ids exist
-    precisely so a repeat run can be recognized as the same real event, not
-    appended as a duplicate. A line that fails to parse is skipped, same
-    resilience discipline as every other reader of these files."""
-    if not path.exists():
-        return False
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if row.get("id") == entry_id:
-            return True
-    return False
 
 
 def _load_known_source_ids(root: Path, project: str) -> set[str]:
@@ -279,9 +259,6 @@ def confirm_reversed_pattern(
     )
 
     path = confirmed_patterns_path(resolved_root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not _jsonl_has_id(path, entry.id):
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry.to_dict()) + "\n")
+    locked_append_if_id_absent(path, entry.id, json.dumps(entry.to_dict()))
 
     return entry
