@@ -405,3 +405,36 @@ class TestFormatStalenessWarnings:
     def test_empty_result_returns_empty(self):
         from doc_graph import format_staleness_warnings
         assert format_staleness_warnings({"stale": [], "broken": [], "orphaned": [], "semantic": []}) == []
+
+
+# ── find_unregistered_touched_files ──────────────────────────────────────────
+
+class TestFindUnregisteredTouchedFiles:
+    def test_registered_server_file_is_not_flagged(self):
+        from doc_graph import find_unregistered_touched_files
+        doc_map = {"src_files": [{"file": "servers/core/src/session.py", "refs": ["README.md"]}]}
+        result = find_unregistered_touched_files(["servers/core/src/session.py"], doc_map)
+        assert result == []
+
+    def test_unregistered_server_file_is_flagged(self):
+        from doc_graph import find_unregistered_touched_files
+        doc_map = {"src_files": []}
+        result = find_unregistered_touched_files(["servers/shared/new_module.py"], doc_map)
+        assert result == ["servers/shared/new_module.py"]
+
+    def test_non_server_files_are_ignored(self):
+        """A touched test file or doc isn't server source and shouldn't be flagged."""
+        from doc_graph import find_unregistered_touched_files
+        doc_map = {"src_files": []}
+        result = find_unregistered_touched_files(["tests/test_foo.py", "README.md"], doc_map)
+        assert result == []
+
+    def test_non_python_server_files_are_ignored(self):
+        from doc_graph import find_unregistered_touched_files
+        doc_map = {"src_files": []}
+        result = find_unregistered_touched_files(["servers/core/requirements.txt"], doc_map)
+        assert result == []
+
+    def test_empty_touched_list_returns_empty(self):
+        from doc_graph import find_unregistered_touched_files
+        assert find_unregistered_touched_files([], {"src_files": []}) == []

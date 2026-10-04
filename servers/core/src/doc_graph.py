@@ -157,6 +157,33 @@ def find_untracked_docs(youk_root: Path, doc_map: dict) -> list[str]:
     return untracked
 
 
+def _registered_src_files(doc_map: dict) -> set[str]:
+    """Every file path already registered as a `file:` entry in src_files."""
+    return {
+        entry.get("file", "")
+        for entry in (doc_map.get("src_files") or [])
+        if entry.get("file")
+    }
+
+
+def find_unregistered_touched_files(touched_files: list[str], doc_map: dict) -> list[str]:
+    """Of the files a task actually touched, which ones under servers/ have no
+    src_files entry in doc-map.yaml?
+
+    Scoped to files this task touched, not a retroactive scan of the whole tree --
+    the repo has decades of source files predating this check that aren't
+    registered yet, and flooding every task close with that backlog is exactly the
+    "checker nobody reads" failure find_untracked_docs' own exemption list exists
+    to avoid. This stops new unregistered files from being added going forward;
+    registering the existing backlog is a separate, deliberate decision.
+    """
+    registered = _registered_src_files(doc_map)
+    return sorted(
+        f for f in touched_files
+        if f.startswith("servers/") and f.endswith(".py") and f not in registered
+    )
+
+
 def _expand_scan_scope(scope: list[str], youk_root: Path) -> list[str]:
     """
     Expand a list of glob patterns relative to youk_root.

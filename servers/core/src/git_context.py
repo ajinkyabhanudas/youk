@@ -85,3 +85,21 @@ def _count_commits_since(project_dir: str, since_hash: str) -> int:
         return int(result.stdout.strip()) if result.stdout.strip().isdigit() else 0
     except Exception:
         return 0
+
+
+def _touched_files(project_dir: str) -> list[str]:
+    """Files with uncommitted changes (staged or not), relative to project_dir.
+
+    Only catches work still uncommitted when called -- a task that already
+    committed before checkpointing won't show up here. That's a known boundary,
+    not a bug: task_checkpoint has no recorded task-start commit to diff against.
+    """
+    resolved = str(_resolve_project_path(project_dir))
+    try:
+        result = subprocess.run(
+            ["git", "-C", resolved, "status", "--porcelain"],
+            capture_output=True, text=True, timeout=5
+        )
+        return [line[3:].strip() for line in result.stdout.splitlines() if line.strip()]
+    except Exception:
+        return []

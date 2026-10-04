@@ -25,6 +25,7 @@ from git_context import (
     _current_project_head,
     _check_deploy_freshness,
     _count_commits_since,
+    _touched_files,
 )
 from knowledge_loader import (
     _load_l2_context,
@@ -2468,6 +2469,19 @@ def task_checkpoint(
         else:
             routing_missed = True
 
+    # Doc-registration gate: a new or modified servers/ source file with no src_files
+    # entry in docs/doc-map.yaml would otherwise only surface as a warning next
+    # session_start -- by then the task is already closed. Catch it now, at task
+    # close, while it's still this task's responsibility to register.
+    doc_registration_gap: list[str] = []
+    if size.upper() not in ("XS", "S"):
+        try:
+            from doc_graph import load_doc_map, find_unregistered_touched_files
+            touched = _touched_files(project_dir)
+            doc_registration_gap = find_unregistered_touched_files(touched, load_doc_map(YOUK_ROOT))
+        except Exception:
+            pass
+
     result = {
         "brief": brief_result.get("brief", ""),
         "checkpoint_written": checkpoint_written,
@@ -2486,6 +2500,13 @@ def task_checkpoint(
             "Recurring pattern detected — act now per mid-session adaptation rules: "
             "assess_skill → add_proposal → apply_proposal(confirmed=True) for SKILL_EDIT gaps. "
             "Do not defer to /done."
+        )
+    if doc_registration_gap:
+        result["doc_registration_gap"] = doc_registration_gap
+        result["doc_registration_action"] = (
+            "This task touched source file(s) with no src_files entry in "
+            "docs/doc-map.yaml: " + ", ".join(doc_registration_gap) + ". Add an entry "
+            "mapping each to the doc(s) it affects before calling this task done."
         )
 
     # Goal re-evaluation: check whether the completed task satisfies the session goal.
