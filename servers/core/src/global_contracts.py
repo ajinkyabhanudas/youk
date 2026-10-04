@@ -25,37 +25,51 @@ def promote_to_global_contracts(
     """
     from jsonl_lock import locked_jsonl_append, locked_jsonl_read_all
     from pattern_entry import PatternEntry
+    from semantic_similarity import is_same_lesson
     from verification_research import abstract_claim
     import hashlib
     import json
+    import re
 
     patterns_path = youk_root / "state" / "global-patterns.jsonl"
     existing = locked_jsonl_read_all(patterns_path)
-    existing_statements = {e.get("statement", "").strip().lower() for e in existing}
+
+    def _opposite_polarity(a: str, b: str) -> bool:
+        return ("always" in a and "never" in b) or ("never" in a and "always" in b)
 
     promoted, skipped, conflicts = 0, 0, []
     leak_blocked: list[dict] = []
     for c in contracts:
         normalized = c.strip().lower()
-        if normalized in existing_statements:
+
+        # A genuine contradiction ("always X" vs "never X") shares almost
+        # every token with its opposite, so embedding similarity alone
+        # cannot tell "same lesson, reworded" from "opposite claim, same
+        # words" -- negation is a known blind spot for this class of model.
+        # Polarity is checked first and wins: an opposite-polarity match is
+        # never treated as a duplicate, only ever as a conflict below.
+        duplicate = any(
+            is_same_lesson(c, e.get("statement", ""))
+            and not _opposite_polarity(normalized, e.get("statement", "").lower())
+            for e in existing
+        )
+        if duplicate:
             skipped += 1
             continue
+
         result = abstract_claim(c)
         if not result.confident:
             leak_blocked.append({"contract": c, "reason": result.flagged_reason})
             continue
+
+        topic = re.sub(r"\b(always|never)\b", "", normalized, count=1).strip()
         for existing_row in existing:
             existing_stmt = existing_row.get("statement", "")
-            if (
-                "always" in normalized
-                and "never" in existing_stmt.lower()
-                and normalized[7:20] in existing_stmt.lower()
-            ) or (
-                "never" in normalized
-                and "always" in existing_stmt.lower()
-                and normalized[6:20] in existing_stmt.lower()
-            ):
-                conflicts.append(f"Conflict: new '{c}' vs existing '{existing_stmt}'")
+            existing_lower = existing_stmt.lower()
+            if _opposite_polarity(normalized, existing_lower):
+                existing_topic = re.sub(r"\b(always|never)\b", "", existing_lower, count=1).strip()
+                if is_same_lesson(topic, existing_topic, threshold=0.5):
+                    conflicts.append(f"Conflict: new '{c}' vs existing '{existing_stmt}'")
 
         pattern_id = hashlib.sha256(
             f"{domain}\x1f{sub_domain}\x1f{result.abstracted.strip().lower()}".encode()
@@ -74,7 +88,6 @@ def promote_to_global_contracts(
         )
         locked_jsonl_append(patterns_path, json.dumps(entry.to_dict()))
         existing.append(entry.to_dict())
-        existing_statements.add(normalized)
         promoted += 1
 
     if promoted:

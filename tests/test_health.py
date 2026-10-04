@@ -1163,6 +1163,30 @@ class TestDetectCrossProjectPatterns:
         # shared1 appears in 3 projects, shared2 in 2 — should be sorted desc
         assert result[0]["count"] >= result[-1]["count"]
 
+    def test_catches_the_same_lesson_phrased_differently(self, youk_root):
+        """The real gap exact-match had: the same lesson, worded closely
+        enough across two projects, used to be invisible. This is the case
+        semantic matching exists to close."""
+        self._write_contracts(youk_root, {
+            "canopy": ["Playwright test screenshots should never be checked into the repo"],
+            "youk": ["never commit screenshot files from Playwright testing"],
+        })
+        from health import _detect_cross_project_patterns
+        result = _detect_cross_project_patterns()
+        assert result
+        assert result[0]["count"] == 2
+
+    def test_does_not_merge_distinct_lessons_sharing_a_theme(self, youk_root):
+        """Two different, real lessons about verification must stay
+        separate -- merging them would corrupt the knowledge base, which is
+        a worse failure than missing a recurrence."""
+        self._write_contracts(youk_root, {
+            "canopy": ["always verify root cause empirically before guessing"],
+            "youk": ["before stating a conclusion, find the evidence that resolves it"],
+        })
+        from health import _detect_cross_project_patterns
+        assert _detect_cross_project_patterns() == []
+
 
 # ── add_proposal deduplication ────────────────────────────────────────────────
 

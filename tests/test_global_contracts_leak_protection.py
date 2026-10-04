@@ -45,6 +45,31 @@ def test_confident_contract_is_written_in_its_abstracted_form(tmp_path):
     assert "{repo}" not in content or "secrets" in content  # abstracted form present, not raw leak
 
 
+def test_semantic_dedup_skips_a_close_paraphrase(tmp_path):
+    """The same lesson phrased differently must be skipped, not promoted as
+    a second entry -- exact-text dedup used to miss this."""
+    gc.promote_to_global_contracts(
+        ["never commit screenshot files from Playwright testing"],
+        tmp_path, "ci-hygiene", "git-workflow",
+    )
+    result = gc.promote_to_global_contracts(
+        ["Playwright test screenshots should never be checked into the repo"],
+        tmp_path, "ci-hygiene", "git-workflow",
+    )
+    assert result["promoted"] == 0
+    assert result["skipped"] == 1
+
+
+def test_opposite_polarity_on_the_same_topic_is_flagged_as_conflict(tmp_path):
+    gc.promote_to_global_contracts(
+        ["always run ruff before committing"], tmp_path, "ci-hygiene", "lint",
+    )
+    result = gc.promote_to_global_contracts(
+        ["never run ruff before committing"], tmp_path, "ci-hygiene", "lint",
+    )
+    assert result["conflicts"]
+
+
 def test_leak_blocked_contract_never_counted_as_skipped():
     """A blocked contract is a distinct outcome from a duplicate skip --
     conflating them would hide real leak attempts inside a benign-looking

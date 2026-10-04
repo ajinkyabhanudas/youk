@@ -5,3 +5,9 @@ anthropic>=0.112.0
 pyyaml>=6.0
 langfuse>=2.0.0
 jsonschema>=4.25.0
+
+# Local semantic similarity (semantic_similarity.py) -- CPU-only torch wheel
+# to avoid the ~2GB CUDA build; this runs no-GPU, offline, no vendor API.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0
+sentence-transformers>=3.0.0

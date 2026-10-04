@@ -3461,18 +3461,37 @@ def _detect_cross_project_patterns(min_projects: int = 2) -> list[dict]:
     if len(project_contracts) < min_projects:
         return []
 
-    # Find contracts appearing in min_projects or more distinct projects
-    contract_to_projects: dict[str, list[str]] = {}
-    for slug, contracts in project_contracts.items():
-        for c in contracts:
-            contract_to_projects.setdefault(c, [])
-            if slug not in contract_to_projects[c]:
-                contract_to_projects[c].append(slug)
+    # Cluster contracts recurring across projects by semantic similarity, not
+    # exact text -- the same lesson phrased differently across two projects
+    # used to be invisible to this check. Identical text always clusters
+    # together (similarity 1.0), so this is a strict superset of the old
+    # exact-match behavior, never a regression on what it already caught.
+    # cluster_by_similarity batch-encodes once; a pairwise is_same_lesson
+    # loop re-encodes on every comparison and is unusably slow (minutes,
+    # not seconds) once real contract counts reach the dozens.
+    from semantic_similarity import cluster_by_similarity
+
+    flat: list[tuple[str, str]] = [
+        (slug, c) for slug, contracts in project_contracts.items() for c in contracts
+    ]
+    index_groups = cluster_by_similarity([c for _, c in flat])
+    clusters = [
+        {
+            "canonical": flat[indices[0]][1],
+            "projects": list(dict.fromkeys(flat[i][0] for i in indices)),
+        }
+        for indices in index_groups
+    ]
 
     candidates = [
-        {"contract": c, "projects": slugs, "count": len(slugs), "theme": _classify_theme(c)}
-        for c, slugs in contract_to_projects.items()
-        if len(slugs) >= min_projects
+        {
+            "contract": cl["canonical"],
+            "projects": cl["projects"],
+            "count": len(cl["projects"]),
+            "theme": _classify_theme(cl["canonical"]),
+        }
+        for cl in clusters
+        if len(cl["projects"]) >= min_projects
     ]
     candidates = sorted(candidates, key=lambda x: x["count"], reverse=True)
 

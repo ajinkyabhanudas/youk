@@ -1989,16 +1989,17 @@ class TestPromoteToGlobalContractsIdempotency:
         assert not tmp.exists(), ".tmp file must be cleaned up after atomic rename"
 
     def test_new_contracts_append_to_existing(self, youk_root):
-        """Second call with a different contract must append, not overwrite."""
+        """Second call with a genuinely different contract must append, not
+        overwrite or get semantically deduped against the first."""
         import global_contracts as gc
 
-        gc.promote_to_global_contracts(["rule A"], youk_root, "misc", "general")
-        gc.promote_to_global_contracts(["rule B"], youk_root, "misc", "general")
+        gc.promote_to_global_contracts(["always run ruff before committing"], youk_root, "misc", "general")
+        gc.promote_to_global_contracts(["never commit screenshot files from Playwright"], youk_root, "misc", "general")
 
         global_file = youk_root / "knowledge" / "global" / "contracts.md"
         content = global_file.read_text()
-        assert "rule A" in content
-        assert "rule B" in content
+        assert "ruff" in content
+        assert "Playwright" in content
 
     def test_contracts_are_tagged_and_queryable_by_domain(self, youk_root):
         """The real point of this redesign: a promoted contract must be
