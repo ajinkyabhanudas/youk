@@ -55,6 +55,7 @@ class SizingDecision:
     grounding_status: str = ""
     precedent_count: int = 0
     domain_invariant_count: int = 0
+    lesson_count: int = 0
 
     def __post_init__(self) -> None:
         if not isinstance(self.task, str) or not self.task.strip():
@@ -92,6 +93,7 @@ class SizingDecision:
             "grounding_status": self.grounding_status,
             "precedent_count": self.precedent_count,
             "domain_invariant_count": self.domain_invariant_count,
+            "lesson_count": self.lesson_count,
         }
 
 
@@ -124,6 +126,7 @@ def log_sizing_decision(
         grounding_status=(grounding or {}).get("status", ""),
         precedent_count=int((grounding or {}).get("precedent_count", 0)),
         domain_invariant_count=int((grounding or {}).get("domain_invariant_count", 0)),
+        lesson_count=int((grounding or {}).get("lesson_count", 0)),
     )
     locked_jsonl_append(resolved_log_path, json.dumps(decision.to_dict()))
     return decision

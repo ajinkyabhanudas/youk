@@ -67,13 +67,22 @@ SESSION_CAP:     [has self_heal() already run this session? yes → skip AUDIT]
 
 5. **Pattern-learning reversal check (Phase C, periodic):** if the current project has a
    real Domain Brief (`state/domain-brief.json` exists), call
-   `reversal_check.detect_reversals(project, root)`. Empty result → nothing to do, continue.
+   `youk-core.detect_domain_reversals(project)`. Empty `reversals` list → nothing to do, continue.
    A non-empty result → read `skills/self-heal/references/reversal-confirmation.md` and
    follow its required `[REVERSAL CONFIRMED]` judgment-call format for EACH pair before
-   calling `reversal_check.confirm_reversed_pattern(reversal, domain, sub_domain)` — never
+   calling `youk-core.confirm_domain_reversal(reversal, domain, sub_domain, project)` — never
    skip straight to confirmation, domain/sub_domain are never inferred automatically.
 
-> Compact phase summary: org_score known, gap signals enumerated, generation candidates identified, reversal check run.
+6. **Cross-project promotion (Phase D, periodic):** call
+   `youk-core.find_pattern_promotion_candidates()`. Empty `groups` → continue. Otherwise
+   read `skills/self-heal/references/pattern-promotion.md`, choose the wording per its
+   required format, then call `youk-core.promote_pattern_group(domain, sub_domain,
+   chosen_statement)` for each group. Promoted patterns are the reusable, project-neutral
+   learnings; nothing is promoted from a single project. A group whose wording already
+   exists is refused with `duplicate_of`. When a promoted learning is contradicted by a later
+   confirmed decision, call `youk-core.retire_global_pattern(pattern_id, reason)`.
+
+> Compact phase summary: org_score known, gap signals enumerated, generation candidates identified, reversal check run, promotion check run.
 
 ---
 
@@ -192,7 +201,8 @@ Call `youk-core.session_end("done", commits_made=False, close_cluster=True, skil
 |------|-------------|
 | `knowledge/SKILL-REGISTRY.md` | Phase 3 — dedup candidates against existing skill descriptions |
 | `servers/shared/models.py` | Phase 4 — understand Proposal fields before calling add_proposal |
-| `skills/self-heal/references/reversal-confirmation.md` | Phase 1 step 5 — required judgment-call format before any `confirm_reversed_pattern` call |
+| `skills/self-heal/references/pattern-promotion.md` | Phase 1 step 6 — wording choice before any `promote_pattern_group` call |
+| `skills/self-heal/references/reversal-confirmation.md` | Phase 1 step 5 — required judgment-call format before any `confirm_domain_reversal` call |
 
 ---
 

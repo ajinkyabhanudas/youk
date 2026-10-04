@@ -414,28 +414,62 @@ def _record_generation(model: str, response: GenerationResult, duration_s: float
         pass
 
 
+def _current_project_slug() -> str:
+    try:
+        from session_slug import get_session_slug
+        slug = get_session_slug(YOUK_ROOT)
+    except Exception:
+        return ""
+    return "" if slug == "unknown" else slug
+
+
+def _relevant_global_patterns(task: str, path: Path, limit: int = 3) -> list[dict]:
+    """Cross-project lessons whose statement bears on this task, best first.
+    Which lessons apply is decided fresh per task by similarity; nothing about
+    relevance is stored. Raises if the embedding model is needed and absent."""
+    from jsonl_lock import locked_jsonl_read_all
+    from semantic_similarity import LESSON_RELEVANCE_FLOOR, rank_by_similarity
+
+    from global_contracts import effective_patterns
+
+    seen: set[str] = set()
+    rows: list[dict] = []
+    for r in effective_patterns(locked_jsonl_read_all(path)):
+        stmt = r.get("statement")
+        if r.get("scope") == "global" and isinstance(stmt, str) and stmt.strip():
+            key = stmt.strip().lower()
+            if key not in seen:
+                seen.add(key)
+                rows.append(r)
+    ranked = rank_by_similarity(
+        task, [r["statement"] for r in rows], min_score=LESSON_RELEVANCE_FLOOR, limit=limit
+    )
+    return [rows[i] for i, _ in ranked]
+
+
 def _sizing_grounding(
-    raw_input: str, log_path: Path | None = None, brief_path: Path | None = None
+    raw_input: str, log_path: Path | None = None, brief_path: Path | None = None,
+    project_slug: str | None = None, patterns_path: Path | None = None,
 ) -> tuple[str, dict]:
     """Evidence for the estimated_size / scope judgment, plus a record of what
     was actually supplied.
 
-    A size guessed with nothing in front of the model is a cold guess. Two
+    A size guessed with nothing in front of the model is a cold guess. Three
     kinds of retrieved evidence are appended to the END of the final user
-    message: similar past sizing decisions, and the project's Domain Brief
-    invariants whose vocabulary overlaps this task. Placement: the research
-    usually cited for this (Liu et al., "Lost in the Middle") reports that
-    models use information at the start and end of a long context better than
-    the middle; it does not show the end beating the start, and it has not
-    been re-verified from this repo. The block is short and last because the
-    user message is short and the tail is next to the instruction -- not
-    because the end is proven best. Sections are only emitted when real
+    message: similar past sizing decisions, the project's Domain Brief
+    invariants whose vocabulary overlaps this task, and promoted cross-project
+    lessons similar to this task. Placement: Liu et al., "Lost in the Middle" (TACL 2024), found accuracy
+    highest when relevant information is at the start or end of a long context
+    and lower in the middle. That was measured on long multi-document inputs;
+    it does not show the end beating the start, nor cover a short block like
+    this. The block goes last because it sits next to the instruction, not
+    because the end is proven best (see docs/research-basis.md). Sections are only emitted when real
     evidence cleared its relevance bar; nothing is invented to fill them.
 
     Returns (block, info). info["status"] is "grounded", "no_evidence", or
     "unavailable" (retrieval failed, so the estimate is cold) -- the caller
     logs it so cold estimates are visible rather than silent."""
-    info: dict = {"status": "no_evidence", "precedent_count": 0, "domain_invariant_count": 0}
+    info: dict = {"status": "no_evidence", "precedent_count": 0, "domain_invariant_count": 0, "lesson_count": 0}
     sections: list[str] = []
     unavailable = False
 
@@ -458,9 +492,19 @@ def _sizing_grounding(
         info["precedent_count"] = len(precedents)
 
     try:
+        from domain_brief import project_brief_path
         from domain_context import match_invariants
-        brief = json.loads((brief_path or (YOUK_ROOT / "state" / "domain-brief.json")).read_text(encoding="utf-8"))
-        invariants = match_invariants(raw_input, brief, top_n=3)
+        slug = _current_project_slug() if project_slug is None else project_slug
+        if brief_path is None:
+            per_project = project_brief_path(YOUK_ROOT, slug) if slug else None
+            brief_path = per_project if per_project is not None and per_project.exists() \
+                else YOUK_ROOT / "state" / "domain-brief.json"
+        brief = json.loads(brief_path.read_text(encoding="utf-8"))
+        # state/domain-brief.json is one global file; only use it for the
+        # project it was built for. An unknown current project, or a brief
+        # from a different one, contributes nothing rather than another
+        # project's invariants.
+        invariants = match_invariants(raw_input, brief, top_n=3) if slug and brief.get("project") == slug else []
     except (OSError, ValueError, KeyError, TypeError):
         invariants = []  # no brief for this project is a normal state
     if invariants:
@@ -469,6 +513,19 @@ def _sizing_grounding(
             lines.append(f"- [{inv['bounded_context']}] {inv['invariant'][:160]} ({inv['source_id']})")
         sections.append("\n".join(lines))
         info["domain_invariant_count"] = len(invariants)
+
+    try:
+        lessons = _relevant_global_patterns(
+            raw_input, patterns_path or (YOUK_ROOT / "state" / "global-patterns.jsonl")
+        )
+    except Exception:
+        lessons, unavailable = [], True
+    if lessons:
+        sections.append(
+            "Lessons that held across projects and overlap this task:\n"
+            + "\n".join(f"- {r['statement'][:200]}" for r in lessons)
+        )
+        info["lesson_count"] = len(lessons)
 
     if not sections:
         if unavailable:

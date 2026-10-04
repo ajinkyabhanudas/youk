@@ -10,7 +10,49 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ## [Unreleased]
 
+### Fixed
+
+- `task_checkpoint` doc-registration gate judged every project by youk's own doc-map,
+  missed files in new untracked directories, and swallowed failures. It now uses the working
+  repo's doc-map, lists untracked files individually, and reports `doc_registration_error`.
+- Task sizing matched signals as raw substrings, so `add` fired inside "padding" and
+  "address" and sent small edits through the full gate chain. Signals now match whole words
+  with ordinary inflections. `scripts/eval_routing.py` now runs the real scorer instead of a copy.
+- Sizing precedent had no relevance floor and presented unrelated tasks as similar. It now
+  uses one batched encode, a floor, and de-duplication.
+- A failed sizing-log write and a failed git status are reported instead of passed silently.
+- README said the embedding model is ~22MB; it is ~90MB (22.7M parameters). The "lost in the
+  middle" and Self-Correction Illusion citations now say what those papers show.
+
+### Changed
+
+- Session start loads the best-supported 50 cross-project learnings (real confirmed count, then
+  newest) instead of the newest 50, keeps the committed default contracts (they were dropped
+  first once personal learnings filled the cap), and skips retired learnings.
+- `optimize_intent` places similar sizing precedent and the current project's Domain Brief
+  invariants after the task text and records what evidence was shown (`grounding_status`,
+  `precedent_count`, `domain_invariant_count` on each sizing row).
+- The sizing evidence block also includes promoted cross-project lessons similar to the task
+  (`lesson_count` is logged on each sizing row).
+- Promoted cross-project lessons record the projects they came from and a real
+  `confirmed_count` (previously a constant 2 with the source `cross-project`); an unknown
+  source is stored as `unknown` with a count of 0.
+- Providers return `GenerationResult`; `intent.py` no longer reads Anthropic's response object.
+- `/health` reports cold sizing estimates and frequent keyword-scorer overrides, and compares how
+  often a task's size was later raised when it was sized with retrieved evidence versus without.
+- Added `docs/research-basis.md`.
+
 ### Added
+
+- Per-project Domain Briefs: session start builds `state/domain-briefs/{slug}.json` from the
+  project's own `DECISIONS.md` when missing or stale; the sizing call and nfr_check's edge-case pass read the current project's,
+  and neither serves another project's legacy `state/domain-brief.json`.
+- `detect_domain_reversals`, `confirm_domain_reversal`, `find_pattern_promotion_candidates` and
+  `promote_pattern_group` MCP tools, and self-heal steps 5 and 6 that call them. The self-heal
+  skill used to tell the agent to call Python modules directly, which an MCP-only host cannot do.
+- `retire_global_pattern`: append-only retirement of a promoted learning, with a required reason.
+  Retired learnings leave `contracts.md`, `query_global_patterns` and per-task retrieval.
+- `promote_pattern_group` refuses a meaning-duplicate of an existing learning (`duplicate_of`).
 
 **Deterministic information governance**
 

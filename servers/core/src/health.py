@@ -1465,6 +1465,76 @@ def _structural_skill_findings(youk_root: Path, claude_root: Path) -> list[str]:
         pass
     return out
 
+_SIZE_RANK = {"XS": 1, "S": 2, "M": 3, "L": 4, "XL": 5}
+
+
+def sizing_revision_stats(rows: list[dict]) -> dict[str, tuple[int, int]]:
+    """Outcome signal for sizing, derived from the log alone. Re-routing a task
+    after a scope escalation can only raise its size, so a task whose later
+    sizing row is larger than its first was under-sized the first time.
+    Returns {"evidence": (revised_up, tasks), "no_evidence": (revised_up, tasks)},
+    grouped by what the FIRST estimate was shown. Rows without grounding_status
+    (written before it existed) are skipped. A proxy, not ground truth: a task
+    can also be re-routed after a clarification."""
+    by_task: dict[str, list[dict]] = {}
+    for r in rows:
+        if isinstance(r.get("task"), str):
+            by_task.setdefault(r["task"], []).append(r)
+    stats = {"evidence": [0, 0], "no_evidence": [0, 0]}
+    for runs in by_task.values():
+        first = runs[0]
+        status = first.get("grounding_status")
+        if not status:
+            continue
+        key = "evidence" if status == "grounded" else "no_evidence"
+        stats[key][1] += 1
+        base = _SIZE_RANK.get(first.get("resolved_size", ""), 0)
+        if any(_SIZE_RANK.get(later.get("resolved_size", ""), 0) > base for later in runs[1:]):
+            stats[key][0] += 1
+    return {k: (v[0], v[1]) for k, v in stats.items()}
+
+
+def _sizing_grounding_findings(youk_root: Path, window: int = 50, min_rows: int = 5,
+                               threshold: float = 0.3) -> list[str]:
+    """Read state/sizing-decisions.jsonl back into /health so the log is
+    consumed, not just written. Two signals over the most recent rows:
+    estimates made with no retrieval evidence (grounding_status "unavailable",
+    i.e. the embedding model could not run), and how often the model sized a
+    task below the deterministic scorer. Rows written before grounding_status
+    existed carry no such key and are not counted."""
+    try:
+        from jsonl_lock import locked_jsonl_read_all
+        rows = locked_jsonl_read_all(youk_root / "state" / "sizing-decisions.jsonl")
+    except (OSError, ValueError) as e:
+        return [f"Sizing log unreadable ({type(e).__name__}: {e}) — grounding of size estimates cannot be checked."]
+    findings: list[str] = []
+    graded = [r for r in rows if r.get("grounding_status")][-window:]
+    cold = sum(1 for r in graded if r["grounding_status"] == "unavailable")
+    if len(graded) >= min_rows and cold / len(graded) >= threshold:
+        findings.append(
+            f"{cold} of the last {len(graded)} task size estimates were made with no retrieved "
+            "evidence (retrieval unavailable — usually the local embedding model). "
+            "Those sizes are cold guesses; check the youk-core image has sentence-transformers."
+        )
+    stats = sizing_revision_stats(rows)
+    (rev_e, n_e), (rev_n, n_n) = stats["evidence"], stats["no_evidence"]
+    if n_e >= min_rows and n_n >= min_rows:
+        findings.append(
+            f"Sizes raised when the same task was routed again: {rev_e} of {n_e} tasks sized with "
+            f"retrieved evidence, {rev_n} of {n_n} sized without. (Proxy for under-sizing; "
+            "a re-route can also follow a clarification.)"
+        )
+    estimated = [r for r in rows if r.get("llm_estimated_size")][-window:]
+    under = sum(1 for r in estimated if r.get("mismatch_flag"))
+    if len(estimated) >= min_rows and under / len(estimated) >= threshold:
+        findings.append(
+            f"The intent model sized {under} of the last {len(estimated)} tasks below the "
+            "deterministic keyword scorer. Its estimates are being overridden often; review "
+            "the sizing prompt or the routes.yaml signals."
+        )
+    return findings
+
+
 def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     findings = []
     if not audit_texts:
@@ -1675,6 +1745,7 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
     findings.extend(skill_quality_findings[:2])
 
     findings.extend(_structural_skill_findings(YOUK_ROOT, CLAUDE_ROOT))
+    findings.extend(_sizing_grounding_findings(YOUK_ROOT))
 
     # A capped score must say why. An unexplained low number reads as a metric glitch
     # and gets ignored, which is the failure mode this whole gate exists to prevent.

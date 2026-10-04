@@ -2,7 +2,7 @@
 
 Exact-match text comparison is the wrong tool for a meaning question. This
 module is the right one -- a small, local, offline sentence-embedding model
-(all-MiniLM-L6-v2, ~22MB), not a call to any LLM vendor's API. No network
+(all-MiniLM-L6-v2, 22.7M parameters, ~90MB), not a call to any LLM vendor's API. No network
 access at runtime: the model weights are baked into the Docker image at
 build time.
 """
@@ -97,9 +97,18 @@ def cluster_by_similarity(texts: list[str], threshold: float = _SIMILARITY_THRES
 # recorded above for this model: unrelated pairs scored 0.01-0.19, true
 # paraphrases 0.39-0.77. Task descriptions about the same kind of work are
 # looser than paraphrases of one lesson, so this is deliberately below
-# _SIMILARITY_THRESHOLD. It has not been re-measured on real sizing-task pairs;
-# retune it from state/sizing-decisions.jsonl once enough rows exist.
+# _SIMILARITY_THRESHOLD. tests/test_task_relevance_floor.py checks that it separates 8 related
+# from 8 unrelated task pairs; retune it from state/sizing-decisions.jsonl as real rows accumulate.
 TASK_RELEVANCE_FLOOR = 0.30
+
+
+# Relevance floor for "does this cross-project lesson bear on this task". A
+# lesson is abstracted and a task is concrete, so their scores run lower than
+# task-to-task pairs; this sits at the lowest true-paraphrase score recorded
+# above (0.39) to favour leaving a lesson out over showing an unrelated one.
+# Recall is unmeasured: it may be too strict. tests/test_task_relevance_floor.py
+# checks precision (no unrelated pair clears it) wherever the model exists.
+LESSON_RELEVANCE_FLOOR = 0.40
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
