@@ -2474,13 +2474,21 @@ def task_checkpoint(
     # session_start -- by then the task is already closed. Catch it now, at task
     # close, while it's still this task's responsibility to register.
     doc_registration_gap: list[str] = []
+    doc_registration_error = ""
     if size.upper() not in ("XS", "S"):
+        # Checked against the doc-map of the repo being worked in. A project
+        # with no docs/doc-map.yaml has nothing to register against, so the
+        # gate does not apply -- it must never judge another project's
+        # servers/ tree by youk's own map.
         try:
             from doc_graph import load_doc_map, find_unregistered_touched_files
-            touched = _touched_files(project_dir)
-            doc_registration_gap = find_unregistered_touched_files(touched, load_doc_map(YOUK_ROOT))
-        except Exception:
-            pass
+            _project_root = Path(str(_resolve_project_path(project_dir)))
+            if (_project_root / "docs" / "doc-map.yaml").exists():
+                doc_registration_gap = find_unregistered_touched_files(
+                    _touched_files(project_dir), load_doc_map(_project_root)
+                )
+        except Exception as e:
+            doc_registration_error = f"{type(e).__name__}: {e}"
 
     result = {
         "brief": brief_result.get("brief", ""),
@@ -2501,6 +2509,8 @@ def task_checkpoint(
             "assess_skill → add_proposal → apply_proposal(confirmed=True) for SKILL_EDIT gaps. "
             "Do not defer to /done."
         )
+    if doc_registration_error:
+        result["doc_registration_error"] = doc_registration_error  # check could not run; not a pass
     if doc_registration_gap:
         result["doc_registration_gap"] = doc_registration_gap
         result["doc_registration_action"] = (
