@@ -51,18 +51,22 @@ Each item says what the evidence supports, what youk does today, and what would 
    old constant `confirmed_count=2` / `cross-project`. Entries promoted before this change keep
    the old values. ExpeL's up/down-voting and ACE's incremental curation both need this
    per-learning evidence.
-3. **A way to retire a learning.** Nothing downvotes or removes a promoted entry; the store
-   only grows. Done when: a learning contradicted by a later confirmed decision is marked
-   superseded and excluded from retrieval.
+3. **A way to retire a learning.** Done: `retire_global_pattern` appends a `retired` tombstone
+   with a required reason; `contracts.md`, `query_global_patterns` and per-task retrieval all
+   drop retired rows, and the retired wording still blocks re-promotion. Nothing is deleted.
+   Not yet automatic: a session has to call it. `promote_to_global_contracts` already reports
+   opposite-claim conflicts, and the self-heal step tells the session to retire the wrong one.
 4. **Measure whether grounded sizing is better.** The sizing log now records
    `grounding_status`, and `/health` reports cold-estimate and override rates, but nothing
    compares sizing outcomes with and without evidence. `resolved_size` is the system's own
    output, not a checked outcome. Done when: a task's actual effort or rework is joined to its
    sizing row and grounded and cold rows are compared.
-5. **Decide the Phase C/D chain on data.** Reversal detection and cross-project promotion of
-   confirmed patterns are implemented and tested but unwired, deliberately: the earlier wiring
-   was reverted because it duplicated the contracts path, which has real entries while this
-   chain had none. Wire it, or delete it, once `state/disposition-log.jsonl` has real events.
+5. **Phase C/D chain: wired, now judge it on data.** Reversal detection and promotion of
+   confirmed patterns were unwired earlier because they duplicated the contracts path and had no
+   entries. They are now reachable as tools and self-heal steps, `promote_pattern_group` refuses a
+   meaning-duplicate of anything already in the store, and a bad learning can be retired. Keep it
+   only if `state/confirmed-patterns.jsonl` and `state/global-patterns.jsonl` show entries it
+   produced; otherwise delete it.
 6. **Build the Domain Brief for projects other than youk.** `build_domain_brief` reads only
    youk's own decision records and nothing generates it automatically, so for most users the
    brief is absent and the domain evidence block is empty.

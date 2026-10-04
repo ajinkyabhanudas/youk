@@ -5,12 +5,15 @@
 > here — same discipline as docs/problem-space-modeling-design.md, which
 > this initiative builds directly on top of.
 
-> **STATUS:** Phase C/D's wiring into `self_heal` was reverted: it
-> duplicated `_detect_cross_project_patterns` -> `promote_to_global_contracts`,
-> which already had 65 real entries against zero here. The "self-heal AUDIT
-> phase" named below never existed in the live system. The functions remain
-> real and tested with no live caller. `global-patterns.jsonl` is now backed
-> by `promote_to_global_contracts` (`global_contracts.py`), not `promote_group`.
+> **STATUS (2026-10-04):** Phase C/D were unwired once because they duplicated
+> `_detect_cross_project_patterns` -> `promote_to_global_contracts`, which had 65 real entries
+> against zero here. They are wired again as MCP tools (`detect_domain_reversals`,
+> `confirm_domain_reversal`, `find_pattern_promotion_candidates`, `promote_pattern_group`) and
+> self-heal steps 5 and 6, with the duplication problem addressed: `promote_pattern_group`
+> refuses a statement that already exists in `state/global-patterns.jsonl` (matched by meaning,
+> opposite "always"/"never" never counts as a duplicate), and `retire_global_pattern` retires a
+> contradicted learning. Both write paths still share one store. If neither has produced entries
+> once real dispositions exist, delete the chain rather than keep it.
 
 ## The outcome this exists to serve
 

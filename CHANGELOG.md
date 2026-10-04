@@ -40,6 +40,13 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ### Added
 
+- `detect_domain_reversals`, `confirm_domain_reversal`, `find_pattern_promotion_candidates` and
+  `promote_pattern_group` MCP tools, and self-heal steps 5 and 6 that call them. The self-heal
+  skill used to tell the agent to call Python modules directly, which an MCP-only host cannot do.
+- `retire_global_pattern`: append-only retirement of a promoted learning, with a required reason.
+  Retired learnings leave `contracts.md`, `query_global_patterns` and per-task retrieval.
+- `promote_pattern_group` refuses a meaning-duplicate of an existing learning (`duplicate_of`).
+
 **Deterministic information governance**
 
 Projects can declare non-code source-of-truth and derived-file relationships in a

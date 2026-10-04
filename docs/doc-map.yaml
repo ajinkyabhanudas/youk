@@ -87,6 +87,9 @@ mcp_tools:
     - {tool: log_domain_edge_case_disposition, refs: [docs/pattern-learning-architecture-design.md]}
     - {tool: detect_domain_reversals, refs: [docs/pattern-learning-architecture-design.md, skills/self-heal/SKILL.md]}
     - {tool: confirm_domain_reversal, refs: [docs/pattern-learning-architecture-design.md, skills/self-heal/SKILL.md]}
+    - {tool: find_pattern_promotion_candidates, refs: [docs/pattern-learning-architecture-design.md, skills/self-heal/SKILL.md]}
+    - {tool: promote_pattern_group, refs: [docs/pattern-learning-architecture-design.md, skills/self-heal/SKILL.md]}
+    - {tool: retire_global_pattern, refs: [docs/pattern-learning-architecture-design.md, skills/self-heal/SKILL.md]}
     # system observability Phase 1 (CIR-177): domain-scope judgment-call log
     - {tool: log_domain_scope_event, refs: [docs/system-observability-design.md]}
     - {tool: check_ab_pilot_status, refs: [README.md]}

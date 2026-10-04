@@ -9,6 +9,46 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
+def effective_patterns(rows: list[dict]) -> list[dict]:
+    """The store is append-only: a later row with the same id supersedes the
+    earlier one (retirement appends a copy with status "retired"). Returns the
+    live rows -- last row per id, retired ones dropped -- in first-seen order."""
+    latest: dict[str, dict] = {}
+    for i, r in enumerate(rows):
+        key = r.get("id")
+        latest[key if key is not None else f"\x00row{i}"] = r  # id-less rows are each their own
+    return [r for r in latest.values() if r.get("status") != "retired"]
+
+
+def retire_global_pattern(youk_root: Path, pattern_id: str, reason: str) -> dict:
+    """Retire one promoted learning (for example one contradicted by a later
+    confirmed decision) so it is no longer rendered or retrieved. Appends a
+    tombstone copy with status "retired" and a reason; nothing is deleted, and
+    the retired statement still blocks re-promotion of the same wording.
+    Raises KeyError for an unknown id and ValueError for an empty reason."""
+    import json
+    from datetime import UTC, datetime
+
+    from jsonl_lock import locked_jsonl_append, locked_jsonl_read_all
+    from pattern_entry import PatternEntry
+
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("a reason is required to retire a learning")
+    path = youk_root / "state" / "global-patterns.jsonl"
+    current = {r["id"]: r for r in locked_jsonl_read_all(path) if "id" in r}
+    row = current.get(pattern_id)
+    if row is None:
+        raise KeyError(pattern_id)
+    if row.get("status") == "retired":
+        return row
+    retired = dict(row, status="retired", retired_reason=reason.strip(),
+                   retired_at=datetime.now(UTC).isoformat())
+    PatternEntry.from_dict(retired)  # validate before writing
+    locked_jsonl_append(path, json.dumps(retired))
+    render_contracts_md(youk_root)
+    return retired
+
+
 def _projects_with_lesson(contract: str, youk_root: Path) -> list[str]:
     """Names of the projects whose contracts.md holds this lesson, matched by
     meaning (same threshold as cross-project detection). Returns [] when no
@@ -140,7 +180,7 @@ def render_contracts_md(youk_root: Path) -> None:
     from jsonl_lock import locked_jsonl_read_all
 
     patterns_path = youk_root / "state" / "global-patterns.jsonl"
-    entries = locked_jsonl_read_all(patterns_path)
+    entries = effective_patterns(locked_jsonl_read_all(patterns_path))
 
     by_domain: dict[str, list[dict]] = {}
     for e in entries:

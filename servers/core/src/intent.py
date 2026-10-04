@@ -430,9 +430,11 @@ def _relevant_global_patterns(task: str, path: Path, limit: int = 3) -> list[dic
     from jsonl_lock import locked_jsonl_read_all
     from semantic_similarity import LESSON_RELEVANCE_FLOOR, rank_by_similarity
 
+    from global_contracts import effective_patterns
+
     seen: set[str] = set()
     rows: list[dict] = []
-    for r in locked_jsonl_read_all(path):
+    for r in effective_patterns(locked_jsonl_read_all(path)):
         stmt = r.get("statement")
         if r.get("scope") == "global" and isinstance(stmt, str) and stmt.strip():
             key = stmt.strip().lower()

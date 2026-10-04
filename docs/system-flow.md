@@ -157,7 +157,8 @@ server.py (MCP tool surface)
   domain-brief.json             ← per-project Domain Brief; used only when brief.project matches
                                    the current project slug
   global-patterns.jsonl         ← cross-project learnings (written by promote_to_global_contracts);
-                                   rendered to knowledge/global/contracts.md. No retrieval caller yet
+                                   rendered to knowledge/global/contracts.md. Append-only: a later row with the same id
+                                   supersedes; retired rows are dropped from contracts.md and retrieval
   knowledge/
     projects/{slug}/            ← per-project contracts, decisions, context
     domain/                     ← accumulated domain knowledge from /learn
@@ -184,6 +185,11 @@ server.py (MCP tool surface)
 | `check_intake_gate` | server.py → intake_gate.py | Blocks when intake_required=True |
 | `mark_challenge_ran` | server.py (inline) | Writes challenge-ran.json under sessions/{slug}/ |
 | `task_checkpoint` | server.py → session.py | Mid-task progress + pattern detection |
+| `detect_domain_reversals` | server.py → reversal_check.py | Pairs a new decision with a dismissed edge case it reverses; updates the seen-decisions ledger |
+| `confirm_domain_reversal` | server.py → reversal_check.py | Records a reversal pair as a confirmed pattern (state/confirmed-patterns.jsonl) |
+| `find_pattern_promotion_candidates` | server.py → pattern_promotion.py | Confirmed patterns recurring in 2+ projects whose wording abstracts cleanly |
+| `promote_pattern_group` | server.py → pattern_promotion.py | Promotes one group to state/global-patterns.jsonl; refuses a meaning-duplicate (`duplicate_of`) |
+| `retire_global_pattern` | server.py → global_contracts.py | Appends a `retired` tombstone with a reason; the learning leaves contracts.md and retrieval |
 | `compact_context` | server.py → compaction.py | Writes tiered context brief |
 | `self_heal` | server.py → health.py | org_score, proposals, wiring check |
 | `save_contract` | server.py → compaction.py | Persists behavioral contracts |

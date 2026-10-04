@@ -235,7 +235,7 @@
 - name: find_promotion_candidates
   grounding: deterministic
   subsystem: pattern-learning-architecture
-  triggers_on: "ORPHANED -- no live caller. Real, tested function; reachable only by direct import."
+  triggers_on: "self-heal Phase 1 step 6, via the youk-core.find_pattern_promotion_candidates tool"
   reads: [state/confirmed-patterns.jsonl]
   writes: []
   real_log: null
@@ -243,7 +243,7 @@
 - name: promotion_statement_selection_judgment
   grounding: llm_judgment
   subsystem: pattern-learning-architecture
-  triggers_on: "ORPHANED -- paired with find_promotion_candidates, which has no live caller"
+  triggers_on: "self-heal Phase 1 step 6, for a group with more than one distinct abstracted wording, before promote_pattern_group"
   reads: []
   writes: []
   real_log: null
@@ -251,7 +251,7 @@
 - name: promote_group
   grounding: hybrid
   subsystem: pattern-learning-architecture
-  triggers_on: "ORPHANED -- no live caller. state/global-patterns.jsonl is now written by promote_to_global_contracts (below), a different real function, not this one."
+  triggers_on: "youk-core.promote_pattern_group tool, after the wording is chosen"
   reads: []
   writes: [state/global-patterns.jsonl]
   real_log: state/global-patterns.jsonl
@@ -295,3 +295,11 @@
   reads: []
   writes: [state/sizing-decisions.jsonl]
   real_log: state/sizing-decisions.jsonl
+
+- name: retire_global_pattern
+  grounding: deterministic
+  subsystem: pattern-learning-architecture
+  triggers_on: "youk-core.retire_global_pattern tool, called when a promoted learning is contradicted by a later confirmed decision or by a promote_to_global_contracts conflict"
+  reads: [state/global-patterns.jsonl]
+  writes: [state/global-patterns.jsonl]
+  real_log: state/global-patterns.jsonl  # append-only: a retired copy with status "retired" and a reason supersedes the live row

@@ -2669,6 +2669,113 @@ def confirm_domain_reversal(reversal: dict, domain: str, sub_domain: str, projec
 
 
 @mcp.tool()
+def find_pattern_promotion_candidates() -> dict:
+    """
+    Find confirmed patterns that recur across two or more projects under the
+    same (domain, sub_domain) and whose statements abstract cleanly (Phase D of
+    docs/pattern-learning-architecture-design.md). A group with any statement
+    abstract_claim() is not confident about is dropped whole, never partly
+    promoted. Read-only.
+
+    Called by self-heal's AUDIT phase after confirming reversals.
+
+    Returns: {"groups": [{"domain", "sub_domain", "projects": [...],
+    "abstracted_statements": [...], "pattern_ids": [...]}], "count": int}.
+    The session picks the wording per skills/self-heal/references/
+    pattern-promotion.md, then calls promote_pattern_group.
+    """
+    from pattern_promotion import find_promotion_candidates
+
+    try:
+        groups = find_promotion_candidates(YOUK_ROOT)
+        return {
+            "groups": [
+                {
+                    "domain": g["domain"],
+                    "sub_domain": g["sub_domain"],
+                    "projects": sorted(g["projects"]),
+                    "abstracted_statements": g["abstracted_statements"],
+                    "pattern_ids": [e.id for e in g["entries"]],
+                }
+                for g in groups
+            ],
+            "count": len(groups),
+        }
+    except Exception as exc:
+        return {"groups": [], "count": 0, "error": str(exc), "error_type": "SYSTEM"}
+
+
+@mcp.tool()
+def promote_pattern_group(domain: str, sub_domain: str, chosen_statement: str) -> dict:
+    """
+    Promote one group from find_pattern_promotion_candidates into the
+    cross-project store (state/global-patterns.jsonl). The group is looked up
+    again server-side, so the two-project and abstraction guardrails are
+    re-checked here rather than trusted from the caller.
+
+    chosen_statement: the session's wording for the group (never picked here);
+    it must be non-empty.
+
+    Returns: {"promoted": bool, "pattern_id": str, "path": str}
+    """
+    from pattern_entry import PatternValidationError
+    from pattern_promotion import (
+        DuplicatePatternError,
+        find_promotion_candidates,
+        global_patterns_path,
+        promote_group,
+    )
+
+    try:
+        group = next(
+            (g for g in find_promotion_candidates(YOUK_ROOT)
+             if g["domain"] == domain and g["sub_domain"] == sub_domain),
+            None,
+        )
+        if group is None:
+            return {"promoted": False, "error_type": "BUSINESS_RULE",
+                    "error": f"no promotable group for ({domain!r}, {sub_domain!r})"}
+        entry = promote_group(group, chosen_statement, root=YOUK_ROOT)
+        return {"promoted": True, "pattern_id": entry.id, "path": str(global_patterns_path(YOUK_ROOT))}
+    except DuplicatePatternError as exc:
+        return {"promoted": False, "error": str(exc), "error_type": "BUSINESS_RULE",
+                "duplicate_of": exc.existing_id}
+    except PatternValidationError as exc:
+        return {"promoted": False, "error": str(exc), "error_type": "BUSINESS_RULE"}
+    except Exception as exc:
+        return {"promoted": False, "error": str(exc), "error_type": "SYSTEM"}
+
+
+@mcp.tool()
+def retire_global_pattern(pattern_id: str, reason: str) -> dict:
+    """
+    Retire one promoted cross-project learning so it is no longer rendered into
+    knowledge/global/contracts.md or retrieved for a task. Use it when a later
+    confirmed decision contradicts the learning, or when
+    promote_to_global_contracts reports a conflict and the older wording is the
+    wrong one. Nothing is deleted: a tombstone row with the reason is appended,
+    and the retired wording still blocks re-promotion.
+
+    pattern_id: the id of a row in state/global-patterns.jsonl.
+    reason: why it is no longer true or useful (required).
+
+    Returns: {"retired": bool, "pattern_id": str, "path": str}
+    """
+    from global_contracts import retire_global_pattern as _retire
+
+    try:
+        _retire(YOUK_ROOT, pattern_id, reason)
+        return {"retired": True, "pattern_id": pattern_id,
+                "path": str(YOUK_ROOT / "state" / "global-patterns.jsonl")}
+    except KeyError:
+        return {"retired": False, "error_type": "BUSINESS_RULE", "error": f"unknown pattern id {pattern_id!r}"}
+    except ValueError as exc:
+        return {"retired": False, "error_type": "BUSINESS_RULE", "error": str(exc)}
+    except Exception as exc:
+        return {"retired": False, "error": str(exc), "error_type": "SYSTEM"}
+
+
+@mcp.tool()
 def log_domain_scope_event(
     task: str,
     domains: list[dict],

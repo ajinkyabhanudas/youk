@@ -127,6 +127,8 @@ flowchart LR
     D[Project decision records] --> B[Domain Brief per project]
     B --> E[Invariants matched to this task by vocabulary, every task]
     E --> P[Evidence block for sizing, edge-case review]
+    CP[Confirmed reversals, 2+ projects] -->|promote_pattern_group, refuses duplicates| S
+    S -->|retire_global_pattern| T[Retired: leaves contracts.md and retrieval]
     S --> R[Lessons similar to this task, above a floor]
     R --> P
     H[Past sizing decisions] --> P
@@ -139,7 +141,11 @@ flowchart LR
 - **Domain Brief (live for youk's own repo).** The stable model is reused; which
   invariants apply is decided fresh for each task, so a past task cannot bias a later one.
   It is only used when the brief was built for the current project.
-- **Reversal and promotion of confirmed patterns (built, unwired by decision).**
+- **Reversal and promotion of confirmed patterns (wired, no data yet).** Self-heal calls
+  `detect_domain_reversals` and `find_pattern_promotion_candidates`; a group whose wording
+  already exists in the store is refused, and `retire_global_pattern` removes a learning that a
+  later decision contradicts. It has produced no entries so far, so whether it earns its keep
+  is for real data to settle.
 
 What the research supports and what is still to build is in
 [docs/research-basis.md](docs/research-basis.md#advancements-still-needed-in-priority-order).

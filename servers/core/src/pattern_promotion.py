@@ -116,6 +116,40 @@ def _compute_promoted_id(domain: str, sub_domain: str, entries: list[PatternEntr
     return hashlib.sha256(digest_input.encode("utf-8")).hexdigest()[:16]
 
 
+class DuplicatePatternError(ValueError):
+    def __init__(self, existing_id: str):
+        super().__init__(f"same lesson already in the global store as {existing_id}")
+        self.existing_id = existing_id
+
+
+def _find_duplicate(root: Path, statement: str, own_id: str | None = None) -> str | None:
+    """Id of a stored learning (live or retired) that says the same thing as
+    `statement`, matched by meaning, so the confirmed-pattern path and the
+    contracts path cannot write the same lesson twice. An opposite-polarity
+    pair ("always" vs "never") is never a duplicate."""
+    from global_contracts import effective_patterns  # noqa: F401  (same module family)
+    from jsonl_lock import locked_jsonl_read_all
+    from semantic_similarity import _SIMILARITY_THRESHOLD, rank_by_similarity
+
+    latest: dict[str, dict] = {}
+    for r in locked_jsonl_read_all(global_patterns_path(root)):
+        if r.get("id") and isinstance(r.get("statement"), str):
+            latest[r["id"]] = r
+    if own_id is not None and own_id in latest:
+        return None  # same group promoted again: the id-keyed append makes it a no-op
+    rows = list(latest.values())
+    if not rows:
+        return None
+    new = statement.lower()
+    for idx, _ in rank_by_similarity(statement, [r["statement"] for r in rows],
+                                     min_score=_SIMILARITY_THRESHOLD, limit=3):
+        old = rows[idx]["statement"].lower()
+        if (("always" in new and "never" in old) or ("never" in new and "always" in old)):
+            continue
+        return rows[idx]["id"]
+    return None
+
+
 def promote_group(group: dict, chosen_statement: str, *, root: Path | None = None) -> PatternEntry:
     """Build the provenance list for a real promotion candidate group
     (every real entry's real provenance rows, each row's abstracted set to
@@ -156,6 +190,10 @@ def promote_group(group: dict, chosen_statement: str, *, root: Path | None = Non
 
     promoted = promote_pattern(base_entry, confirmed_in_projects=projects)
 
+    duplicate_of = _find_duplicate(resolved_root, promoted.statement, own_id=promoted.id)
+    if duplicate_of is not None:
+        raise DuplicatePatternError(duplicate_of)
+
     path = global_patterns_path(resolved_root)
     locked_append_if_id_absent(path, promoted.id, json.dumps(promoted.to_dict()))
 
@@ -173,14 +211,18 @@ def query_global_patterns(
     path = global_patterns_path(root)
     if not path.exists():
         return []
-    entries: list[PatternEntry] = []
+    from global_contracts import effective_patterns
+
+    parsed: list[dict] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         try:
-            row = json.loads(line)
+            parsed.append(json.loads(line))
         except json.JSONDecodeError:
             continue
+    entries: list[PatternEntry] = []
+    for row in effective_patterns(parsed):
         entry = PatternEntry.from_dict(row)
         if domain is not None and entry.domain != domain:
             continue
