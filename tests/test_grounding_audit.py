@@ -222,3 +222,65 @@ def test_signal_inside_a_longer_word_does_not_inflate_size(task):
 def test_inflected_signal_still_matches(task):
     import routing
     assert routing._score_size(task, _real_routes()).value == "M"
+
+
+# --- goal 5: the sizing log is read back by /health ----------------------------
+
+def _rows(tmp_path, specs):
+    log = tmp_path / "state" / "sizing-decisions.jsonl"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    for i, (status, llm, mismatch) in enumerate(specs):
+        log_sizing_decision(task=f"t{i}", deterministic_size="M", llm_estimated_size=llm,
+                            resolved_size="M", mismatch_flag=mismatch, log_path=log,
+                            grounding={"status": status} if status else None)
+
+
+def test_health_reports_cold_estimates(tmp_path):
+    import health
+    _rows(tmp_path, [("unavailable", "S", False)] * 4 + [("grounded", "M", False)] * 2)
+    out = health._sizing_grounding_findings(tmp_path)
+    assert len(out) == 1 and "4 of the last 6" in out[0] and "cold guesses" in out[0]
+
+
+def test_health_reports_frequent_model_undersizing(tmp_path):
+    import health
+    _rows(tmp_path, [("grounded", "S", True)] * 3 + [("grounded", "M", False)] * 3)
+    assert any("3 of the last 6" in f and "below" in f for f in health._sizing_grounding_findings(tmp_path))
+
+
+def test_health_is_quiet_with_little_or_healthy_data(tmp_path):
+    import health
+    assert health._sizing_grounding_findings(tmp_path) == []
+    _rows(tmp_path, [("unavailable", "S", True)] * 2)  # under min_rows
+    assert health._sizing_grounding_findings(tmp_path) == []
+    _rows(tmp_path, [("grounded", "M", False)] * 8)
+    assert health._sizing_grounding_findings(tmp_path) == []
+
+
+# --- failures that used to vanish -----------------------------------------------
+
+def test_touched_files_propagates_a_git_failure(tmp_path, monkeypatch):
+    import git_context
+
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired("git", 5)
+    monkeypatch.setattr(git_context.subprocess, "run", boom)
+    with pytest.raises(subprocess.TimeoutExpired):
+        git_context._touched_files(str(tmp_path))
+
+
+def test_touched_files_for_a_non_repo_is_empty_not_an_error(tmp_path):
+    import git_context
+    assert git_context._touched_files(str(tmp_path)) == []
+
+
+def test_unlogged_sizing_decision_is_reported_and_routing_still_works(youk_root, monkeypatch, capsys):
+    import routing
+    import sizing_decision
+
+    def boom(**kw):
+        raise OSError("disk full")
+    monkeypatch.setattr(sizing_decision, "log_sizing_decision", boom)
+    decision = routing.route_task("fix a typo in the readme")
+    assert decision is not None
+    assert "sizing decision not logged (OSError: disk full)" in capsys.readouterr().err

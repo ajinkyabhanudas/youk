@@ -322,8 +322,10 @@ def route_task(
             log_path=YOUK_ROOT / "state" / "sizing-decisions.jsonl",
             grounding=(intent_brief or {}).get("grounding"),
         )
-    except Exception:
-        pass  # logging must never block the real routing decision
+    except Exception as e:
+        # Never block the routing decision, but never hide that the record is
+        # missing either: a gap here silently starves precedent retrieval.
+        print(f"youk: sizing decision not logged ({type(e).__name__}: {e})", file=sys.stderr)
 
     # Scope escalation (CIR-150 item 2 / CIR-151): a pending, unconsumed
     # write_scope_escalation() signal for this slug forces a floor on the size

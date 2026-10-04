@@ -95,17 +95,18 @@ def _touched_files(project_dir: str) -> list[str]:
     not a bug: task_checkpoint has no recorded task-start commit to diff against.
     """
     resolved = str(_resolve_project_path(project_dir))
-    try:
-        result = subprocess.run(
-            # -uall lists each new file; without it git collapses a wholly
-            # untracked directory to "dir/" and the .py files inside vanish.
-            ["git", "-C", resolved, "status", "--porcelain", "-uall"],
-            capture_output=True, text=True, timeout=5
-        )
-        # A rename line reads "old -> new"; the file now on disk is "new".
-        return [
-            line[3:].strip().split(" -> ")[-1]
-            for line in result.stdout.splitlines() if line.strip()
-        ]
-    except Exception:
-        return []
+    # No try/except: a git timeout or missing binary must reach the caller
+    # (task_checkpoint reports it as doc_registration_error) rather than read
+    # as "no files touched". A directory that is not a repo is not an error --
+    # git exits non-zero with empty stdout and this returns [].
+    result = subprocess.run(
+        # -uall lists each new file; without it git collapses a wholly
+        # untracked directory to "dir/" and the .py files inside vanish.
+        ["git", "-C", resolved, "status", "--porcelain", "-uall"],
+        capture_output=True, text=True, timeout=5
+    )
+    # A rename line reads "old -> new"; the file now on disk is "new".
+    return [
+        line[3:].strip().split(" -> ")[-1]
+        for line in result.stdout.splitlines() if line.strip()
+    ]
