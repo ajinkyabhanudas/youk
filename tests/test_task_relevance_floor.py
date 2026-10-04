@@ -71,3 +71,22 @@ def test_lesson_floor_admits_no_unrelated_lesson(scores):
         f"an unrelated lesson scores {worst:.2f}, at or above LESSON_RELEVANCE_FLOOR "
         f"{semantic_similarity.LESSON_RELEVANCE_FLOOR}"
     )
+
+
+# (task, lesson): an abstracted lesson that DOES bear on the task.
+RELATED_LESSONS = [
+    ("add retry logic to the file uploader", "Retries of a failed network call need a backoff and a cap, or they hide outages."),
+    ("write a migration to rename the users column", "A database migration must be reversible before it ships."),
+    ("fix the flaky checkout test", "Retrying a flaky test without root-causing it hides a real bug."),
+    ("rotate the API keys for the payment service", "Rotate credentials on a fixed schedule, not only after an incident."),
+    ("pin the docker base image for the api", "Pin the base image digest, not just its tag."),
+    ("make the order webhook safe to receive twice", "Idempotency keys must be stored before the side effect runs."),
+]
+
+
+def test_lesson_floor_keeps_at_least_half_of_the_relevant_lessons(scores):
+    sim = semantic_similarity.similarity
+    got = [(round(sim(task, lesson), 2), task) for task, lesson in RELATED_LESSONS]
+    floor = semantic_similarity.LESSON_RELEVANCE_FLOOR
+    kept = sum(1 for s, _ in got if s >= floor)
+    assert kept >= len(got) / 2, f"only {kept}/{len(got)} relevant lessons clear {floor}; scores: {got}"
