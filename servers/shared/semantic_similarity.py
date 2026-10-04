@@ -97,8 +97,8 @@ def cluster_by_similarity(texts: list[str], threshold: float = _SIMILARITY_THRES
 # recorded above for this model: unrelated pairs scored 0.01-0.19, true
 # paraphrases 0.39-0.77. Task descriptions about the same kind of work are
 # looser than paraphrases of one lesson, so this is deliberately below
-# _SIMILARITY_THRESHOLD. It has not been re-measured on real sizing-task pairs;
-# retune it from state/sizing-decisions.jsonl once enough rows exist.
+# _SIMILARITY_THRESHOLD. tests/test_task_relevance_floor.py checks that it separates 8 related
+# from 8 unrelated task pairs; retune it from state/sizing-decisions.jsonl as real rows accumulate.
 TASK_RELEVANCE_FLOOR = 0.30
 
 
