@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import threading
+import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -208,7 +209,17 @@ def test_the_anthropic_adapter_now_reads_the_key_file_too(tmp_path, monkeypatch)
     f = key_file_path("anthropic", tmp_path)
     f.parent.mkdir(parents=True)
     f.write_text("sk-ant-from-file")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    seen = {}
+
+    class _FakeClient:
+        def __init__(self, api_key):
+            seen["key"] = api_key
+
+    # The SDK is optional in CI; a stand-in keeps this about key resolution, not installation.
+    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(Anthropic=_FakeClient))
     assert inference.AnthropicIntentProvider("m").capability.status is InferenceStatus.AVAILABLE
+    assert seen["key"] == "sk-ant-from-file"
 
 
 # --- the intent call end to end on another model --------------------------------------
