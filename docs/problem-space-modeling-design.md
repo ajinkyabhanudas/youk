@@ -36,7 +36,8 @@ BEFORE work starts. Everything that exists today is reactive (after a miss)
 or generic (same for every project).
 
 ## Research (bounded, cited, done before design -- not LLM intuition alone)
-1. DDD / bounded contexts, 2026 sources: "AI-generated code may violate DDD
+1. DDD / bounded contexts, 2026 sources (quoted sentence NOT verified, see
+   docs/research-basis.md): "AI-generated code may violate DDD
    invariants because LLMs lack persistent understanding of domain
    constraints." Bounded context is becoming the real unit of agent context
    scoping in practice, not just a human modeling tool.
@@ -45,10 +46,12 @@ or generic (same for every project).
    candidates unless filtered. Elicitation quality depends heavily on the
    quality of domain context fed in, not just prompting technique.
 3. LLM self-correction bias, 2026 sources ("Self-Correction Illusion" and
-   related): self-correction is weak when the generator and the checker share
-   training data/context -- shared blind spots. Correction rates jump
-   23-93 percentage points when an identical claim is reframed as coming from
-   an external source rather than the model's own prior output. Self-
+   related): self-correction without external feedback is weak (Huang et al.,
+   ICLR 2024). Relabeling an identical claim as coming from an external role
+   raised explicit error flagging by 23-93 points (arXiv 2606.05976; a
+   flagging rate, attributed there to chat-template role labeling, not to
+   shared training data). Separate-session review beat same-session review
+   modestly (arXiv 2603.12123). See docs/research-basis.md. Self-
    consistency ensembles converge on the FREQUENT answer, not the correct one.
 
 ## Design, directly shaped by the research (not decorated with it)

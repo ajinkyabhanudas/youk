@@ -68,11 +68,14 @@ depends on and checked against evidence: a grep hit, a test run, a live call. An
 sub-claim left unresolved blocks the claim from being reported done, enforced at the
 tool boundary rather than relying on a model to remember to check. Large claims (L/XL)
 also need a confirmation from a separate session, since a session checking its own work
-inherits that work's blind spots.
+inherits that work's blind spots. The evidence for that is real but modest
+(reviewing in a fresh session beat a second same-session review, F1 28.6% vs 21.7%),
+which is why it is limited to L/XL. Sources, and what each does and does not show:
+[docs/research-basis.md](docs/research-basis.md).
 
 Judging whether two differently-worded lessons are the same lesson is a meaning
 problem, so that comparison runs through a small, local, offline sentence-embedding
-model (~22MB) instead of a string match or another API call — no vendor dependency,
+model (~90MB, 22.7M parameters) instead of a string match or another API call — no vendor dependency,
 nothing leaves the machine. Sizing a new task draws on logged precedent: past sizing
 decisions are retrieved by similarity (only ones that clear a relevance floor; an
 unrelated past task is never shown as precedent), and so are the invariants from the
@@ -80,8 +83,10 @@ project's Domain Brief whose vocabulary overlaps the task. Both are appended aft
 task text, not buried in the system prompt. Each sizing record logs what evidence the
 estimate was shown, so a size guessed cold (retrieval unavailable) is visible in
 `state/sizing-decisions.jsonl` instead of looking like a grounded one. The placement
-follows the "lost in the middle" finding that models use the edges of a long context
-better than the middle; that citation has not been re-verified from this repo.
+follows Liu et al., "Lost in the Middle" (TACL 2024): accuracy is highest when relevant
+information is at the start or end of a long context and drops in the middle. That was
+measured on long multi-document inputs, not on a short evidence block like this one, so
+the placement is a reasonable choice rather than a tested one.
 
 ```mermaid
 flowchart TD

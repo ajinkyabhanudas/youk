@@ -8,17 +8,19 @@ alone, those candidates would be reviewed by the same session that
 elicited them -- generator and checker sharing the same context, and
 therefore the same blind spots.
 
-The cited 2026 finding (the Self-Correction Illusion) is specific: an LLM
-checking its own prior reasoning barely improves on it, but correction
-rates jump 23-93 percentage points when an identical claim is reframed as
-coming from an external source. This module does not hide that the
+The cited 2026 finding (the Self-Correction Illusion, arXiv 2606.05976) is
+specific: relabeling an identical claim as coming from an external role
+raised the explicit-error-flagging rate by 23-93 percentage points across 13
+model-domain cells. It measures flagging, not final accuracy, and attributes
+the effect to chat-template role labeling rather than shared training data. This module does not hide that the
 candidates came from this project -- the source_file/source_id stay real
 and traceable throughout. It changes only the FRAMING (first-person
 "I found this" versus third-person "a prior review flagged this"), and
 only the STRUCTURE handed to a reviewer (a self-contained request with no
-reference to the eliciting session's own reasoning), because framing and
-structural isolation are the two levers the cited research says actually
-move the correction rate. Never the facts.
+reference to the eliciting session's own reasoning), because framing is the lever the Self-Correction Illusion paper measured
+and structural isolation (a fresh session) is the lever Cross-Context Review,
+arXiv 2603.12123, measured (F1 28.6% vs 21.7% for a same-session second
+review; a modest gain). Never the facts.
 
 Two real, separately testable functions, not one:
 

@@ -1,0 +1,16 @@
+# Research basis
+
+Each design choice below cites outside research. This file records what the
+source says, what it does not say, and whether it was checked. Verified means
+the paper's own page or abstract was read on 2026-10-04; "not verified" means
+no source was found, and the choice stands on its own engineering reasons.
+
+| Design choice | Source | What it shows | What it does not show | Status |
+|---|---|---|---|---|
+| Put retrieved evidence after the task text, not buried mid-prompt (`intent._sizing_grounding`) | Liu et al., [Lost in the Middle](https://aclanthology.org/2024.tacl-1.9/), TACL 12 (2024) | Accuracy is highest when relevant information is at the start or end of a long context and drops in the middle (a U shape), on multi-document QA and key-value retrieval | That the end beats the start, or that it applies to a short evidence block in a short prompt. This placement is a reasonable choice, not a tested one in this setting | Verified |
+| A claim is not trusted on the author session's say-so (verification pipeline) | Huang et al., [LLMs Cannot Self-Correct Reasoning Yet](https://arxiv.org/abs/2310.01798), ICLR 2024 | Without external feedback, self-correction often fails to help and sometimes degrades answers | That every self-check is useless; correction works when external feedback (tools, tests, a knowledge base) is available, which is what the pipeline's grep/test/live-call checks provide | Verified |
+| L/XL claims need confirmation from a separate session | [Cross-Context Review](https://arxiv.org/abs/2603.12123) (2026) | Reviewing in a fresh session beat a second review in the producing session (F1 28.6% vs 21.7%, 360 reviews) | A large effect. The gain is modest, so the separate-session rule is a cost/benefit call, which is why it is limited to L/XL | Verified |
+| Third-person reframing of candidates before review (`domain_edge_case_review.py`) | [The Self-Correction Illusion](https://arxiv.org/abs/2606.05976) (2026) | Re-presenting an identical claim under an external role raised the explicit-correction rate by 23 to 93 points across 13 model-domain cells (10 significant) | That correction accuracy improves, only that flagging does. It attributes the effect to chat-template role labeling, not to shared training data. A self-distrust prompt that leaves the claim in place did not help | Verified |
+| Local embedding model for "same lesson" and precedent retrieval (`semantic_similarity.py`) | [all-MiniLM-L6-v2 model card](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) | 384-dim embeddings, 22.7M parameters, about 91 MB on disk | Anything about sizing-task similarity. The 0.30 task floor and 0.55 lesson threshold come from this repo's own pair measurements and were not re-measured | Model facts verified; thresholds not re-measured |
+| Domain Brief from bounded contexts and invariants | `docs/problem-space-modeling-design.md` cites a 2026 DDD source ("LLMs lack persistent understanding of domain constraints") | Not checked | Not checked | Not verified: the quoted sentence was not found. The Domain Brief stands on its own engineering reasons (stable per-project facts, matched fresh per task) |
+| LLM requirements elicitation floods engineers with false positives unless filtered | `docs/problem-space-modeling-design.md` item 2 | Not checked | Not checked | Not verified |

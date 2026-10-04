@@ -433,13 +433,12 @@ def _sizing_grounding(
     A size guessed with nothing in front of the model is a cold guess. Two
     kinds of retrieved evidence are appended to the END of the final user
     message: similar past sizing decisions, and the project's Domain Brief
-    invariants whose vocabulary overlaps this task. Placement: the research
-    usually cited for this (Liu et al., "Lost in the Middle") reports that
-    models use information at the start and end of a long context better than
-    the middle; it does not show the end beating the start, and it has not
-    been re-verified from this repo. The block is short and last because the
-    user message is short and the tail is next to the instruction -- not
-    because the end is proven best. Sections are only emitted when real
+    invariants whose vocabulary overlaps this task. Placement: Liu et al., "Lost in the Middle" (TACL 2024), found accuracy
+    highest when relevant information is at the start or end of a long context
+    and lower in the middle. That was measured on long multi-document inputs;
+    it does not show the end beating the start, nor cover a short block like
+    this. The block goes last because it sits next to the instruction, not
+    because the end is proven best (see docs/research-basis.md). Sections are only emitted when real
     evidence cleared its relevance bar; nothing is invented to fill them.
 
     Returns (block, info). info["status"] is "grounded", "no_evidence", or

@@ -2,7 +2,7 @@
 
 Exact-match text comparison is the wrong tool for a meaning question. This
 module is the right one -- a small, local, offline sentence-embedding model
-(all-MiniLM-L6-v2, ~22MB), not a call to any LLM vendor's API. No network
+(all-MiniLM-L6-v2, 22.7M parameters, ~90MB), not a call to any LLM vendor's API. No network
 access at runtime: the model weights are baked into the Docker image at
 build time.
 """
