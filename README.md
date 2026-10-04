@@ -78,11 +78,61 @@ decisions are retrieved by similarity and appended at the end of the prompt, the
 position a transformer attends to most strongly, rather than left in the middle where
 it's easy to under-weight.
 
+```mermaid
+flowchart TD
+    Task[New decision point] --> Tag{Deterministic or judgment?}
+    Tag -->|deterministic| Code[Code decides — same input, same answer]
+    Tag -->|judgment| Retrieve[Retrieve similar past decisions by similarity]
+    Retrieve --> Place[Place precedent at the end of the prompt]
+    Place --> Model[Model judges with real precedent in view]
+    Model --> Claim[Claim produced]
+    Claim --> Decompose[Decompose into sub-claims]
+    Decompose --> Verify[Check each sub-claim: grep hit / test run / live call]
+    Verify -->|unresolved| Blocked[Blocked — not reported done]
+    Verify -->|verified, L/XL| Second[Separate session confirms independently]
+    Verify -->|verified, smaller| Done[Done]
+    Second --> Done
+```
+
 youk also checks, every session, whether what it built is actually called from the live
 routing loop — not just present in the codebase.
 
 None of this runs with zero human involvement, and it isn't meant to. Detection is
 automatic and logged durably; deciding what to do about a finding is still a human call.
+
+---
+
+## Architecture
+
+youk runs as two Docker containers, each a separate MCP server:
+
+- **youk-core** (port 8001) — session state, routing, sizing, health checks, claim
+  verification. The read-write side: the only place that writes to `/youk/state/`.
+- **youk-code** (port 8002) — skill generation, skill loading, NFR checks, review.
+  Read-only: it reads state, never writes it.
+
+```mermaid
+flowchart LR
+    Host["Agent host<br/>Claude Code / Codex"] -->|MCP / HTTP| Core["youk-core :8001<br/>read-write"]
+    Host -->|MCP / HTTP| Code["youk-code :8002<br/>read-only"]
+    Core -->|writes| State[("/youk/state/<br/>shared volume")]
+    Code -->|reads| State
+    Core -.imports.-> Shared["servers/shared/<br/>schemas · semantic model · agent_host.py"]
+    Code -.imports.-> Shared
+```
+
+The two talk to each other through nothing but a shared volume mount at
+`/youk/state/` — no network call between them. That boundary is deliberate: either
+container can be rebuilt, redeployed, or replaced independently, and a bug in one
+can't corrupt state through a code path in the other.
+
+`servers/shared/` is the module layer both containers import rather than duplicate:
+the dataclass schemas every record type validates against, the local
+sentence-embedding model, the sizing-decision log, and `agent_host.py` — the
+vendor-neutral capability boundary Claude Code and Codex both declare against. New
+logic that more than one container needs belongs here, not copied into both.
+
+Full module-by-module wiring map: **[docs/system-flow.md](docs/system-flow.md)**.
 
 ---
 
