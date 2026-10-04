@@ -572,7 +572,6 @@ class TestCompoundingGap:
     """end_session writes CompoundingGap: yes/no to audit entry."""
 
     def _read_audit(self, tmp_path):
-        import session
         audit_dir = tmp_path / "claude" / "audit"
         files = sorted(audit_dir.glob("*.md"))
         return files[-1].read_text() if files else ""

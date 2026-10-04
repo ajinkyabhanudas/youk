@@ -287,7 +287,8 @@ def check_voice_gate(prose):
     """Run voice_fingerprint.check_text if available."""
     print("\n[VOICE GATE] check_text (voice_fingerprint)")
     try:
-        import sys as _sys, os as _os
+        import sys as _sys
+        import os as _os
         _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "..", "..", "..", "servers", "core", "src"))
         from voice_fingerprint import check_text
         r = check_text(prose)

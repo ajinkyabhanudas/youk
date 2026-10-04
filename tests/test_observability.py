@@ -1,6 +1,4 @@
 """Tests for observability.py — NoOp path, singleton, and compute_patch_cycle_rate."""
-import importlib
-import sys
 import pytest
 
 

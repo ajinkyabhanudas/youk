@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from host_inventory import scan as scan_host_graph
@@ -604,7 +605,7 @@ class TestVerificationLevel:
 
 
 class TestVerificationLevelMigration:
-    def _write_legacy_claim_file(self, tmp_path) -> "Path":
+    def _write_legacy_claim_file(self, tmp_path) -> Path:
         """A claim file shaped exactly like CIR-154/155/156's real claim
         files on disk before verification_level existed -- no key at all on
         any sub_claim."""

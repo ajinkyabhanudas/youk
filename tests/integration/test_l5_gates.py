@@ -298,7 +298,7 @@ class TestProposalLifecycle:
 
     def test_add_proposal_creates_entry(self, tmp_path, monkeypatch):
         import health
-        proposals_file = self._patch(monkeypatch, tmp_path)
+        self._patch(monkeypatch, tmp_path)
         proposal = self._make_proposal(
             "PENDING-20260721000001", "checkup test proposal",
             "FILE_CREATE", "skills/checkup-test/SKILL.md", "# Checkup Test\n",

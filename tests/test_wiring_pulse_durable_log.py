@@ -32,7 +32,7 @@ def test_wiring_pulse_writes_full_uncapped_result_to_durable_log(tmp_path, monke
 
     log_path = youk_root / "state" / "wiring-pulse-log.jsonl"
     assert log_path.exists(), "wiring-pulse-log.jsonl must be written every run, not only when orphans exist"
-    lines = [json.loads(l) for l in log_path.read_text().splitlines() if l.strip()]
+    lines = [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
     assert len(lines) == 1
     assert "orphaned" in lines[0]
     assert "total" in lines[0]
@@ -52,7 +52,7 @@ def test_wiring_pulse_log_is_append_only_across_multiple_runs(tmp_path, monkeypa
     session._check_doc_freshness()
 
     log_path = youk_root / "state" / "wiring-pulse-log.jsonl"
-    lines = [l for l in log_path.read_text().splitlines() if l.strip()]
+    lines = [line for line in log_path.read_text().splitlines() if line.strip()]
     assert len(lines) == 3, "every real session_start run must add a new entry, never overwrite history"
 
 

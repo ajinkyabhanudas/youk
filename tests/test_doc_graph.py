@@ -64,7 +64,7 @@ class TestCheckConceptStaleness:
 
     def test_authority_newer_returns_stale(self, tmp_youk, tmp_claude):
         auth = _touch(tmp_youk / "README.md", mtime_offset=-100)
-        derived = _touch(tmp_youk / "docs" / "guide.md", mtime_offset=-200)
+        _touch(tmp_youk / "docs" / "guide.md", mtime_offset=-200)
         # Make authority newer than derived
         os.utime(auth, (time.time(), time.time()))
 

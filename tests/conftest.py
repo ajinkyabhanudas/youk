@@ -4,7 +4,6 @@ Sets up sys.path so server modules can be imported directly without Docker,
 and provides fixtures that patch module-level path constants to tmp dirs.
 """
 from __future__ import annotations
-import os
 import sys
 from pathlib import Path
 import pytest

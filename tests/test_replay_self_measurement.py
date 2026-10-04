@@ -163,7 +163,6 @@ class TestEndSessionWritesDuration:
 
     def test_duration_line_appears_in_the_audit_entry(self, youk_root, claude_root, monkeypatch):
         import session
-        import state_paths as sp
 
         monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
 

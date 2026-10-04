@@ -1,6 +1,5 @@
 """Tests for skill_reentry.py — reentry edge detection from skill-graph.yaml."""
 from __future__ import annotations
-import json
 from pathlib import Path
 
 import pytest

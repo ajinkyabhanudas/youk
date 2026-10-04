@@ -5,7 +5,6 @@ semantic_similarity.py was set from this data.
 """
 from __future__ import annotations
 
-import pytest
 
 from semantic_similarity import similarity, is_same_lesson, find_most_similar, cluster_by_similarity
 

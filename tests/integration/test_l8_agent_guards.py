@@ -98,7 +98,7 @@ class TestReportAgentGap:
         content = audit_path.read_text()
         assert marker in content
         lines = content.splitlines(keepends=True)
-        marker_idx = next(i for i, l in enumerate(lines) if marker in l)
+        marker_idx = next(i for i, line in enumerate(lines) if marker in line)
         block_start = marker_idx
         while block_start > 0 and not lines[block_start].startswith("### Paperclip Agent Report"):
             block_start -= 1
