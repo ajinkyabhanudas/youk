@@ -1,5 +1,6 @@
 <!--
-  This block is managed by youk. On install it is appended to ~/.claude/CLAUDE.md
+  This block is managed by youk. The file name is Claude Code's; Codex and other hosts read
+  AGENTS.md, so paste the same block there (see docs/hosts.md). On install it is appended to ~/.claude/CLAUDE.md
   wrapped in "<!-- BEGIN youk (managed) ->" / "<!- END youk ->" fence markers
   (dashes spaced here so this note does not itself become a fence). Do not add the
   literal fence markers to this template — install.sh adds them around it.

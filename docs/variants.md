@@ -114,7 +114,7 @@ claude mcp add --scope user youk-pm --transport stdio -- \
   youk-pm:latest
 ```
 
-That's it. youk-pm's tools are now available in every Claude Code session alongside youk-core and youk-code.
+That's it. youk-pm's tools are now available in every agent session on a host where you register it alongside youk-core and youk-code.
 
 ---
 

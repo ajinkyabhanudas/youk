@@ -6,7 +6,7 @@ Guard rails in youk are versioned contracts, not prompt suggestions. They live i
 
 ## How they work
 
-**Hard rules** block at the tool level. When a hard rule is violated, the tool returns `{"blocked": true, "rule_id": "...", "error": "..."}`. Claude cannot override this — the tool refused, not Claude.
+**Hard rules** block at the tool level. When a hard rule is violated, the tool returns `{"blocked": true, "rule_id": "...", "error": "..."}`. The agent cannot override this — the tool refused, not the model.
 
 **Soft rules** return warnings in the routing decision. They're surfaced once per session and are always skippable. They nudge toward better ceremony, never block.
 

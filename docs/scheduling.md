@@ -2,7 +2,7 @@
 
 > **Full youk only.** Scheduled health checks require Docker Desktop and `youk-core:latest`. No API key is needed — `install.sh` wires Claude Code's existing auth into the container at setup time, and youk reads it at runtime. youk-lite users: run `/health` manually inside a Claude session instead.
 
-youk's compounding engine normally fires during Claude Code sessions (`self_heal` runs every 3rd
+youk's compounding engine normally fires during agent sessions (`self_heal` runs every 3rd
 session via `health_check_due`). A scheduled health check lets it run on a fixed cadence —
 once a week, without a session being open — so the audit loop stays active even during quiet periods.
 
@@ -80,5 +80,5 @@ launchctl load ~/Library/LaunchAgents/com.youk.health.plist
 ## Reviewing results
 
 After a scheduled run, proposals appear in `knowledge/proposals/PENDING.md`. Review them in your
-next Claude Code session with `/health` or `get_proposals()`. No proposals auto-apply —
+next agent session with `/health` or `get_proposals()`. No proposals auto-apply —
 `confirmed=True` is always required.

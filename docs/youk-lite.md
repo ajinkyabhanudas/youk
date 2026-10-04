@@ -1,6 +1,6 @@
 # youk-lite
 
-Zero-dependency memory layer for Claude. Works in any Claude agent that reads `CLAUDE.md` — Claude Code, Claude.ai Projects, Cursor, Windsurf, anything.
+Zero-dependency memory layer for any coding agent that reads a project instructions file (`CLAUDE.md`, `AGENTS.md`) — Claude Code, Claude.ai Projects, Cursor, Windsurf, anything.
 
 No Docker. No MCP servers. No install script.
 
@@ -12,15 +12,15 @@ No Docker. No MCP servers. No install script.
 
 **Session 10 starts from a one-sentence brief of where session 9 ended** — not from scratch, not from re-reading a transcript. One sentence in, one sentence out, every session.
 
-**Non-trivial work doesn't start until the direction is checked.** The direction gate is a behavioral instruction to Claude, not a checklist. If the gate's questions can't be answered, Claude stops and asks — it doesn't proceed to implementation.
+**Non-trivial work doesn't start until the direction is checked.** The direction gate is a behavioral instruction to the agent, not a checklist. If the gate's questions can't be answered, Claude stops and asks — it doesn't proceed to implementation.
 
 ### How to verify (session 2 test)
 After your first session:
-1. Say "always run tests before committing" — Claude writes it under `## Contracts` in CLAUDE.md now, not later.
+1. Say "always run tests before committing" — the agent writes it under `## Contracts` in CLAUDE.md now, not later.
 2. Update the resume point.
-3. Start a new conversation. Without typing anything, Claude should open with the contract and the resume point already loaded.
+3. Start a new conversation. Without typing anything, the agent should open with the contract and the resume point already loaded.
 
-If step 3 works: youk-lite is delivering. If Claude asks you what the project is: the resume point wasn't saved.
+If step 3 works: youk-lite is delivering. If the agent asks you what the project is: the resume point wasn't saved.
 
 ---
 
@@ -90,28 +90,28 @@ You MUST NOT proceed to implementation without completing this gate.
      run it internally, only surface if a BLOCKING objection is found. -->
 ```
 
-That's it. Claude reads this at every session start.
+That's it. The agent reads this at every session start.
 
 ---
 
 ## How to use it
 
-**At the start of a session:** Claude loads contracts and resume point automatically — nothing to type.
+**At the start of a session:** The agent loads contracts and resume point automatically — nothing to type.
 
 **When you make a working agreement** ("always run ruff before committing", "never mock the database in tests"):
-- Just say it. Claude writes it under `## Contracts` immediately — the comment instructs it to.
+- Just say it. the agent writes it under `## Contracts` immediately — the comment instructs it to.
 - No need to say "remember:" first. The instruction is in the template.
 
 **At the end of your first session:** Type: `save resume point: [one sentence about what you did today]`. That seeds session 2. Without it, session 2 starts cold — the template is there but empty.
 
-**At the end of subsequent sessions:** Tell Claude "update the resume point" — one sentence replaces the previous one.
+**At the end of subsequent sessions:** Tell the agent "update the resume point" — one sentence replaces the previous one.
 
 **When you make an architecture decision:**
-- Tell Claude "log this decision: [what and why]"
-- Claude adds a dated entry: `## YYYY-MM-DD: Decision — rationale`
+- Tell the agent "log this decision: [what and why]"
+- The agent adds a dated entry: `## YYYY-MM-DD: Decision — rationale`
 - Use ISO date format so full youk can detect staleness automatically when you upgrade.
 
-**The direction gate fires automatically** on any non-trivial task — Claude reads the gate instruction from your CLAUDE.md and runs the three questions before writing code. If it skips the gate, say "run the direction gate" and it will.
+**The direction gate fires automatically** on any non-trivial task — The agent reads the gate instruction from your instructions file and runs the three questions before writing code. If it skips the gate, say "run the direction gate" and it will.
 
 ---
 
@@ -126,7 +126,7 @@ youk-lite gives you memory. [Full youk](https://github.com/ajinkyabhanudas/youk)
 | Direction gate (behavioral instruction) | Direction gate (tool-enforced — `route_task` blocks dev-loop) |
 | Staleness detection (14-day warning in template) | Staleness detection + audit trail |
 | Decisions logged manually | Decisions tracked with ADR format + drift detection |
-| Works in any Claude agent | Claude Code only (MCP required) |
+| Works with any agent that reads an instructions file | Any MCP host; hook safeguards on Claude Code and Codex ([hosts.md](hosts.md)) |
 | Zero setup | `curl -sL .../install.sh \| bash` (~2 min) |
 | Same quality session 1 and session 100 | Compounding — skills self-patch, patterns promote, org_score tracks |
 

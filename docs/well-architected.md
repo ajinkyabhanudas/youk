@@ -96,7 +96,7 @@ durable per-session `route-task-ran.json` records written by `route_task`.
 | `make checkup` (L0–L6) | Hierarchical integration test suite — each layer gates the next; L3 exercises all 54 capability skills via real MCP, L5 tests gate contracts and proposal lifecycle, L6 runs a full session round-trip |
 | `make checkup-fast` | L0+L1 only — environment + Docker + MCP handshake; replaces `make doctor` for quick infra checks |
 | `check_doc_graph()` at session_start | Catches documentation drift before it causes confusion in later sessions |
-| Compounding context loop | `session_end` writes `resume-from:` externally; `session_start` reads it — sessions compound without relying on Claude's context window surviving |
+| Compounding context loop | `session_end` writes `resume-from:` externally; `session_start` reads it — sessions compound without relying on the host's context window surviving |
 | Validated state store | Mutable-claim state (plan, active task, queue, gate flags) is schema-validated on read and write in a single store — a malformed write raises rather than silently corrupting. Append-only logs and monotonic counters stay out; they cannot lie, only grow |
 | Read-time verification | A stored claim about system state ("X is broken", "gap open") is re-checked against current code before session_start surfaces it as live — a fixed issue never resurfaces as a to-do, and a claim that cannot be verified surfaces tagged, never as a clean item |
 | Project-scoped next task | "What's next" is computed at session_end from the project's own validated task graph and written automatically — scoped to the project youk is in, never a generic cross-project list, never a manual pointer edit |

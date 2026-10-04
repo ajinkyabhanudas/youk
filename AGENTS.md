@@ -13,7 +13,7 @@ This file is loaded by AI coding agents (Cursor, Windsurf, GitHub Copilot, Claud
 
 ---
 
-## How youk works (for Claude Code users)
+## How youk works
 
 youk is a compounding engineering system. Every session, it:
 
@@ -27,7 +27,7 @@ youk is a compounding engineering system. Every session, it:
 
 The longer you use it, the more it adapts to exactly how you build.
 
-**Full youk requires:** Docker Desktop + Claude Code + `make install` (~2 min).
+**Full youk requires:** Docker Desktop + an MCP-capable agent host + `make install` (~2 min). Claude Code and Codex have hook adapters; the installer registers Claude Code, and any other host needs the two MCP URLs added by hand. Support matrix and what is verified: [docs/hosts.md](docs/hosts.md).
 **youk-lite (any agent):** copy the CLAUDE.md template from [docs/youk-lite.md](docs/youk-lite.md) — zero setup.
 
 ---
@@ -39,14 +39,14 @@ servers/core/    — session, health, routing, contracts (MCP server)
 servers/code/    — skill routing, code review, NFR check (MCP server)
 skills/          — capability skills (learn, challenge, dev-loop, code-review, etc.)
 knowledge/       — gitignored: per-project contracts, decisions, domain concepts
-plugin/          — Claude Code plugin (hooks: PreCompact, UserPromptSubmit, PostToolUse)
+plugin/          — host hook scripts and hook registration (Claude Code plugin; Codex hooks)
 docs/            — guides, templates, architecture docs
 tests/           — pytest suite (~1760 tests)
 ```
 
 ---
 
-## For agents other than Claude Code
+## For agents without youk's hooks
 
 If you are Cursor, Windsurf, GitHub Copilot, or any agent reading this file:
 
@@ -55,4 +55,4 @@ If you are Cursor, Windsurf, GitHub Copilot, or any agent reading this file:
 - Read `knowledge/projects/youk/decisions.md` if it exists — those are architecture decisions already made
 - At session end, offer to update the resume point: "session stopped here — [one sentence]"
 
-youk's full compounding loop (skill routing, self-heal, cross-project promotion) requires Claude Code with MCP. Everything else degrades gracefully to the working agreements above.
+youk's full compounding loop (skill routing, self-heal, cross-project promotion) needs the MCP tools, which any MCP host can call, plus hook adapters for the safeguards that must not depend on the model remembering them (Claude Code and Codex today; see [docs/hosts.md](docs/hosts.md)). A host with neither degrades to the working agreements above.

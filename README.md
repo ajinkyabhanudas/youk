@@ -27,7 +27,7 @@ Underneath all that is plain memory: working agreements, decisions, and resume p
 
 youk's core policy is agent-host neutral. Claude Code and Codex integrations declare
 their capabilities at the boundary; a missing safety capability blocks rather than
-silently weakening the workflow. See [ADR-012](docs/adr-012-agent-host-capability-contract.md).
+silently weakening the workflow. See [ADR-012](docs/adr/adr-012-agent-host-capability-contract.md) and the support matrix, verification status and remaining Claude-rooted install paths in [docs/hosts.md](docs/hosts.md).
 
 Optional inference follows the same boundary: `/youk/state/inference-provider.json`
 contains provider, model, and schema version only; credentials remain environment-only.
@@ -197,12 +197,15 @@ events, AB-experiment exposure — plus a SQLite concept graph, each read back b
 later session or `/health` rather than written and forgotten. For maintainer-side
 tracing across a whole session, `servers/core/src/observability.py` wires into a
 self-hosted Langfuse stack (`dev/docker-compose.langfuse.yml`): one trace per
-session, repairs and health checks as spans. It's a no-op unless
+session. Spans cover the health check and the stages the grounding work added
+(sizing evidence, Domain Brief refresh, session-start lesson load, learning promotion and
+retirement); each carries counts and durations only. Because tracing lives in youk-core, a
+trace looks the same whichever agent host drove the session. It's a no-op unless
 `LANGFUSE_HOST`/`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` are set, so a normal
 install never touches it, and what it's allowed to record is constrained by an
 explicit allow-list — derived scalars, enums, and hashed identifiers only, never
 raw task text, file paths, or findings (see
-[ADR-011](docs/adr-011-trace-content-invariant.md)).
+[ADR-011](docs/adr/adr-011-trace-content-invariant.md)).
 
 **Docs stay registered, not just checked.** `docs/doc-map.yaml` maps every MCP tool
 and source file to the docs that describe it; `session_start` diffs the real code
@@ -245,7 +248,7 @@ git clone https://github.com/ajinkyabhanudas/youk "$HOME\.claude\youk"
 cd "$HOME\.claude\youk"; Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\scripts\install.ps1
 ```
 
-One command — builds the Docker image, registers the MCP servers, patches your `CLAUDE.md`. First run ~2 min; re-runs are idempotent. Then open any Claude Code session and just work — youk activates itself.
+One command — builds the Docker images, registers the MCP servers with Claude Code, and patches your `CLAUDE.md`. First run ~2 min; re-runs are idempotent. Then open a session and just work — youk activates itself. For Codex or another MCP host, run the install, then register the two MCP URLs in that host: [docs/hosts.md](docs/hosts.md).
 
 **Installing a specific version.** Both installers take `YOUK_REF`, which accepts any tag or branch and defaults to the latest on `main`. Released versions are listed under [Releases](https://github.com/ajinkyabhanudas/youk/releases).
 
@@ -261,7 +264,7 @@ A ref that does not exist stops the install and names it, rather than quietly fa
 
 A pinned install stays pinned. Re-running the installer will not drag it back to `main`, and `make update` rebuilds at the pinned version instead of pulling.
 
-**Prerequisites:** Docker Desktop (running) · Claude Code · Python 3.11+
+**Prerequisites:** Docker Desktop (running) · an MCP-capable agent host (Claude Code is installed automatically; Codex and others: [docs/hosts.md](docs/hosts.md)) · Python 3.11+
 **Verify anytime:** `bash ~/.claude/youk/scripts/doctor.sh` — checks every dependency and prints a `Fix:` line for anything broken.
 
 Full platform-by-platform walkthrough: **[docs/getting-started.md](docs/getting-started.md)**.
@@ -303,7 +306,7 @@ Once installed, you mostly just work. A few commands are worth knowing:
 
 The single most important habit: **type `/done` at the end of a session.** That's what closes the compounding loop — without it, the work happened but youk didn't learn from it.
 
-A `PreCompact` hook fires before Claude Code compacts the conversation, so contracts
+A compaction hook (Claude Code's `PreCompact`, and Codex's equivalent) fires before the host compacts the conversation, so contracts
 and decisions are written to disk rather than surviving only in context that is about
 to be summarised away.
 
