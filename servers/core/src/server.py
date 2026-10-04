@@ -2617,6 +2617,58 @@ def log_domain_edge_case_disposition(
 
 
 @mcp.tool()
+def detect_domain_reversals(project: str) -> dict:
+    """
+    Find decisions that reverse something previously dismissed (Phase C of
+    docs/pattern-learning-architecture-design.md). Rebuilds this project's
+    Domain Brief, diffs it against the ledger of already-seen decision ids,
+    and pairs each genuinely new decision with a real dismissed edge-case
+    disposition whose bounded context shares its vocabulary. Updates the
+    ledger, so a repeat call with nothing new returns no reversals.
+
+    Called by self-heal's AUDIT phase when state/domain-brief.json exists.
+    Lives in youk-core because it writes the ledger under state/.
+
+    Returns: {"reversals": [{"dismissed_event": {...}, "new_invariant": {...}}],
+              "count": int}. Each pair goes to confirm_domain_reversal only
+    after the judgment step in skills/self-heal/references/reversal-confirmation.md.
+    """
+    from reversal_check import detect_reversals
+
+    try:
+        reversals = detect_reversals(project, YOUK_ROOT)
+        return {"reversals": reversals, "count": len(reversals)}
+    except Exception as exc:
+        return {"reversals": [], "count": 0, "error": str(exc), "error_type": "SYSTEM"}
+
+
+@mcp.tool()
+def confirm_domain_reversal(reversal: dict, domain: str, sub_domain: str, project: str) -> dict:
+    """
+    Record a reversal pair from detect_domain_reversals as a confirmed pattern
+    in state/confirmed-patterns.jsonl. domain and sub_domain are the session's
+    own judgment (never inferred here); an empty one is rejected.
+
+    reversal: one entry of detect_domain_reversals()["reversals"], unchanged.
+
+    Returns: {"confirmed": bool, "pattern_id": str, "path": str}
+    """
+    from pattern_entry import PatternValidationError
+    from reversal_check import confirm_reversed_pattern, confirmed_patterns_path
+
+    try:
+        entry = confirm_reversed_pattern(reversal, domain, sub_domain, project=project, root=YOUK_ROOT)
+        return {"confirmed": True, "pattern_id": entry.id,
+                "path": str(confirmed_patterns_path(YOUK_ROOT))}
+    except PatternValidationError as exc:
+        return {"confirmed": False, "error": str(exc), "error_type": "BUSINESS_RULE"}
+    except (KeyError, TypeError) as exc:
+        return {"confirmed": False, "error": f"malformed reversal: {exc!r}", "error_type": "BUSINESS_RULE"}
+    except Exception as exc:
+        return {"confirmed": False, "error": str(exc), "error_type": "SYSTEM"}
+
+
+@mcp.tool()
 def log_domain_scope_event(
     task: str,
     domains: list[dict],

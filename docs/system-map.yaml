@@ -211,7 +211,7 @@
 - name: detect_reversals
   grounding: deterministic
   subsystem: pattern-learning-architecture
-  triggers_on: "ORPHANED -- no live caller. Real, tested function; reachable only by direct import."
+  triggers_on: "self-heal Phase 1 step 5, via the youk-core.detect_domain_reversals tool, when state/domain-brief.json exists"
   reads: [DECISIONS.md, knowledge/projects/youk/decisions.md, state/domain-brief-known-sources/, state/disposition-log.jsonl]
   writes: [state/domain-brief-known-sources/]
   real_log: null
@@ -219,7 +219,7 @@
 - name: reversal_domain_naming_judgment
   grounding: llm_judgment
   subsystem: pattern-learning-architecture
-  triggers_on: "ORPHANED -- paired with detect_reversals, which has no live caller"
+  triggers_on: "self-heal Phase 1 step 5, for each pair detect_domain_reversals returns, before confirm_domain_reversal"
   reads: []
   writes: []
   real_log: null
@@ -227,7 +227,7 @@
 - name: confirm_reversed_pattern
   grounding: hybrid
   subsystem: pattern-learning-architecture
-  triggers_on: "ORPHANED -- no live caller. Real, tested function; reachable only by direct import."
+  triggers_on: "youk-core.confirm_domain_reversal tool, after the reversal-confirmation judgment block"
   reads: []
   writes: [state/confirmed-patterns.jsonl]
   real_log: state/confirmed-patterns.jsonl
