@@ -279,3 +279,19 @@
   reads: []
   writes: []
   real_log: null  # read-only check; its result is returned inline from self_heal, not separately logged
+
+- name: optimize_intent_size_estimate
+  grounding: llm_judgment
+  subsystem: intent-sizing
+  triggers_on: "optimize_intent full path (no fast-pattern match, provider available) -- the model estimates task size and scope"
+  reads: [state/sizing-decisions.jsonl, state/domain-brief.json]
+  writes: []
+  real_log: state/sizing-decisions.jsonl  # grounding_status / precedent_count / domain_invariant_count record what evidence the estimate was shown, including "unavailable" when it was made cold
+
+- name: route_task_size_resolution
+  grounding: deterministic
+  subsystem: intent-sizing
+  triggers_on: "every route_task call -- keyword-scores the task and takes the larger of that and the model's estimate"
+  reads: []
+  writes: [state/sizing-decisions.jsonl]
+  real_log: state/sizing-decisions.jsonl

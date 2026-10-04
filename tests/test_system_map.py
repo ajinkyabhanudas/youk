@@ -31,6 +31,7 @@ VALID_SUBSYSTEMS = {
     "problem-space-modeling",
     "pattern-learning-architecture",
     "system-observability",
+    "intent-sizing",
 }
 # Runtime-created (state/) or instance-local-gitignored (knowledge/) -- never
 # guaranteed to exist in a fresh checkout, by design.

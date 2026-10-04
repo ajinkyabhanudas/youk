@@ -90,3 +90,39 @@ def cluster_by_similarity(texts: list[str], threshold: float = _SIMILARITY_THRES
                 assigned[j] = cluster_idx
                 clusters[cluster_idx].append(j)
     return clusters
+
+
+# Relevance floor for "is this past task about the same kind of work", used by
+# retrieval-grounding (sizing precedent). Sits between the calibration figures
+# recorded above for this model: unrelated pairs scored 0.01-0.19, true
+# paraphrases 0.39-0.77. Task descriptions about the same kind of work are
+# looser than paraphrases of one lesson, so this is deliberately below
+# _SIMILARITY_THRESHOLD. It has not been re-measured on real sizing-task pairs;
+# retune it from state/sizing-decisions.jsonl once enough rows exist.
+TASK_RELEVANCE_FLOOR = 0.30
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(y * y for y in b) ** 0.5
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def rank_by_similarity(
+    text: str, candidates: list[str], *, min_score: float = 0.0, limit: int | None = None
+) -> list[tuple[int, float]]:
+    """(candidate_index, score) pairs, best first, dropping scores below
+    min_score. Encodes the query and every candidate in one batched call.
+    Raises if the embedding model is unavailable -- callers decide how to
+    report that; this never returns an empty list to hide a failure."""
+    if not candidates:
+        return []
+    embeddings = _model().encode([text, *candidates])
+    query = [float(x) for x in embeddings[0]]
+    scored = [
+        (i, _cosine(query, [float(x) for x in emb]))
+        for i, emb in enumerate(embeddings[1:])
+    ]
+    scored = sorted((s for s in scored if s[1] >= min_score), key=lambda s: -s[1])
+    return scored[:limit] if limit else scored

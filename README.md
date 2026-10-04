@@ -74,9 +74,14 @@ Judging whether two differently-worded lessons are the same lesson is a meaning
 problem, so that comparison runs through a small, local, offline sentence-embedding
 model (~22MB) instead of a string match or another API call — no vendor dependency,
 nothing leaves the machine. Sizing a new task draws on logged precedent: past sizing
-decisions are retrieved by similarity and appended at the end of the prompt, the
-position a transformer attends to most strongly, rather than left in the middle where
-it's easy to under-weight.
+decisions are retrieved by similarity (only ones that clear a relevance floor; an
+unrelated past task is never shown as precedent), and so are the invariants from the
+project's Domain Brief whose vocabulary overlaps the task. Both are appended after the
+task text, not buried in the system prompt. Each sizing record logs what evidence the
+estimate was shown, so a size guessed cold (retrieval unavailable) is visible in
+`state/sizing-decisions.jsonl` instead of looking like a grounded one. The placement
+follows the "lost in the middle" finding that models use the edges of a long context
+better than the middle; that citation has not been re-verified from this repo.
 
 ```mermaid
 flowchart TD

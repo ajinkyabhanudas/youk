@@ -97,9 +97,15 @@ def _touched_files(project_dir: str) -> list[str]:
     resolved = str(_resolve_project_path(project_dir))
     try:
         result = subprocess.run(
-            ["git", "-C", resolved, "status", "--porcelain"],
+            # -uall lists each new file; without it git collapses a wholly
+            # untracked directory to "dir/" and the .py files inside vanish.
+            ["git", "-C", resolved, "status", "--porcelain", "-uall"],
             capture_output=True, text=True, timeout=5
         )
-        return [line[3:].strip() for line in result.stdout.splitlines() if line.strip()]
+        # A rename line reads "old -> new"; the file now on disk is "new".
+        return [
+            line[3:].strip().split(" -> ")[-1]
+            for line in result.stdout.splitlines() if line.strip()
+        ]
     except Exception:
         return []
