@@ -25,10 +25,20 @@ class InferenceCapability:
     reason: str
 
 
+@dataclass(frozen=True)
+class GenerationResult:
+    """What every provider adapter returns, so callers never touch a vendor's
+    response object. Swapping the provider means writing one adapter that
+    produces this; nothing downstream changes."""
+    text: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
 class IntentProvider(Protocol):
     capability: InferenceCapability
 
-    def generate(self, system: str, user: str, max_tokens: int) -> object: ...
+    def generate(self, system: str, user: str, max_tokens: int) -> GenerationResult: ...
 
 
 @dataclass(frozen=True)
@@ -98,10 +108,16 @@ class AnthropicIntentProvider:
             self._client = None
             self.capability = InferenceCapability("anthropic", model, InferenceStatus.UNAVAILABLE, "provider client is unavailable")
 
-    def generate(self, system: str, user: str, max_tokens: int) -> object:
+    def generate(self, system: str, user: str, max_tokens: int) -> GenerationResult:
         if self._client is None:
             raise RuntimeError(self.capability.reason)
-        return self._client.messages.create(model=self.capability.model, max_tokens=max_tokens, system=system, messages=[{"role": "user", "content": user}])
+        response = self._client.messages.create(model=self.capability.model, max_tokens=max_tokens, system=system, messages=[{"role": "user", "content": user}])
+        usage = getattr(response, "usage", None)
+        return GenerationResult(
+            text="".join(getattr(block, "text", "") for block in response.content),
+            input_tokens=getattr(usage, "input_tokens", 0) or 0,
+            output_tokens=getattr(usage, "output_tokens", 0) or 0,
+        )
 
 
 def select_intent_provider(provider_id: str | None = None, config_path: Path | None = None) -> IntentProvider:

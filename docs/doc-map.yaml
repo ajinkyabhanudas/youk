@@ -117,6 +117,10 @@ src_files:
   - {file: servers/core/src/compaction.py, refs: [README.md]}
   - {file: servers/core/src/tokens.py, refs: [README.md]}
   - {file: servers/shared/models.py, refs: [README.md]}
+  - {file: servers/shared/domain_context.py, refs: [README.md, docs/problem-space-modeling-design.md]}
+  - {file: servers/shared/sizing_decision.py, refs: [README.md]}
+  - {file: servers/shared/semantic_similarity.py, refs: [README.md]}
+  - {file: servers/shared/inference.py, refs: [README.md]}
   - {file: servers/shared/schemas.py, refs: [README.md, knowledge/domain/operational-resilience.md]}
   - {file: servers/shared/guardrails.py, refs: [README.md, knowledge/domain/operational-resilience.md]}
   - {file: servers/code/src/server.py, refs: [README.md]}

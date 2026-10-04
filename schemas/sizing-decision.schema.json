@@ -26,6 +26,13 @@
       "type": "boolean",
       "description": "True when llm_estimated_size under-reported relative to deterministic_size."
     },
-    "timestamp": {"type": "string", "format": "date-time"}
+    "timestamp": {"type": "string", "format": "date-time"},
+    "grounding_status": {
+      "type": "string",
+      "enum": ["", "grounded", "no_evidence", "unavailable"],
+      "description": "What optimize_intent's size estimate was grounded in. 'unavailable' means retrieval could not run and the estimate was made cold. Absent on rows written before this field existed."
+    },
+    "precedent_count": {"type": "integer", "minimum": 0, "description": "Past sizing decisions placed in the prompt."},
+    "domain_invariant_count": {"type": "integer", "minimum": 0, "description": "Domain Brief invariants placed in the prompt."}
   }
 }

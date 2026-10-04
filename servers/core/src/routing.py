@@ -303,6 +303,7 @@ def route_task(
             resolved_size=size.value,
             mismatch_flag=_size_mismatch_flag,
             log_path=YOUK_ROOT / "state" / "sizing-decisions.jsonl",
+            grounding=(intent_brief or {}).get("grounding"),
         )
     except Exception:
         pass  # logging must never block the real routing decision

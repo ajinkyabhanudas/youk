@@ -23,14 +23,13 @@ def test_includes_a_real_precedent_and_its_real_resolved_size(tmp_path):
     block = _build_sizing_precedent_block(
         "redesign the architecture for the billing system", log_path=log_path,
     )
-    assert "Real precedent" in block
+    assert "Evidence retrieved" in block
     assert "-> L" in block
 
 
 def test_block_is_appended_not_prepended_to_user_content():
-    """Research finding: the position right before generation gets the
-    strongest attention in a transformer. The precedent block must come
-    after the real task text, not before it."""
+    """The evidence block follows the real task text, next to the instruction,
+    rather than preceding it or living in the system prompt."""
     from sizing_decision import log_sizing_decision
     import tempfile
     from pathlib import Path
@@ -44,7 +43,7 @@ def test_block_is_appended_not_prepended_to_user_content():
         block = _build_sizing_precedent_block("fix a typo somewhere else", log_path=log_path)
 
     user_content = f"Raw input: fix a typo somewhere else{block}"
-    assert user_content.index("Raw input:") < user_content.index("Real precedent")
+    assert user_content.index("Raw input:") < user_content.index("Evidence retrieved")
 
 
 def test_never_raises_when_the_log_path_is_unreadable(tmp_path):

@@ -7,9 +7,10 @@ Serves three purposes:
 3. Clarification capture — seeds knowledge/clarifications/ when intent was non-obvious
 """
 from __future__ import annotations
+import json
 import re
 from pathlib import Path
-from inference import InferenceStatus, record_execution, select_intent_provider
+from inference import GenerationResult, InferenceStatus, record_execution, select_intent_provider
 
 YOUK_ROOT = Path("/youk")
 _PROVIDER = select_intent_provider(config_path=YOUK_ROOT / "state" / "inference-provider.json")
@@ -386,7 +387,7 @@ def _heuristic_brief(raw_input: str, mode: str, error: str | None = None) -> dic
     return brief
 
 
-def _record_generation(model: str, response: object, duration_s: float) -> None:
+def _record_generation(model: str, response: GenerationResult, duration_s: float) -> None:
     """Attach model name, token counts and latency to the active Langfuse trace.
 
     This is youk's only LLM call, so it is the only place per-generation cost can be
@@ -403,26 +404,41 @@ def _record_generation(model: str, response: object, duration_s: float) -> None:
         trace_id = _json.loads(state.read_text()).get("_obs_trace_id") if state.exists() else None
         if not trace_id or trace_id == "noop":
             return
-        usage = getattr(response, "usage", None)
         get_obs().record_generation(
             trace_id, "optimize_intent", model,
-            input_tokens=getattr(usage, "input_tokens", 0) or 0,
-            output_tokens=getattr(usage, "output_tokens", 0) or 0,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
             duration_s=duration_s,
         )
     except Exception:
         pass
 
 
-def _build_sizing_precedent_block(raw_input: str, log_path: Path | None = None) -> str:
-    """Retrieval-grounding for estimated_size: a judgment made cold is less
-    reliable than one anchored to real precedent. This is appended at the
-    END of the final user message, not folded into the system prompt --
-    the position right before generation gets the strongest attention in
-    a transformer (recency), while position bias toward the middle of a
-    long context is structural to the architecture, not something a
-    bigger prompt fixes. Returns "" when no real precedent exists yet --
-    never invents one."""
+def _sizing_grounding(
+    raw_input: str, log_path: Path | None = None, brief_path: Path | None = None
+) -> tuple[str, dict]:
+    """Evidence for the estimated_size / scope judgment, plus a record of what
+    was actually supplied.
+
+    A size guessed with nothing in front of the model is a cold guess. Two
+    kinds of retrieved evidence are appended to the END of the final user
+    message: similar past sizing decisions, and the project's Domain Brief
+    invariants whose vocabulary overlaps this task. Placement: the research
+    usually cited for this (Liu et al., "Lost in the Middle") reports that
+    models use information at the start and end of a long context better than
+    the middle; it does not show the end beating the start, and it has not
+    been re-verified from this repo. The block is short and last because the
+    user message is short and the tail is next to the instruction -- not
+    because the end is proven best. Sections are only emitted when real
+    evidence cleared its relevance bar; nothing is invented to fill them.
+
+    Returns (block, info). info["status"] is "grounded", "no_evidence", or
+    "unavailable" (retrieval failed, so the estimate is cold) -- the caller
+    logs it so cold estimates are visible rather than silent."""
+    info: dict = {"status": "no_evidence", "precedent_count": 0, "domain_invariant_count": 0}
+    sections: list[str] = []
+    unavailable = False
+
     try:
         from sizing_decision import find_similar_sizing_precedents
         precedents = find_similar_sizing_precedents(
@@ -430,14 +446,42 @@ def _build_sizing_precedent_block(raw_input: str, log_path: Path | None = None) 
             log_path=log_path or (YOUK_ROOT / "state" / "sizing-decisions.jsonl"),
         )
     except Exception:
-        return ""
-    if not precedents:
-        return ""
-    lines = ["\n\nReal precedent -- similar past tasks and the size they actually resolved to:"]
-    for p in precedents:
-        lines.append(f"- \"{p['task'][:100]}\" -> {p['resolved_size']}")
-    lines.append("Weigh estimated_size against these; do not contradict them without a stated reason.")
-    return "\n".join(lines)
+        precedents, unavailable = [], True
+    if precedents:
+        lines = ["Similar past tasks and the size they resolved to:"]
+        for p in precedents:
+            note = ""
+            if p.get("mismatch_flag") and p.get("llm_estimated_size"):
+                note = f" (the model first estimated {p['llm_estimated_size']}; keyword scoring raised it)"
+            lines.append(f"- \"{p['task'][:100]}\" -> {p['resolved_size']}{note}")
+        sections.append("\n".join(lines))
+        info["precedent_count"] = len(precedents)
+
+    try:
+        from domain_context import match_invariants
+        brief = json.loads((brief_path or (YOUK_ROOT / "state" / "domain-brief.json")).read_text(encoding="utf-8"))
+        invariants = match_invariants(raw_input, brief, top_n=3)
+    except (OSError, ValueError, KeyError, TypeError):
+        invariants = []  # no brief for this project is a normal state
+    if invariants:
+        lines = ["Decisions on record for this project that overlap this task:"]
+        for inv in invariants:
+            lines.append(f"- [{inv['bounded_context']}] {inv['invariant'][:160]} ({inv['source_id']})")
+        sections.append("\n".join(lines))
+        info["domain_invariant_count"] = len(invariants)
+
+    if not sections:
+        if unavailable:
+            info["status"] = "unavailable"
+        return "", info
+    info["status"] = "grounded"
+    block = ("\n\nEvidence retrieved for this task:\n" + "\n\n".join(sections)
+             + "\nWeigh estimated_size and scope against this; do not contradict it without a stated reason.")
+    return block, info
+
+
+def _build_sizing_precedent_block(raw_input: str, log_path: Path | None = None) -> str:
+    return _sizing_grounding(raw_input, log_path=log_path)[0]
 
 
 def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dict:
@@ -488,7 +532,8 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
     user_content = f"Raw input: {raw_input}"
     if clarified_context:
         user_content += f"\n\nAdditional context from conversation: {clarified_context}"
-    user_content += _build_sizing_precedent_block(raw_input)
+    _grounding_block, _grounding = _sizing_grounding(raw_input)
+    user_content += _grounding_block
 
     _model = _PROVIDER.capability.model
     try:
@@ -496,7 +541,7 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
         _gen_t0 = _time.monotonic()
         response = _PROVIDER.generate(_INTENT_SYSTEM_PROMPT + interpretation_context, user_content, 800)
         _record_generation(_model, response, _time.monotonic() - _gen_t0)
-        text = response.content[0].text.strip()
+        text = response.text.strip()
         # Extract JSON from response (model may wrap in markdown)
         json_match = re.search(r'\{.*\}', text, re.DOTALL)
         if json_match:
@@ -504,6 +549,7 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
             result = json.loads(json_match.group())
             result["raw_input"] = raw_input
             result["mode"] = "api_optimized"
+            result["grounding"] = _grounding
             _size_api = result.get("estimated_size", "M")
             result["intake_required"] = (
                 _size_api in {"M", "L", "XL"}

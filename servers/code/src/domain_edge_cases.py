@@ -27,16 +27,12 @@ volume, so this module reads plain JSON, never imports domain_brief.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 YOUK_ROOT = Path("/youk")
 
-_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
-
-
-def _words(text: str) -> set[str]:
-    return {w.lower() for w in _WORD_RE.findall(text)}
+# servers/shared is on sys.path in both containers.
+from domain_context import match_invariants, words as _words  # noqa: F401
 
 
 def domain_brief_path(youk_root: Path = YOUK_ROOT) -> Path:
@@ -60,44 +56,10 @@ def load_domain_brief(youk_root: Path = YOUK_ROOT) -> dict | None:
 
 
 def find_domain_edge_case_candidates(task: str, brief: dict, *, top_n: int = 5) -> list[dict]:
-    """
-    Score each bounded context's invariants against the task text by
-    keyword overlap (the context's ubiquitous_language terms plus its own
-    name words) and return at most top_n candidates, highest relevance
-    first. A bounded context with zero matched terms contributes nothing --
-    an unrelated task and a populated brief together return [], not a
-    forced match.
-
-    Each candidate dict carries exactly which real invariant and source
-    made it relevant, so a developer sees why it was surfaced, not just
-    that it was:
-      - invariant: the real statement text
-      - source_file / source_id: traceable to the real ADR/decision entry
-      - bounded_context: the Domain Brief bounded context name it came from
-      - matched_terms: the task words that matched this context's vocabulary
-      - relevance_score: len(matched_terms), used only to rank/cap
-    """
-    task_words = _words(task)
-    candidates: list[dict] = []
-    for ctx in brief.get("bounded_contexts", []):
-        ctx_terms = {t.lower() for t in ctx.get("ubiquitous_language", [])}
-        ctx_terms |= _words(ctx.get("name", ""))
-        matched = sorted(task_words & ctx_terms)
-        if not matched:
-            continue
-        for inv in ctx.get("invariants", []):
-            candidates.append(
-                {
-                    "invariant": inv["statement"],
-                    "source_file": inv["source_file"],
-                    "source_id": inv["source_id"],
-                    "bounded_context": ctx["name"],
-                    "matched_terms": matched,
-                    "relevance_score": len(matched),
-                }
-            )
-    candidates.sort(key=lambda c: c["relevance_score"], reverse=True)
-    return candidates[:top_n]
+    """Invariants from the brief's bounded contexts that overlap this task,
+    each carrying the real source that made it relevant. See
+    domain_context.match_invariants for the matching rule."""
+    return match_invariants(task, brief, top_n=top_n)
 
 
 def domain_edge_case_candidates(
