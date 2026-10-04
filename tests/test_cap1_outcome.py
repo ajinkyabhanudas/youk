@@ -176,10 +176,10 @@ class TestComputeOutcomeRates:
 # ── Session: enum validation ──────────────────────────────────────────────────
 
 class TestEndSessionEnumValidation:
-    def test_invalid_outcome_returns_error(self, youk_root, claude_root, monkeypatch):
+    def test_invalid_outcome_returns_error(self, youk_root, host_root, monkeypatch):
         """Invalid outcome value is rejected with a descriptive error — never silently coerced."""
         import session as sess
-        monkeypatch.setattr(sess, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(sess, "HOST_ROOT", host_root)
         result = sess.end_session(
             summary="test session",
             commits_made=False,
@@ -189,10 +189,10 @@ class TestEndSessionEnumValidation:
         assert "PUBLISHED" in result["error"]
         assert "SHIPPED" in result["error"]
 
-    def test_invalid_outcome_result_returns_error(self, youk_root, claude_root, monkeypatch):
+    def test_invalid_outcome_result_returns_error(self, youk_root, host_root, monkeypatch):
         """Invalid outcome_result value is rejected with a descriptive error."""
         import session as sess
-        monkeypatch.setattr(sess, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(sess, "HOST_ROOT", host_root)
         result = sess.end_session(
             summary="test session",
             commits_made=False,
@@ -203,10 +203,10 @@ class TestEndSessionEnumValidation:
         assert "MAYBE" in result["error"]
         assert "WORKED" in result["error"]
 
-    def test_valid_outcome_passes_validation(self, youk_root, claude_root, monkeypatch):
+    def test_valid_outcome_passes_validation(self, youk_root, host_root, monkeypatch):
         """Valid outcome + outcome_result values are accepted."""
         import session as sess
-        monkeypatch.setattr(sess, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(sess, "HOST_ROOT", host_root)
         result = sess.end_session(
             summary="shipped something",
             commits_made=True,
@@ -216,10 +216,10 @@ class TestEndSessionEnumValidation:
         assert result.get("blocked") is not True
         assert "error" not in result
 
-    def test_case_insensitive_normalization(self, youk_root, claude_root, monkeypatch):
+    def test_case_insensitive_normalization(self, youk_root, host_root, monkeypatch):
         """Lowercase enum values are normalized to uppercase before validation."""
         import session as sess
-        monkeypatch.setattr(sess, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(sess, "HOST_ROOT", host_root)
         result = sess.end_session(
             summary="shipped something",
             commits_made=True,
@@ -232,30 +232,30 @@ class TestEndSessionEnumValidation:
 # ── Session: audit line format ────────────────────────────────────────────────
 
 class TestOutcomeAuditLines:
-    def _audit_text(self, youk_root, claude_root, monkeypatch, **kwargs) -> str:
+    def _audit_text(self, youk_root, host_root, monkeypatch, **kwargs) -> str:
         from datetime import datetime
         import session as sess
-        monkeypatch.setattr(sess, "CLAUDE_ROOT", claude_root)
-        (claude_root / "audit").mkdir(parents=True, exist_ok=True)
-        month_file = claude_root / "audit" / f"{datetime.utcnow().strftime('%Y-%m')}.md"
+        monkeypatch.setattr(sess, "HOST_ROOT", host_root)
+        (host_root / "audit").mkdir(parents=True, exist_ok=True)
+        month_file = host_root / "audit" / f"{datetime.utcnow().strftime('%Y-%m')}.md"
         sess.end_session(summary="test", commits_made=False, **kwargs)
         return month_file.read_text() if month_file.exists() else ""
 
-    def test_outcome_line_written_when_shipped(self, youk_root, claude_root, monkeypatch):
+    def test_outcome_line_written_when_shipped(self, youk_root, host_root, monkeypatch):
         """Outcome: SHIPPED is written to audit when outcome=SHIPPED."""
-        text = self._audit_text(youk_root, claude_root, monkeypatch, outcome="SHIPPED", outcome_result="PENDING")
+        text = self._audit_text(youk_root, host_root, monkeypatch, outcome="SHIPPED", outcome_result="PENDING")
         assert "Outcome: SHIPPED" in text
         assert "OutcomeResult: PENDING" in text
 
-    def test_outcome_omitted_when_none(self, youk_root, claude_root, monkeypatch):
+    def test_outcome_omitted_when_none(self, youk_root, host_root, monkeypatch):
         """Outcome: NONE is not written (keeps audit entries compact for no-code sessions)."""
-        text = self._audit_text(youk_root, claude_root, monkeypatch, outcome="NONE")
+        text = self._audit_text(youk_root, host_root, monkeypatch, outcome="NONE")
         assert "Outcome:" not in text
         assert "OutcomeResult:" not in text
 
-    def test_outcome_result_written_for_staged(self, youk_root, claude_root, monkeypatch):
+    def test_outcome_result_written_for_staged(self, youk_root, host_root, monkeypatch):
         """OutcomeResult is written for STAGED outcome."""
-        text = self._audit_text(youk_root, claude_root, monkeypatch, outcome="STAGED", outcome_result="WORKED")
+        text = self._audit_text(youk_root, host_root, monkeypatch, outcome="STAGED", outcome_result="WORKED")
         assert "Outcome: STAGED" in text
         assert "OutcomeResult: WORKED" in text
 
@@ -263,9 +263,9 @@ class TestOutcomeAuditLines:
 # ── Session: _record_outcome_followup ────────────────────────────────────────
 
 class TestRecordOutcomeFollowup:
-    def _write_audit(self, claude_root, slug: str, outcome: str, outcome_result: str) -> None:
-        (claude_root / "audit").mkdir(parents=True, exist_ok=True)
-        audit_file = claude_root / "audit" / "2026-07.md"
+    def _write_audit(self, host_root, slug: str, outcome: str, outcome_result: str) -> None:
+        (host_root / "audit").mkdir(parents=True, exist_ok=True)
+        audit_file = host_root / "audit" / "2026-07.md"
         audit_file.write_text(
             f"### Session — 2026-07-18 10:00 UTC\n"
             f"Project: {slug}\n"
@@ -276,33 +276,33 @@ class TestRecordOutcomeFollowup:
             f"OutcomeResult: {outcome_result}\n"
         )
 
-    def test_amends_outcome_result_in_audit(self, claude_root, monkeypatch):
+    def test_amends_outcome_result_in_audit(self, host_root, monkeypatch):
         """record_outcome_followup replaces OutcomeResult in the matching audit entry."""
         import session as sess
-        monkeypatch.setattr(sess, "CLAUDE_ROOT", claude_root)
-        self._write_audit(claude_root, "myproject", "SHIPPED", "PENDING")
+        monkeypatch.setattr(sess, "HOST_ROOT", host_root)
+        self._write_audit(host_root, "myproject", "SHIPPED", "PENDING")
         result = sess._record_outcome_followup("myproject", "WORKED")
         assert result["amended"] is True
         assert result["prior_result"] == "PENDING"
         assert result["new_result"] == "WORKED"
-        text = (claude_root / "audit" / "2026-07.md").read_text()
+        text = (host_root / "audit" / "2026-07.md").read_text()
         assert "OutcomeResult: WORKED" in text
         assert "OutcomeResult: PENDING" not in text
 
-    def test_no_match_returns_not_amended(self, claude_root, monkeypatch):
+    def test_no_match_returns_not_amended(self, host_root, monkeypatch):
         """record_outcome_followup returns amended=False when slug not found."""
         import session as sess
-        monkeypatch.setattr(sess, "CLAUDE_ROOT", claude_root)
-        self._write_audit(claude_root, "otherproject", "SHIPPED", "PENDING")
+        monkeypatch.setattr(sess, "HOST_ROOT", host_root)
+        self._write_audit(host_root, "otherproject", "SHIPPED", "PENDING")
         result = sess._record_outcome_followup("notexist", "WORKED")
         assert result["amended"] is False
 
-    def test_amends_entry_when_no_existing_outcome_result(self, claude_root, monkeypatch):
+    def test_amends_entry_when_no_existing_outcome_result(self, host_root, monkeypatch):
         """record_outcome_followup appends OutcomeResult when the entry has none."""
         import session as sess
-        monkeypatch.setattr(sess, "CLAUDE_ROOT", claude_root)
-        (claude_root / "audit").mkdir(parents=True, exist_ok=True)
-        audit_file = claude_root / "audit" / "2026-07.md"
+        monkeypatch.setattr(sess, "HOST_ROOT", host_root)
+        (host_root / "audit").mkdir(parents=True, exist_ok=True)
+        audit_file = host_root / "audit" / "2026-07.md"
         audit_file.write_text(
             "### Session — 2026-07-18 10:00 UTC\n"
             "Project: myproject\n"

@@ -46,5 +46,12 @@ This first slice does not rewrite installers, plugins, or every historical
 `CLAUDE_ROOT` reference. Those migrations follow after the capability policy is proven
 against the current two adapters.
 
+**Update (2026-10-04): the install layer.** `scripts/lib/hosts.sh` is now the only place the
+installer learns about a host (selection, config dir, instructions file, MCP registration, fenced
+block). `CLAUDE_ROOT` is `HOST_ROOT`, resolved with the audit and skills locations by
+`servers/shared/youk_paths.py`; the installer records its choices in `state/path-map.env`. What
+remains vendor-specific is listed in [docs/hosts.md](../hosts.md): the PowerShell installers, the
+Claude-only snapshot, the hooks plugin registration, and the single Anthropic inference adapter.
+
 Revisit this decision if a third host needs a capability that cannot be represented by
 the current vocabulary without vendor-specific policy in core.

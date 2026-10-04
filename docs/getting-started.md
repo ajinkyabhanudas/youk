@@ -43,7 +43,7 @@ Just say a working agreement aloud — Claude writes it immediately (no "remembe
 
 ## Path B — full youk (agent host + Docker)
 
-> The installer registers youk with **Claude Code**. For Codex or another MCP host, do steps 1–3, then register the two MCP URLs in that host yourself and see [hosts.md](hosts.md) and "Agent-host selection" below.
+> The installer registers youk with **Claude Code or Codex**: it detects which CLI is on `PATH`, or you choose with `YOUK_HOST=claude-code|codex|none`. It also adds youk's block to that host's instructions file (`CLAUDE.md` or `AGENTS.md`). With `none` it starts the servers and prints the two MCP URLs for you to add. The steps below show the Claude Code commands; [hosts.md](hosts.md) has the Codex equivalents, what is tested, and the install paths. On Windows, run `install.sh` under Git Bash or WSL2 for any host; `install.ps1` is Claude Code only.
 
 ### No `make`? Use these equivalents
 
@@ -70,7 +70,7 @@ npm install -g @anthropic-ai/claude-code
 ```
 Sign in with `claude` and confirm it works.
 
-> **API key:** Signing in with `claude` writes your key to `~/.claude/.anthropic/api_key`. youk reads it from there automatically — no `ANTHROPIC_API_KEY` export required. If you're using the Claude Code desktop app, the signin flow handles this for you.
+> **API key:** none needed to install. For model-assisted intent optimization, see [Optional inference provider](#optional-inference-provider). The containers do not read Claude Code's sign-in.
 
 **Docker Desktop**
 Must be installed and running. Download from [docker.com](https://www.docker.com/products/docker-desktop). After installing, verify:
@@ -342,10 +342,20 @@ keeps it current as work proceeds. If the terminal closes mid-task, the next
 ## Optional inference provider
 
 Intent optimization remains usable without an LLM through its deterministic heuristic
-path. To select an installed adapter, write a credential-free provider/model/schema
-configuration to `/youk/state/inference-provider.json`; keep credentials in the
-environment. Unsupported providers report an explicit degraded result and never fall
-back silently. Execution traces contain hashes and policy outcomes, never prompts or
+path. Configure a provider with the host-side CLI:
+
+```bash
+python3 scripts/configure_inference.py --provider anthropic --key-from-env ANTHROPIC_API_KEY
+python3 scripts/configure_inference.py --provider openai-compatible \
+  --base-url http://host.docker.internal:11434/v1 --model llama3.1   # local servers need no key
+python3 scripts/configure_inference.py --show     # status, never prints a key
+python3 scripts/configure_inference.py --check    # exit 0 only if the provider is usable
+```
+
+The provider/model/base URL go to `state/inference-provider.json` (credential-free); keys go
+to `state/inference-keys/<provider>.key` (mode 0600, gitignored, mounted into the containers).
+`install.sh` seeds the Anthropic key from `ANTHROPIC_API_KEY` on first install only. Unsupported
+providers report an explicit degraded result and never fall back silently. Execution traces contain hashes and policy outcomes, never prompts or
 responses.
 
 ## Information governance

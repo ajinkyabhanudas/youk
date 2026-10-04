@@ -204,7 +204,7 @@ class TestOrgScoreInvariant:
         """Org score must be identical whether Compactions line is present in audit or not."""
         import health
         monkeypatch.setattr(health, "YOUK_ROOT", tmp_path)
-        monkeypatch.setattr(health, "CLAUDE_ROOT", tmp_path)
+        monkeypatch.setattr(health, "HOST_ROOT", tmp_path)
         monkeypatch.setattr(health, "AUDIT_DIR", tmp_path / "audit")
         monkeypatch.setattr(health, "PROPOSALS_FILE", tmp_path / "PENDING.md")
 

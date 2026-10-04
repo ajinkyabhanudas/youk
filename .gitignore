@@ -79,3 +79,6 @@ Thumbs.db
 *secret*
 *credential*
 *api_key*
+
+# Empty mount point the installer creates when no agent host has a config dir
+.host/

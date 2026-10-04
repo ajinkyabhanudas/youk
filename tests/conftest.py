@@ -73,13 +73,16 @@ def youk_root(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def claude_root(tmp_path, monkeypatch):
-    """Isolated CLAUDE_ROOT (audit dir etc) pointing to a tmp directory."""
+def host_root(tmp_path, monkeypatch):
+    """Isolated HOST_ROOT pointing to a tmp directory, laid out like an install on a host that
+    links skills into its own config dir and has legacy audit logs there. Layouts without those
+    directories are covered by tests/test_youk_paths.py."""
     root = tmp_path / "claude"
     (root / "audit").mkdir(parents=True)
+    (root / "skills").mkdir()
 
     import health
-    monkeypatch.setattr(health, "CLAUDE_ROOT", root)
+    monkeypatch.setattr(health, "HOST_ROOT", root)
     monkeypatch.setattr(health, "AUDIT_DIR", root / "audit")
 
     return root

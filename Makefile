@@ -1,5 +1,9 @@
-YOUK_DIR  := $(HOME)/.claude/youk
-CLAUDE_DIR := $(HOME)/.claude
+# Where youk lives: the directory holding this Makefile, unless overridden.
+YOUK_DIR ?= $(patsubst %/,%,$(dir $(realpath $(firstword $(MAKEFILE_LIST)))))
+# The agent host's config dir, mounted into the containers at /host. Taken from what the
+# installer recorded; installs made before host-neutral paths have no record and always used
+# the Claude Code dir.
+HOST_DIR ?= $(or $(shell sed -n 's/^HOST_CONFIG_DIR=//p' $(YOUK_DIR)/state/path-map.env 2>/dev/null),$(HOME)/.claude)
 
 .DEFAULT_GOAL := help
 
@@ -188,7 +192,7 @@ test-core: ## Test youk-core MCP handshake
 	@echo "==> youk-core"
 	@printf '$(MCP_INIT)\n$(MCP_DONE)\n$(MCP_LIST)\n' | \
 	  docker run -i --rm \
-	    -v $(CLAUDE_DIR):/claude \
+	    -v $(HOST_DIR):/host \
 	    -v $(YOUK_DIR):/youk \
 	    youk-core:latest 2>/dev/null | python3 scripts/parse_mcp_tools.py
 	@echo "    OK"
@@ -198,7 +202,7 @@ test-code: ## Test youk-code MCP handshake
 	@echo "==> youk-code"
 	@printf '$(MCP_INIT)\n$(MCP_DONE)\n$(MCP_LIST)\n' | \
 	  docker run -i --rm \
-	    -v $(CLAUDE_DIR):/claude:ro \
+	    -v $(HOST_DIR):/host:ro \
 	    -v $(YOUK_DIR):/youk:ro \
 	    youk-code:latest 2>/dev/null | python3 scripts/parse_mcp_tools.py
 	@echo "    OK"
@@ -212,7 +216,7 @@ dashboard: ## Terminal dashboard — org score, session history, skill gaps, pro
 	@python3 scripts/dashboard.py
 
 .PHONY: report
-report: ## Write HTML dashboard to ~/.claude/youk/reports/dashboard-YYYY-MM-DD.html
+report: ## Write HTML dashboard to reports/dashboard-YYYY-MM-DD.html
 	@python3 scripts/dashboard.py --html
 
 .PHONY: export-stats
@@ -230,7 +234,7 @@ verify-mcp: ## Test both MCP container handshakes
 	@echo "==> youk-core handshake"
 	@printf '$(MCP_INIT)\n$(MCP_DONE)\n' | \
 	  docker run -i --rm \
-	    -v $(CLAUDE_DIR):/claude \
+	    -v $(HOST_DIR):/host \
 	    -v $(YOUK_DIR):/youk \
 	    youk-core:latest 2>/dev/null \
 	  | python3 -c "import sys,json; lines=[l for l in sys.stdin if l.strip()]; \
@@ -240,7 +244,7 @@ verify-mcp: ## Test both MCP container handshakes
 	@echo "==> youk-code handshake"
 	@printf '$(MCP_INIT)\n$(MCP_DONE)\n' | \
 	  docker run -i --rm \
-	    -v $(CLAUDE_DIR):/claude:ro \
+	    -v $(HOST_DIR):/host:ro \
 	    -v $(YOUK_DIR):/youk:ro \
 	    youk-code:latest 2>/dev/null \
 	  | python3 -c "import sys,json; lines=[l for l in sys.stdin if l.strip()]; \
@@ -257,7 +261,7 @@ simulate: ## Run simulate-experience skill — developer experience audit, feeds
 	@echo "    For automated MCP-based run:"
 	@python3 -c "import json,sys; print(json.dumps({'jsonrpc':'2.0','id':1,'method':'tools/call','params':{'name':'route_to_skill','arguments':{'skill_name':'simulate-experience','task':'full audit — all personas'}}}))" | \
 	  docker run -i --rm \
-	    -v $(CLAUDE_DIR):/claude:ro \
+	    -v $(HOST_DIR):/host:ro \
 	    -v $(YOUK_DIR):/youk:ro \
 	    youk-code:latest 2>/dev/null | python3 -m json.tool || true
 

@@ -189,7 +189,7 @@ class TestEndSessionDeveloperCaught:
         import json
         state_file.write_text(json.dumps({"last_project": "youk", "session_counter": 1}))
 
-        with patch("session.CLAUDE_ROOT", tmp_path), patch("session.YOUK_ROOT", tmp_path):
+        with patch("session.HOST_ROOT", tmp_path), patch("session.YOUK_ROOT", tmp_path):
             _end(
                 summary="test session",
                 commits_made=False,
@@ -210,7 +210,7 @@ class TestEndSessionDeveloperCaught:
         import json
         state_file.write_text(json.dumps({"last_project": "youk", "session_counter": 1}))
 
-        with patch("session.CLAUDE_ROOT", tmp_path), patch("session.YOUK_ROOT", tmp_path):
+        with patch("session.HOST_ROOT", tmp_path), patch("session.YOUK_ROOT", tmp_path):
             _end(summary="test session", commits_made=False)
 
         content = list((tmp_path / "audit").glob("*.md"))[0].read_text()

@@ -31,7 +31,7 @@ def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(skills, "_STATE_WRITABLE", True)
 
     import skill_loader
-    monkeypatch.setattr(skill_loader, "CLAUDE_ROOT", tmp_path)
+    monkeypatch.setattr(skill_loader, "HOST_ROOT", tmp_path)
     monkeypatch.setattr(skill_loader, "SKILLS_DIR", tmp_path / "skills")
     yield
 

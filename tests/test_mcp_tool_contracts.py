@@ -37,7 +37,7 @@ pytest.importorskip(
 
 @pytest.fixture(autouse=True)
 def _isolate_roots(tmp_path, monkeypatch):
-    """Redirect every module-level YOUK_ROOT / CLAUDE_ROOT at a tmp directory.
+    """Redirect every module-level YOUK_ROOT / HOST_ROOT at a tmp directory.
 
     Not optional. route_task writes route-task-ran.json, active_task.json and a task
     graph node, so executing it against the real roots pollutes the audit and graph
@@ -53,11 +53,11 @@ def _isolate_roots(tmp_path, monkeypatch):
     import sys
 
     youk_root = tmp_path / "youk"
-    claude_root = tmp_path / "claude"
+    host_root = tmp_path / "claude"
     for sub in ("state", "knowledge/projects", "knowledge/proposals", "docs", "config"):
         (youk_root / sub).mkdir(parents=True, exist_ok=True)
-    (claude_root / "skills").mkdir(parents=True, exist_ok=True)
-    (claude_root / "audit").mkdir(parents=True, exist_ok=True)
+    (host_root / "skills").mkdir(parents=True, exist_ok=True)
+    (host_root / "audit").mkdir(parents=True, exist_ok=True)
 
     # Import everything the tools reach for BEFORE scanning. Several modules are
     # imported lazily inside functions, so they are absent from sys.modules when the
@@ -76,7 +76,7 @@ def _isolate_roots(tmp_path, monkeypatch):
     # at import time, e.g. server._TOOL_CALL_COUNT_FILE = YOUK_ROOT / "state" / ...,
     # which is already baked by the time a fixture runs. Rewrite every module-level
     # Path that sits under a real root, not just the roots themselves.
-    real = ((Path("/youk"), youk_root), (Path("/claude"), claude_root))
+    real = ((Path("/youk"), youk_root), (Path("/claude"), host_root), (Path("/host"), host_root))
 
     def _redirect(value: Path) -> Path | None:
         for original, replacement in real:
@@ -229,7 +229,7 @@ class TestIsolationActuallyHolds:
     def test_roots_point_at_tmp(self, tmp_path):
         import server
         assert str(server.YOUK_ROOT).startswith(str(tmp_path))
-        assert str(server.CLAUDE_ROOT).startswith(str(tmp_path))
+        assert str(server.HOST_ROOT).startswith(str(tmp_path))
 
     def test_derived_path_constants_are_redirected_too(self, tmp_path):
         """The case that escaped the first fix.

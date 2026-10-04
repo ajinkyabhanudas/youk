@@ -30,7 +30,7 @@ class TestLoadPendingProposals:
             change_type="SKILL_EDIT",
         )
 
-    def test_filters_applied_by_status_field(self, youk_root, claude_root):
+    def test_filters_applied_by_status_field(self, youk_root, host_root):
         import health
         health.add_proposal(self._p("PENDING-LP001", status="APPLIED — 2026-07-02"))
         health.add_proposal(self._p("PENDING-LP002", status="PENDING"))
@@ -40,82 +40,82 @@ class TestLoadPendingProposals:
         assert len(pending_only) == 1
         assert "PENDING-LP002" in pending_only[0].id
 
-    def test_empty_db_returns_empty_list(self, youk_root, claude_root):
+    def test_empty_db_returns_empty_list(self, youk_root, host_root):
         from health import _load_pending_proposals
         assert _load_pending_proposals() == []
 
-    def test_no_proposals_db_returns_empty_list(self, youk_root, claude_root):
+    def test_no_proposals_db_returns_empty_list(self, youk_root, host_root):
         from health import _load_pending_proposals
         assert _load_pending_proposals() == []
 
 
 class TestGenerateFindings:
-    def _run(self, claude_root, youk_root, audit_text: str) -> list[str]:
-        (claude_root / "audit" / "2026-07.md").write_text(audit_text)
+    def _run(self, host_root, youk_root, audit_text: str) -> list[str]:
+        (host_root / "audit" / "2026-07.md").write_text(audit_text)
         from health import _generate_findings, _score_org
         audit_texts = [audit_text]
         score = _score_org(audit_texts)
         return _generate_findings(audit_texts, score)
 
-    def test_zero_contracts_flagged_after_many_sessions(self, youk_root, claude_root):
+    def test_zero_contracts_flagged_after_many_sessions(self, youk_root, host_root):
         """Project with 5+ real (non-stub) sessions and no contracts must surface a finding."""
         proj = youk_root / "knowledge" / "projects" / "myproject"
         proj.mkdir(parents=True)
         # Include Project: field so per-project count reaches threshold
         audit = "\n".join(_audit_block(i, project="myproject") for i in range(1, 7))
-        findings = self._run(claude_root, youk_root, audit)
+        findings = self._run(host_root, youk_root, audit)
         contract_findings = [f for f in findings if "contracts.md" in f or "no contracts" in f.lower()]
         assert contract_findings, f"Expected 0-contracts finding. Got: {findings}"
 
-    def test_contracts_present_no_spurious_finding(self, youk_root, claude_root):
+    def test_contracts_present_no_spurious_finding(self, youk_root, host_root):
         """No 0-contracts finding when contracts.md exists and has entries."""
         proj = youk_root / "knowledge" / "projects" / "myproject"
         proj.mkdir(parents=True)
         (proj / "contracts.md").write_text("- always run tests\n")
         audit = "\n".join(_audit_block(i) for i in range(1, 7))
-        findings = self._run(claude_root, youk_root, audit)
+        findings = self._run(host_root, youk_root, audit)
         contract_findings = [f for f in findings if "no contracts" in f.lower()]
         assert not contract_findings, f"Unexpected 0-contracts finding: {contract_findings}"
 
-    def test_fewer_than_5_sessions_no_zero_contracts_finding(self, youk_root, claude_root):
+    def test_fewer_than_5_sessions_no_zero_contracts_finding(self, youk_root, host_root):
         """0-contracts check only fires when total sessions >= 5."""
         proj = youk_root / "knowledge" / "projects" / "myproject"
         proj.mkdir(parents=True)
         audit = "\n".join(_audit_block(i) for i in range(1, 4))
-        findings = self._run(claude_root, youk_root, audit)
+        findings = self._run(host_root, youk_root, audit)
         contract_findings = [f for f in findings if "contracts.md" in f]
         assert not contract_findings
 
-    def test_empty_loop_flagged(self, youk_root, claude_root):
+    def test_empty_loop_flagged(self, youk_root, host_root):
         """Self-evolution loop starvation detected when no proposals or skill gaps."""
         (youk_root / "knowledge" / "proposals" / "PENDING.md").write_text("# empty\n")
         audit = "\n".join(_audit_block(i) for i in range(1, 5))
-        findings = self._run(claude_root, youk_root, audit)
+        findings = self._run(host_root, youk_root, audit)
         loop_findings = [f for f in findings if "starved" in f.lower() or "evolution" in f.lower()]
         assert loop_findings, f"Expected loop-starvation finding. Got: {findings}"
 
-    def test_high_skip_rate_flagged(self, youk_root, claude_root):
+    def test_high_skip_rate_flagged(self, youk_root, host_root):
         """More than 50% sessions without close-cluster surfaces a finding."""
         audit = "\n".join(
             _audit_block(i, close=(i % 3 == 0)) for i in range(1, 7)
         )
-        findings = self._run(claude_root, youk_root, audit)
+        findings = self._run(host_root, youk_root, audit)
         skip_findings = [f for f in findings if "session-close loop" in f.lower() or "incomplete" in f.lower()]
         assert skip_findings, f"Expected session-close loop finding. Got: {findings}"
 
-    def test_capability_skill_absent_finding(self, youk_root, claude_root):
+    def test_capability_skill_absent_finding(self, youk_root, host_root):
         """When >75% of sessions have no capability skill, surfaces a finding."""
         # All sessions use only 'self_heal' — a meta skill, not a capability skill
         audit = "\n".join(_audit_block(i, skills="self_heal") for i in range(1, 7))
-        findings = self._run(claude_root, youk_root, audit)
+        findings = self._run(host_root, youk_root, audit)
         cap_findings = [f for f in findings if "capability" in f.lower() or "compounding" in f.lower()]
         assert cap_findings, f"Expected capability-skill finding. Got: {findings}"
 
-    def test_capability_skill_present_no_spurious_finding(self, youk_root, claude_root):
+    def test_capability_skill_present_no_spurious_finding(self, youk_root, host_root):
         """When ≥50% of sessions use a capability skill, no capability finding."""
         # All sessions use code-review — a real capability skill
         audit = "\n".join(_audit_block(i, skills="code-review") for i in range(1, 5))
-        findings = self._run(claude_root, youk_root, audit)
+        findings = self._run(host_root, youk_root, audit)
         cap_findings = [f for f in findings if "capability skills absent" in f.lower()]
         assert not cap_findings, f"Unexpected capability-absent finding: {cap_findings}"
 
@@ -206,7 +206,7 @@ class TestScoreOrg:
 
 
 class TestGenerateFindingsDisciplineGate:
-    def _run(self, claude_root, youk_root, sessions: list[dict]) -> list[str]:
+    def _run(self, host_root, youk_root, sessions: list[dict]) -> list[str]:
         blocks = []
         for i, s in enumerate(sessions):
             close = "yes" if s.get("close_cluster") else "no"
@@ -216,14 +216,14 @@ class TestGenerateFindingsDisciplineGate:
                 f"Skills: {skills}\nCloseCluster: {close}\nCommits: yes\n"
             )
         audit = "\n".join(blocks)
-        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        (host_root / "audit" / "2026-07.md").write_text(audit)
         from health import _generate_findings, _score_org
         score = _score_org([audit])
         return _generate_findings([audit], score)
 
-    def test_discipline_gate_finding_when_3_consecutive_skill_skips(self, youk_root, claude_root):
+    def test_discipline_gate_finding_when_3_consecutive_skill_skips(self, youk_root, host_root):
         """Gate finding appears when 3+ consecutive sessions have no capability skill."""
-        findings = self._run(claude_root, youk_root, [
+        findings = self._run(host_root, youk_root, [
             {"skills": "code-review", "close_cluster": True},
             {"skills": "self_heal", "close_cluster": True},
             {"skills": "self_heal", "close_cluster": True},
@@ -232,9 +232,9 @@ class TestGenerateFindingsDisciplineGate:
         gate_findings = [f for f in findings if "discipline gate" in f.lower()]
         assert gate_findings, f"Expected discipline gate finding. Got: {findings}"
 
-    def test_no_discipline_gate_finding_when_recent_skill(self, youk_root, claude_root):
+    def test_no_discipline_gate_finding_when_recent_skill(self, youk_root, host_root):
         """No gate finding when most recent session invoked a capability skill."""
-        findings = self._run(claude_root, youk_root, [
+        findings = self._run(host_root, youk_root, [
             {"skills": "self_heal", "close_cluster": True},
             {"skills": "self_heal", "close_cluster": True},
             {"skills": "self_heal", "close_cluster": True},
@@ -263,15 +263,15 @@ def _audit_with(sessions: list[dict]) -> str:
 class TestSkillInvocationRateMetric:
     """skill_invocation_rate persisted in improvement-metrics.json."""
 
-    def _run_velocity(self, youk_root, claude_root, sessions: list[dict]) -> dict:
+    def _run_velocity(self, youk_root, host_root, sessions: list[dict]) -> dict:
         audit = _audit_with(sessions)
-        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        (host_root / "audit" / "2026-07.md").write_text(audit)
         from health import _compute_improvement_velocity, _score_org
         score = _score_org([audit])
         return _compute_improvement_velocity([audit], score)
 
-    def test_100_percent_when_all_sessions_have_capability_skill(self, youk_root, claude_root):
-        self._run_velocity(youk_root, claude_root, [
+    def test_100_percent_when_all_sessions_have_capability_skill(self, youk_root, host_root):
+        self._run_velocity(youk_root, host_root, [
             {"skills": "code-review", "close_cluster": True},
             {"skills": "learn", "close_cluster": True},
         ])
@@ -279,8 +279,8 @@ class TestSkillInvocationRateMetric:
         entry = json.loads((youk_root / "state" / "improvement-metrics.json").read_text())["entries"][-1]
         assert entry["skill_invocation_rate"] == 1.0
 
-    def test_zero_when_no_capability_skills(self, youk_root, claude_root):
-        self._run_velocity(youk_root, claude_root, [
+    def test_zero_when_no_capability_skills(self, youk_root, host_root):
+        self._run_velocity(youk_root, host_root, [
             {"skills": "self_heal", "close_cluster": False},
             {"skills": "none", "close_cluster": False},
         ])
@@ -288,8 +288,8 @@ class TestSkillInvocationRateMetric:
         entry = json.loads((youk_root / "state" / "improvement-metrics.json").read_text())["entries"][-1]
         assert entry["skill_invocation_rate"] == 0.0
 
-    def test_partial_rate_computed_correctly(self, youk_root, claude_root):
-        self._run_velocity(youk_root, claude_root, [
+    def test_partial_rate_computed_correctly(self, youk_root, host_root):
+        self._run_velocity(youk_root, host_root, [
             {"skills": "code-review", "close_cluster": True},
             {"skills": "none", "close_cluster": False},
             {"skills": "none", "close_cluster": False},
@@ -303,31 +303,31 @@ class TestSkillInvocationRateMetric:
 class TestNfrCheckHitRateMetric:
     """nfr_check_hit_rate: % of sessions where nfr_check appeared in Skills:"""
 
-    def _run(self, youk_root, claude_root, sessions: list[dict]) -> dict:
+    def _run(self, youk_root, host_root, sessions: list[dict]) -> dict:
         audit = _audit_with(sessions)
-        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        (host_root / "audit" / "2026-07.md").write_text(audit)
         from health import _compute_improvement_velocity, _score_org
         score = _score_org([audit])
         _compute_improvement_velocity([audit], score)
         import json
         return json.loads((youk_root / "state" / "improvement-metrics.json").read_text())["entries"][-1]
 
-    def test_nfr_check_hyphen_format_detected(self, youk_root, claude_root):
-        entry = self._run(youk_root, claude_root, [
+    def test_nfr_check_hyphen_format_detected(self, youk_root, host_root):
+        entry = self._run(youk_root, host_root, [
             {"skills": "nfr-check, code-review", "close_cluster": True},
             {"skills": "code-review", "close_cluster": True},
         ])
         assert entry["nfr_check_hit_rate"] == 0.5
 
-    def test_nfr_check_underscore_format_detected(self, youk_root, claude_root):
-        entry = self._run(youk_root, claude_root, [
+    def test_nfr_check_underscore_format_detected(self, youk_root, host_root):
+        entry = self._run(youk_root, host_root, [
             {"skills": "nfr_check", "close_cluster": True},
             {"skills": "nfr_check", "close_cluster": True},
         ])
         assert entry["nfr_check_hit_rate"] == 1.0
 
-    def test_zero_when_nfr_never_fired(self, youk_root, claude_root):
-        entry = self._run(youk_root, claude_root, [
+    def test_zero_when_nfr_never_fired(self, youk_root, host_root):
+        entry = self._run(youk_root, host_root, [
             {"skills": "code-review", "close_cluster": True},
             {"skills": "learn", "close_cluster": True},
         ])
@@ -337,37 +337,37 @@ class TestNfrCheckHitRateMetric:
 class TestContractsTotalMetric:
     """contracts_total: sum of '- ' lines across all projects/*/contracts.md"""
 
-    def _run(self, youk_root, claude_root, contract_lines: dict[str, list[str]]) -> dict:
+    def _run(self, youk_root, host_root, contract_lines: dict[str, list[str]]) -> dict:
         for slug, lines in contract_lines.items():
             proj = youk_root / "knowledge" / "projects" / slug
             proj.mkdir(parents=True, exist_ok=True)
             (proj / "contracts.md").write_text("\n".join(f"- {line}" for line in lines) + "\n")
         audit = _audit_with([{"skills": "code-review", "close_cluster": True}])
-        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        (host_root / "audit" / "2026-07.md").write_text(audit)
         from health import _compute_improvement_velocity, _score_org
         score = _score_org([audit])
         _compute_improvement_velocity([audit], score)
         import json
         return json.loads((youk_root / "state" / "improvement-metrics.json").read_text())["entries"][-1]
 
-    def test_counts_contracts_across_projects(self, youk_root, claude_root):
-        entry = self._run(youk_root, claude_root, {
+    def test_counts_contracts_across_projects(self, youk_root, host_root):
+        entry = self._run(youk_root, host_root, {
             "canopy": ["always run ruff", "test after migrate"],
             "youk": ["never auto-apply code edits"],
         })
         assert entry["contracts_total"] == 3
 
-    def test_zero_when_no_contracts(self, youk_root, claude_root):
-        entry = self._run(youk_root, claude_root, {})
+    def test_zero_when_no_contracts(self, youk_root, host_root):
+        entry = self._run(youk_root, host_root, {})
         assert entry["contracts_total"] == 0
 
-    def test_non_list_lines_not_counted(self, youk_root, claude_root):
+    def test_non_list_lines_not_counted(self, youk_root, host_root):
         """Lines without '- ' prefix (headings, blank lines) are excluded."""
         proj = youk_root / "knowledge" / "projects" / "test"
         proj.mkdir(parents=True, exist_ok=True)
         (proj / "contracts.md").write_text("# contracts\n\n- real contract\nheading line\n")
         audit = _audit_with([{"skills": "code-review", "close_cluster": True}])
-        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        (host_root / "audit" / "2026-07.md").write_text(audit)
         from health import _compute_improvement_velocity, _score_org
         score = _score_org([audit])
         _compute_improvement_velocity([audit], score)
@@ -379,17 +379,17 @@ class TestContractsTotalMetric:
 class TestSkillPatchRateMetric:
     """skill_patch_rate: % of sessions with MidSessionAdaptations: N (N > 0)"""
 
-    def _run(self, youk_root, claude_root, sessions: list[dict]) -> dict:
+    def _run(self, youk_root, host_root, sessions: list[dict]) -> dict:
         audit = _audit_with(sessions)
-        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        (host_root / "audit" / "2026-07.md").write_text(audit)
         from health import _compute_improvement_velocity, _score_org
         score = _score_org([audit])
         _compute_improvement_velocity([audit], score)
         import json
         return json.loads((youk_root / "state" / "improvement-metrics.json").read_text())["entries"][-1]
 
-    def test_counts_sessions_with_adaptations(self, youk_root, claude_root):
-        entry = self._run(youk_root, claude_root, [
+    def test_counts_sessions_with_adaptations(self, youk_root, host_root):
+        entry = self._run(youk_root, host_root, [
             {"skills": "code-review", "close_cluster": True, "adaptations": 2},
             {"skills": "learn", "close_cluster": True, "adaptations": 0},
             {"skills": "verify", "close_cluster": True, "adaptations": 1},
@@ -397,16 +397,16 @@ class TestSkillPatchRateMetric:
         ])
         assert entry["skill_patch_rate"] == 0.5  # 2 out of 4
 
-    def test_zero_when_no_adaptations(self, youk_root, claude_root):
-        entry = self._run(youk_root, claude_root, [
+    def test_zero_when_no_adaptations(self, youk_root, host_root):
+        entry = self._run(youk_root, host_root, [
             {"skills": "code-review", "close_cluster": True},
             {"skills": "learn", "close_cluster": True},
         ])
         assert entry["skill_patch_rate"] == 0.0
 
-    def test_adaptations_zero_not_counted(self, youk_root, claude_root):
+    def test_adaptations_zero_not_counted(self, youk_root, host_root):
         """MidSessionAdaptations: 0 must NOT increment the patch count."""
-        entry = self._run(youk_root, claude_root, [
+        entry = self._run(youk_root, host_root, [
             {"skills": "code-review", "close_cluster": True, "adaptations": 0},
         ])
         assert entry["skill_patch_rate"] == 0.0
@@ -510,35 +510,35 @@ class TestAuditSkillQuality:
 
 
 class TestDormantSkillDetectionExpanded:
-    def _run(self, claude_root, youk_root, skills: str, sessions: int = 6) -> list[str]:
+    def _run(self, host_root, youk_root, skills: str, sessions: int = 6) -> list[str]:
         blocks = "\n".join(
             f"### Session — 2026-07-0{i} 10:00 UTC\n"
             f"Skills: {skills}\nCloseCluster: yes\nCommits: yes\n"
             for i in range(1, sessions + 1)
         )
-        (claude_root / "audit" / "2026-07.md").write_text(blocks)
+        (host_root / "audit" / "2026-07.md").write_text(blocks)
         from health import _generate_findings, _score_org
         score = _score_org([blocks])
         return _generate_findings([blocks], score)
 
-    def test_hardcoded_three_skills_covered_by_expansion(self, youk_root, claude_root):
+    def test_hardcoded_three_skills_covered_by_expansion(self, youk_root, host_root):
         """nfr-check never invoked across 6 sessions surfaces a dormant finding."""
-        findings = self._run(claude_root, youk_root, skills="code-review, learn")
+        findings = self._run(host_root, youk_root, skills="code-review, learn")
         dormant_findings = [f for f in findings if "nfr-check" in f or "dormant" in f.lower() or "never invoked" in f.lower()]
         assert dormant_findings, f"Expected nfr-check dormant finding. Got: {findings}"
 
-    def test_many_dormant_skills_grouped(self, youk_root, claude_root):
+    def test_many_dormant_skills_grouped(self, youk_root, host_root):
         """5+ dormant skills → one grouped finding instead of individual ones."""
         # Only 'learn' used — code-review, verify, nfr-check, dev-loop, security-review all dormant
-        findings = self._run(claude_root, youk_root, skills="learn")
+        findings = self._run(host_root, youk_root, skills="learn")
         grouped = [f for f in findings if "never invoked" in f.lower() or "capability skills" in f.lower()]
         individual = [f for f in findings if "not recorded in any" in f]
         # Should not generate 5+ individual findings — should group them
         assert len(individual) <= 2 or grouped, f"Expected grouping for many dormant skills. Got: {findings}"
 
-    def test_active_skill_not_flagged_as_dormant(self, youk_root, claude_root):
+    def test_active_skill_not_flagged_as_dormant(self, youk_root, host_root):
         """code-review used in all sessions → not flagged as dormant."""
-        findings = self._run(claude_root, youk_root, skills="code-review, learn, nfr-check, verify, dev-loop, security-review, write-spec, adr")
+        findings = self._run(host_root, youk_root, skills="code-review, learn, nfr-check, verify, dev-loop, security-review, write-spec, adr")
         dormant_findings = [f for f in findings if "not recorded" in f or "dormant" in f.lower()]
         assert not dormant_findings, f"Unexpected dormant finding: {dormant_findings}"
 
@@ -559,14 +559,14 @@ class TestApplyProposalSafeTypes:
             change_type="CODE_EDIT", target_section="session_start",
         ))
 
-    def test_confirmed_false_returns_blocked_true(self, youk_root, claude_root):
+    def test_confirmed_false_returns_blocked_true(self, youk_root, host_root):
         import health
         self._setup(health)
         result = health.apply_proposal("PENDING-001", confirmed=False)
         assert result["blocked"] is True
         assert "Preview only" in result["message"]
 
-    def test_skill_edit_passes_safe_types_gate(self, youk_root, claude_root, monkeypatch):
+    def test_skill_edit_passes_safe_types_gate(self, youk_root, host_root, monkeypatch):
         import health as h
         self._setup(h)
         captured = {}
@@ -575,7 +575,7 @@ class TestApplyProposalSafeTypes:
         assert result.get("blocked") is not True
         assert captured["p"].change_type == "SKILL_EDIT"
 
-    def test_code_edit_blocked_by_safe_types_gate(self, youk_root, claude_root, monkeypatch):
+    def test_code_edit_blocked_by_safe_types_gate(self, youk_root, host_root, monkeypatch):
         import health as h
         self._setup(h)
         executed = []
@@ -586,7 +586,7 @@ class TestApplyProposalSafeTypes:
         assert "manual review" in result["message"]
         assert executed == []  # _execute_proposal must NOT be called
 
-    def test_no_safe_types_applies_any_change_type(self, youk_root, claude_root, monkeypatch):
+    def test_no_safe_types_applies_any_change_type(self, youk_root, host_root, monkeypatch):
         import health as h
         self._setup(h)
         executed = []
@@ -595,14 +595,14 @@ class TestApplyProposalSafeTypes:
         assert result.get("blocked") is not True
         assert len(executed) == 1
 
-    def test_missing_proposal_returns_error(self, youk_root, claude_root):
+    def test_missing_proposal_returns_error(self, youk_root, host_root):
         import health
         self._setup(health)
         result = health.apply_proposal("PENDING-999", confirmed=True, safe_types=["SKILL_EDIT"])
         assert result["applied"] is False
         assert "not found" in result["error"]
 
-    def test_default_actor_recorded_as_founder(self, youk_root, claude_root, monkeypatch):
+    def test_default_actor_recorded_as_founder(self, youk_root, host_root, monkeypatch):
         import health as h
         self._setup(h)
         monkeypatch.setattr(h, "_execute_proposal", lambda p: {"applied": True})
@@ -613,14 +613,14 @@ class TestApplyProposalSafeTypes:
         conn.close()
         assert row["confirmed_by"] == "founder"
 
-    def test_explicit_actor_recorded(self, youk_root, claude_root, monkeypatch):
+    def test_explicit_actor_recorded(self, youk_root, host_root, monkeypatch):
         import health as h
         self._setup(h)
         monkeypatch.setattr(h, "_execute_proposal", lambda p: {"applied": True})
         result = h.apply_proposal("PENDING-001", confirmed=True, safe_types=["SKILL_EDIT"], actor="member")
         assert result["confirmed_by"] == "member"
 
-    def test_unrecognised_actor_falls_back_to_founder(self, youk_root, claude_root, monkeypatch):
+    def test_unrecognised_actor_falls_back_to_founder(self, youk_root, host_root, monkeypatch):
         import health as h
         self._setup(h)
         monkeypatch.setattr(h, "_execute_proposal", lambda p: {"applied": True})
@@ -638,19 +638,19 @@ class TestCheckProjectTypeCoverage:
             json.dumps({"last_project": "testproject", "project_purpose": purpose})
         )
 
-    def test_returns_none_for_general_project(self, youk_root, claude_root):
+    def test_returns_none_for_general_project(self, youk_root, host_root):
         self._write_session_json(youk_root, "general")
         from health import _check_project_type_coverage
         assert _check_project_type_coverage() is None
 
-    def test_returns_none_when_session_json_missing(self, youk_root, claude_root):
+    def test_returns_none_when_session_json_missing(self, youk_root, host_root):
         from health import _check_project_type_coverage
         assert _check_project_type_coverage() is None
 
-    def test_returns_gaps_for_ai_engineering_system(self, youk_root, claude_root):
+    def test_returns_gaps_for_ai_engineering_system(self, youk_root, host_root):
         self._write_session_json(youk_root, "ai_engineering_system")
         # skills dir has no skills yet → both expected skills are missing
-        (claude_root / "skills").mkdir(parents=True, exist_ok=True)
+        (host_root / "skills").mkdir(parents=True, exist_ok=True)
         from health import _check_project_type_coverage
         result = _check_project_type_coverage()
         assert result is not None
@@ -660,19 +660,19 @@ class TestCheckProjectTypeCoverage:
         assert "install-experience" in names
         assert "namespace-safety" in names
 
-    def test_returns_none_when_all_expected_skills_present(self, youk_root, claude_root):
+    def test_returns_none_when_all_expected_skills_present(self, youk_root, host_root):
         self._write_session_json(youk_root, "ai_engineering_system")
         # Create both expected skills
         for skill in ["install-experience", "namespace-safety"]:
-            (claude_root / "skills" / skill).mkdir(parents=True)
+            (host_root / "skills" / skill).mkdir(parents=True)
         from health import _check_project_type_coverage
         result = _check_project_type_coverage()
         assert result is None
 
-    def test_partial_gap_surfaces_only_missing(self, youk_root, claude_root):
+    def test_partial_gap_surfaces_only_missing(self, youk_root, host_root):
         self._write_session_json(youk_root, "ai_engineering_system")
         # Only install-experience present → namespace-safety still missing
-        (claude_root / "skills" / "install-experience").mkdir(parents=True)
+        (host_root / "skills" / "install-experience").mkdir(parents=True)
         from health import _check_project_type_coverage
         result = _check_project_type_coverage()
         assert result is not None
@@ -685,7 +685,7 @@ class TestCheckProjectTypeCoverage:
 class TestRetrospectiveRecoveryInFindings:
     """_generate_findings must not flag sessions recovered via retrospective /learn."""
 
-    def _run(self, claude_root, youk_root, sessions: list[dict]) -> list[str]:
+    def _run(self, host_root, youk_root, sessions: list[dict]) -> list[str]:
         blocks = []
         for i, s in enumerate(sessions):
             close = "yes" if s.get("close_cluster") else "no"
@@ -695,14 +695,14 @@ class TestRetrospectiveRecoveryInFindings:
                 f"Skills: {skills}\nCloseCluster: {close}\nCommits: yes\n"
             )
         audit = "\n".join(blocks)
-        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        (host_root / "audit" / "2026-07.md").write_text(audit)
         from health import _generate_findings, _score_org
         score = _score_org([audit])
         return _generate_findings([audit], score)
 
-    def test_no_flag_when_all_sessions_have_done(self, youk_root, claude_root):
+    def test_no_flag_when_all_sessions_have_done(self, youk_root, host_root):
         """All sessions with close_cluster: no spurious session-close loop finding."""
-        findings = self._run(claude_root, youk_root, [
+        findings = self._run(host_root, youk_root, [
             {"skills": "code-review", "close_cluster": True},
             {"skills": "learn", "close_cluster": True},
             {"skills": "code-review", "close_cluster": True},
@@ -710,10 +710,10 @@ class TestRetrospectiveRecoveryInFindings:
         loop_findings = [f for f in findings if "session-close loop" in f.lower()]
         assert not loop_findings, f"Unexpected session-close loop finding: {loop_findings}"
 
-    def test_no_flag_when_skip_rate_below_50pct(self, youk_root, claude_root):
+    def test_no_flag_when_skip_rate_below_50pct(self, youk_root, host_root):
         """skip_rate ≤ 50% after accounting for recovery: no finding."""
         # 2 closed, 1 not-closed but recovered by next session's /learn → 3/3 effective
-        findings = self._run(claude_root, youk_root, [
+        findings = self._run(host_root, youk_root, [
             {"skills": "code-review", "close_cluster": True},
             {"skills": "code-review", "close_cluster": False},  # missed
             {"skills": "learn, code-review", "close_cluster": True},  # recovery
@@ -721,9 +721,9 @@ class TestRetrospectiveRecoveryInFindings:
         loop_findings = [f for f in findings if "session-close loop incomplete" in f.lower()]
         assert not loop_findings, f"Unexpected finding when recovery present: {loop_findings}"
 
-    def test_flag_when_majority_unrecovered(self, youk_root, claude_root):
+    def test_flag_when_majority_unrecovered(self, youk_root, host_root):
         """Majority of sessions have no /done AND no retrospective recovery → finding fires."""
-        findings = self._run(claude_root, youk_root, [
+        findings = self._run(host_root, youk_root, [
             {"skills": "code-review", "close_cluster": False},
             {"skills": "code-review", "close_cluster": False},
             {"skills": "code-review", "close_cluster": False},
@@ -732,11 +732,11 @@ class TestRetrospectiveRecoveryInFindings:
         loop_findings = [f for f in findings if "session-close loop" in f.lower()]
         assert loop_findings, f"Expected session-close loop finding. Got: {findings}"
 
-    def test_recovery_counts_toward_effective_close(self, youk_root, claude_root):
+    def test_recovery_counts_toward_effective_close(self, youk_root, host_root):
         """A no-/done session followed by a session with /learn is counted as recovered."""
         # 4 sessions: 1 closed, 1 not-closed+recovered, 1 not-closed+recovered, 1 closed
         # effective_close = 4/4 = 100% → no finding
-        findings = self._run(claude_root, youk_root, [
+        findings = self._run(host_root, youk_root, [
             {"skills": "code-review", "close_cluster": True},
             {"skills": "code-review", "close_cluster": False},
             {"skills": "learn", "close_cluster": True},   # recovers session 2
@@ -752,7 +752,7 @@ class TestRetrospectiveRecoveryInFindings:
 class TestLoopVerdict:
     """_compute_improvement_velocity loop_verdict — every value, positive and negative."""
 
-    def _run(self, youk_root, claude_root, sessions: list[dict],
+    def _run(self, youk_root, host_root, sessions: list[dict],
              prior_score: float | None = None) -> dict:
         blocks = []
         if prior_score is not None:
@@ -767,38 +767,38 @@ class TestLoopVerdict:
                 f"Skills: {skills}\nCloseCluster: {close}\nCommits: yes\n"
             )
         audit = "\n".join(blocks)
-        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        (host_root / "audit" / "2026-07.md").write_text(audit)
         from health import _compute_improvement_velocity, _score_org
         score = _score_org([audit])
         return _compute_improvement_velocity([audit], score)
 
-    def test_improving_when_score_rose(self, youk_root, claude_root):
+    def test_improving_when_score_rose(self, youk_root, host_root):
         """IMPROVING verdict when current score > previous score."""
-        result = self._run(youk_root, claude_root, [
+        result = self._run(youk_root, host_root, [
             {"skills": "code-review", "close_cluster": True},
             {"skills": "learn", "close_cluster": True},
         ], prior_score=5.0)
         assert "IMPROVING" in result["loop_verdict"]
 
-    def test_regressing_when_score_fell(self, youk_root, claude_root):
+    def test_regressing_when_score_fell(self, youk_root, host_root):
         """REGRESSING verdict when current score < previous score."""
-        result = self._run(youk_root, claude_root, [
+        result = self._run(youk_root, host_root, [
             {"skills": "self_heal", "close_cluster": False},
             {"skills": "none", "close_cluster": False},
         ], prior_score=9.5)
         assert "REGRESSING" in result["loop_verdict"]
 
-    def test_stalled_requires_both_zero(self, youk_root, claude_root):
+    def test_stalled_requires_both_zero(self, youk_root, host_root):
         """STALLED only fires when BOTH skill_invocation_rate=0 AND close_rate=0."""
-        result = self._run(youk_root, claude_root, [
+        result = self._run(youk_root, host_root, [
             {"skills": "none", "close_cluster": False},
             {"skills": "none", "close_cluster": False},
         ])
         assert "STALLED" in result["loop_verdict"]
 
-    def test_not_stalled_when_skills_ran_without_done(self, youk_root, claude_root):
+    def test_not_stalled_when_skills_ran_without_done(self, youk_root, host_root):
         """NOT STALLED when capability skills ran, even with close_rate=0."""
-        result = self._run(youk_root, claude_root, [
+        result = self._run(youk_root, host_root, [
             {"skills": "code-review", "close_cluster": False},
             {"skills": "learn", "close_cluster": False},
         ])
@@ -806,9 +806,9 @@ class TestLoopVerdict:
             f"Should not be STALLED when skills ran. Got: {result['loop_verdict']}"
         )
 
-    def test_not_stalled_when_done_ran_without_skills(self, youk_root, claude_root):
+    def test_not_stalled_when_done_ran_without_skills(self, youk_root, host_root):
         """NOT STALLED when /done ran (close_rate>0) even if no capability skills."""
-        result = self._run(youk_root, claude_root, [
+        result = self._run(youk_root, host_root, [
             {"skills": "none", "close_cluster": True},
             {"skills": "none", "close_cluster": True},
         ])
@@ -816,10 +816,10 @@ class TestLoopVerdict:
             f"Should not be STALLED when /done ran. Got: {result['loop_verdict']}"
         )
 
-    def test_steady_when_no_velocity_but_evolution_active(self, youk_root, claude_root):
+    def test_steady_when_no_velocity_but_evolution_active(self, youk_root, host_root):
         """STEADY when score unchanged and gaps or proposals exist."""
         # Write a SkillGap entry so evolution_active=True
-        (claude_root / "audit" / "2026-07.md").write_text(
+        (host_root / "audit" / "2026-07.md").write_text(
             "### Session — 2026-06-30 10:00 UTC\nSkills: code-review\n"
             "CloseCluster: yes\nOrg score: 7.0/10\nCommits: yes\n"
             "SkillGap: learn — missing PERSIST phase\n\n"
@@ -827,7 +827,7 @@ class TestLoopVerdict:
             "CloseCluster: yes\nCommits: yes\n"
         )
         from health import _compute_improvement_velocity, _score_org
-        audit = (claude_root / "audit" / "2026-07.md").read_text()
+        audit = (host_root / "audit" / "2026-07.md").read_text()
         score = _score_org([audit])
         result = _compute_improvement_velocity([audit], score)
         # Score might not be exactly 7.0 again — just verify STALLED is absent
@@ -846,22 +846,22 @@ class TestNamingLint:
         "G2a", "G2b", "G2c",
     ]
 
-    def _all_finding_strings(self, claude_root, youk_root) -> list[str]:
+    def _all_finding_strings(self, host_root, youk_root) -> list[str]:
         """Run _generate_findings with a realistic audit and collect all strings."""
         audit = "\n".join(
             f"### Session — 2026-07-0{i} 10:00 UTC\n"
             f"Skills: code-review\nCloseCluster: yes\nCommits: yes\n"
             for i in range(1, 6)
         )
-        (claude_root / "audit" / "2026-07.md").write_text(audit)
+        (host_root / "audit" / "2026-07.md").write_text(audit)
         from health import _generate_findings, _score_org, _compute_improvement_velocity
         score = _score_org([audit])
         findings = _generate_findings([audit], score)
         velocity = _compute_improvement_velocity([audit], score)
         return findings + [velocity.get("loop_verdict", "")]
 
-    def test_no_opaque_labels_in_findings(self, youk_root, claude_root):
-        strings = self._all_finding_strings(claude_root, youk_root)
+    def test_no_opaque_labels_in_findings(self, youk_root, host_root):
+        strings = self._all_finding_strings(host_root, youk_root)
         violations = []
         for s in strings:
             for pattern in self._OPAQUE_PATTERNS:
@@ -873,27 +873,27 @@ class TestNamingLint:
 # ── _read_recent_audit_logs ───────────────────────────────────────────────────
 
 class TestReadRecentAuditLogs:
-    def test_returns_empty_when_dir_missing(self, youk_root, claude_root):
+    def test_returns_empty_when_dir_missing(self, youk_root, host_root):
         from health import _read_recent_audit_logs
         assert _read_recent_audit_logs() == []
 
-    def test_reads_current_month_file(self, youk_root, claude_root):
+    def test_reads_current_month_file(self, youk_root, host_root):
         from datetime import datetime
         month = datetime.now(UTC).strftime("%Y-%m")
-        (claude_root / "audit" / f"{month}.md").write_text("### Session — content\n")
+        (host_root / "audit" / f"{month}.md").write_text("### Session — content\n")
         from health import _read_recent_audit_logs
         texts = _read_recent_audit_logs(days=30)
         assert any("### Session" in t for t in texts)
 
-    def test_skips_files_outside_window(self, youk_root, claude_root):
+    def test_skips_files_outside_window(self, youk_root, host_root):
         # Write a file from 3 years ago — should be excluded by the 30-day window
-        (claude_root / "audit" / "2020-01.md").write_text("### Session — old\n")
+        (host_root / "audit" / "2020-01.md").write_text("### Session — old\n")
         from health import _read_recent_audit_logs
         texts = _read_recent_audit_logs(days=30)
         assert not any("old" in t for t in texts)
 
-    def test_skips_malformed_filenames(self, youk_root, claude_root):
-        (claude_root / "audit" / "notes.md").write_text("just notes\n")
+    def test_skips_malformed_filenames(self, youk_root, host_root):
+        (host_root / "audit" / "notes.md").write_text("just notes\n")
         from health import _read_recent_audit_logs
         # Should not raise — malformed files are silently skipped
         texts = _read_recent_audit_logs(days=30)
@@ -903,7 +903,7 @@ class TestReadRecentAuditLogs:
 # ── _parse_skill_gap_signals ──────────────────────────────────────────────────
 
 class TestParseSkillGapSignals:
-    def test_extracts_gap_lines(self, youk_root, claude_root):
+    def test_extracts_gap_lines(self, youk_root, host_root):
         audit = "SkillGap: learn — missing PERSIST phase\nSkillGap: learn — no bridges\n"
         from health import _parse_skill_gap_signals
         result = _parse_skill_gap_signals([audit])
@@ -911,7 +911,7 @@ class TestParseSkillGapSignals:
         assert result[0]["skill"] == "learn"
         assert result[0]["count"] == 2
 
-    def test_multiple_skills_sorted_by_count(self, youk_root, claude_root):
+    def test_multiple_skills_sorted_by_count(self, youk_root, host_root):
         audit = (
             "SkillGap: code-review — gap1\nSkillGap: code-review — gap2\n"
             "SkillGap: code-review — gap3\nSkillGap: learn — gap1\n"
@@ -921,11 +921,11 @@ class TestParseSkillGapSignals:
         assert result[0]["skill"] == "code-review"
         assert result[0]["count"] == 3
 
-    def test_returns_empty_when_no_gap_lines(self, youk_root, claude_root):
+    def test_returns_empty_when_no_gap_lines(self, youk_root, host_root):
         from health import _parse_skill_gap_signals
         assert _parse_skill_gap_signals(["### Session — no gaps\n"]) == []
 
-    def test_ignores_malformed_gap_lines(self, youk_root, claude_root):
+    def test_ignores_malformed_gap_lines(self, youk_root, host_root):
         from health import _parse_skill_gap_signals
         # Missing " — " separator → should be ignored
         result = _parse_skill_gap_signals(["SkillGap: learn missing separator\n"])
@@ -935,7 +935,7 @@ class TestParseSkillGapSignals:
 # ── run_health_check_with_skill_signals ───────────────────────────────────────
 
 class TestRunHealthCheckWithSkillSignals:
-    def _write_audit(self, claude_root, sessions=3, with_gap=False):
+    def _write_audit(self, host_root, sessions=3, with_gap=False):
         lines = []
         for i in range(1, sessions + 1):
             lines.append(f"### Session — {_CURRENT_MONTH}-0{i} 10:00 UTC")
@@ -944,44 +944,44 @@ class TestRunHealthCheckWithSkillSignals:
             lines.append("Commits: yes")
             if with_gap:
                 lines.append("SkillGap: learn — missing PERSIST phase")
-        (claude_root / "audit" / f"{_CURRENT_MONTH}.md").write_text("\n".join(lines))
+        (host_root / "audit" / f"{_CURRENT_MONTH}.md").write_text("\n".join(lines))
 
-    def test_returns_org_score(self, youk_root, claude_root):
-        self._write_audit(claude_root)
+    def test_returns_org_score(self, youk_root, host_root):
+        self._write_audit(host_root)
         from health import run_health_check_with_skill_signals
         result = run_health_check_with_skill_signals()
         assert "org_score" in result
         assert isinstance(result["org_score"], float)
 
-    def test_includes_improvement_velocity(self, youk_root, claude_root):
-        self._write_audit(claude_root)
+    def test_includes_improvement_velocity(self, youk_root, host_root):
+        self._write_audit(host_root)
         from health import run_health_check_with_skill_signals
         result = run_health_check_with_skill_signals()
         assert "improvement_velocity" in result
         assert "loop_verdict" in result["improvement_velocity"]
 
-    def test_surfaces_skill_gap_signals_when_present(self, youk_root, claude_root):
-        self._write_audit(claude_root, with_gap=True)
+    def test_surfaces_skill_gap_signals_when_present(self, youk_root, host_root):
+        self._write_audit(host_root, with_gap=True)
         from health import run_health_check_with_skill_signals
         result = run_health_check_with_skill_signals()
         assert "skill_gap_signals" in result
         assert result["skill_gap_signals"][0]["skill"] == "learn"
 
-    def test_no_skill_gap_key_when_none_present(self, youk_root, claude_root):
-        self._write_audit(claude_root, with_gap=False)
+    def test_no_skill_gap_key_when_none_present(self, youk_root, host_root):
+        self._write_audit(host_root, with_gap=False)
         from health import run_health_check_with_skill_signals
         result = run_health_check_with_skill_signals()
         assert "skill_gap_signals" not in result
 
-    def test_research_mode_adds_topics_when_gaps_exist(self, youk_root, claude_root):
-        self._write_audit(claude_root, with_gap=True)
+    def test_research_mode_adds_topics_when_gaps_exist(self, youk_root, host_root):
+        self._write_audit(host_root, with_gap=True)
         from health import run_health_check_with_skill_signals
         result = run_health_check_with_skill_signals(research_mode=True)
         assert "research_topics" in result
         assert len(result["research_topics"]) >= 1
 
-    def test_research_mode_no_topics_when_no_gaps(self, youk_root, claude_root):
-        self._write_audit(claude_root, with_gap=False)
+    def test_research_mode_no_topics_when_no_gaps(self, youk_root, host_root):
+        self._write_audit(host_root, with_gap=False)
         from health import run_health_check_with_skill_signals
         result = run_health_check_with_skill_signals(research_mode=False)
         assert "research_topics" not in result
@@ -1038,7 +1038,7 @@ class TestBuildDomainResearchInvocation:
 # ── _archive_applied_proposals ────────────────────────────────────────────────
 
 class TestArchiveAppliedProposals:
-    def test_counts_applied_proposals(self, youk_root, claude_root):
+    def test_counts_applied_proposals(self, youk_root, host_root):
         import health
         from models import Proposal
         # Insert one APPLIED and one PENDING proposal directly into SQLite
@@ -1055,7 +1055,7 @@ class TestArchiveAppliedProposals:
         count = health._archive_applied_proposals()
         assert count == 1
 
-    def test_returns_zero_when_nothing_applied(self, youk_root, claude_root):
+    def test_returns_zero_when_nothing_applied(self, youk_root, host_root):
         import health
         from models import Proposal
         health.add_proposal(Proposal(
@@ -1065,7 +1065,7 @@ class TestArchiveAppliedProposals:
         ))
         assert health._archive_applied_proposals() == 0
 
-    def test_returns_zero_when_no_proposals(self, youk_root, claude_root):
+    def test_returns_zero_when_no_proposals(self, youk_root, host_root):
         from health import _archive_applied_proposals
         assert _archive_applied_proposals() == 0
 
@@ -1207,13 +1207,13 @@ class TestAddProposal:
             content="new content",
         )
 
-    def test_proposal_stored_in_db(self, youk_root, claude_root):
+    def test_proposal_stored_in_db(self, youk_root, host_root):
         import health
         health.add_proposal(self._make_proposal("PENDING-H001", "stored in db"))
         loaded = health._load_pending_proposals()
         assert any(p.id == "PENDING-H001" for p in loaded)
 
-    def test_deduplicates_by_id(self, youk_root, claude_root):
+    def test_deduplicates_by_id(self, youk_root, host_root):
         import health
         p = self._make_proposal("PENDING-H002", "unique description for dedup test")
         health.add_proposal(p)
@@ -1221,7 +1221,7 @@ class TestAddProposal:
         loaded = health._load_pending_proposals()
         assert len([x for x in loaded if x.id == "PENDING-H002"]) == 1
 
-    def test_appends_distinct_proposals(self, youk_root, claude_root):
+    def test_appends_distinct_proposals(self, youk_root, host_root):
         import health
         health.add_proposal(self._make_proposal("PENDING-H003", "description one"))
         health.add_proposal(self._make_proposal("PENDING-H004", "description two"))
@@ -1249,13 +1249,13 @@ class TestProposalBacklogCount:
             target_section="Phase 1", content="new content",
         )
 
-    def test_count_matches_real_pending_rows(self, youk_root, claude_root):
+    def test_count_matches_real_pending_rows(self, youk_root, host_root):
         import health
         for i in range(5):
             health.add_proposal(self._make_proposal(f"PENDING-BL{i}"))
         assert len(health._load_pending_proposals()) == 5
 
-    def test_applied_proposals_are_not_counted_as_still_pending(self, youk_root, claude_root):
+    def test_applied_proposals_are_not_counted_as_still_pending(self, youk_root, host_root):
         import health
         health.add_proposal(self._make_proposal("PENDING-BL-APPLIED", status="APPLIED — 2026-07-02"))
         health.add_proposal(self._make_proposal("PENDING-BL-OPEN"))
@@ -1265,7 +1265,7 @@ class TestProposalBacklogCount:
         assert len(still_open) == 1
         assert still_open[0].id == "PENDING-BL-OPEN"
 
-    def test_zero_proposals_when_none_added(self, youk_root, claude_root):
+    def test_zero_proposals_when_none_added(self, youk_root, host_root):
         import health
         assert health._load_pending_proposals() == []
 
@@ -1273,7 +1273,7 @@ class TestProposalBacklogCount:
 # ── _compute_diff_preview (SKILL_EDIT, FILE_CREATE, unknown) ──────────────────
 
 class TestComputeDiffPreview:
-    def _make_proposal(self, change_type, target, section="", content="new content", youk_root=None, claude_root=None):
+    def _make_proposal(self, change_type, target, section="", content="new content", youk_root=None, host_root=None):
         from models import Proposal
         return Proposal(
             id="PENDING-PREVIEW",
@@ -1289,8 +1289,8 @@ class TestComputeDiffPreview:
             content=content,
         )
 
-    def test_skill_edit_section_found(self, youk_root, claude_root):
-        skill_dir = claude_root / "skills" / "learn"
+    def test_skill_edit_section_found(self, youk_root, host_root):
+        skill_dir = host_root / "skills" / "learn"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("# learn\n\n## Phase 1\nold content\n\n## Phase 2\nother\n")
         p = self._make_proposal("SKILL_EDIT", "learn", section="Phase 1", content="new content")
@@ -1300,8 +1300,8 @@ class TestComputeDiffPreview:
         assert "Phase 1" in result["before"]
         assert "new content" in result["after"]
 
-    def test_skill_edit_section_missing(self, youk_root, claude_root):
-        skill_dir = claude_root / "skills" / "learn"
+    def test_skill_edit_section_missing(self, youk_root, host_root):
+        skill_dir = host_root / "skills" / "learn"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("# learn\n\n## Phase 1\nstuff\n")
         p = self._make_proposal("SKILL_EDIT", "learn", section="NonExistent", content="x")
@@ -1309,13 +1309,13 @@ class TestComputeDiffPreview:
         result = _compute_diff_preview(p)
         assert "section not found" in result["before"]
 
-    def test_skill_edit_skill_md_missing(self, youk_root, claude_root):
+    def test_skill_edit_skill_md_missing(self, youk_root, host_root):
         p = self._make_proposal("SKILL_EDIT", "missing-skill", section="Phase 1", content="x")
         from health import _compute_diff_preview
         result = _compute_diff_preview(p)
         assert "error" in result
 
-    def test_unknown_change_type_returns_note(self, youk_root, claude_root):
+    def test_unknown_change_type_returns_note(self, youk_root, host_root):
         p = self._make_proposal("UNKNOWN_TYPE", "some/target")
         from health import _compute_diff_preview
         result = _compute_diff_preview(p)
@@ -1341,14 +1341,14 @@ class TestExecuteProposal:
             content=content,
         )
 
-    def test_file_create_blocked_outside_allowed_roots(self, youk_root, claude_root):
+    def test_file_create_blocked_outside_allowed_roots(self, youk_root, host_root):
         p = self._make_proposal("FILE_CREATE", "/tmp/evil.md", content="evil")
         from health import _execute_proposal
         result = _execute_proposal(p)
         assert result["applied"] is False
         assert "blocked" in result["error"].lower() or "outside" in result["error"].lower()
 
-    def test_file_create_writes_inside_youk_root(self, youk_root, claude_root):
+    def test_file_create_writes_inside_youk_root(self, youk_root, host_root):
         import health
         target = str(youk_root / "knowledge" / "proposals" / "test-create.md")
         p = self._make_proposal("FILE_CREATE", target, content="# Created\n")
@@ -1356,8 +1356,8 @@ class TestExecuteProposal:
         assert result["applied"] is True
         assert (youk_root / "knowledge" / "proposals" / "test-create.md").read_text() == "# Created\n"
 
-    def test_skill_edit_appends_new_section_when_missing(self, youk_root, claude_root):
-        skill_dir = claude_root / "skills" / "learn"
+    def test_skill_edit_appends_new_section_when_missing(self, youk_root, host_root):
+        skill_dir = host_root / "skills" / "learn"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("# learn\n\n## Phase 1\noriginal\n")
         p = self._make_proposal("SKILL_EDIT", "learn", section="New Section", content="brand new")
@@ -1368,8 +1368,8 @@ class TestExecuteProposal:
         assert "New Section" in content
         assert "brand new" in content
 
-    def test_skill_edit_replaces_existing_section(self, youk_root, claude_root):
-        skill_dir = claude_root / "skills" / "learn"
+    def test_skill_edit_replaces_existing_section(self, youk_root, host_root):
+        skill_dir = host_root / "skills" / "learn"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("# learn\n\n## Phase 1\nold content\n\n## Phase 2\nkeep\n")
         p = self._make_proposal("SKILL_EDIT", "learn", section="Phase 1", content="new content")
@@ -1384,8 +1384,8 @@ class TestExecuteProposal:
         # unrelated section must survive
         assert "keep" in content
 
-    def test_skill_edit_preserves_other_sections_only(self, youk_root, claude_root):
-        skill_dir = claude_root / "skills" / "learn"
+    def test_skill_edit_preserves_other_sections_only(self, youk_root, host_root):
+        skill_dir = host_root / "skills" / "learn"
         skill_dir.mkdir(parents=True)
         original = "# learn\n\n## Rules\nrule A\nrule B\n\n## Output Format\nformat here\n"
         (skill_dir / "SKILL.md").write_text(original)
@@ -1402,14 +1402,14 @@ class TestExecuteProposal:
         assert "Output Format" in content
         assert "format here" in content
 
-    def test_skill_edit_missing_skill_md(self, youk_root, claude_root):
+    def test_skill_edit_missing_skill_md(self, youk_root, host_root):
         p = self._make_proposal("SKILL_EDIT", "nonexistent", section="Phase 1", content="x")
         from health import _execute_proposal
         result = _execute_proposal(p)
         assert result["applied"] is False
         assert "not found" in result["error"]
 
-    def test_unknown_change_type_returns_error(self, youk_root, claude_root):
+    def test_unknown_change_type_returns_error(self, youk_root, host_root):
         p = self._make_proposal("UNKNOWN", "some/target")
         from health import _execute_proposal
         result = _execute_proposal(p)
@@ -1420,7 +1420,7 @@ class TestExecuteProposal:
 # ── _compute_knowledge_velocity ───────────────────────────────────────────────
 
 class TestComputeKnowledgeVelocity:
-    def _write_audit(self, claude_root, sessions: list[dict]):
+    def _write_audit(self, host_root, sessions: list[dict]):
         lines = []
         for i, s in enumerate(sessions):
             lines.append(f"### Session — 2026-07-0{i+1} 10:00 UTC")
@@ -1431,11 +1431,11 @@ class TestComputeKnowledgeVelocity:
                 lines.append(f"ContractsSaved: {s['contracts_saved']}")
         return "\n".join(lines)
 
-    def test_growing_when_contracts_and_domain(self, youk_root, claude_root):
+    def test_growing_when_contracts_and_domain(self, youk_root, host_root):
         domain_dir = youk_root / "knowledge" / "domain"
         domain_dir.mkdir(parents=True, exist_ok=True)
         (domain_dir / "testing.md").write_text("# Testing\n")
-        audit = self._write_audit(claude_root, [
+        audit = self._write_audit(host_root, [
             {"skills": "learn", "contracts_saved": 2},
             {"skills": "learn", "contracts_saved": 1},
         ])
@@ -1444,36 +1444,36 @@ class TestComputeKnowledgeVelocity:
         assert result["domain_concepts_total"] >= 1
         assert "GROWING" in result["verdict"] or "SLOW" in result["verdict"]
 
-    def test_empty_verdict_when_no_knowledge(self, youk_root, claude_root):
-        audit = self._write_audit(claude_root, [{"skills": "code-review"}])
+    def test_empty_verdict_when_no_knowledge(self, youk_root, host_root):
+        audit = self._write_audit(host_root, [{"skills": "code-review"}])
         from health import _compute_knowledge_velocity
         result = _compute_knowledge_velocity([audit], "test-project")
         assert result["verdict"] in ("EMPTY — no knowledge accumulated yet; run /learn at session end",
                                      "SLOW — knowledge accumulating but below 1 contract/session average",
                                      "STALLED — existing knowledge loaded but nothing added recently")
 
-    def test_domain_concepts_counts_md_files_excluding_gaps(self, youk_root, claude_root):
+    def test_domain_concepts_counts_md_files_excluding_gaps(self, youk_root, host_root):
         domain_dir = youk_root / "knowledge" / "domain"
         domain_dir.mkdir(parents=True, exist_ok=True)
         (domain_dir / "concept-a.md").write_text("# A\n")
         (domain_dir / "concept-b.md").write_text("# B\n")
         (domain_dir / "gaps.md").write_text("# Gaps\n")  # should be excluded
-        audit = self._write_audit(claude_root, [{"skills": "learn"}])
+        audit = self._write_audit(host_root, [{"skills": "learn"}])
         from health import _compute_knowledge_velocity
         result = _compute_knowledge_velocity([audit], "test-project")
         assert result["domain_concepts_total"] == 2  # gaps.md excluded
 
-    def test_project_contracts_counted(self, youk_root, claude_root):
+    def test_project_contracts_counted(self, youk_root, host_root):
         proj = youk_root / "knowledge" / "projects" / "myproj"
         proj.mkdir(parents=True, exist_ok=True)
         (proj / "contracts.md").write_text("- contract one\n- contract two\n")
-        audit = self._write_audit(claude_root, [{"skills": "learn"}])
+        audit = self._write_audit(host_root, [{"skills": "learn"}])
         from health import _compute_knowledge_velocity
         result = _compute_knowledge_velocity([audit], "myproj")
         assert result["project_contracts_total"] == 2
 
-    def test_learn_rate_computed(self, youk_root, claude_root):
-        audit = self._write_audit(claude_root, [
+    def test_learn_rate_computed(self, youk_root, host_root):
+        audit = self._write_audit(host_root, [
             {"skills": "learn", "close_cluster": True},
             {"skills": "code-review", "close_cluster": True},
         ])
@@ -1484,7 +1484,7 @@ class TestComputeKnowledgeVelocity:
     # ── Bug fix tests ────────────────────────────────────────────────────────
     # Fix 2: project_contracts_total must count only "- " prefixed lines
 
-    def test_separator_lines_not_counted_in_contracts_total(self, youk_root, claude_root):
+    def test_separator_lines_not_counted_in_contracts_total(self, youk_root, host_root):
         """Prose headers and --- separators must not inflate the contract count."""
         proj = youk_root / "knowledge" / "projects" / "sep-proj"
         proj.mkdir(parents=True, exist_ok=True)
@@ -1495,20 +1495,20 @@ class TestComputeKnowledgeVelocity:
             "- real contract two\n"
             "Some prose line without a dash\n"
         )
-        audit = self._write_audit(claude_root, [{"skills": "learn"}])
+        audit = self._write_audit(host_root, [{"skills": "learn"}])
         from health import _compute_knowledge_velocity
         result = _compute_knowledge_velocity([audit], "sep-proj")
         assert result["project_contracts_total"] == 2
 
     # Fix 3: avg_contracts_per_session must read ContractsSaved (capitalised)
 
-    def test_avg_contracts_per_session_reads_capitalised_field(self, youk_root, claude_root):
+    def test_avg_contracts_per_session_reads_capitalised_field(self, youk_root, host_root):
         """avg_contracts_per_session must be non-zero when ContractsSaved lines exist."""
         proj = youk_root / "knowledge" / "projects" / "cap-proj"
         proj.mkdir(parents=True, exist_ok=True)
         (proj / "contracts.md").write_text("- contract a\n- contract b\n")
         # _write_audit now emits ContractsSaved: (capitalised) via updated helper
-        audit = self._write_audit(claude_root, [
+        audit = self._write_audit(host_root, [
             {"skills": "learn", "contracts_saved": 3},
             {"skills": "learn", "contracts_saved": 1},
         ])
@@ -1516,13 +1516,13 @@ class TestComputeKnowledgeVelocity:
         result = _compute_knowledge_velocity([audit], "cap-proj")
         assert result["avg_contracts_per_session"] == 2.0  # (3+1)/2
 
-    def test_file_based_fallback_when_no_audit_contracts_saved(self, youk_root, claude_root):
+    def test_file_based_fallback_when_no_audit_contracts_saved(self, youk_root, host_root):
         """When audit has no ContractsSaved lines, fall back to file total / session count."""
         proj = youk_root / "knowledge" / "projects" / "fallback-proj"
         proj.mkdir(parents=True, exist_ok=True)
         (proj / "contracts.md").write_text("- c1\n- c2\n- c3\n- c4\n")
         # Audit with no ContractsSaved field (simulates pre-fix historical sessions)
-        audit = self._write_audit(claude_root, [
+        audit = self._write_audit(host_root, [
             {"skills": "code-review"},
             {"skills": "code-review"},
         ])
@@ -1546,11 +1546,11 @@ class TestAnalyzePromotionCandidates:
             lines.append(f"SkillGap: {skill} — {desc}")
         return "\n".join(lines)
 
-    def test_returns_empty_when_no_gaps(self, youk_root, claude_root):
+    def test_returns_empty_when_no_gaps(self, youk_root, host_root):
         from health import _analyze_promotion_candidates
         assert _analyze_promotion_candidates([]) == []
 
-    def test_skill_with_3_occurrences_is_candidate(self, youk_root, claude_root):
+    def test_skill_with_3_occurrences_is_candidate(self, youk_root, host_root):
         audit = self._audit_with_gaps([
             ("proj-a", "learn", "missing PERSIST"),
             ("proj-a", "learn", "no bridges"),
@@ -1560,7 +1560,7 @@ class TestAnalyzePromotionCandidates:
         candidates = _analyze_promotion_candidates([audit])
         assert any(c["skill"] == "learn" and c["occurrence_count"] >= 3 for c in candidates)
 
-    def test_skill_with_2_occurrences_not_candidate(self, youk_root, claude_root):
+    def test_skill_with_2_occurrences_not_candidate(self, youk_root, host_root):
         audit = self._audit_with_gaps([
             ("proj-a", "learn", "gap1"),
             ("proj-a", "learn", "gap2"),
@@ -1569,7 +1569,7 @@ class TestAnalyzePromotionCandidates:
         candidates = _analyze_promotion_candidates([audit])
         assert not any(c["skill"] == "learn" for c in candidates)
 
-    def test_cross_project_gap_gets_file_create_type(self, youk_root, claude_root):
+    def test_cross_project_gap_gets_file_create_type(self, youk_root, host_root):
         audit = self._audit_with_gaps([
             ("proj-a", "verify", "missing step"),
             ("proj-b", "verify", "missing step"),
@@ -1581,7 +1581,7 @@ class TestAnalyzePromotionCandidates:
         assert verify is not None
         assert verify["change_type"] in ("FILE_CREATE", "SKILL_EDIT")
 
-    def test_code_gap_signal_gets_code_edit_type(self, youk_root, claude_root):
+    def test_code_gap_signal_gets_code_edit_type(self, youk_root, host_root):
         audit = self._audit_with_gaps([
             ("proj-a", "learn", "session.py route_task missing"),
             ("proj-a", "learn", "session.py returns wrong value"),
@@ -1598,13 +1598,13 @@ class TestAnalyzePromotionCandidates:
 # ── _queue_promotion_proposals ────────────────────────────────────────────────
 
 class TestQueuePromotionProposals:
-    def test_queues_skill_edit_proposal(self, youk_root, claude_root, monkeypatch):
+    def test_queues_skill_edit_proposal(self, youk_root, host_root, monkeypatch):
         (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
         # Create the SKILL.md so the skill is treated as "evolve existing" not "generate new"
-        (claude_root / "skills" / "verify").mkdir(parents=True, exist_ok=True)
-        (claude_root / "skills" / "verify" / "SKILL.md").write_text("# verify skill")
+        (host_root / "skills" / "verify").mkdir(parents=True, exist_ok=True)
+        (host_root / "skills" / "verify" / "SKILL.md").write_text("# verify skill")
         import health
-        monkeypatch.setattr(health, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(health, "HOST_ROOT", host_root)
         candidates = [{
             "skill": "verify",
             "occurrence_count": 4,
@@ -1619,12 +1619,12 @@ class TestQueuePromotionProposals:
         loaded = health._load_pending_proposals()
         assert any("verify" in p.target.lower() for p in loaded)
 
-    def test_queues_code_edit_proposal(self, youk_root, claude_root, monkeypatch):
+    def test_queues_code_edit_proposal(self, youk_root, host_root, monkeypatch):
         (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
-        (claude_root / "skills" / "learn").mkdir(parents=True, exist_ok=True)
-        (claude_root / "skills" / "learn" / "SKILL.md").write_text("# learn skill")
+        (host_root / "skills" / "learn").mkdir(parents=True, exist_ok=True)
+        (host_root / "skills" / "learn" / "SKILL.md").write_text("# learn skill")
         import health
-        monkeypatch.setattr(health, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(health, "HOST_ROOT", host_root)
         candidates = [{
             "skill": "learn",
             "occurrence_count": 5,
@@ -1639,12 +1639,12 @@ class TestQueuePromotionProposals:
         loaded = health._load_pending_proposals()
         assert any(p.change_type == "CODE_EDIT" for p in loaded)
 
-    def test_missing_skill_md_goes_to_gen_pending(self, youk_root, claude_root, monkeypatch):
+    def test_missing_skill_md_goes_to_gen_pending(self, youk_root, host_root, monkeypatch):
         """Skills with no SKILL.md are returned in gen_pending, not queued as proposals."""
         (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
         import health
-        monkeypatch.setattr(health, "CLAUDE_ROOT", claude_root)
-        # "newskill" has no SKILL.md in claude_root/skills/
+        monkeypatch.setattr(health, "HOST_ROOT", host_root)
+        # "newskill" has no SKILL.md in host_root/skills/
         candidates = [{
             "skill": "newskill",
             "occurrence_count": 4,
@@ -1661,11 +1661,11 @@ class TestQueuePromotionProposals:
 # ── _score_org early returns ───────────────────────────────────────────────────
 
 class TestScoreOrgEdgeCases:
-    def test_returns_5_when_no_audit_texts(self, youk_root, claude_root):
+    def test_returns_5_when_no_audit_texts(self, youk_root, host_root):
         from health import _score_org
         assert _score_org([]) == 5.0
 
-    def test_returns_5_when_no_sessions_parseable(self, youk_root, claude_root):
+    def test_returns_5_when_no_sessions_parseable(self, youk_root, host_root):
         from health import _score_org
         result = _score_org(["# empty audit file\nno session blocks here"])
         assert result == 5.0
@@ -1682,7 +1682,7 @@ class TestTokenBudgetParsing:
             f"{token_line}\n"
         )
 
-    def test_parses_tokens_with_budget(self, youk_root, claude_root):
+    def test_parses_tokens_with_budget(self, youk_root, host_root):
         audit = self._audit("Tokens: 8000/12000")
         from health import _parse_audit_sessions
         sessions = _parse_audit_sessions([audit])
@@ -1692,7 +1692,7 @@ class TestTokenBudgetParsing:
         assert s["tokens_budget"] == 12000
         assert abs(s["tokens_ratio"] - 8000 / 12000) < 0.01
 
-    def test_parses_tokens_without_budget(self, youk_root, claude_root):
+    def test_parses_tokens_without_budget(self, youk_root, host_root):
         audit = self._audit("Tokens: 5000")
         from health import _parse_audit_sessions
         sessions = _parse_audit_sessions([audit])
@@ -1719,7 +1719,7 @@ class TestGenerateFindingsExtended:
             blocks.append(block)
         return "\n".join(blocks)
 
-    def test_nominal_finding_when_no_issues(self, youk_root, claude_root):
+    def test_nominal_finding_when_no_issues(self, youk_root, host_root):
         # The 'nominal' finding only fires when all other checks produce zero findings.
         # Require: token data, proposals, all 8 capability skills used, DeveloperCaught,
         # and enough sessions so no depth-discount or autonomy-gap findings surface.
@@ -1762,7 +1762,7 @@ class TestGenerateFindingsExtended:
             block += "DirectionReversal: yes\n"
         return block
 
-    def test_rework_rate_finding_fires_above_threshold(self, youk_root, claude_root):
+    def test_rework_rate_finding_fires_above_threshold(self, youk_root, host_root):
         # 3 of 5 sessions with DirectionReversal → planning gate finding
         from health import _generate_findings
         blocks = (
@@ -1772,7 +1772,7 @@ class TestGenerateFindingsExtended:
         findings = _generate_findings(blocks, score=7.0)
         assert any("direction corrections" in f.lower() for f in findings)
 
-    def test_rework_rate_finding_below_threshold(self, youk_root, claude_root):
+    def test_rework_rate_finding_below_threshold(self, youk_root, host_root):
         # Only 2 of 5 sessions with reversals — below threshold of 3
         from health import _generate_findings
         blocks = (
@@ -1782,7 +1782,7 @@ class TestGenerateFindingsExtended:
         findings = _generate_findings(blocks, score=7.0)
         assert not any("direction corrections" in f.lower() for f in findings)
 
-    def test_consecutive_no_close_with_done_skill(self, youk_root, claude_root, tmp_path):
+    def test_consecutive_no_close_with_done_skill(self, youk_root, host_root, tmp_path):
         import json
         import health
         # Create a project with .claude/skills/done
@@ -1796,14 +1796,14 @@ class TestGenerateFindingsExtended:
         findings = health._generate_findings([audit], score=6.0)
         assert any("done" in f.lower() for f in findings)
 
-    def test_consecutive_no_close_no_retrospective(self, youk_root, claude_root):
+    def test_consecutive_no_close_no_retrospective(self, youk_root, host_root):
         # 3 no-close sessions with no /learn recovery → should flag
         audit = self._make_sessions(3, close=False, skills="code-review")
         from health import _generate_findings
         findings = _generate_findings([audit], score=6.0)
         assert any("session-close loop" in f.lower() for f in findings)
 
-    def test_consecutive_no_close_with_retrospective_learn(self, youk_root, claude_root):
+    def test_consecutive_no_close_with_retrospective_learn(self, youk_root, host_root):
         # 3 no-close sessions but /learn ran in one → the specific
         # "neither /done nor retrospective /learn ran" message should NOT appear.
         # (The generic high-skip-rate finding may still appear — that's expected.)
@@ -1834,8 +1834,8 @@ class TestAuditSkillQualitySingleWeak:
         "## Examples\n```\nexample\n```\n"
     )
 
-    def test_single_weak_skill_message(self, youk_root, claude_root):
-        skills_dir = claude_root / "skills"
+    def test_single_weak_skill_message(self, youk_root, host_root):
+        skills_dir = host_root / "skills"
         # Give all skills good SKILL.md content, except "adr" which gets minimal content
         for name in self._ALL_SKILLS:
             skill_dir = skills_dir / name
@@ -1852,10 +1852,10 @@ class TestAuditSkillQualitySingleWeak:
 # ── _compute_improvement_velocity — single history + PENDING counting ─────────
 
 class TestImprovementVelocityExtended:
-    def _write_audit(self, claude_root, sessions_data):
+    def _write_audit(self, host_root, sessions_data):
         from datetime import datetime
         month = datetime.now(UTC).strftime("%Y-%m")
-        audit_dir = claude_root / "audit"
+        audit_dir = host_root / "audit"
         blocks = []
         for i, s in enumerate(sessions_data):
             close = s.get("close_cluster", True)
@@ -1869,13 +1869,13 @@ class TestImprovementVelocityExtended:
         f.write_text("\n".join(blocks))
         return f.read_text()
 
-    def test_single_score_in_history_velocity_is_zero(self, youk_root, claude_root):
-        audit = self._write_audit(claude_root, [{"skills": "code-review"}])
+    def test_single_score_in_history_velocity_is_zero(self, youk_root, host_root):
+        audit = self._write_audit(host_root, [{"skills": "code-review"}])
         from health import _compute_improvement_velocity
         result = _compute_improvement_velocity([audit], current_score=6.0)
         assert result["velocity"] == 0.0
 
-    def test_proposals_applied_counted(self, youk_root, claude_root):
+    def test_proposals_applied_counted(self, youk_root, host_root):
         (youk_root / "knowledge" / "proposals").mkdir(parents=True, exist_ok=True)
         pending_file = youk_root / "knowledge" / "proposals" / "PENDING.md"
         pending_file.write_text(
@@ -1887,7 +1887,7 @@ class TestImprovementVelocityExtended:
         orig = h.PROPOSALS_FILE
         h.PROPOSALS_FILE = pending_file
         try:
-            audit = self._write_audit(claude_root, [{"skills": "code-review"}])
+            audit = self._write_audit(host_root, [{"skills": "code-review"}])
             from health import _compute_improvement_velocity
             result = _compute_improvement_velocity([audit], current_score=6.0)
             assert result["proposals_applied_total"] == 2
@@ -1898,7 +1898,7 @@ class TestImprovementVelocityExtended:
 # ── _audit_global_contracts — oversize + pending review paths ─────────────────
 
 class TestAuditGlobalContractsExtended:
-    def test_oversize_returns_high_count(self, youk_root, claude_root):
+    def test_oversize_returns_high_count(self, youk_root, host_root):
         global_dir = youk_root / "knowledge" / "global"
         global_dir.mkdir(parents=True)
         lines = [f"- contract {i}" for i in range(105)]
@@ -1907,7 +1907,7 @@ class TestAuditGlobalContractsExtended:
         result = _audit_global_contracts()
         assert result["total"] > 100
 
-    def test_auto_promoted_counted(self, youk_root, claude_root):
+    def test_auto_promoted_counted(self, youk_root, host_root):
         global_dir = youk_root / "knowledge" / "global"
         global_dir.mkdir(parents=True)
         content = "- contract one [auto-promoted]\n- contract two\n- contract three [auto-promoted]\n"
@@ -1920,7 +1920,7 @@ class TestAuditGlobalContractsExtended:
 # ── _compute_knowledge_velocity — STALLED verdict ─────────────────────────────
 
 class TestKnowledgeVelocityStalled:
-    def _write_audit(self, claude_root, sessions_data):
+    def _write_audit(self, host_root, sessions_data):
         from datetime import datetime
         month = datetime.now(UTC).strftime("%Y-%m")
         blocks = []
@@ -1930,22 +1930,22 @@ class TestKnowledgeVelocityStalled:
                 f"Skills: {s.get('skills', 'code-review')}\n"
                 f"CloseCluster: {'yes' if s.get('close_cluster', True) else 'no'}\n"
             )
-        f = claude_root / "audit" / f"{month}.md"
+        f = host_root / "audit" / f"{month}.md"
         f.write_text("\n".join(blocks))
         return f.read_text()
 
-    def test_stalled_when_contracts_exist_but_nothing_added(self, youk_root, claude_root):
+    def test_stalled_when_contracts_exist_but_nothing_added(self, youk_root, host_root):
         # project has contracts but no recent saves → STALLED
         proj = youk_root / "knowledge" / "projects" / "myproj"
         proj.mkdir(parents=True)
         (proj / "contracts.md").write_text("- old contract\n")
-        audit = self._write_audit(claude_root, [{"skills": "code-review"}])
+        audit = self._write_audit(host_root, [{"skills": "code-review"}])
         from health import _compute_knowledge_velocity
         result = _compute_knowledge_velocity([audit], "myproj")
         assert result["verdict"].startswith("STALLED")
 
-    def test_empty_when_nothing_at_all(self, youk_root, claude_root):
-        audit = self._write_audit(claude_root, [{"skills": "code-review"}])
+    def test_empty_when_nothing_at_all(self, youk_root, host_root):
+        audit = self._write_audit(host_root, [{"skills": "code-review"}])
         from health import _compute_knowledge_velocity
         result = _compute_knowledge_velocity([audit], "nonexistent-project")
         assert result["verdict"].startswith("EMPTY")
@@ -1970,29 +1970,29 @@ class TestComputeDiffPreviewExtended:
             content=content,
         )
 
-    def test_reference_add_new_file(self, youk_root, claude_root):
-        skills_dir = claude_root / "skills"
+    def test_reference_add_new_file(self, youk_root, host_root):
+        skills_dir = host_root / "skills"
         (skills_dir / "verify" / "references").mkdir(parents=True)
         proposal = self._make_proposal("REFERENCE_ADD", "verify", "ref content", "my-ref.md")
         import health
-        orig = health.CLAUDE_ROOT
-        health.CLAUDE_ROOT = claude_root
+        orig = health.HOST_ROOT
+        health.HOST_ROOT = host_root
         try:
             from health import _compute_diff_preview
             result = _compute_diff_preview(proposal)
             assert result["change_type"] == "REFERENCE_ADD"
             assert "file does not exist" in result["before"]
         finally:
-            health.CLAUDE_ROOT = orig
+            health.HOST_ROOT = orig
 
-    def test_config_edit_missing_file(self, youk_root, claude_root):
+    def test_config_edit_missing_file(self, youk_root, host_root):
         proposal = self._make_proposal("CONFIG_EDIT", "nonexistent.yaml", "key: value")
         from health import _compute_diff_preview
         result = _compute_diff_preview(proposal)
         assert "error" in result
         assert "Config not found" in result["error"]
 
-    def test_config_edit_existing_file(self, youk_root, claude_root):
+    def test_config_edit_existing_file(self, youk_root, host_root):
         config_dir = youk_root / "config"
         config_dir.mkdir(parents=True)
         (config_dir / "settings.yaml").write_text("existing_key: old_value\n")
@@ -2008,7 +2008,7 @@ class TestComputeDiffPreviewExtended:
         finally:
             health.YOUK_ROOT = orig
 
-    def test_code_edit_no_function(self, youk_root, claude_root):
+    def test_code_edit_no_function(self, youk_root, host_root):
         code_file = youk_root / "servers" / "core" / "src" / "somefile.py"
         code_file.parent.mkdir(parents=True)
         code_file.write_text("def existing_fn():\n    pass\n")
@@ -2023,7 +2023,7 @@ class TestComputeDiffPreviewExtended:
         finally:
             health.YOUK_ROOT = orig
 
-    def test_code_edit_with_matching_function(self, youk_root, claude_root):
+    def test_code_edit_with_matching_function(self, youk_root, host_root):
         code_file = youk_root / "servers" / "core" / "src" / "somefile.py"
         code_file.parent.mkdir(parents=True)
         code_file.write_text("def target_fn():\n    return 1\n\ndef other_fn():\n    pass\n")
@@ -2059,24 +2059,24 @@ class TestExecuteProposalExtended:
             content=content,
         )
 
-    def test_reference_add_writes_file(self, youk_root, claude_root):
-        skills_dir = claude_root / "skills"
+    def test_reference_add_writes_file(self, youk_root, host_root):
+        skills_dir = host_root / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
         import health
-        orig = health.CLAUDE_ROOT
-        health.CLAUDE_ROOT = claude_root
+        orig = health.HOST_ROOT
+        health.HOST_ROOT = host_root
         try:
             proposal = self._make_proposal("REFERENCE_ADD", "verify", "# Ref Content\n", "my-ref.md")
             from health import _execute_proposal
             result = _execute_proposal(proposal)
             assert result["applied"] is True
-            ref_file = claude_root / "skills" / "verify" / "references" / "my-ref.md"
+            ref_file = host_root / "skills" / "verify" / "references" / "my-ref.md"
             assert ref_file.exists()
             assert "Ref Content" in ref_file.read_text()
         finally:
-            health.CLAUDE_ROOT = orig
+            health.HOST_ROOT = orig
 
-    def test_config_edit_missing_file_returns_error(self, youk_root, claude_root):
+    def test_config_edit_missing_file_returns_error(self, youk_root, host_root):
         import health
         orig = health.YOUK_ROOT
         health.YOUK_ROOT = youk_root
@@ -2089,7 +2089,7 @@ class TestExecuteProposalExtended:
         finally:
             health.YOUK_ROOT = orig
 
-    def test_config_edit_merges_yaml(self, youk_root, claude_root):
+    def test_config_edit_merges_yaml(self, youk_root, host_root):
         config_dir = youk_root / "config"
         config_dir.mkdir(parents=True)
         (config_dir / "settings.yaml").write_text("key_a: old\n")
@@ -2107,7 +2107,7 @@ class TestExecuteProposalExtended:
         finally:
             health.YOUK_ROOT = orig
 
-    def test_config_edit_yaml_error(self, youk_root, claude_root):
+    def test_config_edit_yaml_error(self, youk_root, host_root):
         config_dir = youk_root / "config"
         config_dir.mkdir(parents=True)
         (config_dir / "bad.yaml").write_text("valid: yaml\n")
@@ -2123,7 +2123,7 @@ class TestExecuteProposalExtended:
         finally:
             health.YOUK_ROOT = orig
 
-    def test_code_edit_missing_content(self, youk_root, claude_root):
+    def test_code_edit_missing_content(self, youk_root, host_root):
         code_file = youk_root / "servers" / "core" / "src" / "somefile.py"
         code_file.parent.mkdir(parents=True)
         code_file.write_text("def myfn():\n    pass\n")
@@ -2139,7 +2139,7 @@ class TestExecuteProposalExtended:
         finally:
             health.YOUK_ROOT = orig
 
-    def test_code_edit_missing_section(self, youk_root, claude_root):
+    def test_code_edit_missing_section(self, youk_root, host_root):
         code_file = youk_root / "servers" / "core" / "src" / "somefile.py"
         code_file.parent.mkdir(parents=True)
         code_file.write_text("def myfn():\n    pass\n")
@@ -2155,7 +2155,7 @@ class TestExecuteProposalExtended:
         finally:
             health.YOUK_ROOT = orig
 
-    def test_code_edit_function_not_found(self, youk_root, claude_root):
+    def test_code_edit_function_not_found(self, youk_root, host_root):
         code_file = youk_root / "servers" / "core" / "src" / "somefile.py"
         code_file.parent.mkdir(parents=True)
         code_file.write_text("def myfn():\n    pass\n")
@@ -2171,7 +2171,7 @@ class TestExecuteProposalExtended:
         finally:
             health.YOUK_ROOT = orig
 
-    def test_code_edit_replaces_function(self, youk_root, claude_root):
+    def test_code_edit_replaces_function(self, youk_root, host_root):
         code_file = youk_root / "servers" / "core" / "src" / "somefile.py"
         code_file.parent.mkdir(parents=True)
         code_file.write_text("def myfn():\n    return 1\n\ndef other():\n    pass\n")
@@ -2192,7 +2192,7 @@ class TestExecuteProposalExtended:
 # ── run_health_check_with_skill_signals — promotion + coverage + cross-project ─
 
 class TestRunHealthCheckWithSkillSignalsExtended:
-    def _write_audit_with_gaps(self, claude_root, gaps: list[tuple[str, str, str]]) -> None:
+    def _write_audit_with_gaps(self, host_root, gaps: list[tuple[str, str, str]]) -> None:
         from datetime import datetime
         month = datetime.now(UTC).strftime("%Y-%m")
         lines = []
@@ -2202,13 +2202,13 @@ class TestRunHealthCheckWithSkillSignalsExtended:
             lines.append("Skills: code-review")
             lines.append("CloseCluster: yes")
             lines.append(f"SkillGap: {skill} — {desc}")
-        (claude_root / "audit" / f"{month}.md").write_text("\n".join(lines))
+        (host_root / "audit" / f"{month}.md").write_text("\n".join(lines))
 
-    def test_promotion_queued_when_threshold_met(self, youk_root, claude_root):
+    def test_promotion_queued_when_threshold_met(self, youk_root, host_root):
         # Create SKILL.md so "verify" is treated as "evolve existing" not "generate new"
-        (claude_root / "skills" / "verify").mkdir(parents=True)
-        (claude_root / "skills" / "verify" / "SKILL.md").write_text("# verify skill")
-        self._write_audit_with_gaps(claude_root, [
+        (host_root / "skills" / "verify").mkdir(parents=True)
+        (host_root / "skills" / "verify" / "SKILL.md").write_text("# verify skill")
+        self._write_audit_with_gaps(host_root, [
             ("proj-a", "verify", "gap 1"),
             ("proj-a", "verify", "gap 2"),
             ("proj-a", "verify", "gap 3"),
@@ -2217,7 +2217,7 @@ class TestRunHealthCheckWithSkillSignalsExtended:
         result = run_health_check_with_skill_signals()
         assert result.get("promotion_proposals_queued", 0) >= 1
 
-    def test_cross_project_patterns_surfaced(self, youk_root, claude_root):
+    def test_cross_project_patterns_surfaced(self, youk_root, host_root):
         # Two projects with the same contract → should appear in global_pattern_candidates
         proj_a = youk_root / "knowledge" / "projects" / "alpha"
         proj_b = youk_root / "knowledge" / "projects" / "beta"
@@ -2229,7 +2229,7 @@ class TestRunHealthCheckWithSkillSignalsExtended:
         result = run_health_check_with_skill_signals()
         assert "global_pattern_candidates" in result
 
-    def test_knowledge_velocity_stalled_surfaces_warning(self, youk_root, claude_root):
+    def test_knowledge_velocity_stalled_surfaces_warning(self, youk_root, host_root):
         # No /learn, no contracts → knowledge velocity will be EMPTY or STALLED
         from health import run_health_check_with_skill_signals
         result = run_health_check_with_skill_signals()
@@ -2604,7 +2604,7 @@ class TestComputePreventedCostScore:
 
 
 class TestScoreOrgWithPreventedCost:
-    def test_org_score_ceiling_is_9_0(self, claude_root):
+    def test_org_score_ceiling_is_9_0(self, host_root):
         """With all rates 1.0, prevented_score 1.0, and framing_accuracy 1.0, ceiling is 9.0."""
         from health import _score_org
 
@@ -2621,7 +2621,7 @@ class TestScoreOrgWithPreventedCost:
         assert score >= 8.0
         assert score <= 10.0
 
-    def test_org_score_rises_with_prevented_cost(self, claude_root):
+    def test_org_score_rises_with_prevented_cost(self, host_root):
         """Adding outcome findings lifts score above process-only baseline."""
         from health import _score_org
 
@@ -2642,10 +2642,10 @@ class TestScoreOrgWithPreventedCost:
 class TestRecomputeOrgScore:
     """Tests for the lightweight /done org_score writeback."""
 
-    def test_writes_entry_to_metrics_file(self, youk_root, claude_root):
+    def test_writes_entry_to_metrics_file(self, youk_root, host_root):
         """recompute_org_score() creates improvement-metrics.json with an entry."""
         import json
-        (claude_root / "audit" / "2026-07.md").write_text(
+        (host_root / "audit" / "2026-07.md").write_text(
             _audit_block(n=1, skills="code-review")
             + _audit_block(n=2, skills="nfr-check")
         )
@@ -2662,12 +2662,12 @@ class TestRecomputeOrgScore:
         assert entry["source"] == "done_close"
         assert "org_score" in entry
 
-    def test_skips_write_when_score_unchanged_same_day(self, youk_root, claude_root):
+    def test_skips_write_when_score_unchanged_same_day(self, youk_root, host_root):
         """Second call on same day with same score is skipped."""
         import json
         from datetime import datetime
 
-        (claude_root / "audit" / "2026-07.md").write_text(
+        (host_root / "audit" / "2026-07.md").write_text(
             _audit_block(n=1, skills="code-review")
         )
         today = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -2688,10 +2688,10 @@ class TestRecomputeOrgScore:
         data = json.loads(metrics_file.read_text())
         assert len(data["entries"]) == 1
 
-    def test_updates_per_project_score(self, youk_root, claude_root):
+    def test_updates_per_project_score(self, youk_root, host_root):
         """recompute_org_score() writes per-project org_score under 'projects' key."""
         import json
-        (claude_root / "audit" / "2026-07.md").write_text(
+        (host_root / "audit" / "2026-07.md").write_text(
             _audit_block(n=1, skills="code-review")
         )
         from health import recompute_org_score
@@ -2701,10 +2701,10 @@ class TestRecomputeOrgScore:
         assert "canopy" in data["projects"]
         assert "org_score" in data["projects"]["canopy"]
 
-    def test_caps_entries_at_twenty(self, youk_root, claude_root):
+    def test_caps_entries_at_twenty(self, youk_root, host_root):
         """Entries list is capped at 20 — old entries are pruned."""
         import json
-        (claude_root / "audit" / "2026-07.md").write_text(
+        (host_root / "audit" / "2026-07.md").write_text(
             _audit_block(n=1, skills="code-review")
         )
         # Pre-seed with 20 entries from a prior date
@@ -2721,7 +2721,7 @@ class TestRecomputeOrgScore:
         data = json.loads(metrics_file.read_text())
         assert len(data["entries"]) == 20  # still capped at 20, oldest pruned
 
-    def test_returns_error_dict_on_exception(self, youk_root, claude_root):
+    def test_returns_error_dict_on_exception(self, youk_root, host_root):
         """recompute_org_score() never raises — returns error in dict."""
         # Make state/ dir a file to force a write error
         state_dir = youk_root / "state"
@@ -3005,9 +3005,9 @@ class TestEmptyContentProposalIsRefused:
             change_type=change_type, target_section="Quality bars", content=content,
         ))
 
-    def test_empty_skill_edit_is_refused(self, youk_root, claude_root):
+    def test_empty_skill_edit_is_refused(self, youk_root, host_root):
         import health as h
-        skill = claude_root / "skills" / "dev-loop"
+        skill = host_root / "skills" / "dev-loop"
         skill.mkdir(parents=True, exist_ok=True)
         (skill / "SKILL.md").write_text("# s\n\n## Quality bars\n\n1. real bar\n")
         self._proposal(h, "PENDING-EMPTY-1", "SKILL_EDIT", "", "dev-loop")
@@ -3017,26 +3017,26 @@ class TestEmptyContentProposalIsRefused:
         assert "empty content" in result["error"].lower()
         assert (skill / "SKILL.md").read_text().count("real bar") == 1, "section was damaged"
 
-    def test_whitespace_only_skill_edit_is_refused(self, youk_root, claude_root):
+    def test_whitespace_only_skill_edit_is_refused(self, youk_root, host_root):
         import health as h
-        skill = claude_root / "skills" / "dev-loop"
+        skill = host_root / "skills" / "dev-loop"
         skill.mkdir(parents=True, exist_ok=True)
         (skill / "SKILL.md").write_text("# s\n\n## Quality bars\n\n1. real bar\n")
         self._proposal(h, "PENDING-EMPTY-2", "SKILL_EDIT", "   \n\t ", "dev-loop")
         result = h.apply_proposal("PENDING-EMPTY-2", confirmed=True)
         assert result["applied"] is False
 
-    def test_empty_code_edit_is_refused(self, youk_root, claude_root):
+    def test_empty_code_edit_is_refused(self, youk_root, host_root):
         import health as h
         self._proposal(h, "PENDING-EMPTY-3", "CODE_EDIT", "", "servers/core/src/session.py")
         result = h.apply_proposal("PENDING-EMPTY-3", confirmed=True)
         assert result["applied"] is False
         assert "empty content" in result["error"].lower()
 
-    def test_real_content_still_applies(self, youk_root, claude_root):
+    def test_real_content_still_applies(self, youk_root, host_root):
         """The guard must not block legitimate proposals."""
         import health as h
-        skill = claude_root / "skills" / "dev-loop"
+        skill = host_root / "skills" / "dev-loop"
         skill.mkdir(parents=True, exist_ok=True)
         (skill / "SKILL.md").write_text("# s\n\n## Quality bars\n\n1. old bar\n")
         self._proposal(h, "PENDING-REAL-1", "SKILL_EDIT", "1. new bar\n", "dev-loop")
@@ -3058,7 +3058,7 @@ class TestGapReverificationWiring:
     mechanism to route the finding back into behaviour.
     """
 
-    def _audit(self, claude_root, gap: str):
+    def _audit(self, host_root, gap: str):
         lines = []
         for i in range(1, 4):
             lines += [
@@ -3068,37 +3068,37 @@ class TestGapReverificationWiring:
                 "Commits: yes",
                 f"SkillGap: learn — {gap}",
             ]
-        (claude_root / "audit" / f"{_CURRENT_MONTH}.md").write_text("\n".join(lines))
+        (host_root / "audit" / f"{_CURRENT_MONTH}.md").write_text("\n".join(lines))
 
-    def _skill(self, claude_root, text: str):
-        d = claude_root / "skills" / "learn"
+    def _skill(self, host_root, text: str):
+        d = host_root / "skills" / "learn"
         d.mkdir(parents=True, exist_ok=True)
         (d / "SKILL.md").write_text(text)
 
-    def test_gap_already_in_skill_is_reclassified_not_reported(self, youk_root, claude_root):
+    def test_gap_already_in_skill_is_reclassified_not_reported(self, youk_root, host_root):
         gap = "retry backoff absent for transient upstream connection failures"
-        self._audit(claude_root, gap)
-        self._skill(claude_root, f"# learn\n\n## Retry\n{gap} — now handled.\n")
+        self._audit(host_root, gap)
+        self._skill(host_root, f"# learn\n\n## Retry\n{gap} — now handled.\n")
         from health import run_health_check_with_skill_signals
 
         result = run_health_check_with_skill_signals()
         assert "gaps_already_addressed" in result
         assert "skill_gap_signals" not in result
 
-    def test_live_gap_still_surfaces(self, youk_root, claude_root):
+    def test_live_gap_still_surfaces(self, youk_root, host_root):
         """The guard must not swallow a real gap."""
-        self._audit(claude_root, "retry backoff absent for transient upstream failures")
-        self._skill(claude_root, "# learn\n\n## Phases\nUnrelated content entirely.\n")
+        self._audit(host_root, "retry backoff absent for transient upstream failures")
+        self._skill(host_root, "# learn\n\n## Phases\nUnrelated content entirely.\n")
         from health import run_health_check_with_skill_signals
 
         result = run_health_check_with_skill_signals()
         assert "skill_gap_signals" in result
         assert result["skill_gap_signals"][0]["skill"] == "learn"
 
-    def test_reclassified_gaps_carry_a_readable_note(self, youk_root, claude_root):
+    def test_reclassified_gaps_carry_a_readable_note(self, youk_root, host_root):
         gap = "retry backoff absent for transient upstream connection failures"
-        self._audit(claude_root, gap)
-        self._skill(claude_root, f"# learn\n\n## Retry\n{gap} — now handled.\n")
+        self._audit(host_root, gap)
+        self._skill(host_root, f"# learn\n\n## Retry\n{gap} — now handled.\n")
         from health import run_health_check_with_skill_signals
 
         result = run_health_check_with_skill_signals()
@@ -3148,7 +3148,7 @@ class TestCappedScoreExplainsItself:
     route_task was broken; a silent 6.5 would be no more actionable than a false 9.3.
     """
 
-    def _audit(self, claude_root):
+    def _audit(self, host_root):
         lines = []
         for i in range(1, 4):
             lines += [
@@ -3157,11 +3157,11 @@ class TestCappedScoreExplainsItself:
                 "CloseCluster: yes",
                 "Commits: yes",
             ]
-        (claude_root / "audit" / f"{_CURRENT_MONTH}.md").write_text("\n".join(lines))
+        (host_root / "audit" / f"{_CURRENT_MONTH}.md").write_text("\n".join(lines))
 
-    def test_broken_route_surfaces_a_cap_finding(self, youk_root, claude_root):
-        self._audit(claude_root)
-        (claude_root / "CLAUDE.md").write_text('route_to_skill("ghost-skill", task)')
+    def test_broken_route_surfaces_a_cap_finding(self, youk_root, host_root):
+        self._audit(host_root)
+        (host_root / "CLAUDE.md").write_text('route_to_skill("ghost-skill", task)')
         from health import run_health_check_with_skill_signals
 
         result = run_health_check_with_skill_signals()
@@ -3169,9 +3169,9 @@ class TestCappedScoreExplainsItself:
         assert cap_findings, "capped score did not explain itself"
         assert "ghost-skill" in cap_findings[0]
 
-    def test_healthy_install_has_no_cap_finding(self, youk_root, claude_root):
-        self._audit(claude_root)
-        (claude_root / "CLAUDE.md").write_text("no routes declared here")
+    def test_healthy_install_has_no_cap_finding(self, youk_root, host_root):
+        self._audit(host_root)
+        (host_root / "CLAUDE.md").write_text("no routes declared here")
         from health import run_health_check_with_skill_signals
 
         result = run_health_check_with_skill_signals()

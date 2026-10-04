@@ -160,7 +160,7 @@ def run_research(slug: str, youk_dir: Path) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(description="youk project research — weekly stack briefing")
     parser.add_argument("--slug", help="Project slug (default: all known projects)")
-    parser.add_argument("--youk-dir", default=str(Path.home() / ".claude" / "youk"),
+    parser.add_argument("--youk-dir", default=str(Path(__file__).resolve().parent.parent),
                         help="Path to youk directory")
     args = parser.parse_args()
 

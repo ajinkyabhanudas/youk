@@ -33,7 +33,7 @@ from knowledge_loader import (
     _scan_project_context_files,
 )
 
-CLAUDE_ROOT = Path("/claude")
+from youk_paths import HOST_ROOT, resolve_audit_dir
 YOUK_ROOT = Path("/youk")
 HOST_HOME = Path("/host-home")   # $HOME mounted :ro when install.sh adds -v $HOME:/host-home:ro
 STATE_FILE = YOUK_ROOT / "state" / "session.json"
@@ -42,7 +42,7 @@ STATE_FILE = YOUK_ROOT / "state" / "session.json"
 def _sync_sp() -> None:
     """Sync mount-point constants to state_paths and submodules that read YOUK_ROOT."""
     _sp.YOUK_ROOT = YOUK_ROOT
-    _sp.CLAUDE_ROOT = CLAUDE_ROOT
+    _sp.HOST_ROOT = HOST_ROOT
     _sp.HOST_HOME = HOST_HOME
 
 
@@ -1086,7 +1086,7 @@ def _check_doc_freshness() -> list[str]:
             format_staleness_warnings,
         )
         concepts = load_concept_graph(YOUK_ROOT)
-        stale = check_concept_staleness(concepts, YOUK_ROOT, CLAUDE_ROOT)
+        stale = check_concept_staleness(concepts, YOUK_ROOT, HOST_ROOT)
         undocumented.extend(format_staleness_warnings(stale, cap=2))
     except Exception:
         pass
@@ -1146,7 +1146,7 @@ def _check_doc_freshness() -> list[str]:
     # are connected. An orphan is late tech debt in the making — surfaced the moment it exists.
     try:
         from wiring_pulse import check_wiring, format_wiring_warnings
-        wiring = check_wiring(YOUK_ROOT, CLAUDE_ROOT)
+        wiring = check_wiring(YOUK_ROOT, HOST_ROOT)
         undocumented.extend(format_wiring_warnings(wiring, cap=5))
         # The in-session text above is capped at 5; the full result is
         # recorded here so no orphan depends on a model reading capped text.
@@ -1324,7 +1324,7 @@ def _merge_stale_checkpoint() -> None:
     Both files are deleted after being merged. Age guard: skip files < 5 min old
     (same-session race: session_start just wrote the file for THIS session).
     """
-    audit_dir = CLAUDE_ROOT / "audit"
+    audit_dir = resolve_audit_dir(HOST_ROOT, YOUK_ROOT)
     audit_dir.mkdir(parents=True, exist_ok=True)
 
     for fname, label in [
@@ -1621,7 +1621,7 @@ def start_session(project_dir: str) -> SessionState:
     )
     _save_state(state)
 
-    audit_dir = CLAUDE_ROOT / "audit"
+    audit_dir = resolve_audit_dir(HOST_ROOT, YOUK_ROOT)
     close_cluster_missed, orchestrate_pending = _parse_last_session_flags(audit_dir)
 
     # Pending-action TTL: if pending-action.json is >24h old, clear it.
@@ -1676,7 +1676,7 @@ def start_session(project_dir: str) -> SessionState:
     pulse_line = ""
     try:
         from wiring_pulse import check_wiring
-        w = check_wiring(YOUK_ROOT, CLAUDE_ROOT)
+        w = check_wiring(YOUK_ROOT, HOST_ROOT)
         if w["orphaned"]:
             pulse_line = (
                 f"⚡ PULSE: {w['wired']}/{w['wired'] + len(w['orphaned'])} tools wired "
@@ -1716,7 +1716,7 @@ def start_session(project_dir: str) -> SessionState:
     # finding domains are visible before the developer starts coding again.
     try:
         from failure_pattern_detector import scan_failure_patterns as _scan_patterns
-        _fpd_audit_dir = HOST_HOME / ".claude" / "audit"
+        _fpd_audit_dir = resolve_audit_dir(HOST_ROOT, YOUK_ROOT)
         _fp_alerts = _scan_patterns(
             audit_dir=_fpd_audit_dir if _fpd_audit_dir.exists() else None,
             slug=slug,
@@ -2313,7 +2313,7 @@ def _attach_structural_scores(obs, trace_id: str) -> None:
     """
     # Both roots come from the module constants so tests and alternate installs can
     # redirect them. test_path_redirectability caught a hardcoded Path("/claude") here.
-    _claude = CLAUDE_ROOT
+    _claude = HOST_ROOT
     _youk = YOUK_ROOT
 
     try:
@@ -2973,7 +2973,7 @@ def end_session(
         if phrase.lower() in summary.lower()
     ]
 
-    audit_dir = CLAUDE_ROOT / "audit"
+    audit_dir = resolve_audit_dir(HOST_ROOT, YOUK_ROOT)
     audit_dir.mkdir(parents=True, exist_ok=True)
     month = datetime.utcnow().strftime("%Y-%m")
     audit_file = audit_dir / f"{month}.md"
@@ -3567,7 +3567,7 @@ def _record_outcome_followup(session_slug: str, outcome_result: str) -> dict:
 
     Returns: amended (bool), prior_result (str), new_result (str), audit_file (str).
     """
-    audit_dir = CLAUDE_ROOT / "audit"
+    audit_dir = resolve_audit_dir(HOST_ROOT, YOUK_ROOT)
     if not audit_dir.exists():
         return {"error": "No audit directory found", "blocked": True, "amended": False}
 

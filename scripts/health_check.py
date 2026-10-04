@@ -7,15 +7,19 @@ Safe for cron — no side effects beyond writing proposals to PENDING.md.
 Usage:
   python3 scripts/health_check.py     # manual run
   make health-check                   # via Makefile
-  0 9 * * 1 cd ~/.claude/youk && make health-check >> ~/.claude/audit/cron.log 2>&1
+  0 9 * * 1 cd <youk dir> && make health-check >> <youk dir>/state/cron.log 2>&1
 """
 import json
 import subprocess
 import sys
-from pathlib import Path
 
-CLAUDE_DIR = Path.home() / ".claude"
-YOUK_DIR = CLAUDE_DIR / "youk"
+import sys as _sys
+from pathlib import Path as _P
+
+_sys.path.insert(0, str(_P(__file__).resolve().parent.parent / "servers" / "shared"))
+from youk_paths import locate_install  # noqa: E402
+
+YOUK_DIR, HOST_DIR, AUDIT_DIR = locate_install(__file__)
 
 MCP_INIT = json.dumps({
     "jsonrpc": "2.0", "id": 1, "method": "initialize",
@@ -39,7 +43,7 @@ def main() -> int:
         proc = subprocess.run(
             [
                 "docker", "run", "-i", "--rm",
-                "-v", f"{CLAUDE_DIR}:/claude",
+                "-v", f"{HOST_DIR}:/host",
                 "-v", f"{YOUK_DIR}:/youk",
                 "youk-core:latest",
             ],

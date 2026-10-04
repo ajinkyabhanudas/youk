@@ -18,6 +18,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from youk_paths import YOUK_ROOT, instruction_files, resolve_skills_dir
+
 # Only explicit routing calls: route_to_skill("name", ...).
 #
 # Slash commands are deliberately NOT parsed. In CLAUDE.md they are prose documentation
@@ -39,15 +41,13 @@ def _normalize(name: str) -> str:
     return name.strip().lower().replace("_", "-")
 
 
-def _referenced_skills(claude_md: Path) -> set[str]:
-    """Skill names reached by an explicit route_to_skill call in CLAUDE.md."""
-    if not claude_md.exists():
-        return set()
-    text = claude_md.read_text(errors="ignore")
+def _referenced_skills(instruction_paths: list[Path]) -> set[str]:
+    """Skill names reached by an explicit route_to_skill call in the host's instructions file."""
+    text = "\n".join(f.read_text(errors="ignore") for f in instruction_paths if f.exists())
     return {_normalize(n) for n in _ROUTE_PATTERN.findall(text)}
 
 
-def check_skill_routes(claude_root: Path, youk_root: Path | None = None) -> dict:
+def check_skill_routes(host_root: Path, youk_root: Path | None = None) -> dict:
     """Resolve every skill CLAUDE.md routes to.
 
     Returns {checked, unresolvable, empty, healthy, message}. Never raises: a health
@@ -59,9 +59,8 @@ def check_skill_routes(claude_root: Path, youk_root: Path | None = None) -> dict
     have different fixes: one is an install problem, the other an authoring problem.
     """
     try:
-        claude_md = claude_root / "CLAUDE.md"
-        skills_dir = claude_root / "skills"
-        referenced = sorted(_referenced_skills(claude_md))
+        skills_dir = resolve_skills_dir(host_root, youk_root if youk_root is not None else YOUK_ROOT)
+        referenced = sorted(_referenced_skills(instruction_files(host_root)))
 
         if not referenced:
             return {

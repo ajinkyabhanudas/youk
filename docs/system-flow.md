@@ -49,6 +49,24 @@ or `blocked`. Safety capabilities fail closed when absent or unknown; advisory
 capabilities degrade explicitly. Host adapters own only translation into their native
 hook shape. See [ADR-012](adr/adr-012-agent-host-capability-contract.md).
 
+### Mounts and paths
+
+Each container mounts two directories: youk's install at `/youk`, and the agent host's config dir
+at `/host` (`/claude` is still accepted for installs made before host-neutral paths). A host with
+no config dir gets an empty `<youk dir>/.host`, so the layout inside the containers is the same
+for every host. `servers/shared/youk_paths.py` is the one place that resolves what the runtime needs
+from them:
+
+| Needed | Resolved to |
+|---|---|
+| Audit logs | `/host/audit` if it exists (every earlier install), else `/youk/audit` |
+| Skills | `/host/skills` if the installer linked them (`HOST_SKILLS_LINKED=1`, or no record on an older install and the dir exists), else `/youk/skills` |
+| Instructions files | `CLAUDE.md`, `AGENTS.md` under the host dir or a project (`instruction_files`) |
+
+The installer records its choices in `state/path-map.env` (`YOUK_AGENT_HOST`, `YOUK_HOST_DIR`,
+`HOST_CONFIG_DIR`, `HOST_SKILLS_LINKED`). The runtime, `doctor.sh`, `uninstall.sh`, the Makefile and
+the host-side scripts read it rather than assuming a location. See [hosts.md](hosts.md).
+
 Both containers mount the same host directory at `/youk/state/`. This shared volume is the only channel between them — no inter-container network calls.
 
 ---
@@ -56,7 +74,7 @@ Both containers mount the same host directory at `/youk/state/`. This shared vol
 ## youk-core: Module Wiring
 
 ```
-server.py (MCP tool surface — Claude calls these)
+server.py (MCP tool surface — the agent calls these)
 │
 ├── session.py
 │   ├── state_paths.py          ← slug-scoped path resolution (SINGLE AUTHORITY)
@@ -173,7 +191,7 @@ server.py (MCP tool surface)
 
 ---
 
-## MCP Tool Surface: What Claude Calls
+## MCP Tool Surface: What the Agent Calls
 
 ### youk-core tools
 | Tool | Module | What it does |
@@ -220,7 +238,7 @@ server.py (MCP tool surface)
 ## Data Flow: session_start → route_task → session_end
 
 ```
-Claude calls session_start(project_dir)
+The agent calls session_start(project_dir)
   → server.py: resolves slug from project_dir path basename
   → session.py: start_session()
       reads: state/session.json (counter), state/knowledge/projects/{slug}/
@@ -228,7 +246,7 @@ Claude calls session_start(project_dir)
               state/session-open.json  (redirect pointer only)
   → returns: brief (verbatim paste), session_plan, resume_point
 
-Claude calls route_task(task, project_dir)
+The agent calls route_task(task, project_dir)
   → server.py: _get_session_slug() → state_paths.current_session_slug()
   → routing.py: _route_task() → size, ceremony, plan_hook, blocked
   → server.py: _enrich_route_result_impl() → adds skill routing, graph_state
@@ -240,7 +258,7 @@ Claude calls route_task(task, project_dir)
   Each gate check reads slug via state_paths.current_session_slug()
   Each gate flag writes to state/sessions/{slug}/ (not state/ root)
 
-Claude calls session_end(summary, commits_made, close_cluster)
+The agent calls session_end(summary, commits_made, close_cluster)
   → server.py → session.py: end_session()
       deletes: state/sessions/{slug}/open.json
                state/sessions/{slug}/challenge-ran.json (and other session flags)
@@ -252,18 +270,18 @@ Claude calls session_end(summary, commits_made, close_cluster)
 
 ---
 
-## How skill content reaches Claude
+## How skill content reaches the agent
 
 ```
-Claude calls route_to_skill("challenge", task)   [youk-code:8002]
+The agent calls route_to_skill("challenge", task)   [youk-code:8002]
   → skills.py: loads skills/challenge/SKILL.md from filesystem
   → returns: {mode: "in_session", skill_content: "<full SKILL.md text>"}
 
-Claude executes the skill_content as a prompt to itself.
+The agent executes the skill_content as a prompt to itself.
 No agent is spawned. No separate API call. The skill is a text prompt.
 ```
 
-Skills are discovered from `~/.claude/skills/{name}/SKILL.md`. The skill loader scans this directory. When Claude Code runs route_to_skill, the skill file content is returned and Claude runs it in the current session context.
+Skills are read from `{skills dir}/{name}/SKILL.md`, where the skills dir is resolved as in "Mounts and paths" above (the host's linked skills for Claude Code installs, otherwise youk's own `skills/`). When the agent calls route_to_skill, the skill file content is returned and the agent runs it in the current session context. Claude Code also discovers the linked skills natively as slash commands; on other hosts the same skills are reached through `list_skills` and `route_to_skill`.
 
 ---
 

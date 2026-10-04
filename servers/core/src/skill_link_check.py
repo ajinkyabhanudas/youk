@@ -1,6 +1,6 @@
 """Detect drift between the repo skills tree and the runtime skills tree.
 
-install.sh symlinks every directory in YOUK_ROOT/skills into CLAUDE_ROOT/skills, but
+install.sh symlinks every directory in YOUK_ROOT/skills into HOST_ROOT/skills, but
 it only runs at install time. A skill added to the repo afterwards has no symlink, so
 route_to_skill cannot load it even though it is committed and looks present to anyone
 reading the repo. Nothing surfaced this, and it is how CLAUDE.md ended up routing to
@@ -41,7 +41,7 @@ def _skill_dirs(root: Path) -> set[str]:
     }
 
 
-def check_skill_links(youk_root: Path, claude_root: Path) -> dict:
+def check_skill_links(youk_root: Path, host_root: Path) -> dict:
     """Compare repo skills against runtime skills.
 
     Returns {unlinked, orphaned, repo_count, runtime_count, healthy, message}.
@@ -49,7 +49,7 @@ def check_skill_links(youk_root: Path, claude_root: Path) -> dict:
     """
     try:
         repo_dir = youk_root / "skills"
-        runtime_dir = claude_root / "skills"
+        runtime_dir = host_root / "skills"
 
         # No runtime tree means youk is running directly from the repo, which is a
         # valid dev setup rather than drift.

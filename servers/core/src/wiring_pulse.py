@@ -25,7 +25,7 @@ import re
 from pathlib import Path
 
 YOUK_ROOT = Path("/youk")
-CLAUDE_ROOT = Path("/claude")
+from youk_paths import HOST_ROOT, instruction_files
 
 # Tools invoked directly by the user/model via slash-commands or docs, not by other code.
 # Allow-listed so they don't count as orphans. Keep this SMALL and justified — every entry
@@ -53,11 +53,11 @@ def _defined_tools(server_py: Path) -> list[str]:
     return re.findall(r"@mcp\.tool\(\)\s*\ndef\s+(\w+)\s*\(", text)
 
 
-def _routing_loop_text(claude_root: Path) -> str:
-    """CLAUDE.md — the routing loop the model actually executes. A tool NAMED here (the model
-    is instructed to call it) counts as wired, even without a '(' since the model calls it."""
-    claude_md = claude_root / "CLAUDE.md"
-    return claude_md.read_text() if claude_md.exists() else ""
+def _routing_loop_text(host_root: Path) -> str:
+    """The host's instructions file (CLAUDE.md, AGENTS.md) — the routing loop the model actually
+    executes. A tool NAMED here (the model is instructed to call it) counts as wired, even
+    without a '(' since the model calls it."""
+    return "\n".join(f.read_text() for f in instruction_files(host_root))
 
 
 def _live_call_corpus(youk_root: Path) -> str:
@@ -82,7 +82,7 @@ def _live_call_corpus(youk_root: Path) -> str:
     return "\n".join(parts)
 
 
-def check_wiring(youk_root: Path = YOUK_ROOT, claude_root: Path = CLAUDE_ROOT) -> dict:
+def check_wiring(youk_root: Path = YOUK_ROOT, host_root: Path = HOST_ROOT) -> dict:
     """Return which defined MCP tools are wired vs orphaned.
 
     A tool is WIRED only if:
@@ -96,7 +96,7 @@ def check_wiring(youk_root: Path = YOUK_ROOT, claude_root: Path = CLAUDE_ROOT) -
     """
     server_py = youk_root / "servers" / "core" / "src" / "server.py"
     tools = _defined_tools(server_py)
-    routing = _routing_loop_text(claude_root)
+    routing = _routing_loop_text(host_root)
     calls = _live_call_corpus(youk_root)
 
     wired: list[str] = []

@@ -21,7 +21,7 @@ from pathlib import Path
 # YOUK_ROOT is set by the caller module (session.py / server.py) via module-level
 # assignment. Tests patch it via monkeypatch. We default to the container path.
 YOUK_ROOT: Path = Path("/youk")
-CLAUDE_ROOT: Path = Path("/claude")
+from youk_paths import HOST_ROOT
 HOST_HOME: Path = Path("/host-home")
 
 # open.json entries older than this are considered stale (prior session, crashed, etc.)
@@ -215,7 +215,9 @@ def resolve_project_path(host_path: str) -> Path:
                     mapping[key.strip()] = val.strip()
 
             youk_host = mapping.get("YOUK_HOST_DIR", "")
-            claude_host = mapping.get("CLAUDE_HOST_DIR", "")
+            # HOST_CONFIG_DIR is the host-neutral key; CLAUDE_HOST_DIR is what installs made
+            # before host-neutral paths wrote.
+            host_config = mapping.get("HOST_CONFIG_DIR") or mapping.get("CLAUDE_HOST_DIR", "")
 
             if youk_host and host_path.startswith(youk_host):
                 relative = host_path[len(youk_host):].lstrip("/")
@@ -223,9 +225,9 @@ def resolve_project_path(host_path: str) -> Path:
                 if candidate.exists():
                     return candidate
 
-            if claude_host and host_path.startswith(claude_host):
-                relative = host_path[len(claude_host):].lstrip("/")
-                candidate = CLAUDE_ROOT / relative if relative else CLAUDE_ROOT
+            if host_config and host_path.startswith(host_config):
+                relative = host_path[len(host_config):].lstrip("/")
+                candidate = HOST_ROOT / relative if relative else HOST_ROOT
                 if candidate.exists():
                     return candidate
         except Exception:

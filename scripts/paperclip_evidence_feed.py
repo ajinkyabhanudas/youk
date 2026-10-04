@@ -40,10 +40,14 @@ import argparse
 import json
 import subprocess
 import sys
-from pathlib import Path
 
-CLAUDE_DIR = Path.home() / ".claude"
-YOUK_DIR = CLAUDE_DIR / "youk"
+import sys as _sys
+from pathlib import Path as _P
+
+_sys.path.insert(0, str(_P(__file__).resolve().parent.parent / "servers" / "shared"))
+from youk_paths import locate_install  # noqa: E402
+
+YOUK_DIR, HOST_DIR, AUDIT_DIR = locate_install(__file__)
 DOCKER_IMAGE = "youk-core:latest"
 
 
@@ -74,7 +78,7 @@ def _mcp_call(tool: str, arguments: dict, timeout: int = 90) -> dict:
         proc = subprocess.run(
             [
                 "docker", "run", "-i", "--rm",
-                "-v", f"{CLAUDE_DIR}:/claude",
+                "-v", f"{HOST_DIR}:/host",
                 "-v", f"{YOUK_DIR}:/youk",
                 DOCKER_IMAGE,
             ],

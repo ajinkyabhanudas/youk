@@ -5,7 +5,6 @@ sys.path.insert(0, "/shared")
 
 from schemas import ErrorType
 
-from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from nfr import run_nfr_check
@@ -21,13 +20,14 @@ from skill_gen import generate_skill as _generate_skill, assess_skill as _assess
 from contract_verifier import verify_contracts as _verify_contracts
 
 import argparse as _argparse
+import re as _re
 _p = _argparse.ArgumentParser(add_help=False)
 _p.add_argument("--transport", default="stdio")
 _p.add_argument("--port", type=int, default=8000)
 _p.add_argument("--host", default="0.0.0.0")
 _server_args, _ = _p.parse_known_args()
 
-CLAUDE_ROOT = Path("/claude")
+from youk_paths import YOUK_ROOT
 
 mcp = FastMCP("youk-code", host=_server_args.host, port=_server_args.port)
 
@@ -330,19 +330,19 @@ def get_fast_path(skill_name: str) -> str:
     return get_skill_fast_path(skill_name)
 
 
+_PROJECT_NAME = _re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
 @mcp.resource("youk://context/{project}")
 def get_project_context(project: str) -> str:
-    """Return L2 project context file for the named project."""
-    # Try common locations
-    candidates = [
-        CLAUDE_ROOT / "projects" / f"-Users-ajinkya-Desktop-{project}" / "memory",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            for f in candidate.iterdir():
-                if f.suffix == ".md":
-                    return f.read_text()
-    return f"No context found for project: {project}"
+    """Return youk's own notes for the named project: the markdown files under
+    knowledge/projects/{project}/ (contracts, decisions). Host-independent; it used to read
+    one host's per-project memory folder at a hardcoded personal path."""
+    if not _PROJECT_NAME.fullmatch(project):
+        return f"No context found for project: {project}"  # not a slug; never build a path from it
+    folder = YOUK_ROOT / "knowledge" / "projects" / project
+    parts = [f"## {f.name}\n\n{f.read_text()}" for f in sorted(folder.glob("*.md"))] if folder.is_dir() else []
+    return "\n\n".join(parts) if parts else f"No context found for project: {project}"
 
 
 if __name__ == "__main__":

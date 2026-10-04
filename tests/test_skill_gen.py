@@ -5,14 +5,14 @@ import pytest
 
 @pytest.fixture
 def skill_gen_root(tmp_path, monkeypatch):
-    """Isolated YOUK_ROOT + CLAUDE_ROOT for skill_gen."""
+    """Isolated YOUK_ROOT + HOST_ROOT for skill_gen."""
     import skill_gen
     youk = tmp_path / "youk"
     claude = tmp_path / "claude"
     (youk / "knowledge").mkdir(parents=True)
     (claude / "skills").mkdir(parents=True)
     monkeypatch.setattr(skill_gen, "YOUK_ROOT", youk)
-    monkeypatch.setattr(skill_gen, "CLAUDE_ROOT", claude)
+    monkeypatch.setattr(skill_gen, "HOST_ROOT", claude)
     monkeypatch.setattr(skill_gen, "SKILLS_DIR", claude / "skills")
     # No real skills on disk — stub list_skills so existing_skills is deterministic
     monkeypatch.setattr(skill_gen, "list_skills", lambda: [{"name": "dev-loop"}, {"name": "learn"}])

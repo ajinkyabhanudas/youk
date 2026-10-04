@@ -6,7 +6,7 @@
 #
 # By default this reverts the SYSTEM integration (MCP servers, skill symlinks,
 # hooks plugin, CLAUDE.md block, schedulers, Docker images) and PRESERVES your
-# accumulated knowledge (~/.claude/youk/knowledge, state, and ~/.claude/audit),
+# accumulated knowledge (<youk dir>/knowledge, state, and the audit logs),
 # so a later re-install resumes with full history.
 #
 #   bash scripts/uninstall.sh              # revert integration, keep knowledge
@@ -14,12 +14,12 @@
 #   bash scripts/uninstall.sh --keep-images  # leave Docker images in place
 #   bash scripts/uninstall.sh --dry-run    # print every action, change nothing
 #
-# The youk repo at ~/.claude/youk is left in place — removing it is `rm -rf`, your call.
+# The youk repo is left in place — removing it is `rm -rf`, your call.
 set -euo pipefail
 
-YOUK_DIR="$HOME/.claude/youk"
-CLAUDE_DIR="$HOME/.claude"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The install this script belongs to, unless YOUK_HOME says otherwise.
+YOUK_DIR="${YOUK_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 # ── Flags ─────────────────────────────────────────────────────────────────────
 PURGE=false
@@ -54,7 +54,22 @@ if $DRY_RUN; then
   echo -e "${YELLOW}DRY RUN — no changes will be made.${NC}"
 fi
 
-RESTORE_ROOT="$CLAUDE_DIR/youk-restore"
+# Which agent host the install targeted and where its config lives, as the installer recorded
+# them. Installs made before the host was recorded were all Claude Code.
+# shellcheck source=lib/hosts.sh
+. "$SCRIPT_DIR/lib/hosts.sh"
+_map() { sed -n "s/^$1=//p" "$YOUK_DIR/state/path-map.env" 2>/dev/null | head -1; }
+YOUK_HOST_ID="$(_map YOUK_AGENT_HOST)"
+if [ -z "$YOUK_HOST_ID" ]; then YOUK_HOST_ID="claude-code"; fi
+HOST_DIR="$(_map HOST_CONFIG_DIR)"
+if [ -z "$HOST_DIR" ]; then HOST_DIR="$(youk_host_dir "$YOUK_HOST_ID")"; fi
+case "$YOUK_HOST_ID" in
+  claude-code) CLAUDE_DIR="$HOST_DIR"; export CLAUDE_DIR; AUDIT_DIR="$HOST_DIR/audit" ;;
+  codex)       CODEX_HOME="$HOST_DIR"; export CODEX_HOME; AUDIT_DIR="$YOUK_DIR/audit" ;;
+  *)           AUDIT_DIR="$YOUK_DIR/audit" ;;
+esac
+
+RESTORE_ROOT="${HOST_DIR:-$YOUK_DIR}/youk-restore"
 SNAP="$RESTORE_ROOT/latest"
 
 # ── Step 1: Stop persistent servers + deregister MCP ────────────────────────
@@ -72,16 +87,29 @@ docker stop youk-core-server youk-code-server 2>/dev/null || true
 docker rm youk-core-server youk-code-server 2>/dev/null || true
 ok "Persistent servers stopped"
 
-if command -v claude >/dev/null 2>&1; then
-  run claude mcp remove youk-core  2>/dev/null || warn "youk-core not registered (already removed)"
-  run claude mcp remove youk-code  2>/dev/null || warn "youk-code not registered (already removed)"
-  ok "youk-core / youk-code deregistered"
+if [ "$YOUK_HOST_ID" = "none" ]; then
+  ok "No agent host was registered — nothing to deregister"
 else
-  warn "claude CLI not found — skipping MCP deregistration"
+  _cli=claude; [ "$YOUK_HOST_ID" = "codex" ] && _cli=codex
+  if command -v "$_cli" >/dev/null 2>&1; then
+    for _s in youk-core youk-code; do
+      if youk_host_mcp_registered "$YOUK_HOST_ID" "$_s"; then
+        run youk_host_mcp_remove "$YOUK_HOST_ID" "$_s"
+        ok "$_s deregistered from $YOUK_HOST_ID"
+      else
+        warn "$_s not registered with $YOUK_HOST_ID (already removed)"
+      fi
+    done
+  else
+    warn "$_cli CLI not found — skipping MCP deregistration"
+  fi
 fi
 
 # ── Step 2: Remove hooks plugin symlink ──────────────────────────────────────
 step "Context hooks plugin"
+if [ "$YOUK_HOST_ID" != "claude-code" ]; then
+  ok "Skipped: the hooks plugin is Claude Code's"
+else
 LINK_TARGET="$CLAUDE_DIR/plugins/youk-context"
 if [ -L "$LINK_TARGET" ]; then
   # Only remove if it points at youk's plugin.
@@ -95,6 +123,7 @@ elif [ -e "$LINK_TARGET" ]; then
 else
   warn "plugins/youk-context already absent"
 fi
+fi  # claude-code hooks plugin
 
 # ── Step 3: Remove skill symlinks ────────────────────────────────────────────
 # Remove ONLY symlinks that resolve to a path under THIS install's youk/skills
@@ -102,6 +131,9 @@ fi
 # absolute path (not a bare substring match) so a user's fork whose path merely
 # contains "youk/skills" is not caught.
 step "Skill symlinks"
+if [ "$YOUK_HOST_ID" != "claude-code" ]; then
+  ok "Skipped: skills were not linked into $YOUK_HOST_ID"
+else
 SKILLS_DIR="$CLAUDE_DIR/skills"
 # Canonical prefix for youk's own skills, trailing slash for prefix comparison.
 YOUK_SKILLS_PREFIX="$YOUK_DIR/skills/"
@@ -126,54 +158,38 @@ if [ -d "$SKILLS_DIR" ]; then
 else
   warn "skills dir absent"
 fi
+fi  # claude-code skill links
 
-# ── Step 4: CLAUDE.md ────────────────────────────────────────────────────────
-# Surgical fence removal first; snapshot restore as fallback; never blind-truncate.
-step "CLAUDE.md"
-CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
-FENCE_BEGIN="<!-- BEGIN youk (managed) -->"
-FENCE_END="<!-- END youk -->"
-if [ ! -f "$CLAUDE_MD" ]; then
-  warn "CLAUDE.md absent — nothing to do"
-elif grep -qF "$FENCE_BEGIN" "$CLAUDE_MD" && grep -qF "$FENCE_END" "$CLAUDE_MD"; then
-  # Preferred: surgical fence removal. Deletes ONLY youk's fenced block and
-  # preserves everything else — including edits the user made to their own
-  # content after install. This is why fences exist; snapshot restore (below)
-  # would revert those post-install edits too.
+# ── Step 4: Instructions file ───────────────────────────────────────────────
+# Surgical fence removal first; snapshot restore as fallback (Claude Code only); never blind-truncate.
+step "Instructions file"
+INSTR_FILE="$(youk_host_instructions_file "$YOUK_HOST_ID")"
+INSTR_NAME="$(basename "${INSTR_FILE:-instructions file}")"
+if [ -z "$INSTR_FILE" ]; then
+  ok "No agent host recorded — no instructions file to revert"
+elif [ ! -f "$INSTR_FILE" ]; then
+  warn "$INSTR_NAME absent — nothing to do"
+elif grep -qF "$YOUK_FENCE_BEGIN" "$INSTR_FILE" && grep -qF "$YOUK_FENCE_END" "$INSTR_FILE"; then
+  # Preferred: delete ONLY youk's fenced block and keep everything else, including edits the
+  # user made to their own content after install. Snapshot restore would revert those too.
   if $DRY_RUN; then
-    echo -e "  ${YELLOW}dry-run:${NC} remove fenced youk block from $CLAUDE_MD"
+    echo -e "  ${YELLOW}dry-run:${NC} remove fenced youk block from $INSTR_FILE"
+  elif youk_remove_fenced_block "$INSTR_FILE"; then
+    ok "youk block removed from $INSTR_NAME (fenced region deleted, your edits preserved)"
   else
-    tmp="$(mktemp)"
-    awk -v begin="$FENCE_BEGIN" -v end="$FENCE_END" '
-      $0 == begin { skip=1; next }
-      $0 == end   { skip=0; next }
-      !skip       { print }
-    ' "$CLAUDE_MD" > "$tmp"
-    # Guard against truncation: only overwrite if the result is non-empty. A
-    # disk-full or interrupted awk would otherwise clobber CLAUDE.md with an
-    # empty file. (An all-youk CLAUDE.md legitimately becoming empty is fine —
-    # but that never happens here since the file always has the user's content
-    # or at minimum the H1 the block sat under.)
-    if [ -s "$tmp" ]; then
-      mv "$tmp" "$CLAUDE_MD"
-      ok "youk block removed from CLAUDE.md (fenced region deleted, your edits preserved)"
-    else
-      rm -f "$tmp"
-      fail "Fence removal produced an empty file (disk full?) — CLAUDE.md left unchanged."
-    fi
+    fail "Fence removal failed (disk full?) — $INSTR_NAME left unchanged."
   fi
-elif [ -f "$SNAP/CLAUDE.md.orig" ]; then
-  # Fallback: fences missing/corrupt (e.g. a pre-fence legacy install, or the
-  # markers were hand-deleted). Restore the pre-install snapshot verbatim.
-  # NOTE: this also reverts any edits made to CLAUDE.md after install.
-  run cp "$SNAP/CLAUDE.md.orig" "$CLAUDE_MD"
+elif [ "$YOUK_HOST_ID" = "claude-code" ] && [ -f "$SNAP/CLAUDE.md.orig" ]; then
+  # Fallback: fences missing/corrupt (a pre-fence legacy install, or hand-deleted markers).
+  # Restore the pre-install snapshot verbatim. This also reverts later edits to CLAUDE.md.
+  run cp "$SNAP/CLAUDE.md.orig" "$INSTR_FILE"
   warn "CLAUDE.md had no fence markers — restored the pre-install snapshot verbatim."
   warn "  Any edits you made to CLAUDE.md after installing youk were reverted."
-elif grep -q "youk-core.session_start" "$CLAUDE_MD" 2>/dev/null; then
+elif grep -q "youk-core.session_start" "$INSTR_FILE" 2>/dev/null; then
   warn "youk block present but no fences and no snapshot — NOT auto-editing."
-  warn "  Manually remove the youk section (from the '# youk' heading to EOF) in $CLAUDE_MD"
+  warn "  Manually remove the youk section (from the '# youk' heading to EOF) in $INSTR_FILE"
 else
-  ok "no youk block in CLAUDE.md — nothing to remove"
+  ok "no youk block in $INSTR_NAME — nothing to remove"
 fi
 
 # ── Step 5: Schedulers ───────────────────────────────────────────────────────
@@ -216,12 +232,12 @@ fi
 # ── Step 7: Accumulated knowledge ────────────────────────────────────────────
 step "Accumulated knowledge"
 if $PURGE; then
-  for p in "$YOUK_DIR/knowledge" "$YOUK_DIR/state" "$CLAUDE_DIR/audit" "$RESTORE_ROOT"; do
+  for p in "$YOUK_DIR/knowledge" "$YOUK_DIR/state" "$AUDIT_DIR" "$RESTORE_ROOT"; do
     if [ -e "$p" ]; then run rm -rf "$p"; ok "purged $p"; fi
   done
   warn "--purge: all youk knowledge, state, audit, and the restore snapshot are gone."
 else
-  ok "Preserved: $YOUK_DIR/knowledge, $YOUK_DIR/state, $CLAUDE_DIR/audit"
+  ok "Preserved: $YOUK_DIR/knowledge, $YOUK_DIR/state, $AUDIT_DIR"
   ok "  Snapshot kept at $RESTORE_ROOT — re-installing resumes with full history."
   echo "  To remove everything: bash scripts/uninstall.sh --purge"
 fi
@@ -230,4 +246,4 @@ fi
 echo ""
 echo -e "${GREEN}youk integration reverted.${NC}"
 echo "  The youk repo itself is untouched at $YOUK_DIR (remove with: rm -rf $YOUK_DIR)."
-echo "  Restart Claude Code so it stops loading youk's MCP servers and hooks."
+echo "  Restart your agent host so it stops loading youk's MCP servers and hooks."

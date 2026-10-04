@@ -26,7 +26,7 @@ sys.path.insert(0, str(YOUK_ROOT / "scripts"))
 
 @pytest.fixture
 def skill_root(tmp_path):
-    """Fake CLAUDE_ROOT with a minimal SKILL.md."""
+    """Fake HOST_ROOT with a minimal SKILL.md."""
     croot = tmp_path / "claude"
     skill_dir = croot / "skills" / "test-skill"
     skill_dir.mkdir(parents=True)
@@ -69,7 +69,7 @@ class TestDiffInPayload:
     def test_skill_edit_returns_diff_preview_key(self, skill_root, proposal_obj, monkeypatch):
         """apply_proposal SKILL_EDIT returns a diff_preview key in the result."""
         import health as h
-        monkeypatch.setattr(h, "CLAUDE_ROOT", skill_root)
+        monkeypatch.setattr(h, "HOST_ROOT", skill_root)
         monkeypatch.setattr(h, "YOUK_ROOT", skill_root)
 
         result = h._execute_proposal(proposal_obj)
@@ -79,7 +79,7 @@ class TestDiffInPayload:
     def test_diff_preview_contains_plus_lines(self, skill_root, proposal_obj, monkeypatch):
         """diff_preview contains + lines showing the new content."""
         import health as h
-        monkeypatch.setattr(h, "CLAUDE_ROOT", skill_root)
+        monkeypatch.setattr(h, "HOST_ROOT", skill_root)
         monkeypatch.setattr(h, "YOUK_ROOT", skill_root)
 
         result = h._execute_proposal(proposal_obj)
@@ -92,7 +92,7 @@ class TestDiffInPayload:
     def test_diff_preview_contains_minus_or_context_lines(self, skill_root, monkeypatch):
         """diff_preview for a section replacement contains - lines showing removed content."""
         import health as h
-        monkeypatch.setattr(h, "CLAUDE_ROOT", skill_root)
+        monkeypatch.setattr(h, "HOST_ROOT", skill_root)
         monkeypatch.setattr(h, "YOUK_ROOT", skill_root)
 
         p = _make_proposal(
@@ -111,7 +111,7 @@ class TestDiffInPayload:
     def test_diff_lines_total_reported(self, skill_root, proposal_obj, monkeypatch):
         """apply_proposal returns diff_lines_total count."""
         import health as h
-        monkeypatch.setattr(h, "CLAUDE_ROOT", skill_root)
+        monkeypatch.setattr(h, "HOST_ROOT", skill_root)
         monkeypatch.setattr(h, "YOUK_ROOT", skill_root)
 
         result = h._execute_proposal(proposal_obj)
@@ -126,7 +126,7 @@ class TestDiffInPayload:
         skill_dir = croot / "skills" / "new-skill" / "references"
         skill_dir.mkdir(parents=True)
         youk_root.mkdir(parents=True)
-        monkeypatch.setattr(h, "CLAUDE_ROOT", croot)
+        monkeypatch.setattr(h, "HOST_ROOT", croot)
         monkeypatch.setattr(h, "YOUK_ROOT", youk_root)
 
         target_path = croot / "skills" / "new-skill" / "references" / "test.md"
@@ -149,7 +149,7 @@ class TestDiffInAudit:
         """After SKILL_EDIT apply, audit file contains ```diff block."""
         import health as h
         from datetime import datetime
-        monkeypatch.setattr(h, "CLAUDE_ROOT", skill_root)
+        monkeypatch.setattr(h, "HOST_ROOT", skill_root)
         monkeypatch.setattr(h, "YOUK_ROOT", skill_root)
 
         month = datetime.utcnow().strftime("%Y-%m")
@@ -165,7 +165,7 @@ class TestDiffInAudit:
         """Audit entry starts with SkillPatch: line followed by the diff block."""
         import health as h
         from datetime import datetime
-        monkeypatch.setattr(h, "CLAUDE_ROOT", skill_root)
+        monkeypatch.setattr(h, "HOST_ROOT", skill_root)
         monkeypatch.setattr(h, "YOUK_ROOT", skill_root)
 
         month = datetime.utcnow().strftime("%Y-%m")
@@ -184,7 +184,7 @@ class TestDiffInAudit:
     def test_audit_skipped_when_no_audit_file(self, skill_root, proposal_obj, monkeypatch):
         """If no audit file exists, apply still succeeds (audit write failure is non-blocking)."""
         import health as h
-        monkeypatch.setattr(h, "CLAUDE_ROOT", skill_root)
+        monkeypatch.setattr(h, "HOST_ROOT", skill_root)
         monkeypatch.setattr(h, "YOUK_ROOT", skill_root)
         # No audit file created — should not raise
         result = h._execute_proposal(proposal_obj)
@@ -417,13 +417,13 @@ class TestOrgScoreInvariantStrong:
     def _build_health_input(self, tmp_path):
         """Build minimal health.py state: audit logs, metrics, proposals."""
         youk_root = tmp_path / "youk"
-        claude_root = tmp_path / "claude"
+        host_root = tmp_path / "claude"
         (youk_root / "state" / "relay").mkdir(parents=True)
         (youk_root / "knowledge" / "proposals").mkdir(parents=True)
         (youk_root / "knowledge" / "audit").mkdir(parents=True)
         (youk_root / "state").mkdir(parents=True, exist_ok=True)
-        (claude_root / "audit").mkdir(parents=True)
-        audit_dir = claude_root / "audit"
+        (host_root / "audit").mkdir(parents=True)
+        audit_dir = host_root / "audit"
         lines = []
         for i in range(10):
             lines.append(
@@ -437,20 +437,20 @@ class TestOrgScoreInvariantStrong:
                 f"OutcomeResult: WORKED\n"
             )
         (audit_dir / "2026-01.md").write_text("\n".join(lines))
-        return youk_root, claude_root
+        return youk_root, host_root
 
     def test_org_score_identical_without_and_with_review(self, tmp_path, monkeypatch):
         """org_score from _score_org must be identical regardless of whether
         state/relay/REVIEW-* dirs exist.  This is the Goodhart-invariant test."""
         import health as h
 
-        youk_root, claude_root = self._build_health_input(tmp_path)
+        youk_root, host_root = self._build_health_input(tmp_path)
         monkeypatch.setattr(h, "YOUK_ROOT", youk_root)
-        monkeypatch.setattr(h, "CLAUDE_ROOT", claude_root)
-        monkeypatch.setattr(h, "AUDIT_DIR", claude_root / "audit")
+        monkeypatch.setattr(h, "HOST_ROOT", host_root)
+        monkeypatch.setattr(h, "AUDIT_DIR", host_root / "audit")
         monkeypatch.setattr(h, "PROPOSALS_FILE", youk_root / "knowledge" / "proposals" / "PENDING.md")
 
-        audit_texts = [f.read_text() for f in sorted((claude_root / "audit").glob("*.md"))]
+        audit_texts = [f.read_text() for f in sorted((host_root / "audit").glob("*.md"))]
 
         # Score WITHOUT any review dir
         score_no_review = h._score_org(audit_texts)
@@ -472,13 +472,13 @@ class TestOrgScoreInvariantStrong:
         """_score_org produces the same value whether relay dir exists or not."""
         import health as h
 
-        youk_root, claude_root = self._build_health_input(tmp_path)
+        youk_root, host_root = self._build_health_input(tmp_path)
         monkeypatch.setattr(h, "YOUK_ROOT", youk_root)
-        monkeypatch.setattr(h, "CLAUDE_ROOT", claude_root)
-        monkeypatch.setattr(h, "AUDIT_DIR", claude_root / "audit")
+        monkeypatch.setattr(h, "HOST_ROOT", host_root)
+        monkeypatch.setattr(h, "AUDIT_DIR", host_root / "audit")
         monkeypatch.setattr(h, "PROPOSALS_FILE", youk_root / "knowledge" / "proposals" / "PENDING.md")
 
-        audit_texts = [f.read_text() for f in sorted((claude_root / "audit").glob("*.md"))]
+        audit_texts = [f.read_text() for f in sorted((host_root / "audit").glob("*.md"))]
 
         # Score with relay dir present
         (youk_root / "state" / "relay" / "REVIEW-2026-07-01").mkdir(parents=True, exist_ok=True)

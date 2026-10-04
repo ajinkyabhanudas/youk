@@ -317,10 +317,10 @@ class TestMidSessionAdaptations:
     @pytest.fixture(autouse=True)
     def patch_claude_root(self, tmp_path, monkeypatch):
         import session
-        claude_root = tmp_path / "claude"
-        (claude_root / "audit").mkdir(parents=True)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
-        self._audit_dir = claude_root / "audit"
+        host_root = tmp_path / "claude"
+        (host_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
+        self._audit_dir = host_root / "audit"
 
     def _write_state(self, youk_root, slug="testslug"):
         (youk_root / "state" / "session.json").write_text(
@@ -520,7 +520,7 @@ class TestEndSessionSkillGate:
     def test_skill_gate_warning_when_no_capability_skill(self, youk_root, tmp_path, monkeypatch):
         """Warning returned when closing with no capability skill."""
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         result = session.end_session(
             summary="did some work",
@@ -534,7 +534,7 @@ class TestEndSessionSkillGate:
     def test_no_skill_gate_warning_when_capability_used(self, youk_root, tmp_path, monkeypatch):
         """No warning when a capability skill was invoked."""
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         result = session.end_session(
             summary="did some work",
@@ -547,7 +547,7 @@ class TestEndSessionSkillGate:
     def test_no_skill_gate_warning_when_not_closing(self, youk_root, tmp_path, monkeypatch):
         """Gate only fires when close_cluster=True — /close without skills is fine."""
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         result = session.end_session(
             summary="quick close",
@@ -560,7 +560,7 @@ class TestEndSessionSkillGate:
     def test_learn_gate_warning_when_learn_not_run(self, youk_root, tmp_path, monkeypatch):
         """learn_gate_warning fires when close_cluster=True and learn not in skills_used."""
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         result = session.end_session(
             summary="did some work",
@@ -574,7 +574,7 @@ class TestEndSessionSkillGate:
     def test_no_learn_gate_warning_when_learn_ran(self, youk_root, tmp_path, monkeypatch):
         """No learn_gate_warning when learn is in skills_used."""
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         result = session.end_session(
             summary="did some work",
@@ -587,7 +587,7 @@ class TestEndSessionSkillGate:
     def test_no_learn_gate_warning_when_not_closing(self, youk_root, tmp_path, monkeypatch):
         """/close without learn is fine — gate only applies to /done (close_cluster=True)."""
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         result = session.end_session(
             summary="quick close",
@@ -609,7 +609,7 @@ class TestCompoundingGap:
     def test_compounding_gap_yes_when_commits_no_skills(self, youk_root, tmp_path, monkeypatch):
         """commits_made=True + no capability skill → CompoundingGap: yes."""
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         session.end_session(summary="work done", commits_made=True, skills_used=[])
         assert "CompoundingGap: yes" in self._read_audit(tmp_path)
@@ -617,7 +617,7 @@ class TestCompoundingGap:
     def test_compounding_gap_no_when_commits_and_capability_skill(self, youk_root, tmp_path, monkeypatch):
         """commits_made=True + capability skill ran → CompoundingGap: no."""
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         session.end_session(summary="work done", commits_made=True, skills_used=["code-review"])
         assert "CompoundingGap: no" in self._read_audit(tmp_path)
@@ -625,7 +625,7 @@ class TestCompoundingGap:
     def test_compounding_gap_no_when_no_commits(self, youk_root, tmp_path, monkeypatch):
         """commits_made=False → CompoundingGap: no regardless of skills."""
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         session.end_session(summary="planning only", commits_made=False, skills_used=[])
         assert "CompoundingGap: no" in self._read_audit(tmp_path)
@@ -633,7 +633,7 @@ class TestCompoundingGap:
     def test_compounding_gap_no_when_no_commits_but_skill_ran(self, youk_root, tmp_path, monkeypatch):
         """commits_made=False + skill ran → CompoundingGap: no."""
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         session.end_session(summary="review only", commits_made=False, skills_used=["nfr_check"])
         assert "CompoundingGap: no" in self._read_audit(tmp_path)
@@ -644,14 +644,14 @@ class TestCompoundingGapReturnValue:
 
     def test_compounding_gap_true_in_return_when_commits_no_skills(self, youk_root, tmp_path, monkeypatch):
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         result = session.end_session(summary="work done", commits_made=True, skills_used=[])
         assert result["compounding_gap"] is True
 
     def test_compounding_gap_warning_present_when_gap_true(self, youk_root, tmp_path, monkeypatch):
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         result = session.end_session(summary="work done", commits_made=True, skills_used=[])
         assert "compounding_gap_warning" in result
@@ -659,21 +659,21 @@ class TestCompoundingGapReturnValue:
 
     def test_compounding_gap_false_in_return_when_skill_ran(self, youk_root, tmp_path, monkeypatch):
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         result = session.end_session(summary="work done", commits_made=True, skills_used=["code-review"])
         assert result["compounding_gap"] is False
 
     def test_compounding_gap_warning_absent_when_gap_false(self, youk_root, tmp_path, monkeypatch):
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         result = session.end_session(summary="work done", commits_made=True, skills_used=["code-review"])
         assert "compounding_gap_warning" not in result
 
     def test_compounding_gap_false_when_no_commits(self, youk_root, tmp_path, monkeypatch):
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         result = session.end_session(summary="planning only", commits_made=False, skills_used=[])
         assert result["compounding_gap"] is False
@@ -692,9 +692,9 @@ class TestEndSessionCheckpointRollup:
         import session
         from datetime import datetime
 
-        claude_root = tmp_path / "claude"
-        (claude_root / "audit").mkdir(parents=True)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        host_root = tmp_path / "claude"
+        (host_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
         # Pre-write two checkpoint entries
         cp_file = youk_root / "state" / "task-checkpoints.jsonl"
@@ -709,7 +709,7 @@ class TestEndSessionCheckpointRollup:
         session.end_session(summary="session done", commits_made=False)
 
         month = datetime.utcnow().strftime("%Y-%m")
-        audit_text = (claude_root / "audit" / f"{month}.md").read_text()
+        audit_text = (host_root / "audit" / f"{month}.md").read_text()
         assert "TaskCheckpoints: 2" in audit_text
         assert "implement login" in audit_text
 
@@ -718,9 +718,9 @@ class TestEndSessionCheckpointRollup:
         import json
         import session
 
-        claude_root = tmp_path / "claude"
-        (claude_root / "audit").mkdir(parents=True)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        host_root = tmp_path / "claude"
+        (host_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
         cp_file = youk_root / "state" / "task-checkpoints.jsonl"
         cp_file.write_text(
@@ -736,9 +736,9 @@ class TestEndSessionCheckpointRollup:
         """end_session works normally when no task-checkpoints.jsonl exists."""
         import session
 
-        claude_root = tmp_path / "claude"
-        (claude_root / "audit").mkdir(parents=True)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        host_root = tmp_path / "claude"
+        (host_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
         (youk_root / "state" / "session.json").write_text(
             '{"session_counter": 1, "last_project": "proj3", "last_seen": "2026-07-01"}'
@@ -1164,11 +1164,11 @@ class TestMergeStaleCheckpoint:
     def test_writes_audit_entry_for_stale_session_open(self, tmp_path, monkeypatch):
         import session
         youk_root = tmp_path / "youk"
-        claude_root = tmp_path / "claude"
+        host_root = tmp_path / "claude"
         (youk_root / "state").mkdir(parents=True)
-        (claude_root / "audit").mkdir(parents=True)
+        (host_root / "audit").mkdir(parents=True)
         monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
         self._write_checkpoint(
             youk_root / "state", "session-open.json",
@@ -1178,7 +1178,7 @@ class TestMergeStaleCheckpoint:
 
         session._merge_stale_checkpoint()
 
-        audit_file = claude_root / "audit" / "2026-07.md"
+        audit_file = host_root / "audit" / "2026-07.md"
         assert audit_file.exists()
         content = audit_file.read_text()
         assert "myproject" in content
@@ -1194,11 +1194,11 @@ class TestMergeStaleCheckpoint:
         import json
         import session
         youk_root = tmp_path / "youk"
-        claude_root = tmp_path / "claude"
+        host_root = tmp_path / "claude"
         (youk_root / "state").mkdir(parents=True)
-        (claude_root / "audit").mkdir(parents=True)
+        (host_root / "audit").mkdir(parents=True)
         monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
         slug = "myproject"
         skills_log = youk_root / "state" / "sessions" / slug
@@ -1217,7 +1217,7 @@ class TestMergeStaleCheckpoint:
 
         session._merge_stale_checkpoint()
 
-        content = (claude_root / "audit" / "2026-07.md").read_text()
+        content = (host_root / "audit" / "2026-07.md").read_text()
         assert "Skills: challenge, cto, pm-review" in content
         assert "Skills: none" not in content
         # Same contract as session_end's own use of this helper: the log is cleared so
@@ -1229,11 +1229,11 @@ class TestMergeStaleCheckpoint:
         must still read "Skills: none", not a stale or invented value."""
         import session
         youk_root = tmp_path / "youk"
-        claude_root = tmp_path / "claude"
+        host_root = tmp_path / "claude"
         (youk_root / "state").mkdir(parents=True)
-        (claude_root / "audit").mkdir(parents=True)
+        (host_root / "audit").mkdir(parents=True)
         monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
         self._write_checkpoint(
             youk_root / "state", "session-open.json",
@@ -1243,17 +1243,17 @@ class TestMergeStaleCheckpoint:
 
         session._merge_stale_checkpoint()
 
-        content = (claude_root / "audit" / "2026-07.md").read_text()
+        content = (host_root / "audit" / "2026-07.md").read_text()
         assert "Skills: none" in content
 
     def test_stale_checkpoint_file_deleted_after_merge(self, tmp_path, monkeypatch):
         import session
         youk_root = tmp_path / "youk"
-        claude_root = tmp_path / "claude"
+        host_root = tmp_path / "claude"
         (youk_root / "state").mkdir(parents=True)
-        (claude_root / "audit").mkdir(parents=True)
+        (host_root / "audit").mkdir(parents=True)
         monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
         self._write_checkpoint(
             youk_root / "state", "session-open.json",
@@ -1268,15 +1268,15 @@ class TestMergeStaleCheckpoint:
         """When session-checkpoint.json has resume_candidate, _merge_stale writes it."""
         import session
         youk_root = tmp_path / "youk"
-        claude_root = tmp_path / "claude"
+        host_root = tmp_path / "claude"
         (youk_root / "state").mkdir(parents=True)
-        (claude_root / "audit").mkdir(parents=True)
+        (host_root / "audit").mkdir(parents=True)
         slug = "myproject"
         ctx_dir = youk_root / "knowledge" / "projects" / slug
         ctx_dir.mkdir(parents=True)
         (ctx_dir / "context.md").write_text("last-seen: 2026-07-01\n")
         monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
         self._write_checkpoint(
             youk_root / "state", "session-checkpoint.json",
@@ -1294,16 +1294,16 @@ class TestMergeStaleCheckpoint:
         """session-open.json has no resume_candidate — context.md not touched."""
         import session
         youk_root = tmp_path / "youk"
-        claude_root = tmp_path / "claude"
+        host_root = tmp_path / "claude"
         (youk_root / "state").mkdir(parents=True)
-        (claude_root / "audit").mkdir(parents=True)
+        (host_root / "audit").mkdir(parents=True)
         slug = "myproject"
         ctx_dir = youk_root / "knowledge" / "projects" / slug
         ctx_dir.mkdir(parents=True)
         original = "last-seen: 2026-07-01\nresume-from: old resume point\n"
         (ctx_dir / "context.md").write_text(original)
         monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
         self._write_checkpoint(
             youk_root / "state", "session-open.json",
@@ -1322,11 +1322,11 @@ class TestMergeStaleCheckpoint:
         import session
         from datetime import datetime
         youk_root = tmp_path / "youk"
-        claude_root = tmp_path / "claude"
+        host_root = tmp_path / "claude"
         (youk_root / "state").mkdir(parents=True)
-        (claude_root / "audit").mkdir(parents=True)
+        (host_root / "audit").mkdir(parents=True)
         monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
         now_ts = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         self._write_checkpoint(
@@ -1338,7 +1338,7 @@ class TestMergeStaleCheckpoint:
 
         # No audit entry should be written for a < 5 min old file
         month = now_ts[:7]
-        audit_file = claude_root / "audit" / f"{month}.md"
+        audit_file = host_root / "audit" / f"{month}.md"
         assert not audit_file.exists()
 
 
@@ -1411,12 +1411,12 @@ class TestColdStart:
 
     @pytest.fixture(autouse=True)
     def patch_claude_root(self, tmp_path, monkeypatch, youk_root):
-        """Patch session.CLAUDE_ROOT so audit dir writes don't hit the read-only container path."""
+        """Patch session.HOST_ROOT so audit dir writes don't hit the read-only container path."""
         import session
-        claude_root = tmp_path / "claude"
-        (claude_root / "audit").mkdir(parents=True)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
-        return claude_root
+        host_root = tmp_path / "claude"
+        (host_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
+        return host_root
 
     def test_cold_start_no_prior_audit_returns_session_state(self, youk_root, tmp_path):
         """Brand-new install: no audit, no contracts, no prior session."""
@@ -1501,10 +1501,10 @@ class TestDuplicateSessionStartWithinWindow:
     @pytest.fixture(autouse=True)
     def patch_claude_root(self, tmp_path, monkeypatch, youk_root):
         import session
-        claude_root = tmp_path / "claude"
-        (claude_root / "audit").mkdir(parents=True)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
-        return claude_root
+        host_root = tmp_path / "claude"
+        (host_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
+        return host_root
 
     def test_second_call_within_window_does_not_bump_session_counter(self, youk_root, tmp_path):
         import session
@@ -1544,10 +1544,10 @@ class TestKillCriterionDecisionPacket:
     @pytest.fixture(autouse=True)
     def patch_claude_root(self, tmp_path, monkeypatch, youk_root):
         import session
-        claude_root = tmp_path / "claude"
-        (claude_root / "audit").mkdir(parents=True)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
-        return claude_root
+        host_root = tmp_path / "claude"
+        (host_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
+        return host_root
 
     def test_triggered_flag_surfaces_as_decision_packet(self, youk_root, tmp_path):
         import json
@@ -1679,7 +1679,7 @@ class TestCrossProjectPatternThemes:
         lines = ["# Working contracts\n"] + [f"- {c}\n" for c in contracts]
         (proj / "contracts.md").write_text("".join(lines))
 
-    def test_theme_field_present(self, youk_root, claude_root):
+    def test_theme_field_present(self, youk_root, host_root):
         self._write_contracts(youk_root, "alpha", ["always run tests before merging"])
         self._write_contracts(youk_root, "beta", ["always run tests before merging"])
         from health import _detect_cross_project_patterns
@@ -1687,7 +1687,7 @@ class TestCrossProjectPatternThemes:
         assert candidates
         assert "theme" in candidates[0]
 
-    def test_commit_hygiene_theme_detected(self, youk_root, claude_root):
+    def test_commit_hygiene_theme_detected(self, youk_root, host_root):
         contract = "always run lint before committing"
         self._write_contracts(youk_root, "alpha", [contract])
         self._write_contracts(youk_root, "beta", [contract])
@@ -1697,7 +1697,7 @@ class TestCrossProjectPatternThemes:
         assert match is not None
         assert match["theme"] == "Commit hygiene"
 
-    def test_testing_discipline_theme_detected(self, youk_root, claude_root):
+    def test_testing_discipline_theme_detected(self, youk_root, host_root):
         contract = "always write tests for every new function"
         self._write_contracts(youk_root, "alpha", [contract])
         self._write_contracts(youk_root, "beta", [contract])
@@ -1707,7 +1707,7 @@ class TestCrossProjectPatternThemes:
         assert match is not None
         assert match["theme"] == "Testing discipline"
 
-    def test_general_theme_when_no_keywords_match(self, youk_root, claude_root):
+    def test_general_theme_when_no_keywords_match(self, youk_root, host_root):
         contract = "keep responses concise and direct"
         self._write_contracts(youk_root, "alpha", [contract])
         self._write_contracts(youk_root, "beta", [contract])
@@ -1774,7 +1774,7 @@ class TestGoalAnchorCleanup:
         """goal-anchor.json is removed at session_end."""
         import json
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
 
         anchor = youk_root / "state" / "goal-anchor.json"
@@ -1791,7 +1791,7 @@ class TestGoalAnchorCleanup:
     def test_goal_anchor_absent_does_not_error(self, youk_root, tmp_path, monkeypatch):
         """end_session works normally when goal-anchor.json does not exist."""
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
 
         anchor = youk_root / "state" / "goal-anchor.json"
@@ -1807,7 +1807,7 @@ class TestReentryLogCleanup:
         """reentry-log.json is removed at session_end."""
         import json
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
 
         log = youk_root / "state" / "reentry-log.json"
@@ -1822,7 +1822,7 @@ class TestReentryLogCleanup:
     def test_reentry_log_absent_does_not_error(self, youk_root, tmp_path, monkeypatch):
         """end_session works normally when reentry-log.json does not exist."""
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
 
         log = youk_root / "state" / "reentry-log.json"
@@ -1838,7 +1838,7 @@ class TestCognitiveAssessmentAuditLine:
 
     def test_cognitive_assessment_written_to_audit(self, youk_root, tmp_path, monkeypatch):
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         block = "[COGNITIVE ASSESSMENT]\nSession: #5\nDreyfus stage: Competent\nZPD zone: Productive ZPD"
         session.end_session(
@@ -1856,7 +1856,7 @@ class TestCognitiveAssessmentAuditLine:
 
     def test_cognitive_assessment_collapsed_to_single_line(self, youk_root, tmp_path, monkeypatch):
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         block = "Line A\nLine B\nLine C"
         session.end_session(
@@ -1872,7 +1872,7 @@ class TestCognitiveAssessmentAuditLine:
 
     def test_no_cognitive_assessment_line_when_empty(self, youk_root, tmp_path, monkeypatch):
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         session.end_session(
             summary="test",
@@ -1886,7 +1886,7 @@ class TestCognitiveAssessmentAuditLine:
 
     def test_cognitive_assessment_not_written_when_whitespace_only(self, youk_root, tmp_path, monkeypatch):
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         session.end_session(
             summary="test",
@@ -1900,7 +1900,7 @@ class TestCognitiveAssessmentAuditLine:
 
     def test_long_assessment_truncated_to_400_chars(self, youk_root, tmp_path, monkeypatch):
         import session
-        monkeypatch.setattr(session, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
         block = "x" * 500
         session.end_session(
@@ -1926,10 +1926,10 @@ class TestSessionEndIdempotency:
     @pytest.fixture(autouse=True)
     def _patch_roots(self, tmp_path, monkeypatch, youk_root):
         import session
-        claude_root = tmp_path / "claude"
-        (claude_root / "audit").mkdir(parents=True)
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
-        self._claude_root = claude_root
+        host_root = tmp_path / "claude"
+        (host_root / "audit").mkdir(parents=True)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
+        self._claude_root = host_root
 
     def test_double_call_produces_one_audit_entry(self, youk_root):
         """Two rapid end_session calls share a minute-level timestamp — must yield one block."""
@@ -2115,13 +2115,13 @@ class TestReadAndClearSkillsInvoked:
 
 
 class TestEndSessionMechanicalSkillsMerge:
-    def test_mechanical_skills_merged_into_audit_line(self, youk_root, claude_root, monkeypatch):
+    def test_mechanical_skills_merged_into_audit_line(self, youk_root, host_root, monkeypatch):
         """The exact bug this fixes: session reports skills_used=[] but skills
         were actually logged via log_skill_invocation() during the session."""
         import json
         import session
         import state_paths as sp
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
         sp.YOUK_ROOT = youk_root
         log_path = sp.skills_invoked_log_path("youk")
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2134,15 +2134,15 @@ class TestEndSessionMechanicalSkillsMerge:
         from session import end_session
         end_session(summary="test session", commits_made=False, skills_used=None)
 
-        audit_file = claude_root / "audit" / __import__("datetime").datetime.utcnow().strftime("%Y-%m.md")
+        audit_file = host_root / "audit" / __import__("datetime").datetime.utcnow().strftime("%Y-%m.md")
         content = audit_file.read_text()
         assert "Skills: code-review" in content
 
-    def test_explicit_skills_used_preserved_alongside_mechanical(self, youk_root, claude_root, monkeypatch):
+    def test_explicit_skills_used_preserved_alongside_mechanical(self, youk_root, host_root, monkeypatch):
         import json
         import session
         import state_paths as sp
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
         sp.YOUK_ROOT = youk_root
         log_path = sp.skills_invoked_log_path("youk")
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2155,7 +2155,7 @@ class TestEndSessionMechanicalSkillsMerge:
         from session import end_session
         end_session(summary="test session", commits_made=False, skills_used=["humanize"])
 
-        audit_file = claude_root / "audit" / __import__("datetime").datetime.utcnow().strftime("%Y-%m.md")
+        audit_file = host_root / "audit" / __import__("datetime").datetime.utcnow().strftime("%Y-%m.md")
         content = audit_file.read_text()
         assert "humanize" in content
         assert "learn" in content

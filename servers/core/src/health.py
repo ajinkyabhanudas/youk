@@ -11,9 +11,9 @@ import sys
 sys.path.insert(0, "/shared")
 from models import HealthReport, Proposal
 
-CLAUDE_ROOT = Path("/claude")
+from youk_paths import HOST_ROOT, resolve_audit_dir, resolve_skills_dir
 YOUK_ROOT = Path("/youk")
-AUDIT_DIR = CLAUDE_ROOT / "audit"
+AUDIT_DIR = resolve_audit_dir(HOST_ROOT, YOUK_ROOT)
 PROPOSALS_FILE = YOUK_ROOT / "knowledge" / "proposals" / "PENDING.md"
 _PROPOSALS_DB = YOUK_ROOT / "knowledge" / "shared-index.db"
 
@@ -207,16 +207,16 @@ _CAPABILITY_SKILLS = frozenset({
 def _allowed_write_roots() -> list[Path]:
     """Paths that FILE_CREATE proposals are permitted to write to.
 
-    A function, not a frozen module-level list: YOUK_ROOT/CLAUDE_ROOT are
-    monkeypatched to tmp dirs in tests (see conftest.py's youk_root/claude_root
+    A function, not a frozen module-level list: YOUK_ROOT/HOST_ROOT are
+    monkeypatched to tmp dirs in tests (see conftest.py's youk_root/host_root
     fixtures), and a list built once at import time would keep referencing the
     real /youk, /claude/skills regardless of that patch.
     """
-    return [YOUK_ROOT, CLAUDE_ROOT / "skills"]
+    return [YOUK_ROOT, resolve_skills_dir(HOST_ROOT, YOUK_ROOT)]
 
 def _host_path_markers() -> tuple[tuple[str, Path], ...]:
     """health.py runs inside the youk-core container, where the host's
-    ~/.claude and ~/.claude/youk are bind-mounted at CLAUDE_ROOT and YOUK_ROOT
+    ~/.claude and ~/.claude/youk are bind-mounted at HOST_ROOT and YOUK_ROOT
     respectively (see install.sh / docker-compose). A caller outside the
     container — e.g. Claude Code running on the host — only knows its own
     real filesystem path, never the container-internal one, so a host-absolute
@@ -226,11 +226,11 @@ def _host_path_markers() -> tuple[tuple[str, Path], ...]:
 
     A function, not a frozen tuple, for the same reason as _allowed_write_roots:
     a tuple built once at import time keeps the real /youk, /claude/skills even
-    after tests monkeypatch YOUK_ROOT/CLAUDE_ROOT.
+    after tests monkeypatch YOUK_ROOT/HOST_ROOT.
     """
     return (
         (".claude/youk/", YOUK_ROOT),
-        (".claude/skills/", CLAUDE_ROOT / "skills"),
+        (".claude/skills/", resolve_skills_dir(HOST_ROOT, YOUK_ROOT)),
     )
 
 
@@ -290,8 +290,8 @@ def _host_relative_path(container_path: Path) -> str:
     s = str(container_path)
     if s.startswith(str(YOUK_ROOT)):
         return "youk/" + s[len(str(YOUK_ROOT)):].lstrip("/")
-    if s.startswith(str(CLAUDE_ROOT)):
-        return s[len(str(CLAUDE_ROOT)):].lstrip("/")
+    if s.startswith(str(HOST_ROOT)):
+        return s[len(str(HOST_ROOT)):].lstrip("/")
     return s
 
 
@@ -1268,7 +1268,7 @@ _CAP_LINK_DRIFT = 8.0
 
 
 def _structural_integrity_cap(
-    youk_root: Path | None = None, claude_root: Path | None = None
+    youk_root: Path | None = None, host_root: Path | None = None
 ) -> tuple[float | None, list[str]]:
     """Cap org_score when youk's own structure is broken.
 
@@ -1282,13 +1282,13 @@ def _structural_integrity_cap(
     Never raises: a health check must not be able to fail a session.
     """
     youk_root = youk_root if youk_root is not None else YOUK_ROOT
-    claude_root = claude_root if claude_root is not None else CLAUDE_ROOT
+    host_root = host_root if host_root is not None else HOST_ROOT
     cap: float | None = None
     reasons: list[str] = []
 
     try:
         from skill_route_check import check_skill_routes
-        routes = check_skill_routes(claude_root, youk_root)
+        routes = check_skill_routes(host_root, youk_root)
         broken = list(routes.get("unresolvable", [])) + list(routes.get("empty", []))
         if broken:
             cap = _CAP_ROUTES_BROKEN
@@ -1300,7 +1300,7 @@ def _structural_integrity_cap(
 
     try:
         from skill_link_check import check_skill_links
-        links = check_skill_links(youk_root, claude_root)
+        links = check_skill_links(youk_root, host_root)
         if links.get("unlinked"):
             unlinked = links["unlinked"]
             cap = min(cap, _CAP_LINK_DRIFT) if cap is not None else _CAP_LINK_DRIFT
@@ -1350,7 +1350,7 @@ def _check_project_type_coverage() -> dict | None:
     if not expected:
         return None
 
-    skills_dir = CLAUDE_ROOT / "skills"
+    skills_dir = resolve_skills_dir(HOST_ROOT, YOUK_ROOT)
     if not skills_dir.exists():
         skills_dir = YOUK_ROOT / "skills"
 
@@ -1431,7 +1431,7 @@ def _audit_skill_quality(skills_dir: Path) -> list[str]:
 
 
 
-def _structural_skill_findings(youk_root: Path, claude_root: Path) -> list[str]:
+def _structural_skill_findings(youk_root: Path, host_root: Path) -> list[str]:
     """Structural skill checks: link drift and route resolution.
 
     Extracted from the health body so the wiring is unit-testable. Both checks were
@@ -1451,14 +1451,14 @@ def _structural_skill_findings(youk_root: Path, claude_root: Path) -> list[str]:
     out: list[str] = []
     try:
         from skill_link_check import check_skill_links
-        msg = check_skill_links(youk_root, claude_root).get("message")
+        msg = check_skill_links(youk_root, host_root).get("message")
         if msg:
             out.append(msg)
     except Exception:
         pass
     try:
         from skill_route_check import check_skill_routes
-        msg = check_skill_routes(claude_root, youk_root).get("message")
+        msg = check_skill_routes(host_root, youk_root).get("message")
         if msg:
             out.append(msg)
     except Exception:
@@ -1741,10 +1741,10 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
 
     # Proactive SKILL.md quality audit — does not wait for explicit SkillGap log entries.
     # Reads SKILL.md files directly and surfaces structurally weak skills.
-    skill_quality_findings = _audit_skill_quality(CLAUDE_ROOT / "skills")
+    skill_quality_findings = _audit_skill_quality(resolve_skills_dir(HOST_ROOT, YOUK_ROOT))
     findings.extend(skill_quality_findings[:2])
 
-    findings.extend(_structural_skill_findings(YOUK_ROOT, CLAUDE_ROOT))
+    findings.extend(_structural_skill_findings(YOUK_ROOT, HOST_ROOT))
     findings.extend(_sizing_grounding_findings(YOUK_ROOT))
 
     # A capped score must say why. An unexplained low number reads as a metric glitch
@@ -2323,7 +2323,7 @@ def _queue_promotion_proposals(candidates: list[dict]) -> tuple[int, list[str]]:
     these need Track A generation, not just a SKILL_EDIT proposal.
     """
     from datetime import datetime, UTC
-    skills_dir = CLAUDE_ROOT / "skills"
+    skills_dir = resolve_skills_dir(HOST_ROOT, YOUK_ROOT)
     if not skills_dir.exists():
         skills_dir = YOUK_ROOT / "skills"
 
@@ -2830,7 +2830,7 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     _gap_resolution: dict = {}
     try:
         from gap_resolution import reverify_gap_signals
-        _gap_resolution = reverify_gap_signals(skill_gap_signals, CLAUDE_ROOT / "skills")
+        _gap_resolution = reverify_gap_signals(skill_gap_signals, resolve_skills_dir(HOST_ROOT, YOUK_ROOT))
         skill_gap_signals = _gap_resolution.get("open_signals", skill_gap_signals)
     except Exception:
         pass
@@ -2847,7 +2847,7 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
 
     # Also surface gap signals (count ≥ 2, no SKILL.md) that weren't caught by the
     # promotion threshold (count < 3 but still warrants generation).
-    skills_dir = CLAUDE_ROOT / "skills"
+    skills_dir = resolve_skills_dir(HOST_ROOT, YOUK_ROOT)
     if not skills_dir.exists():
         skills_dir = YOUK_ROOT / "skills"
     for sig in skill_gap_signals:
@@ -3662,7 +3662,7 @@ def _compute_diff_preview(proposal: Proposal) -> dict:
         }
 
     if ct == "REFERENCE_ADD":
-        ref_path = CLAUDE_ROOT / "skills" / proposal.target / "references" / proposal.target_section
+        ref_path = resolve_skills_dir(HOST_ROOT, YOUK_ROOT) / proposal.target / "references" / proposal.target_section
         before = ref_path.read_text() if ref_path.exists() else "(file does not exist)"
         after = proposal.content
         return {
@@ -3674,7 +3674,7 @@ def _compute_diff_preview(proposal: Proposal) -> dict:
         }
 
     if ct == "SKILL_EDIT":
-        skill_path = CLAUDE_ROOT / "skills" / proposal.target / "SKILL.md"
+        skill_path = resolve_skills_dir(HOST_ROOT, YOUK_ROOT) / proposal.target / "SKILL.md"
         if not skill_path.exists():
             return {"error": f"SKILL.md not found at {skill_path}"}
         current = skill_path.read_text()
@@ -3781,7 +3781,7 @@ def _execute_proposal(proposal: Proposal) -> dict:
         }
 
     if ct == "REFERENCE_ADD":
-        ref_path = CLAUDE_ROOT / "skills" / proposal.target / "references" / proposal.target_section
+        ref_path = resolve_skills_dir(HOST_ROOT, YOUK_ROOT) / proposal.target / "references" / proposal.target_section
         ref_path.parent.mkdir(parents=True, exist_ok=True)
         ref_path.write_text(proposal.content)
         return {
@@ -3792,7 +3792,7 @@ def _execute_proposal(proposal: Proposal) -> dict:
         }
 
     if ct == "SKILL_EDIT":
-        skill_path = CLAUDE_ROOT / "skills" / proposal.target / "SKILL.md"
+        skill_path = resolve_skills_dir(HOST_ROOT, YOUK_ROOT) / proposal.target / "SKILL.md"
         if not skill_path.exists():
             return {"applied": False, "error": f"SKILL.md not found at {skill_path}"}
         current = skill_path.read_text()
@@ -3832,7 +3832,7 @@ def _execute_proposal(proposal: Proposal) -> dict:
         # Write audit trail with full diff so self-heal can detect patch→gap cycles.
         try:
             month = datetime.now(UTC).strftime("%Y-%m")
-            audit_file = CLAUDE_ROOT / "audit" / f"{month}.md"
+            audit_file = resolve_audit_dir(HOST_ROOT, YOUK_ROOT) / f"{month}.md"
             if audit_file.exists():
                 with open(audit_file, "a") as _af:
                     _af.write(
@@ -3909,7 +3909,7 @@ def _business_rule_error() -> str:
 def _uncommitted_warning(written_path: Path) -> dict:
     """Flag that an applied edit landed on a git-tracked file and is not committed.
 
-    CLAUDE_ROOT/skills/<name> is a symlink into YOUK_ROOT/skills, so a SKILL_EDIT
+    HOST_ROOT/skills/<name> is a symlink into YOUK_ROOT/skills, so a SKILL_EDIT
     writes to a tracked file in the repo working tree. Nothing committed it and
     nothing said so, which means any branch switch silently discarded the applied
     improvement. That is a data-loss path for every skill youk improves, and it
@@ -4045,7 +4045,7 @@ def _build_review_bundle(
     scope: str,
     notes: str = "",
     youk_root: Path | None = None,
-    claude_root: Path | None = None,
+    host_root: Path | None = None,
     health_data: dict | None = None,
 ) -> dict:
     """Package youk state for external discriminator review.
@@ -4067,7 +4067,7 @@ def _build_review_bundle(
         }
 
     root = youk_root if youk_root is not None else YOUK_ROOT
-    croot = claude_root if claude_root is not None else CLAUDE_ROOT
+    croot = host_root if host_root is not None else HOST_ROOT
 
     today = _date.today().isoformat()
     relay_dir = root / "state" / "relay" / f"REVIEW-{today}"
