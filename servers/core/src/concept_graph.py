@@ -38,11 +38,12 @@ CREATE TABLE IF NOT EXISTS concepts (
     session_n    INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT    NOT NULL,
     summary      TEXT    NOT NULL DEFAULT '',
-    UNIQUE (label, project_slug, session_n)
+    UNIQUE (label, project_slug)
 );
 
 CREATE INDEX IF NOT EXISTS concepts_label    ON concepts (label);
 CREATE INDEX IF NOT EXISTS concepts_project  ON concepts (project_slug);
+CREATE UNIQUE INDEX IF NOT EXISTS concepts_label_project_unique ON concepts (label, project_slug);
 
 CREATE TABLE IF NOT EXISTS concept_edges (
     from_id        INTEGER NOT NULL REFERENCES concepts(id),
@@ -314,8 +315,9 @@ def write_concepts(
 ) -> dict[str, Any]:
     """Upsert concepts into shared-index.db and emit co-occurrence edges.
 
-    Idempotent: INSERT OR IGNORE on (label, project_slug, session_n) and
-    (from_id, to_id, edge_type).
+    A concept is keyed on (label, project_slug): a repeat run updates
+    session_n/summary on the existing row instead of inserting a new one.
+    Edges are idempotent via INSERT OR IGNORE on (from_id, to_id, edge_type).
 
     Returns {"written": int, "edges_written": int, "project_slug": str}.
     """
@@ -330,14 +332,25 @@ def write_concepts(
         conn = _connect(db_path)
         try:
             for c in concepts:
-                cursor = conn.execute(
-                    """INSERT OR IGNORE INTO concepts
+                # written counts genuinely NEW concepts, not refreshed ones --
+                # rowcount is 1 for both the insert and the update branch of
+                # an upsert, so existence has to be checked before writing.
+                existed = conn.execute(
+                    "SELECT 1 FROM concepts WHERE label = ? AND project_slug = ?",
+                    (c["label"], c["project_slug"]),
+                ).fetchone()
+                conn.execute(
+                    """INSERT INTO concepts
                        (label, type, project_slug, session_n, created_at, summary)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(label, project_slug) DO UPDATE SET
+                           session_n = excluded.session_n,
+                           created_at = excluded.created_at,
+                           summary = excluded.summary""",
                     (c["label"], c["type"], c["project_slug"],
                      c["session_n"], c["created_at"], c["summary"]),
                 )
-                if cursor.rowcount:
+                if not existed:
                     written += 1
 
             conn.commit()
