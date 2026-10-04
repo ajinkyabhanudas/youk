@@ -147,6 +147,14 @@ explicit allow-list — derived scalars, enums, and hashed identifiers only, nev
 raw task text, file paths, or findings (see
 [ADR-011](docs/adr-011-trace-content-invariant.md)).
 
+**Docs stay registered, not just checked.** `docs/doc-map.yaml` maps every MCP tool
+and source file to the docs that describe it; `session_start` diffs the real code
+against that map every session and flags what's missing. `task_checkpoint` closes
+the gap that check alone leaves: it flags any source file a task just touched with
+no `src_files` entry at the moment the task closes, not next session, so new
+undocumented files stop accumulating going forward instead of becoming a growing
+backlog nobody notices until someone runs the session-start check.
+
 ---
 
 ## Start here (60 seconds)

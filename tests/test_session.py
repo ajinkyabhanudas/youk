@@ -417,6 +417,34 @@ class TestTaskCheckpoint:
         result = session.task_checkpoint(str(tmp_path), "any task", size="M")
         assert "brief" in result
 
+    def test_unregistered_touched_server_file_surfaces_gap(self, youk_root, tmp_path, monkeypatch):
+        """An M+ task that touched an unregistered servers/ file must surface
+        doc_registration_gap -- the whole point is catching this before task close,
+        not waiting for the next session_start to report it."""
+        import session
+        monkeypatch.setattr(session, "_touched_files", lambda project_dir: ["servers/shared/new_module.py"])
+        result = session.task_checkpoint(str(tmp_path), "add new_module", size="M")
+        assert result["doc_registration_gap"] == ["servers/shared/new_module.py"]
+        assert "doc_registration_action" in result
+
+    def test_registered_touched_file_does_not_surface_gap(self, youk_root, tmp_path, monkeypatch):
+        (youk_root / "docs").mkdir(parents=True, exist_ok=True)
+        (youk_root / "docs" / "doc-map.yaml").write_text(
+            "src_files:\n  - {file: servers/shared/known_module.py, refs: [README.md]}\n"
+        )
+        import session
+        monkeypatch.setattr(session, "_touched_files", lambda project_dir: ["servers/shared/known_module.py"])
+        result = session.task_checkpoint(str(tmp_path), "edit known_module", size="M")
+        assert "doc_registration_gap" not in result
+
+    def test_xs_task_does_not_check_doc_registration(self, youk_root, tmp_path, monkeypatch):
+        """XS/S tasks skip the gate entirely -- same proportionality as the
+        checkpoint-write skip above."""
+        import session
+        monkeypatch.setattr(session, "_touched_files", lambda project_dir: ["servers/shared/new_module.py"])
+        result = session.task_checkpoint(str(tmp_path), "tiny fix", size="XS")
+        assert "doc_registration_gap" not in result
+
     def test_label_truncated_to_200(self, youk_root, tmp_path):
         """Labels longer than 200 chars are truncated in the checkpoint entry."""
         import json
