@@ -138,16 +138,13 @@ echo ""
 # ── API key ───────────────────────────────────────────────────────────────────
 echo "API key"
 
-# Priority 1: env var (CI / explicit export)
-# Priority 2: Claude Code's own key file (set when you sign in with 'claude'), which the
-# container reads from the mounted host dir. Other hosts provide the key through the env var.
-if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-  pass "ANTHROPIC_API_KEY: set in environment"
-elif [[ -f "$HOST_DIR/.anthropic/api_key" ]] && [[ -s "$HOST_DIR/.anthropic/api_key" ]]; then
-  pass "API key: found at $HOST_DIR/.anthropic/api_key (Claude Code signin — auto-mounted into container)"
+# The containers read the key from state/inference-keys/, not from the host environment or the host
+# CLI's sign-in file. configure_inference.py --check reports exactly what optimize_intent will see.
+if python3 "$YOUK_DIR/scripts/configure_inference.py" --check >/dev/null 2>&1; then
+  pass "Inference provider: $(python3 "$YOUK_DIR/scripts/configure_inference.py" --show | sed -n 's/^status: *//p')"
 else
-  warn "API key: not found — optimize_intent and nfr_check will fall back to fast-path (no API call)" \
-    "Export ANTHROPIC_API_KEY=sk-ant-... before running install.sh (or sign in with 'claude' on Claude Code)"
+  warn "Inference provider: not configured — optimize_intent will use the heuristic path (no model call)" \
+    "Run: python3 scripts/configure_inference.py --provider anthropic --key-from-env ANTHROPIC_API_KEY (or --provider openai-compatible --base-url URL --model NAME --key-stdin)"
 fi
 echo ""
 
