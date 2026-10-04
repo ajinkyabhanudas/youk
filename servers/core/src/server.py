@@ -43,7 +43,7 @@ from challenge_gate import check_challenge_gate as _check_challenge_gate
 from ceremony_sequencer import record_gate as _record_gate, check_order as _check_order
 from intake_gate import check_intake_gate as _check_intake_gate
 from intent import optimize_intent as _optimize_intent
-from compaction import build_brief, write_contracts, _slug as _project_slug
+from compaction import build_brief, write_contracts
 from tokens import init_token_tracker, record_checkpoint
 from session_slug import get_session_slug as _get_session_slug_impl
 import state_paths as _sp
@@ -1738,38 +1738,6 @@ def compact_context(project_dir: str, intent: str = "") -> dict:
 
 
 @mcp.tool()
-def checkpoint_now(project_dir: str, note: str, agent: str = "") -> dict:
-    """
-    Write a cheap, one-line save point between full checkpoints.
-
-    compact_context/task_checkpoint/session_end are heavy and only fire at big
-    moments. Between them, a decision made only in conversation is invisible to
-    a fresh session and lost entirely if the session ends without warning (a
-    usage limit, an agent switch mid-task) — nothing in youk can see that coming
-    in advance, so the fix is making saves cheap enough to call constantly
-    instead of trying to predict the cutoff.
-
-    Call this after any non-trivial decision or sub-goal change — not on every
-    tool call, but whenever losing this specific line would mean re-deriving
-    work. The note is surfaced once, automatically, at the next full checkpoint
-    (session_start, compact_context, task_checkpoint) in either Claude or Codex,
-    then consumed — it will not repeat.
-
-    project_dir: The current project directory (same as session_start).
-    note: One line — the current sub-goal or decision, not a transcript excerpt.
-          Rejected if empty or over 280 chars; write the concrete version, not
-          a paraphrase of the conversation.
-    agent: Optional — "claude" or "codex", so the next session/agent to read
-           this knows whether it's its own trail or a handoff from the other.
-
-    Returns: {ok, written, pending, state_written} or {ok: False, error_type, error}.
-    """
-    from turn_checkpoint import write_note as _write_checkpoint_note
-    slug = _project_slug(project_dir)
-    return _write_checkpoint_note(YOUK_ROOT, slug, note, agent=agent)
-
-
-@mcp.tool()
 def track_tokens(
     input_tokens: int,
     output_tokens: int,
@@ -2437,66 +2405,6 @@ def render_coverage_view(
         "angles_missing": len(gaps),
         "state_written": [],
     }
-
-
-@mcp.tool()
-def admit_comprehension_item(kind: str, takeaway: str, context: str = "") -> dict:
-    """
-    Record one load-bearing item for the comprehension channel.
-
-    output_channels defines the two-channel split — execution reasoning collapses to one
-    glanceable line, and only genuinely load-bearing items reach the human, paced to a
-    boundary rather than fired per step. It shipped with tests and no caller, so the split
-    existed as a data model and changed nothing. This is the write half.
-
-    Items accrue in a project-scoped file and surface only when render_task_view is called.
-    Admitting is cheap and continuous; surfacing is rare and paced. Per-step teaching is
-    the firehose this exists to prevent.
-
-    kind: "tradeoff" (a real decision with a rejected alternative), "foreclosure" (an
-        irreversible door closed, which the human may want to veto), or "pattern" (a
-        reusable pattern worth internalising). These three are the whole filter. If an
-        item is none of them it belongs in the execution channel, not here.
-    takeaway: the one thing the reader's mental model should update with. Capped at 280
-        characters and REJECTED rather than truncated when over: this store holds extracted
-        takeaways, and truncating would quietly let it become a transcript log instead.
-    context: optional pointer to what it attaches to — a file, a decision. Capped at 120.
-
-    Returns: {ok, admitted, pending, state_written} or {ok: False, error_type, error}.
-    admitted=False with ok=True means it duplicated an item already pending, not a failure.
-    """
-    from comprehension_digest import admit as _admit
-    try:
-        slug = _get_session_slug()
-    except Exception:
-        slug = ""
-    return _admit(YOUK_ROOT, kind, takeaway, context, session_slug=slug)
-
-
-@mcp.tool()
-def render_task_view(mark_surfaced: bool = True) -> dict:
-    """
-    Render the pending comprehension items as the paced digest, at a task or session
-    boundary. Surface `view` verbatim; it is pre-rendered.
-
-    Rendering marks items surfaced, it does not delete them. A session that ended without
-    rendering — a crash, a closed tab, a switch to another model mid-task — leaves its
-    items pending, so the next session picks up what the previous one never showed. The
-    file is project-scoped for that reason: a slug-scoped path would be invisible to the
-    next session and the handoff would silently never happen.
-
-    An empty digest renders to an empty string. Nothing load-bearing happened is a valid
-    and common result, and manufacturing teaching where none occurred is the exact failure
-    this channel was built to avoid.
-
-    mark_surfaced: pass False to preview without consuming — the items stay pending.
-
-    Returns: {ok, view, item_count, origin_sessions?, state_written?}.
-    origin_sessions appears when the items came from earlier sessions, so a handoff digest
-    is distinguishable from one this session produced.
-    """
-    from comprehension_digest import render as _render
-    return _render(YOUK_ROOT, mark_surfaced=mark_surfaced)
 
 
 @mcp.tool()
