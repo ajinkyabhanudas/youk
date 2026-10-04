@@ -414,6 +414,23 @@ def _record_generation(model: str, response: GenerationResult, duration_s: float
         pass
 
 
+def _record_grounding_stage(info: dict, duration_s: float) -> None:
+    """Trace the evidence step of the sizing call: how much evidence reached the prompt
+    and whether retrieval failed. Counts only; never task text (ADR-011)."""
+    try:
+        from observability import record_stage
+
+        record_stage(
+            YOUK_ROOT, "sizing-grounding", duration_s,
+            precedent_count=info.get("precedent_count", 0),
+            domain_invariant_count=info.get("domain_invariant_count", 0),
+            lesson_count=info.get("lesson_count", 0),
+            retrieval_unavailable=int(info.get("status") == "unavailable"),
+        )
+    except Exception:
+        pass
+
+
 def _current_project_slug() -> str:
     try:
         from session_slug import get_session_slug
@@ -589,7 +606,11 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
     user_content = f"Raw input: {raw_input}"
     if clarified_context:
         user_content += f"\n\nAdditional context from conversation: {clarified_context}"
+    import time as _time
+
+    _g0 = _time.monotonic()
     _grounding_block, _grounding = _sizing_grounding(raw_input)
+    _record_grounding_stage(_grounding, _time.monotonic() - _g0)
     user_content += _grounding_block
 
     _model = _PROVIDER.capability.model
