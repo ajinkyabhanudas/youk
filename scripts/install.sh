@@ -5,8 +5,19 @@
 #               .\scripts\install.ps1    (PowerShell — see scripts/install.ps1)
 set -euo pipefail
 
-YOUK_DIR="$HOME/.claude/youk"
-CLAUDE_DIR="$HOME/.claude"
+# Where youk is installed. YOUK_HOME overrides. An existing ~/.claude/youk keeps being used.
+# Otherwise: ~/.claude/youk when Claude Code is the host (skills are linked relative to the
+# Claude dir), and a host-neutral ~/.youk for any other host.
+if [ -n "${YOUK_HOME:-}" ]; then
+  YOUK_DIR="$YOUK_HOME"
+elif [ -d "$HOME/.claude/youk" ]; then
+  YOUK_DIR="$HOME/.claude/youk"
+elif [ "${YOUK_HOST:-auto}" = "claude-code" ] || { [ "${YOUK_HOST:-auto}" = "auto" ] && command -v claude >/dev/null 2>&1; }; then
+  YOUK_DIR="$HOME/.claude/youk"
+else
+  YOUK_DIR="$HOME/.youk"
+fi
+CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
 # Version to install. Empty means the default branch. Set to any tag or branch to pin:
 #   YOUK_REF=v1.2.1 bash scripts/install.sh
 # Only ever passed as a `git clone --branch` value, never into a URL.
@@ -68,18 +79,7 @@ if ! docker info &>/dev/null 2>&1; then
 fi
 ok "Docker running"
 
-if ! command -v claude &>/dev/null; then
-  if command -v npm &>/dev/null; then
-    warn "Claude Code not found — installing via npm..."
-    npm install -g @anthropic-ai/claude-code
-    ok "Claude Code installed"
-  else
-    fail "Claude Code not found and npm unavailable."
-    echo "  Install Node.js from https://nodejs.org then run: npm install -g @anthropic-ai/claude-code"
-    exit 1
-  fi
-fi
-ok "Claude Code found ($(claude --version 2>/dev/null | head -1))"
+# The agent host (Claude Code, Codex, or none) is chosen after the clone, in "Agent host" below.
 
 # ── Step 1: Clone or pull ────────────────────────────────────────────────────
 step "Repository"
@@ -126,6 +126,59 @@ else
   fi
 fi
 
+CODEX_HOME_DISPLAY="${CODEX_HOME:-~/.codex}"
+# ── Step 1b: Agent host ──────────────────────────────────────────────────────
+step "Agent host"
+HOSTS_LIB="$YOUK_DIR/scripts/lib/hosts.sh"
+if [[ ! -f "$HOSTS_LIB" ]]; then
+  fail "Missing $HOSTS_LIB — the clone at $YOUK_DIR looks incomplete."
+  exit 1
+fi
+# shellcheck source=lib/hosts.sh
+. "$HOSTS_LIB"
+YOUK_HOST_ID="$(youk_detect_host)" || exit 1
+HOST_DIR="$(youk_host_dir "$YOUK_HOST_ID")"
+case "$YOUK_HOST_ID" in
+  claude-code)
+    if ! command -v claude &>/dev/null; then
+      # Only reachable with YOUK_HOST=claude-code: auto-detection needs the CLI to choose it.
+      if command -v npm &>/dev/null; then
+        warn "Claude Code not found — installing via npm..."
+        npm install -g @anthropic-ai/claude-code
+        ok "Claude Code installed"
+      else
+        fail "Claude Code not found and npm unavailable."
+        echo "  Install Node.js from https://nodejs.org then run: npm install -g @anthropic-ai/claude-code"
+        exit 1
+      fi
+    fi
+    ok "Agent host: Claude Code ($(claude --version 2>/dev/null | head -1))"
+    case "$YOUK_DIR" in
+      "$HOST_DIR"/*) ;;
+      *) fail "With Claude Code, YOUK_HOME must be inside $HOST_DIR (skills are linked relative to it). Got: $YOUK_DIR"; exit 1 ;;
+    esac
+    ;;
+  codex)
+    command -v codex &>/dev/null || { fail "YOUK_HOST=codex but the codex CLI was not found on PATH."; exit 1; }
+    ok "Agent host: Codex ($(codex --version 2>/dev/null | head -1))"
+    ;;
+  none)
+    warn "No agent host CLI found (looked for claude and codex): installing youk's servers only."
+    echo "  Set YOUK_HOST=claude-code or YOUK_HOST=codex to target one, or add the MCP URLs to your host yourself."
+    ;;
+esac
+
+# What the containers mount at /host. A host with no config dir gets an empty directory, so the
+# mount and the paths inside the containers look the same for every install.
+if [[ -z "$HOST_DIR" ]]; then
+  HOST_MOUNT="$YOUK_DIR/.host"
+else
+  HOST_MOUNT="$HOST_DIR"
+fi
+mkdir -p "$HOST_MOUNT"
+# Where youk's audit logs live. Claude Code installs keep them in its config dir, as before.
+if [[ "$YOUK_HOST_ID" == "claude-code" ]]; then AUDIT_DIR="$HOST_DIR/audit"; SKILLS_LINKED=1; else AUDIT_DIR="$YOUK_DIR/audit"; SKILLS_LINKED=0; fi
+
 # ── Step 2: Runtime directories ──────────────────────────────────────────────
 step "Runtime directories"
 
@@ -135,16 +188,18 @@ mkdir -p \
   "$YOUK_DIR/knowledge/clarifications" \
   "$YOUK_DIR/knowledge/proposals" \
   "$YOUK_DIR/knowledge/projects" \
-  "$CLAUDE_DIR/audit"
+  "$AUDIT_DIR"
 ok "Directories ready"
 
 # Write host→container path map so the Docker containers can translate paths passed
-# by Claude Code (which uses host-absolute paths) to their mounted equivalents.
-# The containers mount YOUK_DIR → /youk and CLAUDE_DIR → /claude.
+# by the agent host (which uses host-absolute paths) to their mounted equivalents.
+# The containers mount YOUK_DIR → /youk and the host config dir → /host.
 cat > "$YOUK_DIR/state/path-map.env" <<EOF
-# Host→container path mappings — written by install.sh, read by session.py
+# Host→container path mappings — written by install.sh, read by state_paths.py and youk_paths.py
+YOUK_AGENT_HOST=$YOUK_HOST_ID
 YOUK_HOST_DIR=$YOUK_DIR
-CLAUDE_HOST_DIR=$CLAUDE_DIR
+HOST_CONFIG_DIR=$HOST_MOUNT
+HOST_SKILLS_LINKED=$SKILLS_LINKED
 EOF
 ok "path-map.env written to state/"
 
@@ -157,6 +212,7 @@ step "Pre-install snapshot"
 # SCRIPT_DIR resolved to whatever directory the user happened to be in, and this line
 # aborted the install for anyone following the README's curl command. Step 1 guarantees
 # the repo is at $YOUK_DIR, which makes it the only reliable place to read this from.
+if [[ "$YOUK_HOST_ID" == "claude-code" ]]; then
 SNAPSHOT_LIB="$YOUK_DIR/scripts/lib/snapshot.sh"
 if [[ ! -f "$SNAPSHOT_LIB" ]]; then
   fail "Missing $SNAPSHOT_LIB — the clone at $YOUK_DIR looks incomplete."
@@ -166,6 +222,9 @@ fi
 # shellcheck source=lib/snapshot.sh
 . "$SNAPSHOT_LIB"
 youk_take_snapshot
+else
+  ok "Skipped: the pre-install snapshot covers Claude Code files only"
+fi
 
 # ── Step 3: Symlinks ─────────────────────────────────────────────────────────
 step "Symlinks"
@@ -174,6 +233,10 @@ step "Symlinks"
 # This lets youk co-exist with skills from other tools — nothing gets clobbered.
 SKILLS_DIR="$CLAUDE_DIR/skills"
 SKILLS_REPO="$YOUK_DIR/skills"
+
+if [[ "$YOUK_HOST_ID" != "claude-code" ]]; then
+  ok "Skipped skill links: youk serves its skills over MCP (list_skills, route_to_skill) for $YOUK_HOST_ID"
+else
 
 # Migrate legacy whole-directory symlink (→ youk/skills) to per-skill symlinks.
 # The old form prevented other tools from adding skills alongside youk's.
@@ -231,6 +294,7 @@ if [[ ${#_conflicts[@]} -gt 0 ]]; then
 else
   ok "$_installed skills linked → $SKILLS_REPO"
 fi
+fi  # claude-code skill links
 
 if [[ -d "$SKILLS_REPO/learn/knowledge" ]]; then
   if [[ ! -L "$YOUK_DIR/knowledge/domain" ]]; then
@@ -285,7 +349,7 @@ for SERVER in core code; do
     code) PORT=8002 ;;
   esac
   sed \
-    -e "s|{{CLAUDE_DIR}}|$CLAUDE_DIR|g" \
+    -e "s|{{HOST_DIR}}|$HOST_MOUNT|g" \
     -e "s|{{YOUK_DIR}}|$YOUK_DIR|g" \
     -e "s|{{HOST_HOME}}|$HOME|g" \
     -e "s|{{PORT}}|$PORT|g" \
@@ -317,16 +381,15 @@ for i in $(seq 1 30); do
   fi
 done
 
-# Register with Claude Code as HTTP servers
-claude mcp remove youk-core 2>/dev/null || true
-claude mcp remove youk-code 2>/dev/null || true
-claude mcp add --scope user youk-core --transport http http://127.0.0.1:8001/mcp
-ok "youk-core registered (HTTP)"
-claude mcp add --scope user youk-code --transport http http://127.0.0.1:8002/mcp
-ok "youk-code registered (HTTP)"
+# Register with the selected host (or print the URLs when there is none).
+youk_register_servers "$YOUK_HOST_ID"
 
 # ── Step 5b: Register youk context hooks plugin ──────────────────────────────
 step "Context hooks plugin"
+
+if [[ "$YOUK_HOST_ID" != "claude-code" ]]; then
+  ok "Skipped: the hooks plugin is Claude Code's. Codex hooks are set up in $CODEX_HOME_DISPLAY/hooks.json or config.toml (docs/getting-started.md, \"Agent-host selection\"); this installer does not edit them."
+else
 
 PLUGIN_DIR="$YOUK_DIR/plugin"
 PLUGINS_ROOT="$CLAUDE_DIR/plugins"
@@ -352,63 +415,23 @@ else
   fail "youk-context plugin symlink failed — hooks will not be active"
   warn "Manual fix: ln -sf $PLUGIN_DIR $LINK_TARGET"
 fi
+fi  # claude-code hooks plugin
 
-# ── Step 6: Patch CLAUDE.md ──────────────────────────────────────────────────
-step "CLAUDE.md"
+# ── Step 6: Patch the host's instructions file ───────────────────────────────
+step "Instructions file"
 
-CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
-TEMPLATE="$YOUK_DIR/docs/claude-md-template.md"
-FENCE_BEGIN="<!-- BEGIN youk (managed) -->"
-FENCE_END="<!-- END youk -->"
-
-if [[ ! -f "$CLAUDE_MD" ]]; then
-  touch "$CLAUDE_MD"
-fi
-
-# Three cases. Fence markers let uninstall.sh remove youk's block surgically
-# without touching the user's own content.
-if grep -qF "$FENCE_BEGIN" "$CLAUDE_MD" 2>/dev/null; then
-  # (1) Already fenced → replace the fenced region with the current template.
-  #     Makes `make update` self-healing for the youk block.
-  tmp="$(mktemp)"
-  awk -v begin="$FENCE_BEGIN" -v end="$FENCE_END" -v tpl="$TEMPLATE" '
-    $0 == begin { print; while ((getline line < tpl) > 0) print line; skip=1; next }
-    $0 == end   { print; skip=0; next }
-    !skip       { print }
-  ' "$CLAUDE_MD" > "$tmp"
-  if [[ -s "$tmp" ]]; then mv "$tmp" "$CLAUDE_MD"; else rm -f "$tmp"; fail "CLAUDE.md refresh produced empty output — left unchanged"; fi
-  ok "CLAUDE.md youk block refreshed (fenced region replaced)"
-elif grep -q "youk-core.session_start" "$CLAUDE_MD" 2>/dev/null; then
-  # (2) Unfenced youk block (legacy install / hand-edited) → wrap it in fences
-  #     in place. The block runs from the first youk H1 heading to EOF; insert
-  #     BEGIN before that heading, append END at EOF. Content above is untouched.
-  tmp="$(mktemp)"
-  awk -v begin="$FENCE_BEGIN" -v end="$FENCE_END" '
-    !wrapped && /^# youk( |$|—)/ { print begin; wrapped=1 }
-    { print }
-    END { if (wrapped) print end }
-  ' "$CLAUDE_MD" > "$tmp"
-  if [[ -s "$tmp" ]]; then mv "$tmp" "$CLAUDE_MD"; else rm -f "$tmp"; fail "CLAUDE.md wrap produced empty output — left unchanged"; fi
-  if grep -qF "$FENCE_END" "$CLAUDE_MD" 2>/dev/null; then
-    ok "CLAUDE.md legacy youk block wrapped in fence markers (content preserved)"
-  else
-    warn "Could not locate youk H1 heading to fence — leaving CLAUDE.md unchanged"
-  fi
+INSTRUCTIONS_FILE="$(youk_host_instructions_file "$YOUK_HOST_ID")"
+if [[ -z "$INSTRUCTIONS_FILE" ]]; then
+  ok "Skipped: no host selected, so there is no instructions file to patch (docs/youk-lite.md covers the file-only variant)"
 else
-  # (3) No youk block → append the template, fenced.
-  {
-    printf "\n\n%s\n" "$FENCE_BEGIN"
-    cat "$TEMPLATE"
-    printf "%s\n" "$FENCE_END"
-  } >> "$CLAUDE_MD"
-  ok "youk block appended to $CLAUDE_MD (fenced)"
+  youk_patch_instructions "$INSTRUCTIONS_FILE" "$YOUK_DIR/docs/claude-md-template.md"
 fi
 
 # ── Step 7: Seed audit log ───────────────────────────────────────────────────
 step "Audit log"
 
 MONTH=$(date +%Y-%m)
-AUDIT_FILE="$CLAUDE_DIR/audit/$MONTH.md"
+AUDIT_FILE="$AUDIT_DIR/$MONTH.md"
 if [[ ! -f "$AUDIT_FILE" ]]; then
   touch "$AUDIT_FILE"
 fi
@@ -494,24 +517,27 @@ fi
 
 # ── Step 9: Validate ─────────────────────────────────────────────────────────
 step "Validation"
-bash "$YOUK_DIR/scripts/doctor.sh"
+YOUK_DIR="$YOUK_DIR" YOUK_HOST="$YOUK_HOST_ID" bash "$YOUK_DIR/scripts/doctor.sh"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}youk is ready.${NC}"
 echo ""
-echo "  Open a new Claude Code session — youk starts automatically."
+case "$YOUK_HOST_ID" in
+  claude-code) echo "  Open a new Claude Code session — youk starts automatically." ;;
+  codex)       echo "  Open a new Codex session. For context injected at session start, add the hooks in docs/getting-started.md (Agent-host selection)." ;;
+  none)        echo "  Add the two MCP servers above to your agent host, then start a session." ;;
+esac
 echo ""
-echo "  Note: youk stores knowledge on this machine only (~/.claude/youk/)."
+echo "  Note: youk stores knowledge on this machine only ($YOUK_DIR/)."
 echo "  Teammates using youk on the same project have separate histories."
-echo "  To share context, copy ~/.claude/youk/knowledge/projects/<slug>/ to their machine."
+echo "  To share context, copy $YOUK_DIR/knowledge/projects/<slug>/ to their machine."
 echo ""
-echo "  Skill override warning: if any project you use has .claude/skills/done,"
-echo "  .claude/skills/start, or .claude/skills/build, those files take precedence"
-echo "  over youk's versions in that project directory. Use 'ship it' (phrase) instead"
-echo "  of /done in those projects to ensure youk's session tracking still runs."
-echo "  Run: ls <project>/.claude/skills/ to check for conflicts."
-echo ""
-echo "  Tip: pair with headroom for 60-95% token cost reduction"
-echo "       brew install headroom && headroom wrap claude"
-echo ""
+if [[ "$YOUK_HOST_ID" == "claude-code" ]]; then
+  echo "  Skill override warning: if any project you use has .claude/skills/done,"
+  echo "  .claude/skills/start, or .claude/skills/build, those files take precedence"
+  echo "  over youk's versions in that project directory. Use 'ship it' (phrase) instead"
+  echo "  of /done in those projects to ensure youk's session tracking still runs."
+  echo "  Run: ls <project>/.claude/skills/ to check for conflicts."
+  echo ""
+fi

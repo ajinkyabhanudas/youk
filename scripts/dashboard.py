@@ -3,7 +3,7 @@
 
 Usage:
   python3 scripts/dashboard.py          # terminal output
-  python3 scripts/dashboard.py --html   # write ~/.claude/youk/reports/dashboard-YYYY-MM-DD.html
+  python3 scripts/dashboard.py --html   # write <youk dir>/reports/dashboard-YYYY-MM-DD.html
 """
 from __future__ import annotations
 
@@ -18,9 +18,13 @@ from pathlib import Path
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-CLAUDE_DIR = Path.home() / ".claude"
-AUDIT_DIR = CLAUDE_DIR / "audit"
-YOUK_DIR = CLAUDE_DIR / "youk"
+import sys as _sys
+from pathlib import Path as _P
+
+_sys.path.insert(0, str(_P(__file__).resolve().parent.parent / "servers" / "shared"))
+from youk_paths import locate_install  # noqa: E402
+
+YOUK_DIR, HOST_DIR, AUDIT_DIR = locate_install(__file__)
 STATE_DIR = YOUK_DIR / "state"
 PROPOSALS_FILE = YOUK_DIR / "knowledge" / "proposals" / "PENDING.md"
 REPORTS_DIR = YOUK_DIR / "reports"

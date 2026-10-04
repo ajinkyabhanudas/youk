@@ -20,9 +20,13 @@ from pathlib import Path
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
-CLAUDE_DIR = Path.home() / ".claude"
-AUDIT_DIR = CLAUDE_DIR / "audit"
-YOUK_DIR = CLAUDE_DIR / "youk"
+import sys as _sys
+from pathlib import Path as _P
+
+_sys.path.insert(0, str(_P(__file__).resolve().parent.parent / "servers" / "shared"))
+from youk_paths import locate_install  # noqa: E402
+
+YOUK_DIR, HOST_DIR, AUDIT_DIR = locate_install(__file__)
 METRICS_FILE = YOUK_DIR / "state" / "improvement-metrics.json"
 OUTPUT_FILE = YOUK_DIR / "STATS.md"
 

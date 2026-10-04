@@ -113,3 +113,41 @@ def test_path_map_accepts_the_neutral_key_and_the_old_one(tmp_path, monkeypatch)
     for key in ("HOST_CONFIG_DIR", "CLAUDE_HOST_DIR"):
         (youk / "state" / "path-map.env").write_text(f"YOUK_HOST_DIR=/h/youk\n{key}=/h/cfg\n")
         assert state_paths.resolve_project_path("/h/cfg/work") == host / "work", key
+
+
+def test_skills_are_read_from_youk_when_the_installer_did_not_link_them(tmp_path):
+    host, youk = tmp_path / "host", tmp_path / "youk"
+    (host / "skills" / "someone-elses-skill").mkdir(parents=True)     # another tool's skills dir
+    (youk / "state").mkdir(parents=True)
+    # no path-map.env: legacy rule, the host dir wins
+    assert youk_paths.resolve_skills_dir(host, youk) == host / "skills"
+    (youk / "state" / "path-map.env").write_text("HOST_SKILLS_LINKED=0\n")
+    assert youk_paths.resolve_skills_dir(host, youk) == youk / "skills"
+    (youk / "state" / "path-map.env").write_text("# c\nHOST_SKILLS_LINKED=1\n")
+    assert youk_paths.resolve_skills_dir(host, youk) == host / "skills"
+
+
+# --- host-side scripts locate the install without assuming ~/.claude ----------------
+
+def test_locate_install_uses_the_script_location_and_the_recorded_host_dir(tmp_path, monkeypatch):
+    monkeypatch.delenv("YOUK_HOME", raising=False)
+    install = tmp_path / "somewhere" / "youk"
+    (install / "scripts").mkdir(parents=True)
+    (install / "state").mkdir()
+    (install / "state" / "path-map.env").write_text("HOST_CONFIG_DIR=/cfg/.codex\n")
+    youk_dir, host_dir, audit = youk_paths.locate_install(install / "scripts" / "dashboard.py")
+    assert (youk_dir, host_dir) == (install.resolve(), __import__("pathlib").Path("/cfg/.codex"))
+    assert audit == install.resolve() / "audit"          # no legacy audit dir under the host dir
+
+
+def test_locate_install_falls_back_to_the_claude_dir_and_honours_youk_home(tmp_path, monkeypatch):
+    install = tmp_path / "youk"
+    (install / "scripts").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(tmp_path / "h"))
+    (tmp_path / "h" / ".claude" / "audit").mkdir(parents=True)
+    _, host_dir, audit = youk_paths.locate_install(install / "scripts" / "x.py")
+    assert host_dir == tmp_path / "h" / ".claude" and audit == host_dir / "audit"   # legacy layout
+    other = tmp_path / "other"
+    other.mkdir()
+    monkeypatch.setenv("YOUK_HOME", str(other))
+    assert youk_paths.locate_install(install / "scripts" / "x.py")[0] == other

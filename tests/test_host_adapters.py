@@ -186,3 +186,31 @@ def test_the_library_is_syntactically_valid_bash_3_compatible():
     assert subprocess.run(["bash", "-n", str(_LIB)], capture_output=True).returncode == 0
     text = _LIB.read_text()
     assert "declare -A" not in text and ",," not in text and os.access(_LIB, os.R_OK)
+
+
+# --- Makefile: no hardcoded install or host dir -------------------------------------
+
+def _make_vars(tmp_path, *, path_map: str | None):
+    import shutil
+    if shutil.which("make") is None:
+        pytest.skip("make not installed")
+    root = tmp_path / "installdir"
+    (root / "state").mkdir(parents=True)
+    shutil.copy(Path(__file__).parent.parent / "Makefile", root / "Makefile")
+    if path_map is not None:
+        (root / "state" / "path-map.env").write_text(path_map)
+    out = subprocess.run(
+        ["make", "-s", "-C", str(root), "--eval", 'show: ; @echo "$(YOUK_DIR)|$(HOST_DIR)"', "show"],
+        capture_output=True, text=True, env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path / "h")},
+    )
+    return root, out.stdout.strip().split("|")
+
+
+def test_makefile_takes_the_youk_dir_from_its_own_location_and_the_host_dir_from_the_map(tmp_path):
+    root, (youk_dir, host_dir) = _make_vars(tmp_path, path_map="YOUK_AGENT_HOST=codex\nHOST_CONFIG_DIR=/x/.codex\n")
+    assert youk_dir == str(root.resolve()) and host_dir == "/x/.codex"
+
+
+def test_makefile_falls_back_to_the_claude_dir_for_installs_without_a_map(tmp_path):
+    _, (_, host_dir) = _make_vars(tmp_path, path_map=None)
+    assert host_dir == str(tmp_path / "h" / ".claude")
