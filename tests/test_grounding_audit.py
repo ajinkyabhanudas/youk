@@ -199,3 +199,26 @@ def test_gate_failure_is_surfaced_not_swallowed(youk_root, tmp_path, monkeypatch
     monkeypatch.setattr(session, "_touched_files", lambda p: (_ for _ in ()).throw(RuntimeError("git gone")))
     result = session.task_checkpoint(str(tmp_path), "t", size="M")
     assert result["doc_registration_error"] == "RuntimeError: git gone"
+
+
+# --- goal 3: sizing must not inflate a small task via substring hits -----------
+
+def _real_routes():
+    import yaml
+    from pathlib import Path
+    return yaml.safe_load((Path(__file__).parent.parent / "config" / "routes.yaml").read_text())
+
+
+@pytest.mark.parametrize("task", [
+    "update the padding on the settings page",
+    "change the address field label",
+])
+def test_signal_inside_a_longer_word_does_not_inflate_size(task):
+    import routing
+    assert routing._score_size(task, _real_routes()).value in ("XS", "S")
+
+
+@pytest.mark.parametrize("task", ["add a button", "adding a button to the form", "added a retry"])
+def test_inflected_signal_still_matches(task):
+    import routing
+    assert routing._score_size(task, _real_routes()).value == "M"

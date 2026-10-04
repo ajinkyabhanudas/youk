@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import re
 import json
 import yaml
 from datetime import datetime
@@ -166,6 +168,21 @@ def _consume_scope_escalation(slug: str) -> TaskSize | None:
     return size
 
 
+_SIGNAL_PATTERNS: dict[str, re.Pattern[str]] = {}
+
+
+def _signal_in(signal: str, text_lower: str) -> bool:
+    """Whole-word match with ordinary inflections (add -> adds/added/adding,
+    migrate -> migrating). A bare substring test fired "add" inside "padding"
+    and "address", sending a CSS tweak through the full M-size gate chain."""
+    sig = signal.lower()
+    pattern = _SIGNAL_PATTERNS.get(sig)
+    if pattern is None:
+        stem = re.escape(sig[:-1]) + "(?:e|es|ed|ing)" if sig.endswith("e") else re.escape(sig) + "(?:s|es|ed|ing)?"
+        pattern = _SIGNAL_PATTERNS[sig] = re.compile(r"(?<![a-z0-9])" + stem + r"(?![a-z0-9])")
+    return pattern.search(text_lower) is not None
+
+
 def _score_size(task: str, routes: dict) -> TaskSize:
     """
     Net-score routing: positive signal matches minus (negative signal matches × 2).
@@ -180,8 +197,8 @@ def _score_size(task: str, routes: dict) -> TaskSize:
     scored: list[tuple[int, TaskSize]] = []
 
     for size_name, config in sizes.items():
-        positive = sum(1 for s in config.get("signals", []) if s.lower() in task_lower)
-        negative = sum(1 for s in config.get("negative_signals", []) if s.lower() in task_lower)
+        positive = sum(1 for s in config.get("signals", []) if _signal_in(s, task_lower))
+        negative = sum(1 for s in config.get("negative_signals", []) if _signal_in(s, task_lower))
         net = positive - (negative * 2)
         if net > 0:
             scored.append((net, TaskSize(size_name)))
@@ -189,7 +206,7 @@ def _score_size(task: str, routes: dict) -> TaskSize:
     if not scored:
         # XS signals without positive match — check if any XS signal is present
         xs_signals = sizes.get("XS", {}).get("signals", [])
-        if any(s.lower() in task_lower for s in xs_signals):
+        if any(_signal_in(s, task_lower) for s in xs_signals):
             return TaskSize.XS
         # Fall back to word count heuristic
         word_count = len(task.split())

@@ -24,39 +24,19 @@ REPO_ROOT = Path(__file__).parent.parent
 ROUTES_FILE = REPO_ROOT / "config" / "routes.yaml"
 ACCURACY_THRESHOLD = 0.75
 
-# ── Inline _score_size (avoids Docker path dependency in routing.py) ───────────
+# ── Scorer under test: the real routing._score_size, not a copy ───────────────
+# An inline copy here drifted from routing.py silently, so the eval measured
+# something production never ran. routing imports cleanly without Docker.
+
+for _p in ("servers/shared", "servers/core/src"):
+    sys.path.insert(0, str(REPO_ROOT / _p))
+import routing as _routing  # noqa: E402
 
 _SPARK = " ▁▂▃▄▅▆▇█"
 
 
 def _score_size(task: str, routes: dict) -> str:
-    task_lower = task.lower()
-    sizes = routes.get("task_sizes", {})
-    size_order = {"XL": 5, "L": 4, "M": 3, "S": 2, "XS": 1}
-
-    scored: list[tuple[int, str]] = []
-    for size_name, config in sizes.items():
-        positive = sum(1 for s in config.get("signals", []) if s.lower() in task_lower)
-        negative = sum(1 for s in config.get("negative_signals", []) if s.lower() in task_lower)
-        net = positive - (negative * 2)
-        if net > 0:
-            scored.append((net, size_name))
-
-    if not scored:
-        xs_signals = sizes.get("XS", {}).get("signals", [])
-        if any(s.lower() in task_lower for s in xs_signals):
-            return "XS"
-        word_count = len(task.split())
-        if word_count <= 5:
-            return "XS"
-        elif word_count <= 15:
-            return "S"
-        elif word_count <= 40:
-            return "M"
-        return "L"
-
-    scored.sort(key=lambda x: (x[0], size_order.get(x[1], 0)), reverse=True)
-    return scored[0][1]
+    return _routing._score_size(task, routes).value
 
 
 # ── Labelled eval set ─────────────────────────────────────────────────────────
@@ -66,6 +46,8 @@ def _score_size(task: str, routes: dict) -> str:
 EVAL_CASES: list[tuple[str, str, str]] = [
     # XS — typo, rename, one-liner
     ("fix typo in README", "XS", "single word correction, no logic"),
+    ("update the padding on the settings page", "S", "css tweak; 'add' inside 'padding' must not count as the verb"),
+    ("change the address field label", "XS", "one-line label text; 'add' inside 'address' must not count as the verb"),
     ("rename variable userId to user_id in auth.py", "XS", "rename with no logic change"),
     ("update comment on line 42 to match new behavior", "XS", "comment-only change"),
 
