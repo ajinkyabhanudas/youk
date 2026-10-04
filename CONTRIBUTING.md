@@ -6,17 +6,16 @@ compounding loop (audit → self_heal → proposal → apply). This guide covers
 ## Prerequisites
 
 **For skill and docs contributions (no Docker required):**
-- Claude Code (Anthropic CLI) — or any Claude agent
+- An MCP-capable agent host: Claude Code (the installer registers it) or Codex ([docs/hosts.md](docs/hosts.md))
 - A text editor
 
 Skills (`skills/*/SKILL.md`) and knowledge files are plain markdown — no build step needed to edit them.
 
 **For server code contributions (`servers/`):**
 - Docker Desktop 24+
-- Claude Code (Anthropic CLI)
 - Python 3.11+
 
-No API key is required to install or run youk — `install.sh` wires Claude Code's existing auth into the containers, and youk reads it at runtime.
+No API key is required to install or run youk — `install.sh` wires the host's existing auth into the containers (Claude Code today), and youk reads it at runtime.
 
 ## Setup
 
@@ -130,7 +129,25 @@ repo root. It is gitignored via `.env.*`. Source it before running youk:
 set -a && source .env.langfuse && set +a
 ```
 
-**Before adding anything to a trace, read `docs/adr-011-trace-content-invariant.md`.**
+**What a session trace contains.** One trace per session, opened by `session_start`.
+
+| Name | Kind | Numbers it carries |
+|---|---|---|
+| `optimize_intent` | generation | model, input and output tokens, latency |
+| `sizing-grounding` | span | `precedent_count`, `domain_invariant_count`, `lesson_count`, `retrieval_unavailable` (0/1), duration |
+| `domain-brief-refresh` | span | `built`, `fresh`, `absent` (one is 1), duration |
+| `session-lessons-load` | span | `loaded`, `cap`, duration |
+| `pattern-promotion` | span | `promoted`, `duplicate` (0/1) |
+| `pattern-retire` | span | `retired` |
+| `health-check` | span | `findings`, `sessions_analyzed`, duration |
+
+To trace a new stage, call `observability.record_stage(YOUK_ROOT, "name", duration_s, count=n)`
+with numbers only (anything else is dropped). A stage that finishes *before* `_obs_start`
+runs, as the session-start ones do, must be buffered and flushed after it: until then
+`state/session.json` still holds the previous session's trace id, and recording would
+attach the span to the wrong trace (`session._flush_stage_records` does this).
+
+**Before adding anything to a trace, read `docs/adr/adr-011-trace-content-invariant.md`.**
 Traces carry derived scalars, enums and hashed identifiers only, never free text from
 a session. `_ALLOWED_METADATA_KEYS` in `servers/core/src/observability.py` enforces it
 and `tests/test_observability_privacy.py` will fail if the surface widens. The

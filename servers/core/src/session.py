@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import re
+import time
 from datetime import datetime, UTC
 from pathlib import Path
 
@@ -1462,9 +1463,16 @@ def start_session(project_dir: str) -> SessionState:
     slug = _slug(project_dir)
     # Keep this project's Domain Brief current from its own DECISIONS.md, so the
     # sizing call has project-specific invariants without a manual build step.
+    # Stages that finish before this session's trace exists are buffered and attached by
+    # _flush_stage_records once _obs_start has opened it; recording them now would land on
+    # the previous session's trace id still sitting in state.
+    _stage_records: list[tuple[str, float, dict]] = []
+    _t0 = time.monotonic()
     try:
         from domain_brief import refresh_project_domain_brief
-        refresh_project_domain_brief(YOUK_ROOT, Path(str(_resolve_project_path(project_dir))), slug)
+        _brief_status = refresh_project_domain_brief(YOUK_ROOT, Path(str(_resolve_project_path(project_dir))), slug)
+        _stage_records.append(("domain-brief-refresh", time.monotonic() - _t0,
+                               {s: int(_brief_status == s) for s in ("built", "fresh", "absent")}))
     except Exception as e:
         print(f"youk: domain brief not refreshed ({type(e).__name__}: {e})", file=sys.stderr)
     state = _load_state()
@@ -1596,7 +1604,10 @@ def start_session(project_dir: str) -> SessionState:
     else:
         resume_point = "No prior context found — fresh session."
 
+    _t1 = time.monotonic()
     global_contracts = _load_global_contracts()
+    _stage_records.append(("session-lessons-load", time.monotonic() - _t1,
+                           {"loaded": len(global_contracts), "cap": 50}))
     project_contracts = _load_contracts(slug)
     contracts = global_contracts + project_contracts  # global first, project overrides
 
@@ -2190,6 +2201,7 @@ def start_session(project_dir: str) -> SessionState:
         pass
 
     _obs_start(project_dir, slug)
+    _flush_stage_records(_stage_records)
     return SessionState(
         project=slug,
         resume_point=resume_point,
@@ -2222,6 +2234,16 @@ def start_session(project_dir: str) -> SessionState:
         cross_project_concepts=_cross_project_concepts,
         pending_build_task=_pending_build_task,
     )
+
+
+def _flush_stage_records(records: list[tuple[str, float, dict]]) -> None:
+    """Attach buffered session-start stages to the trace _obs_start just opened."""
+    try:
+        from observability import record_stage
+        for name, duration_s, numbers in records:
+            record_stage(YOUK_ROOT, name, duration_s, **numbers)
+    except Exception:
+        pass
 
 
 def _obs_start(project_dir: str, slug: str) -> None:

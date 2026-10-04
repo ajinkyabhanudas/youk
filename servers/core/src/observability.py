@@ -6,7 +6,7 @@ reaches Langfuse and never needs the stack. Setup lives in CONTRIBUTING.md.
 
 One trace per run (session_start to session_end). Repairs and health checks are spans.
 
-TRACE CONTENT INVARIANT (see docs/adr-011-trace-content-invariant.md):
+TRACE CONTENT INVARIANT (see docs/adr/adr-011-trace-content-invariant.md):
 
     Traces carry derived scalars and enums. Never free text from the session.
 
@@ -113,6 +113,9 @@ class NoOpObs:
 
     def record_generation(self, trace_id: str, name: str, model: str,
                           input_tokens: int, output_tokens: int, duration_s: float) -> None:
+        pass
+
+    def record_stage(self, trace_id: str, name: str, duration_s: float, **numbers) -> None:
         pass
 
     def end_run(self, trace: Any, **kw) -> None:
@@ -234,6 +237,27 @@ class LangfuseObs:
         except Exception:
             pass
 
+    def record_stage(self, trace_id: str, name: str, duration_s: float, **numbers) -> None:
+        """Record a stage that has already finished, with counts measured inside it.
+
+        span_by_id times a `with` block but fixes its metadata when the block opens, so it
+        cannot carry a count that is only known once the stage ends (how many lessons were
+        retrieved, say). This takes the duration and the numbers after the fact. Values are
+        scrubbed to numbers only (ADR-011); `name` is a literal in the calling code. Never raises.
+        """
+        from datetime import datetime as _dt, timedelta as _td
+        try:
+            end = _dt.now()
+            payload = _numeric_only(numbers)
+            payload["duration_s"] = round(duration_s, 3)
+            self._lf.span(
+                trace_id=trace_id, name=name,
+                start_time=end - _td(seconds=max(duration_s, 0.0)), end_time=end,
+                metadata=payload,
+            )
+        except Exception:
+            pass
+
     def end_run_by_id(self, trace_id: str, outcome: str = "NONE", commits_made: bool = False) -> None:
         self._lf.trace(
             id=trace_id,
@@ -266,6 +290,29 @@ def compute_patch_cycle_rate(candidates: list[dict]) -> float | None:
         return None
     cycling = sum(1 for c in candidates if c.get("patch_cycle"))
     return round(cycling / len(candidates), 3)
+
+
+def current_trace_id(youk_root: Path) -> str | None:
+    """The open trace's id from state/session.json, or None when tracing is off
+    or there is no trace. Never raises."""
+    import json as _json
+    try:
+        state = Path(str(youk_root)) / "state" / "session.json"
+        trace_id = _json.loads(state.read_text()).get("_obs_trace_id") if state.exists() else None
+    except Exception:
+        return None
+    return None if not trace_id or trace_id == "noop" else trace_id
+
+
+def record_stage(youk_root: Path, name: str, duration_s: float, **numbers) -> None:
+    """Attach a finished stage to the current trace as a span. Numbers only (ADR-011).
+    A no-op without a trace. Never raises: tracing must not fail the stage it measures."""
+    try:
+        trace_id = current_trace_id(youk_root)
+        if trace_id is not None:
+            get_obs().record_stage(trace_id, name, duration_s, **numbers)
+    except Exception:
+        pass
 
 
 def _numeric_only(metadata: dict) -> dict:

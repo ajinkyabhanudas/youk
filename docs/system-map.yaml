@@ -159,10 +159,10 @@
 - name: reframe_and_package_review
   grounding: deterministic
   subsystem: problem-space-modeling
-  triggers_on: "a Phase 2 domain edge-case candidate needs third-person reframing (reframe_candidate) and self-contained packaging (build_independent_review_request) before an independent review session sees it"
+  triggers_on: "every nfr_check result with domain edge-case candidates: nfr._domain_edge_case_fields reframes them (reframe_candidates) and attaches a self-contained review request (build_independent_review_request) for a fresh session or subagent where the host has one"
   reads: []
   writes: []
-  real_log: null  # pure in-memory transform/packaging; dispatching the package to a separate review session is left to the caller (module's own docstring)
+  real_log: null  # pure in-memory transform/packaging; whether the host dispatches it to a separate session is the host's choice
 
 - name: domain_scope_naming
   grounding: llm_judgment
@@ -205,9 +205,11 @@
   real_log: state/disposition-log.jsonl
 
 # detect_reversals/confirm_reversed_pattern/find_promotion_candidates/
-# promote_group have no live caller -- self_heal wiring was reverted after
-# duplicating _detect_cross_project_patterns -> promote_to_global_contracts
-# below. "self-heal AUDIT phase" never existed in the live system.
+# promote_group are reachable as youk-core tools (detect_domain_reversals,
+# confirm_domain_reversal, find_pattern_promotion_candidates, promote_pattern_group)
+# and self-heal steps 5-6. They were unwired once for duplicating
+# _detect_cross_project_patterns -> promote_to_global_contracts; promote_pattern_group
+# now refuses a meaning-duplicate. Keep them only if they produce entries on real data.
 - name: detect_reversals
   grounding: deterministic
   subsystem: pattern-learning-architecture

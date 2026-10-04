@@ -41,7 +41,9 @@ Just say a working agreement aloud — Claude writes it immediately (no "remembe
 
 ---
 
-## Path B — full youk (Claude Code + Docker)
+## Path B — full youk (agent host + Docker)
+
+> The installer registers youk with **Claude Code**. For Codex or another MCP host, do steps 1–3, then register the two MCP URLs in that host yourself and see [hosts.md](hosts.md) and "Agent-host selection" below.
 
 ### No `make`? Use these equivalents
 
@@ -173,7 +175,7 @@ If install fails, run `make checkup-fast` (or the direct equivalent from the tab
 
 ---
 
-## Steps 4–5: Register MCP servers + patch CLAUDE.md
+## Steps 4–5: Register MCP servers + patch the instructions file
 
 `install.sh` handles both of these automatically. If you need to run them manually:
 
@@ -188,13 +190,13 @@ claude mcp add --scope user youk-core --transport http http://127.0.0.1:8001/mcp
 claude mcp add --scope user youk-code --transport http http://127.0.0.1:8002/mcp
 ```
 
-Verify with `claude mcp list` — both should show `✔ Connected`. The servers run as persistent HTTP daemons (launchd on macOS, cron on Linux) at ports 8001 and 8002.
+Verify with `claude mcp list` (Claude Code; other hosts have their own MCP listing) — both should show `✔ Connected`. The servers run as persistent HTTP daemons (launchd on macOS, cron on Linux) at ports 8001 and 8002.
 
 `install.sh` also patches `~/.claude/CLAUDE.md` with the youk identity block. If you already have a CLAUDE.md, it appends without overwriting existing content.
 
 ---
 
-## Step 6: Open a new Claude Code session
+## Step 6: Open a new session in your host
 
 In a new terminal:
 ```bash

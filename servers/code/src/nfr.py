@@ -5,7 +5,8 @@ from pathlib import Path
 YOUK_ROOT = Path("/youk")
 sys.path.insert(0, "/shared")
 
-from domain_edge_cases import domain_edge_case_candidates
+from domain_edge_case_review import build_independent_review_request, reframe_candidates
+from domain_edge_cases import find_domain_edge_case_candidates, load_domain_brief
 from models import NFRBlock, TaskSize
 from skill_loader import load_skill, load_skill_reference
 
@@ -95,18 +96,40 @@ _FUNCTIONAL_EDGE_CASE_INSTRUCTION = (
 _DOMAIN_EDGE_CASE_INSTRUCTION = (
     "CIR-163 Phase 2 — distinct from the generic functional edge-case bank above: "
     "each domain edge-case candidate below (if any) names a real invariant from "
-    "this project's own Domain Brief (state/domain-brief.json) that matched the "
+    "this project's own Domain Brief (state/domain-briefs/{project}.json) that matched the "
     "task text by name or vocabulary. Check the task against each cited invariant "
     "specifically — don't restate the generic bank. An empty list means no real "
     "invariant on record matched this task; that is a true negative, not a gap "
-    "in coverage, so do not invent a domain concern to fill it."
+    "in coverage, so do not invent a domain concern to fill it. Each candidate carries a "
+    "`framed_claim`: judge it as a finding from a prior review, not as your own. If a "
+    "`domain_edge_case_review_request` is present it is self-contained; where your host can "
+    "start a fresh session or subagent, give it that request and use its verdict, otherwise "
+    "judge the candidates yourself."
 )
+
+
+def _domain_edge_case_fields(task: str) -> dict:
+    """Domain edge-case fields for an nfr_check result.
+
+    Candidates are reframed in third person, as a prior review's finding rather than this
+    session's own (the Self-Correction Illusion result, docs/research-basis.md); every
+    original key survives, so disposition logging is unaffected. When there are candidates,
+    a self-contained review request is added so a reviewer with none of this session's
+    context can judge them (Cross-Context Review). Omitted when there are none."""
+    brief = load_domain_brief()
+    if brief is None:
+        return {"domain_edge_case_candidates": []}
+    candidates = reframe_candidates(find_domain_edge_case_candidates(task, brief))
+    fields: dict = {"domain_edge_case_candidates": candidates}
+    if candidates:
+        fields["domain_edge_case_review_request"] = build_independent_review_request(task, candidates, brief)
+    return fields
 
 
 def nfr_check_quick(task: str, autonomy_mode: str = "standard") -> dict:
     """
-    4-question NFR context for M tasks — returns in_session dict for Claude Code to answer.
-    No API call: the active Claude Code session answers the questions with full project context.
+    4-question NFR context for M tasks — returns in_session dict for the agent to answer.
+    No API call: the active agent session answers the questions with full project context.
 
     autonomy_mode: "standard" (default) asks all 4 questions fresh, every time. "validate"
     is the branch session.py's nfr_autonomy_mode computation was already deciding on
@@ -128,15 +151,15 @@ def nfr_check_quick(task: str, autonomy_mode: str = "standard") -> dict:
         "instruction": _VALIDATE_MODE_INSTRUCTION if validate else _STANDARD_MODE_INSTRUCTION,
         "functional_edge_case_questions": load_functional_edge_case_questions(),
         "functional_edge_case_instruction": _FUNCTIONAL_EDGE_CASE_INSTRUCTION,
-        "domain_edge_case_candidates": domain_edge_case_candidates(task),
+        **_domain_edge_case_fields(task),
         "domain_edge_case_instruction": _DOMAIN_EDGE_CASE_INSTRUCTION,
     }
 
 
 def nfr_check_full(task: str, size: TaskSize) -> dict:
     """
-    Full NFR context for L/XL tasks — returns in_session dict for Claude Code to answer.
-    No API call: the active Claude Code session runs the full check with all phases.
+    Full NFR context for L/XL tasks — returns in_session dict for the agent to answer.
+    No API call: the active agent session runs the full check with all phases.
     """
     skill_content = load_skill("nfr-check")
     return {
@@ -147,7 +170,7 @@ def nfr_check_full(task: str, size: TaskSize) -> dict:
         "questions": _QUICK_4Q_QUESTIONS,
         "functional_edge_case_questions": load_functional_edge_case_questions(),
         "functional_edge_case_instruction": _FUNCTIONAL_EDGE_CASE_INSTRUCTION,
-        "domain_edge_case_candidates": domain_edge_case_candidates(task),
+        **_domain_edge_case_fields(task),
         "domain_edge_case_instruction": _DOMAIN_EDGE_CASE_INSTRUCTION,
         "instruction": (
             f"Run the full nfr-check skill (all phases) for this {size.value} task. "
@@ -185,7 +208,7 @@ def _is_youk_project() -> bool:
 def run_nfr_check(task: str, size_str: str = "M", autonomy_mode: str = "standard") -> NFRBlock | dict:
     """
     XS/S: returns NFRBlock (fast path, no API call).
-    M+: returns in_session dict for Claude Code to execute with full context.
+    M+: returns in_session dict for the agent to execute with full context.
 
     autonomy_mode only affects the M path — L/XL always run the full check regardless
     of developer autonomy history. Higher-stakes work earns no reduction in ceremony;

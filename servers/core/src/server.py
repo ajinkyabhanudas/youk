@@ -2668,6 +2668,15 @@ def confirm_domain_reversal(reversal: dict, domain: str, sub_domain: str, projec
         return {"confirmed": False, "error": str(exc), "error_type": "SYSTEM"}
 
 
+def _trace_learning(name: str, **counts: int) -> None:
+    """Count a learning-store change on the current trace (numbers only, ADR-011)."""
+    try:
+        from observability import record_stage
+        record_stage(YOUK_ROOT, name, 0.0, **counts)
+    except Exception:
+        pass
+
+
 @mcp.tool()
 def find_pattern_promotion_candidates() -> dict:
     """
@@ -2736,8 +2745,10 @@ def promote_pattern_group(domain: str, sub_domain: str, chosen_statement: str) -
             return {"promoted": False, "error_type": "BUSINESS_RULE",
                     "error": f"no promotable group for ({domain!r}, {sub_domain!r})"}
         entry = promote_group(group, chosen_statement, root=YOUK_ROOT)
+        _trace_learning("pattern-promotion", promoted=1, duplicate=0)
         return {"promoted": True, "pattern_id": entry.id, "path": str(global_patterns_path(YOUK_ROOT))}
     except DuplicatePatternError as exc:
+        _trace_learning("pattern-promotion", promoted=0, duplicate=1)
         return {"promoted": False, "error": str(exc), "error_type": "BUSINESS_RULE",
                 "duplicate_of": exc.existing_id}
     except PatternValidationError as exc:
@@ -2765,6 +2776,7 @@ def retire_global_pattern(pattern_id: str, reason: str) -> dict:
 
     try:
         _retire(YOUK_ROOT, pattern_id, reason)
+        _trace_learning("pattern-retire", retired=1)
         return {"retired": True, "pattern_id": pattern_id,
                 "path": str(YOUK_ROOT / "state" / "global-patterns.jsonl")}
     except KeyError:

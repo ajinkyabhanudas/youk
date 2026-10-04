@@ -12,6 +12,12 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ### Fixed
 
+- Docs described parts of the system as Claude-only. `docs/hosts.md` now gives the real
+  Claude Code and Codex capability matrix (checked against `agent_host.py` by a test), says that
+  Codex hooks are wired but not yet exercised live, and lists the install paths that are still
+  Claude-rooted. AGENTS.md, README, getting-started, CONTRIBUTING, youk-lite, scheduling and
+  guardrails no longer present Claude Code as the only host.
+
 - `task_checkpoint` doc-registration gate judged every project by youk's own doc-map,
   missed files in new untracked directories, and swallowed failures. It now uses the working
   repo's doc-map, lists untracked files individually, and reports `doc_registration_error`.
@@ -25,6 +31,21 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
   middle" and Self-Correction Illusion citations now say what those papers show.
 
 ### Changed
+
+- Removed three modules with no caller, tool, skill or test-time guard: `confidence_signal.py`,
+  `output_channels.py`, `comprehension_digest.py` (515 lines plus tests). They implemented an
+  "Agentic-UX Rework" spec that was never wired and is no longer in the tree; they are in git
+  history if that rework is resumed. `capability_ledger.py` stays: it is a CI guard.
+- MCP tool descriptions in youk-code say "the agent" instead of "Claude Code", since every host's
+  model reads them.
+
+- Langfuse traces now include the grounding stages: `sizing-grounding`, `domain-brief-refresh`,
+  `session-lessons-load`, `pattern-promotion`, `pattern-retire`. Numbers only (ADR-011).
+  Session-start stages are buffered until the new trace exists.
+- Docs reorganised: ADRs moved to `docs/adr/`, added `docs/README.md` (index) and `docs/hosts.md`.
+- Removed files nothing used: a stale knowledge index, two personal design specs and a session
+  note tracked against `.gitignore`, an unreferenced banner, `scripts/update.sh` (duplicated
+  `make update` and hardcoded `~/.claude/youk`) and `scripts/bootstrap_behavioral_profile.py`.
 
 - Session start loads the best-supported 50 cross-project learnings (real confirmed count, then
   newest) instead of the newest 50, keeps the committed default contracts (they were dropped
@@ -43,6 +64,11 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 - Added `docs/research-basis.md`.
 
 ### Added
+
+- `nfr_check` now reframes domain edge-case candidates in third person (`framed_claim`) and, when
+  there are candidates, attaches a self-contained `domain_edge_case_review_request` for a fresh
+  session or subagent. `domain_edge_case_review.py` had tests and a research citation but no
+  production caller.
 
 - Per-project Domain Briefs: session start builds `state/domain-briefs/{slug}.json` from the
   project's own `DECISIONS.md` when missing or stale; the sizing call and nfr_check's edge-case pass read the current project's,

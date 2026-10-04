@@ -47,7 +47,7 @@
 versioned capability declaration and deterministically returns `available`, `degraded`,
 or `blocked`. Safety capabilities fail closed when absent or unknown; advisory
 capabilities degrade explicitly. Host adapters own only translation into their native
-hook shape. See [ADR-012](adr-012-agent-host-capability-contract.md).
+hook shape. See [ADR-012](adr/adr-012-agent-host-capability-contract.md).
 
 Both containers mount the same host directory at `/youk/state/`. This shared volume is the only channel between them — no inter-container network calls.
 

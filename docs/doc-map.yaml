@@ -313,7 +313,8 @@ concepts:
 # difference between a checker that reports real drift and one that reports 9 files
 # every run until people stop reading it.
 untracked_exempt:
-  - "docs/adr-*.md"              # decision records — historical, by definition not derived
+  - "docs/README.md"             # index of the docs, not a claim about the system
+  - "docs/hosts.md"              # host support matrix, checked against agent_host.py by a test
   - "docs/guardrails.md"         # reference material, no authority relationship
   - "docs/system-flow.md"        # diagram/reference
   - "docs/tool-contract-template.md"  # a template, not a claim about the system

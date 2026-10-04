@@ -281,10 +281,10 @@ def _routing_ran_this_session() -> bool:
 
 def route_to_skill(skill_name: str, task: str, context: dict | None = None) -> dict:
     """
-    Load a skill and return context for in-session execution by Claude Code.
+    Load a skill and return context for in-session execution by the agent.
 
     Does NOT call the Anthropic API — returns skill_content + task so the
-    active Claude Code session executes the skill with full conversation
+    active agent session executes the skill with full conversation
     context, tools, and history. This is both more capable and requires no
     separate API credits.
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import re
 import subprocess
 import zlib
@@ -542,3 +543,90 @@ def test_health_reports_the_comparison_only_with_enough_tasks_in_both_groups(tmp
     assert msg and "1 of 5 tasks sized with retrieved evidence, 3 of 5 sized without" in msg[0]
     log.write_text("".join(json.dumps(r) + "\n" for r in rows[:4]))
     assert not [f for f in health._sizing_grounding_findings(tmp_path) if "routed again" in f]
+
+
+# --- Langfuse: the new stages are traced, numbers only (ADR-011) ----------------
+
+class _Recorder:
+    def __init__(self):
+        self.stages = []
+
+    def record_stage(self, trace_id, name, duration_s, **numbers):
+        self.stages.append((trace_id, name, numbers))
+
+
+def _trace_state(root, trace_id):
+    (root / "state").mkdir(parents=True, exist_ok=True)
+    (root / "state" / "session.json").write_text(json.dumps({"_obs_trace_id": trace_id}))
+
+
+def test_langfuse_record_stage_drops_everything_but_numbers():
+    import observability
+    sent = {}
+
+    class _Lf:
+        def span(self, **kw):
+            sent.update(kw)
+
+    obs = observability.LangfuseObs.__new__(observability.LangfuseObs)
+    obs._lf = _Lf()
+    obs.record_stage("t1", "sizing-grounding", 0.25, precedent_count=2, task="fix the secret thing",
+                     flag=True, rate=0.5)
+    assert sent["metadata"] == {"precedent_count": 2, "rate": 0.5, "duration_s": 0.25}
+    assert sent["trace_id"] == "t1" and sent["name"] == "sizing-grounding"
+
+
+def test_record_stage_only_acts_when_a_real_trace_is_open(tmp_path, monkeypatch):
+    import observability
+    rec = _Recorder()
+    monkeypatch.setattr(observability, "get_obs", lambda: rec)
+    observability.record_stage(tmp_path, "x", 0.1, n=1)           # no state at all
+    _trace_state(tmp_path, "noop")
+    observability.record_stage(tmp_path, "x", 0.1, n=1)           # tracing disabled
+    assert rec.stages == []
+    _trace_state(tmp_path, "t9")
+    observability.record_stage(tmp_path, "x", 0.1, n=1)
+    assert rec.stages == [("t9", "x", {"n": 1})]
+
+
+def test_sizing_call_traces_evidence_counts_without_any_task_text(tmp_path, monkeypatch):
+    import observability
+    rec = _Recorder()
+    monkeypatch.setattr(observability, "get_obs", lambda: rec)
+    monkeypatch.setattr(intent, "_PROVIDER", _FakeProvider())
+    monkeypatch.setattr(intent, "_ANTHROPIC_AVAILABLE", True)
+    monkeypatch.setattr(intent, "YOUK_ROOT", tmp_path)
+    _trace_state(tmp_path, "t1")
+    intent.optimize_intent("rework the retry behaviour of the uploader, secret-project-name")
+    (trace, name, numbers), = rec.stages
+    assert (trace, name) == ("t1", "sizing-grounding")
+    assert set(numbers) == {"precedent_count", "domain_invariant_count", "lesson_count", "retrieval_unavailable"}
+    assert all(isinstance(v, int) for v in numbers.values())
+
+
+def test_session_start_stages_attach_to_the_new_trace_not_the_old_one(tmp_path, monkeypatch):
+    import observability
+    import session
+    rec = _Recorder()
+    monkeypatch.setattr(observability, "get_obs", lambda: rec)
+    monkeypatch.setattr(session, "YOUK_ROOT", tmp_path)
+    _trace_state(tmp_path, "previous-session")
+    buffered = [("domain-brief-refresh", 0.01, {"built": 1, "fresh": 0, "absent": 0})]
+    _trace_state(tmp_path, "this-session")      # what _obs_start does before the flush
+    session._flush_stage_records(buffered)
+    assert [(t, n) for t, n, _ in rec.stages] == [("this-session", "domain-brief-refresh")]
+
+
+def test_promotion_and_retirement_are_traced_as_counts(tmp_path, monkeypatch):
+    import importlib.util
+    import observability
+    rec = _Recorder()
+    monkeypatch.setattr(observability, "get_obs", lambda: rec)
+    spec = importlib.util.spec_from_file_location(
+        "youk_core_server_for_trace", Path(__file__).parent.parent / "servers" / "core" / "src" / "server.py")
+    srv = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(srv)
+    monkeypatch.setattr(srv, "YOUK_ROOT", tmp_path)
+    _trace_state(tmp_path, "t5")
+    srv._trace_learning("pattern-retire", retired=1)
+    assert rec.stages == [("t5", "pattern-retire", {"retired": 1})]
