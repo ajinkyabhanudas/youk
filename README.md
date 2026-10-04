@@ -92,9 +92,10 @@ the placement is a reasonable choice rather than a tested one.
 flowchart TD
     Task[New decision point] --> Tag{Deterministic or judgment?}
     Tag -->|deterministic| Code[Code decides — same input, same answer]
-    Tag -->|judgment| Retrieve[Retrieve similar past decisions by similarity]
-    Retrieve --> Place[Place precedent at the end of the prompt]
-    Place --> Model[Model judges with real precedent in view]
+    Tag -->|judgment| Retrieve["Retrieve evidence: similar past decisions + this project's Domain Brief invariants, each above a relevance floor"]
+    Retrieve --> Place[Place evidence after the task text]
+    Place --> Log[Log what evidence was shown — or that none was]
+    Log --> Model["Model judges via a vendor-neutral provider result"]
     Model --> Claim[Claim produced]
     Claim --> Decompose[Decompose into sub-claims]
     Decompose --> Verify[Check each sub-claim: grep hit / test run / live call]
@@ -105,7 +106,40 @@ flowchart TD
 ```
 
 youk also checks, every session, whether what it built is actually called from the live
-routing loop — not just present in the codebase.
+routing loop — not just present in the codebase. `/health` reads the sizing log back and
+flags it when many recent estimates were made cold or the model is often overridden by the
+keyword scorer.
+
+Sources for each research-backed choice, with what each does and does not show:
+[docs/research-basis.md](docs/research-basis.md).
+
+### Reusable learnings
+
+youk reuses three kinds of knowledge, and they are at different stages:
+
+```mermaid
+flowchart LR
+    C[Per-project contracts] --> X{Same lesson in 2+ projects? by meaning}
+    X -->|yes| G[Guards: abstraction check, opposite-claim check, dedup]
+    G --> S[(state/global-patterns.jsonl)]
+    S --> M[knowledge/global/contracts.md, regenerated from the store]
+    M --> L[Loaded at session start: last 50 lines]
+    D[Project decision records] --> B[Domain Brief per project]
+    B --> E[Invariants matched to this task by vocabulary, every task]
+    E --> P[Evidence block for sizing, edge-case review]
+    H[Past sizing decisions] --> P
+```
+
+- **Lessons and contracts (live).** Promoted across projects with the guards above.
+  The gap: they are loaded wholesale at session start and capped at the newest 50, not
+  retrieved for the task at hand. The structured store has no retrieval caller yet.
+- **Domain Brief (live for youk's own repo).** The stable model is reused; which
+  invariants apply is decided fresh for each task, so a past task cannot bias a later one.
+  It is only used when the brief was built for the current project.
+- **Reversal and promotion of confirmed patterns (built, unwired by decision).**
+
+What the research supports and what is still to build is in
+[docs/research-basis.md](docs/research-basis.md#advancements-still-needed-in-priority-order).
 
 None of this runs with zero human involvement, and it isn't meant to. Detection is
 automatic and logged durably; deciding what to do about a finding is still a human call.

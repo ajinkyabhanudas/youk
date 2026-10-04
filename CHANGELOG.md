@@ -10,6 +10,29 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ## [Unreleased]
 
+### Fixed
+
+- `task_checkpoint` doc-registration gate judged every project by youk's own doc-map,
+  missed files in new untracked directories, and swallowed failures. It now uses the working
+  repo's doc-map, lists untracked files individually, and reports `doc_registration_error`.
+- Task sizing matched signals as raw substrings, so `add` fired inside "padding" and
+  "address" and sent small edits through the full gate chain. Signals now match whole words
+  with ordinary inflections. `scripts/eval_routing.py` now runs the real scorer instead of a copy.
+- Sizing precedent had no relevance floor and presented unrelated tasks as similar. It now
+  uses one batched encode, a floor, and de-duplication.
+- A failed sizing-log write and a failed git status are reported instead of passed silently.
+- README said the embedding model is ~22MB; it is ~90MB (22.7M parameters). The "lost in the
+  middle" and Self-Correction Illusion citations now say what those papers show.
+
+### Changed
+
+- `optimize_intent` places similar sizing precedent and the current project's Domain Brief
+  invariants after the task text and records what evidence was shown (`grounding_status`,
+  `precedent_count`, `domain_invariant_count` on each sizing row).
+- Providers return `GenerationResult`; `intent.py` no longer reads Anthropic's response object.
+- `/health` reports cold sizing estimates and frequent keyword-scorer overrides.
+- Added `docs/research-basis.md`.
+
 ### Added
 
 **Deterministic information governance**

@@ -79,7 +79,10 @@ server.py (MCP tool surface — Claude calls these)
 ├── nfr_gate.py                 ← check_nfr_gate (pure function)
 ├── intake_gate.py              ← check_intake_gate (pure function)
 │
-├── intent.py                   ← optimize_intent
+├── intent.py                   ← optimize_intent; _sizing_grounding builds the evidence block
+│   │                              (similar sizing precedent + Domain Brief invariants for the
+│   │                              current project), logs what was shown
+│   └─ inference.py (shared)     ← provider adapter returns GenerationResult, never a vendor object
 ├── compaction.py               ← build_brief, write_contracts
 │
 ├── graph.py                    ← task-graph.db (SQLite WAL), task nodes/edges
@@ -93,6 +96,9 @@ server.py (MCP tool surface — Claude calls these)
 ├── skill_signals.py            ← get_skill_signals, get_steering_vocab, detect patterns
 ├── steering_vocab.py           ← steering vocabulary management
 │
+├── sizing_decision.py (shared) ← typed log of every sizing call + similarity retrieval over it
+├── semantic_similarity.py (shared) ← local embedding model; rank_by_similarity, TASK_RELEVANCE_FLOOR
+├── domain_context.py (shared)  ← match_invariants: which Domain Brief invariants apply to a task
 ├── guardrails.py (shared)      ← hard rule enforcement (knowledge writes, destructive cmds)
 ├── models.py (shared)          ← SessionState, RouteResult, shared schemas
 ├── skill_loader.py (shared)    ← SKILL.md file loading (used by youk-code)
@@ -145,6 +151,13 @@ server.py (MCP tool surface)
                                    never used for slug resolution
   session.json                  ← persistent session counter, org_score history
   task-graph.db                 ← SQLite WAL: task nodes, edges, dependency graph
+  sizing-decisions.jsonl        ← one row per route_task: sizes, mismatch_flag, grounding_status,
+                                   precedent_count, domain_invariant_count.
+                                   Read by: intent._sizing_grounding (retrieval), /health findings
+  domain-brief.json             ← per-project Domain Brief; used only when brief.project matches
+                                   the current project slug
+  global-patterns.jsonl         ← cross-project learnings (written by promote_to_global_contracts);
+                                   rendered to knowledge/global/contracts.md. No retrieval caller yet
   knowledge/
     projects/{slug}/            ← per-project contracts, decisions, context
     domain/                     ← accumulated domain knowledge from /learn
