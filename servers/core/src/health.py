@@ -1465,6 +1465,35 @@ def _structural_skill_findings(youk_root: Path, claude_root: Path) -> list[str]:
         pass
     return out
 
+_SIZE_RANK = {"XS": 1, "S": 2, "M": 3, "L": 4, "XL": 5}
+
+
+def sizing_revision_stats(rows: list[dict]) -> dict[str, tuple[int, int]]:
+    """Outcome signal for sizing, derived from the log alone. Re-routing a task
+    after a scope escalation can only raise its size, so a task whose later
+    sizing row is larger than its first was under-sized the first time.
+    Returns {"evidence": (revised_up, tasks), "no_evidence": (revised_up, tasks)},
+    grouped by what the FIRST estimate was shown. Rows without grounding_status
+    (written before it existed) are skipped. A proxy, not ground truth: a task
+    can also be re-routed after a clarification."""
+    by_task: dict[str, list[dict]] = {}
+    for r in rows:
+        if isinstance(r.get("task"), str):
+            by_task.setdefault(r["task"], []).append(r)
+    stats = {"evidence": [0, 0], "no_evidence": [0, 0]}
+    for runs in by_task.values():
+        first = runs[0]
+        status = first.get("grounding_status")
+        if not status:
+            continue
+        key = "evidence" if status == "grounded" else "no_evidence"
+        stats[key][1] += 1
+        base = _SIZE_RANK.get(first.get("resolved_size", ""), 0)
+        if any(_SIZE_RANK.get(later.get("resolved_size", ""), 0) > base for later in runs[1:]):
+            stats[key][0] += 1
+    return {k: (v[0], v[1]) for k, v in stats.items()}
+
+
 def _sizing_grounding_findings(youk_root: Path, window: int = 50, min_rows: int = 5,
                                threshold: float = 0.3) -> list[str]:
     """Read state/sizing-decisions.jsonl back into /health so the log is
@@ -1486,6 +1515,14 @@ def _sizing_grounding_findings(youk_root: Path, window: int = 50, min_rows: int 
             f"{cold} of the last {len(graded)} task size estimates were made with no retrieved "
             "evidence (retrieval unavailable — usually the local embedding model). "
             "Those sizes are cold guesses; check the youk-core image has sentence-transformers."
+        )
+    stats = sizing_revision_stats(rows)
+    (rev_e, n_e), (rev_n, n_n) = stats["evidence"], stats["no_evidence"]
+    if n_e >= min_rows and n_n >= min_rows:
+        findings.append(
+            f"Sizes raised when the same task was routed again: {rev_e} of {n_e} tasks sized with "
+            f"retrieved evidence, {rev_n} of {n_n} sized without. (Proxy for under-sizing; "
+            "a re-route can also follow a clarification.)"
         )
     estimated = [r for r in rows if r.get("llm_estimated_size")][-window:]
     under = sum(1 for r in estimated if r.get("mismatch_flag"))

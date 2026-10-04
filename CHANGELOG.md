@@ -38,7 +38,8 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
   `confirmed_count` (previously a constant 2 with the source `cross-project`); an unknown
   source is stored as `unknown` with a count of 0.
 - Providers return `GenerationResult`; `intent.py` no longer reads Anthropic's response object.
-- `/health` reports cold sizing estimates and frequent keyword-scorer overrides.
+- `/health` reports cold sizing estimates and frequent keyword-scorer overrides, and compares how
+  often a task's size was later raised when it was sized with retrieved evidence versus without.
 - Added `docs/research-basis.md`.
 
 ### Added

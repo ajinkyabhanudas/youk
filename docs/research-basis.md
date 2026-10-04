@@ -58,11 +58,13 @@ Each item says what the evidence supports, what youk does today, and what would 
    drop retired rows, and the retired wording still blocks re-promotion. Nothing is deleted.
    Not yet automatic: a session has to call it. `promote_to_global_contracts` already reports
    opposite-claim conflicts, and the self-heal step tells the session to retire the wrong one.
-4. **Measure whether grounded sizing is better.** The sizing log now records
-   `grounding_status`, and `/health` reports cold-estimate and override rates, but nothing
-   compares sizing outcomes with and without evidence. `resolved_size` is the system's own
-   output, not a checked outcome. Done when: a task's actual effort or rework is joined to its
-   sizing row and grounded and cold rows are compared.
+4. **Measure whether grounded sizing is better.** Partly done: `/health` now compares tasks
+   sized with retrieved evidence against tasks sized without, by how often a later `route_task`
+   for the same task raised the size (re-routing after a scope escalation can only raise it, so a
+   raise means the first size was too small). It reports once both groups have five tasks. It is a
+   proxy, since a re-route can also follow a clarification, and it measures under-sizing only, not
+   over-sizing or real effort. Still open: join sizing rows to actual effort or rework, and judge
+   the comparison on real data. `resolved_size` alone is still the system's own output.
 5. **Phase C/D chain: wired, now judge it on data.** Reversal detection and promotion of
    confirmed patterns were unwired earlier because they duplicated the contracts path and had no
    entries. They are now reachable as tools and self-heal steps, `promote_pattern_group` refuses a

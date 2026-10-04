@@ -509,3 +509,36 @@ def test_edge_case_pass_still_uses_the_legacy_brief_when_no_project_is_known(tmp
     from domain_edge_cases import domain_edge_case_candidates
     _brief_file(tmp_path / "state" / "domain-brief.json", "youk", "A youk-only webhook rule.")
     assert len(domain_edge_case_candidates("fix the webhook handler", youk_root=tmp_path)) == 1
+
+
+# --- outcome signal: was the first size later raised? ---------------------------
+
+def _row_for(task, resolved, status):
+    return {"task": task, "resolved_size": resolved, "grounding_status": status}
+
+
+def test_revision_stats_count_tasks_whose_size_was_later_raised():
+    import health
+    rows = [
+        _row_for("a", "S", "grounded"), _row_for("a", "L", "grounded"),     # raised, evidence
+        _row_for("b", "M", "grounded"),                                      # never re-routed
+        _row_for("c", "S", "unavailable"), _row_for("c", "S", "unavailable"),  # re-routed, same size
+        _row_for("d", "S", "no_evidence"), _row_for("d", "M", "no_evidence"),  # raised, no evidence
+        {"task": "old", "resolved_size": "S"},                               # pre-field row: skipped
+    ]
+    assert health.sizing_revision_stats(rows) == {"evidence": (1, 2), "no_evidence": (1, 2)}
+
+
+def test_health_reports_the_comparison_only_with_enough_tasks_in_both_groups(tmp_path):
+    import health
+    rows = []
+    for i in range(5):
+        rows += [_row_for(f"g{i}", "S", "grounded"), _row_for(f"g{i}", "M" if i < 1 else "S", "grounded")]
+        rows += [_row_for(f"n{i}", "S", "unavailable"), _row_for(f"n{i}", "L" if i < 3 else "S", "unavailable")]
+    log = tmp_path / "state" / "sizing-decisions.jsonl"
+    log.parent.mkdir(parents=True)
+    log.write_text("".join(json.dumps(dict(r, llm_estimated_size="", mismatch_flag=False)) + "\n" for r in rows))
+    msg = [f for f in health._sizing_grounding_findings(tmp_path) if "routed again" in f]
+    assert msg and "1 of 5 tasks sized with retrieved evidence, 3 of 5 sized without" in msg[0]
+    log.write_text("".join(json.dumps(r) + "\n" for r in rows[:4]))
+    assert not [f for f in health._sizing_grounding_findings(tmp_path) if "routed again" in f]
