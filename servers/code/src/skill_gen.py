@@ -188,9 +188,9 @@ def generate_skill(
     signal_type: str = "engineer_request",
 ) -> dict:
     """
-    Assemble context for in-session SKILL.md generation by Claude Code.
+    Assemble context for in-session SKILL.md generation by the agent.
 
-    Returns schema + examples + cross-project knowledge so the active Claude Code
+    Returns schema + examples + cross-project knowledge so the active agent
     session generates the SKILL.md with full conversation context. No API call.
 
     signal_type: "engineer_request" | "demand_gap" | "project_type_gap" | "best_practices_gap"
@@ -243,13 +243,13 @@ def generate_skill(
 
 def assess_skill(skill_name: str) -> dict:
     """
-    Assemble context for in-session skill assessment by Claude Code.
+    Assemble context for in-session skill assessment by the agent.
 
     Returns SKILL.md content + audit evidence + gap signals so the active
-    Claude Code session performs the assessment with full conversation context.
+    The agent session performs the assessment with full conversation context.
     No API call.
 
-    The returned dict instructs Claude Code to produce:
+    The returned dict instructs the agent to produce:
       coverage_score, strengths, gaps, proposed_additions
     Each proposed_addition maps directly to a youk-core.add_proposal() call.
     """
@@ -297,10 +297,10 @@ def generate_stack_overlay(
     """
     Assemble context for in-session stack overlay generation.
 
-    Returns the overlay schema + base skill + cross-project knowledge so Claude Code
+    Returns the overlay schema + base skill + cross-project knowledge so the agent
     generates the overlay file content in-session without an extra API call.
 
-    After generating, Claude Code calls add_proposal(FILE_CREATE) + apply_proposal(confirmed=True)
+    After generating, the agent calls add_proposal(FILE_CREATE) + apply_proposal(confirmed=True)
     to save the file at references/stacks/{framework or stack}.md.
     """
     try:

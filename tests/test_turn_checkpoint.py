@@ -2,7 +2,7 @@
 Tests for turn_checkpoint — cheap save points between full checkpoints
 (compact_context / task_checkpoint / session_end).
 
-The property that matters most here, beyond comprehension_digest's own three
+The property that matters most here, beyond the store's other three
 (project-scoped, render marks not deletes, oversize rejected), is concurrency:
 this store is written by two agents (Claude, Codex) that can call checkpoint_now
 at close to the same moment, so the read-modify-write cycle has to be locked

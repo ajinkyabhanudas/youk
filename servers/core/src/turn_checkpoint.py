@@ -12,7 +12,7 @@ non-trivial decision, surfaced automatically at the next brief and then
 consumed — so the loss window shrinks from "since the last full checkpoint" to
 "since the last note," which callers control directly.
 
-Same three properties as comprehension_digest.py, and for the same reasons:
+Three properties, each for a reason:
 project-scoped (not session-scoped, so a fresh session/agent can see it),
 render marks rather than deletes (an interrupted read must not destroy the
 payload), and oversize input is rejected rather than truncated (this is a

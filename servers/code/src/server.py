@@ -38,7 +38,7 @@ def nfr_check(task: str, size: str = "M", nfr_autonomy_mode: str = "standard") -
     Run an NFR (Non-Functional Requirements) check on a task.
 
     XS/S: 2-question fast path, instant, no API call.
-    M/L/XL: Returns in_session context — Claude Code answers the questions
+    M/L/XL: Returns in_session context — the agent answers the questions
              using full session context (no separate API call or credits needed).
 
     task: What you're about to build.
@@ -61,7 +61,7 @@ def nfr_check(task: str, size: str = "M", nfr_autonomy_mode: str = "standard") -
     """
     result = run_nfr_check(task, size, nfr_autonomy_mode)
     if isinstance(result, dict):
-        return result  # in_session — Claude Code executes with full context
+        return result  # in_session — the agent executes with full context
     return {
         "task": result.task,
         "size": result.size.value,
@@ -80,10 +80,10 @@ def route_to_skill(
     context: dict | None = None,
 ) -> dict:
     """
-    Load a skill and return context for in-session execution by Claude Code.
+    Load a skill and return context for in-session execution by the agent.
 
     Returns skill_content (the SKILL.md) + task + instruction. The active
-    Claude Code session executes the skill using full conversation context,
+    The agent session executes the skill using full conversation context,
     tools, and history — no separate API call or credits needed.
 
     skill: Skill name (e.g. 'pm-review', 'write-spec', 'adr', 'stress-test', 'humanize', 'learn').
@@ -186,10 +186,10 @@ def generate_skill(
     signal_type: str = "engineer_request",
 ) -> dict:
     """
-    Assemble context for in-session SKILL.md generation by Claude Code.
+    Assemble context for in-session SKILL.md generation by the agent.
 
     Returns skill_schema + cross-project knowledge + example skills so the
-    active Claude Code session writes the SKILL.md with full context.
+    active agent session writes the SKILL.md with full context.
     No separate API call or credits needed.
 
     name: kebab-case skill name (e.g. 'security-review', 'python-ml')
@@ -198,7 +198,7 @@ def generate_skill(
     signal_type: "engineer_request" | "demand_gap" | "project_type_gap" | "best_practices_gap"
 
     Returns: {mode: "in_session", skill_schema, cross_project_knowledge, example_skills, instruction}
-    Claude Code writes content, then calls add_proposal() + apply_proposal() to persist.
+    The agent writes content, then calls add_proposal() + apply_proposal() to persist.
     """
     return _generate_skill(name, purpose, project_context, signal_type)
 
@@ -206,9 +206,9 @@ def generate_skill(
 @mcp.tool()
 def assess_skill(skill_name: str) -> dict:
     """
-    Assemble context for in-session skill assessment by Claude Code.
+    Assemble context for in-session skill assessment by the agent.
 
-    Returns SKILL.md + audit evidence + gap signals so the active Claude Code
+    Returns SKILL.md + audit evidence + gap signals so the active agent
     session assesses coverage gaps with full conversation context.
     No separate API call or credits needed.
 
@@ -216,7 +216,7 @@ def assess_skill(skill_name: str) -> dict:
 
     Returns: {mode: "in_session", skill_content, audit_evidence, gap_signals,
               assessment_criteria, instruction}
-    Claude Code produces coverage_score, strengths, gaps, proposed_additions,
+    The agent produces coverage_score, strengths, gaps, proposed_additions,
     then calls add_proposal() + apply_proposal() for each approved addition.
     """
     return _assess_skill(skill_name)
@@ -234,7 +234,7 @@ def generate_stack_overlay(
     Assemble context for in-session stack overlay generation.
 
     Returns the overlay schema + base skill content + cross-project knowledge
-    so the active Claude Code session generates the overlay file in-session.
+    so the active agent session generates the overlay file in-session.
     No separate API call or credits needed.
 
     skill_name: Skill to generate overlay for (e.g. 'code-review', 'nfr-check', 'dev-loop')
@@ -245,7 +245,7 @@ def generate_stack_overlay(
 
     Returns: {mode: "in_session", overlay_schema, base_skill_content, cross_project_knowledge,
               write_path, instruction}
-    Claude Code generates content, then calls add_proposal(FILE_CREATE) + apply_proposal(confirmed=True).
+    The agent generates content, then calls add_proposal(FILE_CREATE) + apply_proposal(confirmed=True).
     """
     return _generate_stack_overlay(skill_name, stack, framework, domain, project_context)
 

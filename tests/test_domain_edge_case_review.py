@@ -158,3 +158,44 @@ class TestIndependentReviewRequestIsSelfContained:
             "some task", [real_langfuse_candidate], real_brief
         )
         assert request["precedents"][0]["claim"] == real_langfuse_candidate["invariant"]
+
+
+# --- wired into nfr_check (this module had no production caller before) ---------
+
+def _brief_for_nfr(tmp_path, monkeypatch):
+    import json
+
+    import domain_edge_cases
+    (tmp_path / "state").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "state" / "domain-brief.json").write_text(json.dumps({
+        "project": "p",
+        "explicit_non_goals": [{"statement": "No realtime sync."}],
+        "known_boundaries": [{"statement": "Payments go through the vendor."}],
+        "bounded_contexts": [{"name": "webhooks", "ubiquitous_language": ["webhook"],
+                              "invariants": [{"statement": "Webhooks retry three times.",
+                                              "source_file": "DECISIONS.md", "source_id": "D1"}]}],
+    }))
+    monkeypatch.setattr(domain_edge_cases, "YOUK_ROOT", tmp_path)
+    monkeypatch.setattr("nfr.load_domain_brief", lambda: domain_edge_cases.load_domain_brief(tmp_path))
+    monkeypatch.setattr("nfr.load_skill", lambda name: "skill text")
+
+
+def test_nfr_check_returns_reframed_candidates_and_a_review_request(tmp_path, monkeypatch):
+    import nfr
+    _brief_for_nfr(tmp_path, monkeypatch)
+    out = nfr.nfr_check_quick("fix the webhook handler")
+    (cand,) = out["domain_edge_case_candidates"]
+    assert cand["invariant"] == "Webhooks retry three times." and cand["source_id"] == "D1"
+    assert "framed_claim" in cand
+    req = out["domain_edge_case_review_request"]
+    assert req["task"] == "fix the webhook handler"
+    assert req["project_context"]["explicit_non_goals"] == ["No realtime sync."]
+    assert "framed_claim" in out["domain_edge_case_instruction"]
+
+
+def test_nfr_check_omits_the_review_request_when_nothing_matched(tmp_path, monkeypatch):
+    import nfr
+    _brief_for_nfr(tmp_path, monkeypatch)
+    out = nfr.nfr_check_full("tweak button colours", __import__("models").TaskSize.L)
+    assert out["domain_edge_case_candidates"] == []
+    assert "domain_edge_case_review_request" not in out
