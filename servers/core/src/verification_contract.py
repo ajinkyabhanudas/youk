@@ -429,7 +429,12 @@ def load_claim(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def gate_claim_done(path: Path, *, preferred_rework_stage: Stage | None = None) -> dict | None:
+def gate_claim_done(
+    path: Path,
+    *,
+    preferred_rework_stage: Stage | None = None,
+    require_independent_review: bool = False,
+) -> dict | None:
     """Mirrors check_m_plus_write_gate's contract (plugin/scripts/
     youk_hook_utils.py, CIR-150 item 4): returns None to allow, or a deny
     dict ({"reason", "message", "stage", "routed_to"}) to block.
@@ -444,33 +449,64 @@ def gate_claim_done(path: Path, *, preferred_rework_stage: Stage | None = None) 
     `preferred_rework_stage`, otherwise this defaults to DECOMPOSE (the gate
     itself has no signal to distinguish "domain incomplete" from
     "decomposition missed it" the way a human running VERIFY interactively
-    would)."""
+    would).
+
+    require_independent_review: the Self-Confirmation Trap (a session
+    verifying its own work shares that work's own blind spots) applies to
+    code claims the same way it applies to research claims --
+    externally_verified already exists for exactly this on the research
+    side (two independent passes agreeing, or a human statement). Opt a
+    high-stakes claim into the same bar here: at least one sub_claim must
+    carry verification_level="externally_verified" -- set by a genuinely
+    separate agent/session re-deriving the evidence, not the one that
+    built the fix. False by default; existing callers are unaffected."""
     if not path.exists():
         return None
     data = load_claim(path)
     unresolved = [sc for sc in data.get("sub_claims", []) if sc.get("status") != "verified"]
-    if not unresolved:
-        return None
-    target = preferred_rework_stage or Stage.DECOMPOSE
-    if target not in REWORK_EDGES[Stage.GATE]:
-        raise InvalidStageTransition(
-            f"gate -> {target.value} is not a declared rework edge"
+    if unresolved:
+        target = preferred_rework_stage or Stage.DECOMPOSE
+        if target not in REWORK_EDGES[Stage.GATE]:
+            raise InvalidStageTransition(
+                f"gate -> {target.value} is not a declared rework edge"
+            )
+        detail = ", ".join(f"{sc['id']} ({sc['status']})" for sc in unresolved)
+        return {
+            "reason": "unverified_sub_claims",
+            "stage": Stage.GATE.value,
+            "routed_to": target.value,
+            "message": (
+                f"[YOUK] claim {data.get('statement')!r} has unresolved sub_claims: "
+                f"{detail}. Routing back to {target.value} — every sub_claim the "
+                "checker generated must be status=\"verified\" before this claim "
+                "can be reported done."
+            ),
+        }
+
+    if require_independent_review:
+        has_independent = any(
+            sc.get("verification_level") == "externally_verified"
+            for sc in data.get("sub_claims", [])
         )
-    detail = ", ".join(f"{sc['id']} ({sc['status']})" for sc in unresolved)
-    return {
-        "reason": "unverified_sub_claims",
-        "stage": Stage.GATE.value,
-        "routed_to": target.value,
-        "message": (
-            f"[YOUK] claim {data.get('statement')!r} has unresolved sub_claims: "
-            f"{detail}. Routing back to {target.value} — every sub_claim the "
-            "checker generated must be status=\"verified\" before this claim "
-            "can be reported done."
-        ),
-    }
+        if not has_independent:
+            target = preferred_rework_stage or Stage.DECOMPOSE
+            return {
+                "reason": "no_independent_review",
+                "stage": Stage.GATE.value,
+                "routed_to": target.value,
+                "message": (
+                    f"[YOUK] claim {data.get('statement')!r} has every sub_claim "
+                    "verified, but none carries verification_level="
+                    "\"externally_verified\" -- this claim opted into "
+                    "require_independent_review, so a self-check within the same "
+                    "session is not enough. A genuinely separate agent/session "
+                    "must re-derive and confirm at least one sub_claim."
+                ),
+            }
+    return None
 
 
-def gate_all_claims(root: Path) -> dict | None:
+def gate_all_claims(root: Path, *, require_independent_review: bool = False) -> dict | None:
     """Same contract as gate_claim_done, aggregated across every claim on
     record under this YOUK_ROOT. Wired into plugin/scripts/pre_tool_use.py's
     existing mcp__youk-core__ PreToolUse boundary (CIR-150 item 4's own
@@ -481,7 +517,7 @@ def gate_all_claims(root: Path) -> dict | None:
         return None
     messages = []
     for path in sorted(cdir.glob("*.json")):
-        verdict = gate_claim_done(path)
+        verdict = gate_claim_done(path, require_independent_review=require_independent_review)
         if verdict is not None:
             messages.append(verdict["message"])
     if not messages:
