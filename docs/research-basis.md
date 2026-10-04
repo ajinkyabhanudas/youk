@@ -40,9 +40,11 @@ Each item says what the evidence supports, what youk does today, and what would 
    the other way. Partly done: the sizing evidence block in `optimize_intent` now ranks
    `state/global-patterns.jsonl` against the task with `rank_by_similarity`, shows up to three
    above `LESSON_RELEVANCE_FLOOR` (0.40), and logs `lesson_count`. The floor's precision is
-   checked in CI; its recall is unmeasured and may be too strict. Still open: the session-start
-   load of the newest 50 is unchanged, and `route_task` output does not carry lessons. Done
-   when: that wholesale load is replaced by per-task retrieval and the floor is tuned from
+   checked in CI; its recall is unmeasured and may be too strict. The session-start
+   load now picks the best-supported 50 (real `confirmed_count`, then newest) and always keeps
+   the committed defaults; before, it took the newest 50 and dropped the defaults first once
+   personal learnings filled the cap. It is not per-task, since no task is known at session start.
+   Still open: `route_task` output does not carry lessons, and the floor needs tuning from
    logged `lesson_count` against real tasks.
 2. **Record where a promoted learning came from.** Done: `promote_to_global_contracts` now
    finds which projects' `contracts.md` hold the lesson (same meaning threshold as cross-project
@@ -67,9 +69,12 @@ Each item says what the evidence supports, what youk does today, and what would 
    meaning-duplicate of anything already in the store, and a bad learning can be retired. Keep it
    only if `state/confirmed-patterns.jsonl` and `state/global-patterns.jsonl` show entries it
    produced; otherwise delete it.
-6. **Build the Domain Brief for projects other than youk.** `build_domain_brief` reads only
-   youk's own decision records and nothing generates it automatically, so for most users the
-   brief is absent and the domain evidence block is empty.
+6. **Domain Brief for projects other than youk.** Done for the sizing call: session start now
+   builds `state/domain-briefs/{slug}.json` from the project's own `DECISIONS.md` (when missing
+   or older than it) and the sizing prompt reads only the current project's brief. Not done: the
+   nfr_check edge-case pass (youk-code) still reads the single legacy `state/domain-brief.json`,
+   because that container has no current-project slug. Only the `DECISIONS.md` dialects
+   `domain_brief.py` recognises produce content.
 7. **Widen the floor calibration.** Done at small scale: both floors held on the real model in
    CI (task floor on 8 related and 8 unrelated pairs, lesson floor on 6 unrelated lessons). Still
    open: lesson recall (whether a relevant lesson clears 0.40) is untested, and the samples are

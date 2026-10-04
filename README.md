@@ -135,12 +135,16 @@ flowchart LR
 ```
 
 - **Lessons and contracts (live).** Promoted across projects with the guards above.
-  Lessons similar to the task are now retrieved into the sizing evidence block (and the
-  count logged). The session-start load is still wholesale, capped at the newest 50, so
-  older lessons drop by age rather than relevance.
-- **Domain Brief (live for youk's own repo).** The stable model is reused; which
-  invariants apply is decided fresh for each task, so a past task cannot bias a later one.
-  It is only used when the brief was built for the current project.
+  Lessons similar to the task are retrieved into the sizing evidence block (and the count
+  logged). At session start, when no task is known yet, the best-supported 50 load (real
+  confirmed count, newest as tiebreak), the committed defaults are always kept, and retired
+  learnings never load.
+- **Domain Brief (per project, built automatically).** At session start youk builds
+  `state/domain-briefs/{slug}.json` from the project's own `DECISIONS.md` when there is none
+  or the file is newer. The stable model is reused; which invariants apply is decided fresh
+  for each task, so a past task cannot bias a later one. The sizing call reads only the
+  current project's brief. A `DECISIONS.md` in an unrecognised format yields an empty brief
+  that says so; nothing is invented.
 - **Reversal and promotion of confirmed patterns (wired, no data yet).** Self-heal calls
   `detect_domain_reversals` and `find_pattern_promotion_candidates`; a group whose wording
   already exists in the store is refused, and `retire_global_pattern` removes a learning that a

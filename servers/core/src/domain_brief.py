@@ -382,6 +382,32 @@ def write_domain_brief(root: Path, brief: DomainBrief) -> Path:
     return path
 
 
+def project_brief_path(youk_root: Path, project: str) -> Path:
+    """One brief per project: state/domain-briefs/{slug}.json. The legacy
+    state/domain-brief.json is a single global file and cannot serve more
+    than one project."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", project) or "unknown"
+    return youk_root / "state" / "domain-briefs" / f"{safe}.json"
+
+
+def refresh_project_domain_brief(youk_root: Path, project_root: Path, project: str) -> str:
+    """Build this project's Domain Brief from its own DECISIONS.md when there is
+    none yet or the source is newer. Returns "absent" (no DECISIONS.md, so
+    nothing to build from), "fresh" (already current) or "built". Never invents
+    content: a DECISIONS.md in an unrecognised format yields a brief whose
+    sources record format_recognized false."""
+    source = project_root / "DECISIONS.md"
+    if not source.is_file():
+        return "absent"
+    out = project_brief_path(youk_root, project)
+    if out.exists() and out.stat().st_mtime >= source.stat().st_mtime:
+        return "fresh"
+    brief = build_domain_brief(project_root, project=project)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(brief.to_dict(), indent=2) + "\n", encoding="utf-8")
+    return "built"
+
+
 if __name__ == "__main__":
     _brief = build_domain_brief(REPO_ROOT)
     _path = write_domain_brief(REPO_ROOT, _brief)

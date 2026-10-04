@@ -492,13 +492,18 @@ def _sizing_grounding(
         info["precedent_count"] = len(precedents)
 
     try:
+        from domain_brief import project_brief_path
         from domain_context import match_invariants
-        brief = json.loads((brief_path or (YOUK_ROOT / "state" / "domain-brief.json")).read_text(encoding="utf-8"))
+        slug = _current_project_slug() if project_slug is None else project_slug
+        if brief_path is None:
+            per_project = project_brief_path(YOUK_ROOT, slug) if slug else None
+            brief_path = per_project if per_project is not None and per_project.exists() \
+                else YOUK_ROOT / "state" / "domain-brief.json"
+        brief = json.loads(brief_path.read_text(encoding="utf-8"))
         # state/domain-brief.json is one global file; only use it for the
         # project it was built for. An unknown current project, or a brief
         # from a different one, contributes nothing rather than another
         # project's invariants.
-        slug = _current_project_slug() if project_slug is None else project_slug
         invariants = match_invariants(raw_input, brief, top_n=3) if slug and brief.get("project") == slug else []
     except (OSError, ValueError, KeyError, TypeError):
         invariants = []  # no brief for this project is a normal state

@@ -444,14 +444,37 @@ def _load_contracts(slug: str) -> list[str]:
         return []
 
 
+def _ranked_global_lessons(room: int) -> list[str] | None:
+    """Live cross-project learnings from state/global-patterns.jsonl, best
+    supported first (real confirmed_count, then newest), as the same
+    "- [sub_domain] statement" lines contracts.md renders. Retired learnings
+    are excluded. None when there is no store, so the caller can fall back to
+    the rendered file."""
+    store = YOUK_ROOT / "state" / "global-patterns.jsonl"
+    if not store.exists():
+        return None
+    try:
+        from global_contracts import effective_patterns
+        from jsonl_lock import locked_jsonl_read_all
+
+        rows = [r for r in effective_patterns(locked_jsonl_read_all(store)) if r.get("statement")]
+    except Exception:
+        return None
+    if not rows:
+        return None
+    rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    rows.sort(key=lambda r: -int(r.get("confirmed_count") or 0))  # stable: newest first within a count
+    return [f"- [{r.get('sub_domain', 'general')}] {r['statement']}" for r in rows[:room]]
+
+
 def _load_global_contracts(cap: int = 50) -> list[str]:
-    """Load cross-project behavioral contracts from two sources, merged in order:
+    """Load cross-project behavioral contracts from two sources:
     1. knowledge/default-contracts.md — committed to repo, inherited by all installs.
-    2. knowledge/global/contracts.md  — personal, gitignored, machine-local only.
-    Default contracts are always prepended so they survive even on fresh installs with
-    no personal history. Combined list is capped at `cap` entries."""
-    default_file = YOUK_ROOT / "knowledge" / "default-contracts.md"
-    global_file = YOUK_ROOT / "knowledge" / "global" / "contracts.md"
+    2. Personal learnings — the best-supported live entries of state/global-patterns.jsonl,
+       or knowledge/global/contracts.md (newest first) when there is no store.
+    Defaults are always kept; personal learnings fill the remaining room up to `cap`.
+    Choosing by evidence rather than age means a lesson confirmed in several projects
+    outlives a newer one-off, and a retired learning never loads."""
 
     def _read(path: Path) -> list[str]:
         if not path.exists():
@@ -465,10 +488,14 @@ def _load_global_contracts(cap: int = 50) -> list[str]:
         except Exception:
             return []
 
-    defaults = _read(default_file)
-    personal = _read(global_file)
-    combined = defaults + personal
-    return combined[-cap:]  # most recently added personal contracts take priority at cap
+    defaults = _read(YOUK_ROOT / "knowledge" / "default-contracts.md")[:cap]
+    room = cap - len(defaults)
+    if room <= 0:
+        return defaults
+    personal = _ranked_global_lessons(room)
+    if personal is None:
+        personal = _read(YOUK_ROOT / "knowledge" / "global" / "contracts.md")[-room:]
+    return defaults + personal
 
 
 _CAPABILITY_SKILLS = frozenset({
@@ -1433,6 +1460,13 @@ def start_session(project_dir: str) -> SessionState:
     _merge_stale_checkpoint()
 
     slug = _slug(project_dir)
+    # Keep this project's Domain Brief current from its own DECISIONS.md, so the
+    # sizing call has project-specific invariants without a manual build step.
+    try:
+        from domain_brief import refresh_project_domain_brief
+        refresh_project_domain_brief(YOUK_ROOT, Path(str(_resolve_project_path(project_dir))), slug)
+    except Exception as e:
+        print(f"youk: domain brief not refreshed ({type(e).__name__}: {e})", file=sys.stderr)
     state = _load_state()
     # CIR-155: a real SessionStart hook and a project's own CLAUDE.md instruction can
     # both reach this function for the same real-world session. On the duplicate call,

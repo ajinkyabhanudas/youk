@@ -154,8 +154,10 @@ server.py (MCP tool surface)
   sizing-decisions.jsonl        ← one row per route_task: sizes, mismatch_flag, grounding_status,
                                    precedent_count, domain_invariant_count.
                                    Read by: intent._sizing_grounding (retrieval), /health findings
-  domain-brief.json             ← per-project Domain Brief; used only when brief.project matches
-                                   the current project slug
+  domain-briefs/{slug}.json     ← per-project Domain Brief, built at session start from the project's
+                                   own DECISIONS.md when missing or older; read by the sizing call
+  domain-brief.json             ← legacy single brief (youk's own); still read by nfr_check's
+                                   edge-case pass; used by sizing only when brief.project matches
   global-patterns.jsonl         ← cross-project learnings (written by promote_to_global_contracts);
                                    rendered to knowledge/global/contracts.md. Append-only: a later row with the same id
                                    supersedes; retired rows are dropped from contracts.md and retrieval

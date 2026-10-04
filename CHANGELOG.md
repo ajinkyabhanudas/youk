@@ -26,6 +26,9 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ### Changed
 
+- Session start loads the best-supported 50 cross-project learnings (real confirmed count, then
+  newest) instead of the newest 50, keeps the committed default contracts (they were dropped
+  first once personal learnings filled the cap), and skips retired learnings.
 - `optimize_intent` places similar sizing precedent and the current project's Domain Brief
   invariants after the task text and records what evidence was shown (`grounding_status`,
   `precedent_count`, `domain_invariant_count` on each sizing row).
@@ -40,6 +43,8 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ### Added
 
+- Per-project Domain Briefs: session start builds `state/domain-briefs/{slug}.json` from the
+  project's own `DECISIONS.md` when missing or stale; the sizing call reads the current project's.
 - `detect_domain_reversals`, `confirm_domain_reversal`, `find_pattern_promotion_candidates` and
   `promote_pattern_group` MCP tools, and self-heal steps 5 and 6 that call them. The self-heal
   skill used to tell the agent to call Python modules directly, which an MCP-only host cannot do.

@@ -373,3 +373,101 @@ def test_unknown_source_is_recorded_as_unknown_with_a_zero_count(bag_model, tmp_
     row = json.loads((tmp_path / "state" / "global-patterns.jsonl").read_text().splitlines()[0])
     assert row["provenance"] == [{"project": "unknown", "abstracted": True}]
     assert row["confirmed_count"] == 0
+
+
+# --- session start: choose learnings by evidence, keep defaults, drop retired --
+
+def _write_store(root, rows):
+    p = root / "state" / "global-patterns.jsonl"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("".join(json.dumps(r) + "\n" for r in rows))
+
+
+def _row(i, count, created, status="promoted"):
+    return {"id": f"p{i}", "scope": "global", "status": status, "sub_domain": "s",
+            "statement": f"lesson {i}", "confirmed_count": count, "created_at": created}
+
+
+def test_session_start_prefers_well_supported_learnings_over_newer_ones(youk_root):
+    import session
+    _write_store(youk_root, [
+        _row(1, 3, "2026-01-01"), _row(2, 0, "2026-09-01"), _row(3, 2, "2026-02-01"),
+        _row(4, 0, "2026-10-01"),
+    ])
+    assert session._load_global_contracts(cap=2) == ["- [s] lesson 1", "- [s] lesson 3"]
+
+
+def test_session_start_never_loads_a_retired_learning(youk_root):
+    import session
+    _write_store(youk_root, [_row(1, 5, "2026-01-01"), dict(_row(1, 5, "2026-01-01"), status="retired"),
+                             _row(2, 1, "2026-02-01")])
+    assert session._load_global_contracts(cap=5) == ["- [s] lesson 2"]
+
+
+def test_default_contracts_survive_a_full_personal_store(youk_root):
+    import session
+    (youk_root / "knowledge").mkdir(parents=True, exist_ok=True)
+    (youk_root / "knowledge" / "default-contracts.md").write_text("# d\n- default one\n- default two\n")
+    _write_store(youk_root, [_row(i, 1, f"2026-0{i}-01") for i in range(1, 9)])
+    out = session._load_global_contracts(cap=4)
+    assert out[:2] == ["- default one", "- default two"] and len(out) == 4
+
+
+def test_session_start_falls_back_to_contracts_md_without_a_store(youk_root):
+    import session
+    g = youk_root / "knowledge" / "global"
+    g.mkdir(parents=True, exist_ok=True)
+    (g / "contracts.md").write_text("# g\n- [x] one\n- [x] two\n- [x] three\n")
+    assert session._load_global_contracts(cap=2) == ["- [x] two", "- [x] three"]
+
+
+# --- Domain Brief for projects other than youk ----------------------------------
+
+_DECISIONS = """# Decisions
+
+## 2026-08-27 [Webhook retry policy]
+Chose:      Retry failed webhooks three times with backoff.
+Over:       Retry forever.
+Because:    Endless retries hid a customer outage for a day.
+Cost:       A burst outage can drop events.
+"""
+
+
+def test_a_brief_is_built_from_the_projects_own_decisions_and_kept_fresh(tmp_path):
+    import os
+    from domain_brief import project_brief_path, refresh_project_domain_brief
+    youk, proj = tmp_path / "youk", tmp_path / "shop"
+    proj.mkdir()
+    youk.mkdir()
+    assert refresh_project_domain_brief(youk, proj, "shop") == "absent"
+    (proj / "DECISIONS.md").write_text(_DECISIONS)
+    assert refresh_project_domain_brief(youk, proj, "shop") == "built"
+    brief = json.loads(project_brief_path(youk, "shop").read_text())
+    assert brief["project"] == "shop" and brief["bounded_contexts"]
+    assert refresh_project_domain_brief(youk, proj, "shop") == "fresh"
+    newer = project_brief_path(youk, "shop").stat().st_mtime + 10
+    os.utime(proj / "DECISIONS.md", (newer, newer))
+    assert refresh_project_domain_brief(youk, proj, "shop") == "built"
+
+
+def test_each_project_gets_its_own_brief_file(tmp_path):
+    from domain_brief import project_brief_path
+    assert project_brief_path(tmp_path, "a") != project_brief_path(tmp_path, "b")
+    assert project_brief_path(tmp_path, "../x/y").parent == tmp_path / "state" / "domain-briefs"
+
+
+def test_sizing_uses_the_current_projects_own_brief(tmp_path, monkeypatch):
+    from domain_brief import refresh_project_domain_brief
+    youk, proj = tmp_path / "youk", tmp_path / "shop"
+    proj.mkdir()
+    youk.mkdir()
+    (proj / "DECISIONS.md").write_text(_DECISIONS)
+    refresh_project_domain_brief(youk, proj, "shop")
+    monkeypatch.setattr(intent, "YOUK_ROOT", youk)
+    task = "change the webhook retry backoff"
+    block, info = intent._sizing_grounding(task, log_path=tmp_path / "none.jsonl", project_slug="shop",
+                                           patterns_path=tmp_path / "none.jsonl")
+    assert "Retry failed webhooks three times" in block and info["domain_invariant_count"] >= 1
+    block, info = intent._sizing_grounding(task, log_path=tmp_path / "none.jsonl", project_slug="other",
+                                           patterns_path=tmp_path / "none.jsonl")
+    assert info["domain_invariant_count"] == 0
