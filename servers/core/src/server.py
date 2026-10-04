@@ -1305,9 +1305,17 @@ def self_heal(research_mode: bool = False) -> dict:
 
     Returns: org_score, sessions_analyzed, findings, proposals_count,
              skill_gap_signals (if any — skills needing evolution),
-             research_topics (if research_mode=True and gaps exist).
+             research_topics (if research_mode=True and gaps exist),
+             proposal_backlog_gate ({blocked, count, reason} — real pending-
+             proposal count checked deterministically, not left to a model
+             noticing it; blocked=True means run proposal-review).
     """
-    return run_health_check_with_skill_signals(research_mode=research_mode)
+    result = run_health_check_with_skill_signals(research_mode=research_mode)
+    try:
+        result["proposal_backlog_gate"] = check_proposal_backlog_gate()
+    except Exception:
+        pass
+    return result
 
 
 @mcp.tool()
@@ -1434,7 +1442,9 @@ def get_proposals(project_slug: str | None = None) -> dict:
             project_slug = "youk"
 
     # Pass slug to DB for efficient filtering; empty string = fetch all projects
+    from health import is_still_pending as _is_still_pending
     proposals = _load_pending_proposals(project_slug if project_slug else None)
+    proposals = [p for p in proposals if _is_still_pending(p)]
 
     # Legacy in-memory filter: normalize empty project_slug to "youk" for old rows
     if project_slug:
@@ -1461,6 +1471,31 @@ def get_proposals(project_slug: str | None = None) -> dict:
             for p in proposals
         ],
     }
+
+
+@mcp.tool()
+def check_proposal_backlog_gate(threshold: int = 3) -> dict:
+    """
+    Deterministic check: is the real pending-proposal count at or above the
+    threshold proposal-review's own trigger names ("any session where
+    get_proposals() returns >= 3 PENDING items")? That trigger was advisory
+    text in a SKILL.md with nothing checking the count -- a real 23-item
+    backlog, including two proposals open since 2026-09, accumulated because
+    nothing ever ran this check. Call at self_heal or session_start, not only
+    when a model happens to notice the count.
+
+    Returns: {"blocked": bool, "count": int, "reason": str}
+    blocked=True: run proposal-review before treating the backlog as clear.
+    """
+    result = get_proposals(project_slug="")
+    count = result["count"]
+    if count >= threshold:
+        return {
+            "blocked": True,
+            "count": count,
+            "reason": f"{count} pending proposals >= threshold {threshold} -- run proposal-review.",
+        }
+    return {"blocked": False, "count": count, "reason": ""}
 
 
 @mcp.tool()
@@ -1878,8 +1913,7 @@ def get_interpretation() -> str:
 def get_proposals_resource() -> str:
     """Pending self-heal proposals (rendered from SQLite store)."""
     from health import _load_pending_proposals, _render_pending_md
-    proposals = _load_pending_proposals()
-    pending_only = [p for p in proposals if p.status == "PENDING"]
+    pending_only = _load_pending_proposals()
     if not pending_only:
         return "No pending proposals."
     return _render_pending_md(pending_only)

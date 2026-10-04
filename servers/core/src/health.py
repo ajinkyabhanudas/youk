@@ -2031,6 +2031,11 @@ def _check_git_outcomes(sessions: list[dict]) -> list[str]:
 def _load_pending_proposals(project_slug: str | None = None) -> list[Proposal]:
     """Load proposals from SQLite. Optionally filter by project_slug.
 
+    Returns ALL rows regardless of status -- status is free text (e.g.
+    "APPLIED — 2026-07-02", not a clean enum), so callers that need only
+    still-open proposals filter with is_still_pending() below, not an exact
+    status match here.
+
     Returns empty list if the DB is unavailable (e.g. read-only filesystem in tests
     that don't use the youk_root fixture). Raises RuntimeError only when the DB path
     is reachable but the query fails (a genuine DB error worth surfacing).
@@ -2054,6 +2059,19 @@ def _load_pending_proposals(project_slug: str | None = None) -> list[Proposal]:
     except sqlite3.OperationalError as e:
         conn.close()
         raise RuntimeError(f"proposals DB unavailable: {e}") from e
+
+
+def is_still_pending(proposal: Proposal) -> bool:
+    """True if a proposal's free-text status means it's still open.
+
+    Found 2026-10-04: get_proposals() returned every row from
+    _load_pending_proposals() with no status filter at all, so a real
+    backlog of months-old APPLIED/CLOSED proposals was reported as pending.
+    "APPLIED" and "CLOSED" (and their dated variants, e.g.
+    "APPLIED — 2026-07-02") are the two real terminal statuses seen in
+    production data; anything else, including a bare "PENDING", is open.
+    """
+    return "APPLIED" not in proposal.status and "CLOSED" not in proposal.status
 
 
 def _extract_field(text: str, field_name: str) -> str:
@@ -2133,7 +2151,7 @@ def run_health_check() -> HealthReport:
     audit_texts = _read_recent_audit_logs(days=30)
     score = _score_org(audit_texts)
     findings = _generate_findings(audit_texts, score)
-    proposals = _load_pending_proposals()
+    proposals = [p for p in _load_pending_proposals() if is_still_pending(p)]
 
     sessions = _parse_audit_sessions(audit_texts)
     real_sessions = sum(
