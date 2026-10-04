@@ -1015,12 +1015,9 @@ def _check_doc_freshness() -> list[str]:
     doc_map_file = YOUK_ROOT / "docs" / "doc-map.yaml"
     undocumented: list[str] = []
 
-    # Part 1: undocumented MCP tools
-    # 2026-10-04 fix: this whole function used to `return []` here when
-    # doc-map.yaml was absent, which silently skipped Parts 2-5c too --
-    # including wiring pulse and pipeline pulse, despite wiring_pulse.py's
-    # own docstring claiming it "autoruns EVERY session_start." Only Part 1
-    # actually needs doc_map_file; it's now scoped to just this block.
+    # Part 1: undocumented MCP tools. Only this part needs doc_map_file --
+    # the absence check is scoped here, not a whole-function early return,
+    # so Parts 2-5c (wiring pulse, pipeline pulse, etc.) still run.
     try:
         import re
         import yaml  # already a dep (health.py uses it)
@@ -1122,13 +1119,8 @@ def _check_doc_freshness() -> list[str]:
         from wiring_pulse import check_wiring, format_wiring_warnings
         wiring = check_wiring(YOUK_ROOT, CLAUDE_ROOT)
         undocumented.extend(format_wiring_warnings(wiring, cap=5))
-        # 2026-10-04 fix: format_wiring_warnings caps the IN-SESSION text at 5, and since
-        # check_wiring's orphan order is deterministic (file-order), the SAME first 5 were
-        # the only ones a model could ever see, every session, forever -- anything past
-        # slot 5 was never individually named. This is the deterministic-detection part;
-        # recording every real orphan, every run, must not depend on a model reading and
-        # acting on capped text. Append the FULL, uncapped result durably so the data
-        # exists even if no one reads the session-start text that run.
+        # The in-session text above is capped at 5; the full result is
+        # recorded here so no orphan depends on a model reading capped text.
         from jsonl_lock import locked_jsonl_append
         import json as _json
         from datetime import UTC as _UTC, datetime as _datetime

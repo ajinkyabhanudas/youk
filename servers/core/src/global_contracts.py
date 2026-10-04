@@ -1,68 +1,84 @@
-"""Global contracts storage — no MCP dependency, importable in tests."""
+"""Global contracts storage — no MCP dependency, importable in tests.
+
+Stores each contract as a tagged PatternEntry in state/global-patterns.jsonl
+(query via query_global_patterns). contracts.md is generated from that store
+by render_contracts_md, not edited directly.
+"""
 from __future__ import annotations
+from datetime import UTC, datetime
 from pathlib import Path
 
 
-def promote_to_global_contracts(contracts: list[str], youk_root: Path) -> dict:
-    """Append confirmed cross-project contracts to knowledge/global/contracts.md.
+def promote_to_global_contracts(
+    contracts: list[str],
+    youk_root: Path,
+    domain: str,
+    sub_domain: str,
+) -> dict:
+    """Write each contract as a tagged PatternEntry to state/global-patterns.jsonl
+    and regenerate contracts.md from the full store.
 
-    Deduplicates case-insensitively. Returns {promoted: N, skipped: N, conflicts: [],
-    leak_blocked: [{contract, reason}]}. Uses atomic temp-file rename — safe under
-    concurrent calls.
+    Caller passes domain/sub_domain explicitly per batch; split batches that
+    span different topics.
 
-    2026-10-04: this promotion path had NO abstraction-leak protection -- raw
-    contract text was written verbatim across project boundaries. Reuses
-    abstract_claim() (verification_research.py, the same gate Phase D of
-    docs/pattern-learning-architecture-design.md already requires before
-    cross-project promotion elsewhere) rather than inventing a second check.
-    A contract whose abstraction isn't confident is REFUSED (never silently
-    dropped as a skip, and never promoted raw) -- the caller must abstract
-    it manually or drop it, same as the Phase D guardrail's own contract.
+    Returns {promoted: N, skipped: N, conflicts: [], leak_blocked: [{contract, reason}]}.
     """
+    from jsonl_lock import locked_jsonl_append, locked_jsonl_read_all
+    from pattern_entry import PatternEntry
     from verification_research import abstract_claim
+    import hashlib
+    import json
 
-    global_file = youk_root / "knowledge" / "global" / "contracts.md"
-    global_file.parent.mkdir(parents=True, exist_ok=True)
-
-    existing_text = global_file.read_text() if global_file.exists() else ""
-    existing_lines: list[str] = [
-        line.strip().lstrip("- ")
-        for line in existing_text.splitlines()
-        if line.strip() and not line.startswith("#")
-    ]
-    existing_normalized = {c.lower() for c in existing_lines}
+    patterns_path = youk_root / "state" / "global-patterns.jsonl"
+    existing = locked_jsonl_read_all(patterns_path)
+    existing_statements = {e.get("statement", "").strip().lower() for e in existing}
 
     promoted, skipped, conflicts = 0, 0, []
     leak_blocked: list[dict] = []
-    new_lines: list[str] = []
     for c in contracts:
         normalized = c.strip().lower()
-        if normalized in existing_normalized:
+        if normalized in existing_statements:
             skipped += 1
             continue
         result = abstract_claim(c)
         if not result.confident:
             leak_blocked.append({"contract": c, "reason": result.flagged_reason})
             continue
-        for existing in existing_lines:
+        for existing_row in existing:
+            existing_stmt = existing_row.get("statement", "")
             if (
                 "always" in normalized
-                and "never" in existing.lower()
-                and normalized[7:20] in existing.lower()
+                and "never" in existing_stmt.lower()
+                and normalized[7:20] in existing_stmt.lower()
             ) or (
                 "never" in normalized
-                and "always" in existing.lower()
-                and normalized[6:20] in existing.lower()
+                and "always" in existing_stmt.lower()
+                and normalized[6:20] in existing_stmt.lower()
             ):
-                conflicts.append(f"Conflict: new '{c}' vs existing '{existing}'")
-        new_lines.append(f"- {result.abstracted.strip()}\n")
-        existing_normalized.add(normalized)
+                conflicts.append(f"Conflict: new '{c}' vs existing '{existing_stmt}'")
+
+        pattern_id = hashlib.sha256(
+            f"{domain}\x1f{sub_domain}\x1f{result.abstracted.strip().lower()}".encode()
+        ).hexdigest()[:16]
+        entry = PatternEntry(
+            id=pattern_id,
+            scope="global",
+            domain=domain,
+            sub_domain=sub_domain,
+            statement=result.abstracted.strip(),
+            evidence_level="internally_checked",
+            provenance=[{"project": "cross-project", "abstracted": True}],
+            status="promoted",
+            created_at=datetime.now(UTC).isoformat(),
+            confirmed_count=2,
+        )
+        locked_jsonl_append(patterns_path, json.dumps(entry.to_dict()))
+        existing.append(entry.to_dict())
+        existing_statements.add(normalized)
         promoted += 1
 
-    if new_lines:
-        tmp = global_file.with_suffix(".tmp")
-        tmp.write_text(existing_text + "".join(new_lines))
-        tmp.replace(global_file)
+    if promoted:
+        render_contracts_md(youk_root)
 
     return {
         "promoted": promoted,
@@ -70,3 +86,38 @@ def promote_to_global_contracts(contracts: list[str], youk_root: Path) -> dict:
         "conflicts": conflicts,
         "leak_blocked": leak_blocked,
     }
+
+
+def render_contracts_md(youk_root: Path) -> None:
+    """Regenerate knowledge/global/contracts.md as a human-readable view of
+    the real structured store (state/global-patterns.jsonl), grouped by
+    domain. Never hand-edited -- always regenerated from the source of truth.
+    Atomic temp-file rename — safe under concurrent calls.
+    """
+    from jsonl_lock import locked_jsonl_read_all
+
+    patterns_path = youk_root / "state" / "global-patterns.jsonl"
+    entries = locked_jsonl_read_all(patterns_path)
+
+    by_domain: dict[str, list[dict]] = {}
+    for e in entries:
+        by_domain.setdefault(e.get("domain", "unclassified"), []).append(e)
+
+    lines = [
+        "# Global behavioral contracts — applies to every project\n",
+        "# GENERATED from state/global-patterns.jsonl — do not hand-edit.\n",
+        "# Regenerated by promote_to_global_contracts(); the JSONL file is the source of truth.\n",
+        "# Never committed to the repo — personal intelligence, local only\n",
+        "\n",
+    ]
+    for domain in sorted(by_domain):
+        lines.append(f"## {domain}\n")
+        for e in sorted(by_domain[domain], key=lambda x: x.get("sub_domain", "")):
+            lines.append(f"- [{e.get('sub_domain', 'general')}] {e['statement']}\n")
+        lines.append("\n")
+
+    global_file = youk_root / "knowledge" / "global" / "contracts.md"
+    global_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp = global_file.with_suffix(".tmp")
+    tmp.write_text("".join(lines))
+    tmp.replace(global_file)

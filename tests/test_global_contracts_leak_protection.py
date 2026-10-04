@@ -1,9 +1,5 @@
-"""2026-10-04: promote_to_global_contracts had NO abstraction-leak protection
--- raw contract text, proprietary identifiers included, was written verbatim
-into knowledge/global/contracts.md, which crosses project boundaries by
-design. Reuses abstract_claim() (the same gate Phase D of
-docs/pattern-learning-architecture-design.md already requires before
-cross-project pattern promotion) rather than inventing a second check.
+"""promote_to_global_contracts' abstraction-leak protection: reuses
+abstract_claim() (verification_research.py) rather than a second check.
 """
 from __future__ import annotations
 
@@ -11,10 +7,10 @@ import global_contracts as gc
 
 
 def test_contract_with_unrecognized_proprietary_identifier_is_blocked_not_promoted(tmp_path):
-    # PascalCase, not in abstract_claim's glossary -- the exact leak class
-    # found earlier this session in verification_research.py.
+    # PascalCase, not in abstract_claim's glossary.
     result = gc.promote_to_global_contracts(
-        ["always route billing through PaymentGatewayRetryHandlerV3 first"], tmp_path
+        ["always route billing through PaymentGatewayRetryHandlerV3 first"],
+        tmp_path, "billing", "routing",
     )
     assert result["promoted"] == 0
     assert len(result["leak_blocked"]) == 1
@@ -29,18 +25,19 @@ def test_plain_acronyms_are_not_falsely_blocked(tmp_path):
     """API/JSON/HTTP must not be flagged -- same false-positive-prevention
     bar as abstract_claim's own tests."""
     result = gc.promote_to_global_contracts(
-        ["always validate the API response against the JSON schema before use"], tmp_path
+        ["always validate the API response against the JSON schema before use"],
+        tmp_path, "api-design", "validation",
     )
     assert result["promoted"] == 1
     assert result["leak_blocked"] == []
 
 
 def test_confident_contract_is_written_in_its_abstracted_form(tmp_path):
-    """Even a confidently-abstracted contract should be promoted as its
-    abstracted text, not the raw original -- glossary terms get stripped
-    even when abstraction succeeds."""
+    """A confidently-abstracted contract is promoted as its abstracted
+    text, not the raw original -- glossary terms strip even on success."""
     result = gc.promote_to_global_contracts(
-        ["never read {repo} secrets directly from disk"], tmp_path
+        ["never read {repo} secrets directly from disk"],
+        tmp_path, "security-and-privacy", "secrets-handling",
     )
     assert result["promoted"] == 1
     global_file = tmp_path / "knowledge" / "global" / "contracts.md"
@@ -56,7 +53,8 @@ def test_leak_blocked_contract_never_counted_as_skipped():
     from pathlib import Path
     with tempfile.TemporaryDirectory() as d:
         result = gc.promote_to_global_contracts(
-            ["always call AcmeCorpBillingServiceV2 before refund"], Path(d)
+            ["always call AcmeCorpBillingServiceV2 before refund"],
+            Path(d), "billing", "refunds",
         )
     assert result["skipped"] == 0
     assert len(result["leak_blocked"]) == 1

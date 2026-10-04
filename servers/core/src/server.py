@@ -1918,15 +1918,22 @@ def get_proposals_resource() -> str:
 
 
 @mcp.tool()
-def promote_to_global_contracts(contracts: list[str]) -> dict:
+def promote_to_global_contracts(contracts: list[str], domain: str, sub_domain: str) -> dict:
     """Promote confirmed cross-project patterns to the user's global intelligence layer.
 
-    Appends to knowledge/global/contracts.md — loaded on every future project start.
-    Deduplicates case-insensitively. Returns {promoted: N, skipped: N, conflicts: [...]}.
+    Writes tagged PatternEntry rows to state/global-patterns.jsonl, queryable
+    via query_global_patterns by domain/sub_domain. domain/sub_domain are real
+    classification for THIS batch, named by the caller, never inferred -- a
+    batch spanning genuinely different topics should be split into separate
+    calls. knowledge/global/contracts.md is regenerated as a human-readable
+    view of the structured store, grouped by domain -- never hand-edited.
+
+    Deduplicates by exact statement match. Returns {promoted: N, skipped: N,
+    conflicts: [...], leak_blocked: [...]}.
     Call after confirming candidates from self_heal()'s global_pattern_candidates field.
     """
     from global_contracts import promote_to_global_contracts as _promote
-    return _promote(contracts, YOUK_ROOT)
+    return _promote(contracts, YOUK_ROOT, domain, sub_domain)
 
 
 @mcp.tool()

@@ -1,18 +1,9 @@
 """Exclusive-lock append for the JSONL event logs in this initiative.
 
-Real gap found 2026-10-04: every append_* function across this codebase
-(disposition_event.py, domain_scope_event.py, reversal_check.py's
-confirm_reversed_pattern, pattern_promotion.py's promote_group) opened its
-log file with plain `open(path, "a")` -- no lock. This session itself ran
-two concurrent processes (a Codex session and this Claude Code session)
-connected to the same youk-core server at once; nothing stops two real
-concurrent callers from interleaving writes to the same file today. Not a
-future-scale problem -- a present, already-possible correctness gap.
-
-flock (not a separate .lock file) because unlocking is automatic on close/
-process exit, so a crashed writer can never leave a stale lock other writers
-wait on forever -- the single failure mode a sidecar lock file has that this
-avoids by construction.
+Protects against concurrent writers interleaving or losing writes to the
+same file. Uses flock, not a sidecar .lock file, so a crashed writer can
+never leave a stale lock blocking others -- the lock releases automatically
+on close or process exit.
 """
 from __future__ import annotations
 
@@ -39,15 +30,9 @@ def locked_jsonl_append(path: Path, line: str) -> None:
 
 def locked_append_if_id_absent(path: Path, entry_id: str, line: str) -> bool:
     """Append `line` to `path` only if no existing row has "id" == entry_id,
-    with the presence-check and the write happening under the SAME held
-    lock. Plain locked_jsonl_append doesn't close this gap: two concurrent
-    callers could both pass a separate has-id check before either writes,
-    duplicating a real reversal/promotion despite its deterministic id
-    existing precisely to prevent that. Returns True if it appended, False
-    if the id was already present (no-op, matching the prior
-    check-then-append callers' semantics). A line that fails to parse is
-    skipped, same resilience discipline as every other reader of these
-    files."""
+    checking and writing under one held lock -- a separate check-then-append
+    is a TOCTOU race between concurrent callers. Returns True if appended,
+    False if the id was already present. Unparseable lines are skipped."""
     import json
 
     path.parent.mkdir(parents=True, exist_ok=True)
