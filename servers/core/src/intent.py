@@ -414,8 +414,18 @@ def _record_generation(model: str, response: GenerationResult, duration_s: float
         pass
 
 
+def _current_project_slug() -> str:
+    try:
+        from session_slug import get_session_slug
+        slug = get_session_slug(YOUK_ROOT)
+    except Exception:
+        return ""
+    return "" if slug == "unknown" else slug
+
+
 def _sizing_grounding(
-    raw_input: str, log_path: Path | None = None, brief_path: Path | None = None
+    raw_input: str, log_path: Path | None = None, brief_path: Path | None = None,
+    project_slug: str | None = None,
 ) -> tuple[str, dict]:
     """Evidence for the estimated_size / scope judgment, plus a record of what
     was actually supplied.
@@ -460,7 +470,12 @@ def _sizing_grounding(
     try:
         from domain_context import match_invariants
         brief = json.loads((brief_path or (YOUK_ROOT / "state" / "domain-brief.json")).read_text(encoding="utf-8"))
-        invariants = match_invariants(raw_input, brief, top_n=3)
+        # state/domain-brief.json is one global file; only use it for the
+        # project it was built for. An unknown current project, or a brief
+        # from a different one, contributes nothing rather than another
+        # project's invariants.
+        slug = _current_project_slug() if project_slug is None else project_slug
+        invariants = match_invariants(raw_input, brief, top_n=3) if slug and brief.get("project") == slug else []
     except (OSError, ValueError, KeyError, TypeError):
         invariants = []  # no brief for this project is a normal state
     if invariants:

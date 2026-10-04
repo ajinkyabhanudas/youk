@@ -83,7 +83,7 @@ def test_retrieval_failure_is_reported_not_silent(monkeypatch, tmp_path):
 
 def _brief(tmp_path):
     p = tmp_path / "domain-brief.json"
-    p.write_text(json.dumps({"bounded_contexts": [{
+    p.write_text(json.dumps({"project": "proj", "bounded_contexts": [{
         "name": "contract promotion",
         "ubiquitous_language": ["contract", "promotion", "global"],
         "invariants": [{"statement": "Global contracts never overwrite project contracts.",
@@ -95,11 +95,11 @@ def _brief(tmp_path):
 def test_domain_invariants_reach_the_prompt_only_when_vocabulary_overlaps(tmp_path):
     brief = _brief(tmp_path)
     block, info = intent._sizing_grounding("change how contract promotion works",
-                                           log_path=tmp_path / "none.jsonl", brief_path=brief)
+                                           log_path=tmp_path / "none.jsonl", brief_path=brief, project_slug="proj")
     assert "Global contracts never overwrite project contracts. (D-12)" in block
     assert info["domain_invariant_count"] == 1 and info["status"] == "grounded"
     block, info = intent._sizing_grounding("tweak button colours", log_path=tmp_path / "none.jsonl",
-                                           brief_path=brief)
+                                           brief_path=brief, project_slug="proj")
     assert block == "" and info["domain_invariant_count"] == 0
 
 
@@ -107,7 +107,7 @@ def test_domain_context_still_works_when_the_embedding_model_is_down(monkeypatch
     monkeypatch.setattr(semantic_similarity, "_model", lambda: (_ for _ in ()).throw(RuntimeError("down")))
     log = tmp_path / "s.jsonl"
     _log(log, "anything")
-    block, info = intent._sizing_grounding("change contract promotion", log_path=log, brief_path=_brief(tmp_path))
+    block, info = intent._sizing_grounding("change contract promotion", log_path=log, brief_path=_brief(tmp_path), project_slug="proj")
     assert info["status"] == "grounded" and "D-12" in block
 
 
@@ -284,3 +284,11 @@ def test_unlogged_sizing_decision_is_reported_and_routing_still_works(youk_root,
     decision = routing.route_task("fix a typo in the readme")
     assert decision is not None
     assert "sizing decision not logged (OSError: disk full)" in capsys.readouterr().err
+
+
+def test_a_brief_for_another_or_unknown_project_is_not_used(tmp_path):
+    brief = _brief(tmp_path)
+    for slug in ("someone-elses-project", ""):
+        block, info = intent._sizing_grounding("change contract promotion", log_path=tmp_path / "none.jsonl",
+                                               brief_path=brief, project_slug=slug)
+        assert block == "" and info["domain_invariant_count"] == 0
