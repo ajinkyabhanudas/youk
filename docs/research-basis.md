@@ -44,11 +44,13 @@ Each item says what the evidence supports, what youk does today, and what would 
    load of the newest 50 is unchanged, and `route_task` output does not carry lessons. Done
    when: that wholesale load is replaced by per-task retrieval and the floor is tuned from
    logged `lesson_count` against real tasks.
-2. **Record where a promoted learning came from.** `promote_to_global_contracts` writes
-   `confirmed_count=2` and `provenance=[{"project": "cross-project"}]` for every entry, so the
-   count is a constant and the source projects are lost. ExpeL's up/down-voting and ACE's
-   incremental curation both need per-learning evidence to work. Done when: provenance lists
-   the real projects and `confirmed_count` is the real number.
+2. **Record where a promoted learning came from.** Done: `promote_to_global_contracts` now
+   finds which projects' `contracts.md` hold the lesson (same meaning threshold as cross-project
+   detection) and writes them as provenance with `confirmed_count` set to the real number. When
+   no source project can be determined it records `unknown` with a count of 0 instead of the
+   old constant `confirmed_count=2` / `cross-project`. Entries promoted before this change keep
+   the old values. ExpeL's up/down-voting and ACE's incremental curation both need this
+   per-learning evidence.
 3. **A way to retire a learning.** Nothing downvotes or removes a promoted entry; the store
    only grows. Done when: a learning contradicted by a later confirmed decision is marked
    superseded and excluded from retrieval.

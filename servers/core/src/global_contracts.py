@@ -9,6 +9,34 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
+def _projects_with_lesson(contract: str, youk_root: Path) -> list[str]:
+    """Names of the projects whose contracts.md holds this lesson, matched by
+    meaning (same threshold as cross-project detection). Returns [] when no
+    project file matches or the embedding model cannot run -- the caller then
+    records the source as unknown rather than inventing one."""
+    from semantic_similarity import _SIMILARITY_THRESHOLD, rank_by_similarity
+
+    projects_dir = youk_root / "knowledge" / "projects"
+    if not projects_dir.exists():
+        return []
+    found: list[str] = []
+    try:
+        for d in sorted(projects_dir.iterdir()):
+            f = d / "contracts.md"
+            if not f.is_file():
+                continue
+            lines = [
+                ln.strip().lstrip("- ").strip()
+                for ln in f.read_text().splitlines()
+                if ln.strip() and not ln.startswith("#")
+            ]
+            if lines and rank_by_similarity(contract, lines, min_score=_SIMILARITY_THRESHOLD, limit=1):
+                found.append(d.name)
+    except Exception:
+        return []
+    return found
+
+
 def promote_to_global_contracts(
     contracts: list[str],
     youk_root: Path,
@@ -71,6 +99,7 @@ def promote_to_global_contracts(
                 if is_same_lesson(topic, existing_topic, threshold=0.5):
                     conflicts.append(f"Conflict: new '{c}' vs existing '{existing_stmt}'")
 
+        source_projects = _projects_with_lesson(c, youk_root)
         pattern_id = hashlib.sha256(
             f"{domain}\x1f{sub_domain}\x1f{result.abstracted.strip().lower()}".encode()
         ).hexdigest()[:16]
@@ -81,10 +110,11 @@ def promote_to_global_contracts(
             sub_domain=sub_domain,
             statement=result.abstracted.strip(),
             evidence_level="internally_checked",
-            provenance=[{"project": "cross-project", "abstracted": True}],
+            provenance=[{"project": name, "abstracted": True} for name in source_projects]
+            or [{"project": "unknown", "abstracted": True}],
             status="promoted",
             created_at=datetime.now(UTC).isoformat(),
-            confirmed_count=2,
+            confirmed_count=len(source_projects),
         )
         locked_jsonl_append(patterns_path, json.dumps(entry.to_dict()))
         existing.append(entry.to_dict())

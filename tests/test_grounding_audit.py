@@ -342,3 +342,34 @@ def test_lesson_count_is_logged(tmp_path):
                         mismatch_flag=False, log_path=log,
                         grounding={"status": "grounded", "lesson_count": 2})
     assert json.loads(log.read_text())["lesson_count"] == 2
+
+
+# --- promoted lessons record the projects they actually came from ---------------
+
+def _project_contracts(root, files):
+    for name, lines in files.items():
+        d = root / "knowledge" / "projects" / name
+        d.mkdir(parents=True)
+        (d / "contracts.md").write_text("# contracts\n" + "".join(f"- {ln}\n" for ln in lines))
+
+
+def test_promoted_lesson_records_its_real_source_projects(bag_model, tmp_path):
+    from global_contracts import promote_to_global_contracts
+    _project_contracts(tmp_path, {
+        "alpha": ["always run the tests before committing"],
+        "beta": ["always run the tests before committing code"],
+        "gamma": ["plan the quarterly roadmap in january"],
+    })
+    out = promote_to_global_contracts(["always run the tests before committing"], tmp_path, "testing", "ci")
+    assert out["promoted"] == 1
+    row = json.loads((tmp_path / "state" / "global-patterns.jsonl").read_text().splitlines()[0])
+    assert sorted(p["project"] for p in row["provenance"]) == ["alpha", "beta"]
+    assert row["confirmed_count"] == 2
+
+
+def test_unknown_source_is_recorded_as_unknown_with_a_zero_count(bag_model, tmp_path):
+    from global_contracts import promote_to_global_contracts
+    promote_to_global_contracts(["always run the tests before committing"], tmp_path, "testing", "ci")
+    row = json.loads((tmp_path / "state" / "global-patterns.jsonl").read_text().splitlines()[0])
+    assert row["provenance"] == [{"project": "unknown", "abstracted": True}]
+    assert row["confirmed_count"] == 0

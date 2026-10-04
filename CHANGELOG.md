@@ -31,6 +31,9 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
   `precedent_count`, `domain_invariant_count` on each sizing row).
 - The sizing evidence block also includes promoted cross-project lessons similar to the task
   (`lesson_count` is logged on each sizing row).
+- Promoted cross-project lessons record the projects they came from and a real
+  `confirmed_count` (previously a constant 2 with the source `cross-project`); an unknown
+  source is stored as `unknown` with a count of 0.
 - Providers return `GenerationResult`; `intent.py` no longer reads Anthropic's response object.
 - `/health` reports cold sizing estimates and frequent keyword-scorer overrides.
 - Added `docs/research-basis.md`.
