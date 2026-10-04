@@ -13,6 +13,7 @@ JSON and imports nothing from either container.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 
@@ -47,3 +48,11 @@ def match_invariants(task: str, brief: dict, *, top_n: int = 5) -> list[dict]:
             )
     candidates.sort(key=lambda c: c["relevance_score"], reverse=True)
     return candidates[:top_n]
+
+
+def project_brief_path(youk_root: Path, project: str) -> Path:
+    """state/domain-briefs/{slug}.json: one Domain Brief per project. Shared so
+    youk-core (writer) and youk-code (reader) agree on the file name without
+    importing each other."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", project) or "unknown"
+    return Path(youk_root) / "state" / "domain-briefs" / f"{safe}.json"

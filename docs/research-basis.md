@@ -69,12 +69,13 @@ Each item says what the evidence supports, what youk does today, and what would 
    meaning-duplicate of anything already in the store, and a bad learning can be retired. Keep it
    only if `state/confirmed-patterns.jsonl` and `state/global-patterns.jsonl` show entries it
    produced; otherwise delete it.
-6. **Domain Brief for projects other than youk.** Done for the sizing call: session start now
-   builds `state/domain-briefs/{slug}.json` from the project's own `DECISIONS.md` (when missing
-   or older than it) and the sizing prompt reads only the current project's brief. Not done: the
-   nfr_check edge-case pass (youk-code) still reads the single legacy `state/domain-brief.json`,
-   because that container has no current-project slug. Only the `DECISIONS.md` dialects
-   `domain_brief.py` recognises produce content.
+6. **Domain Brief for projects other than youk.** Done: session start builds
+   `state/domain-briefs/{slug}.json` from the project's own `DECISIONS.md` (when missing or
+   older than it); both the sizing prompt (youk-core) and the nfr_check edge-case pass
+   (youk-code, which reads the current slug from `state/sessions/*/open.json`) use the current
+   project's brief, and neither serves another project's legacy `state/domain-brief.json`. Limit:
+   only the `DECISIONS.md` dialects `domain_brief.py` recognises produce content; a project that
+   records decisions elsewhere gets an empty brief that says so.
 7. **Widen the floor calibration.** Done at small scale: both floors held on the real model in
    CI (task floor on 8 related and 8 unrelated pairs, lesson floor on 6 unrelated lessons). Still
    open: lesson recall (whether a relevant lesson clears 0.40) is untested, and the samples are

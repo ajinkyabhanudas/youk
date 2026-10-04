@@ -471,3 +471,41 @@ def test_sizing_uses_the_current_projects_own_brief(tmp_path, monkeypatch):
     block, info = intent._sizing_grounding(task, log_path=tmp_path / "none.jsonl", project_slug="other",
                                            patterns_path=tmp_path / "none.jsonl")
     assert info["domain_invariant_count"] == 0
+
+
+# --- nfr_check's edge-case pass reads the current project's brief ---------------
+
+def _open_session(root, slug):
+    d = root / "state" / "sessions" / slug
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "open.json").write_text(json.dumps({"slug": slug}))
+
+
+def _brief_file(path, project, statement):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"project": project, "bounded_contexts": [{
+        "name": "webhooks", "ubiquitous_language": ["webhook"],
+        "invariants": [{"statement": statement, "source_file": "DECISIONS.md", "source_id": "D"}]}]}))
+
+
+def test_edge_case_pass_prefers_the_current_projects_brief(tmp_path):
+    from domain_context import project_brief_path
+    from domain_edge_cases import domain_edge_case_candidates
+    _open_session(tmp_path, "shop")
+    _brief_file(project_brief_path(tmp_path, "shop"), "shop", "Webhooks retry three times.")
+    _brief_file(tmp_path / "state" / "domain-brief.json", "youk", "A youk-only webhook rule.")
+    out = domain_edge_case_candidates("fix the webhook handler", youk_root=tmp_path)
+    assert [c["invariant"] for c in out] == ["Webhooks retry three times."]
+
+
+def test_edge_case_pass_ignores_another_projects_legacy_brief(tmp_path):
+    from domain_edge_cases import domain_edge_case_candidates
+    _open_session(tmp_path, "shop")
+    _brief_file(tmp_path / "state" / "domain-brief.json", "youk", "A youk-only webhook rule.")
+    assert domain_edge_case_candidates("fix the webhook handler", youk_root=tmp_path) == []
+
+
+def test_edge_case_pass_still_uses_the_legacy_brief_when_no_project_is_known(tmp_path):
+    from domain_edge_cases import domain_edge_case_candidates
+    _brief_file(tmp_path / "state" / "domain-brief.json", "youk", "A youk-only webhook rule.")
+    assert len(domain_edge_case_candidates("fix the webhook handler", youk_root=tmp_path)) == 1

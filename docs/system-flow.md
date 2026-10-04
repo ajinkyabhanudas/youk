@@ -156,8 +156,8 @@ server.py (MCP tool surface)
                                    Read by: intent._sizing_grounding (retrieval), /health findings
   domain-briefs/{slug}.json     ← per-project Domain Brief, built at session start from the project's
                                    own DECISIONS.md when missing or older; read by the sizing call
-  domain-brief.json             ← legacy single brief (youk's own); still read by nfr_check's
-                                   edge-case pass; used by sizing only when brief.project matches
+  domain-brief.json             ← legacy single brief (youk's own); read only when its project matches
+                                   the current one. nfr_check and the sizing call prefer domain-briefs/
   global-patterns.jsonl         ← cross-project learnings (written by promote_to_global_contracts);
                                    rendered to knowledge/global/contracts.md. Append-only: a later row with the same id
                                    supersedes; retired rows are dropped from contracts.md and retrieval

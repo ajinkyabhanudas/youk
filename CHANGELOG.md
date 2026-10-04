@@ -44,7 +44,8 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 ### Added
 
 - Per-project Domain Briefs: session start builds `state/domain-briefs/{slug}.json` from the
-  project's own `DECISIONS.md` when missing or stale; the sizing call reads the current project's.
+  project's own `DECISIONS.md` when missing or stale; the sizing call and nfr_check's edge-case pass read the current project's,
+  and neither serves another project's legacy `state/domain-brief.json`.
 - `detect_domain_reversals`, `confirm_domain_reversal`, `find_pattern_promotion_candidates` and
   `promote_pattern_group` MCP tools, and self-heal steps 5 and 6 that call them. The self-heal
   skill used to tell the agent to call Python modules directly, which an MCP-only host cannot do.

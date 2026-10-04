@@ -45,6 +45,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from domain_context import project_brief_path  # noqa: F401  (shared with youk-code)
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 _STOPWORDS = {"a", "an", "and", "for", "in", "not", "of", "on", "or", "the", "to", "vs"}
@@ -380,14 +382,6 @@ def write_domain_brief(root: Path, brief: DomainBrief) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(brief.to_dict(), indent=2) + "\n", encoding="utf-8")
     return path
-
-
-def project_brief_path(youk_root: Path, project: str) -> Path:
-    """One brief per project: state/domain-briefs/{slug}.json. The legacy
-    state/domain-brief.json is a single global file and cannot serve more
-    than one project."""
-    safe = re.sub(r"[^A-Za-z0-9._-]", "_", project) or "unknown"
-    return youk_root / "state" / "domain-briefs" / f"{safe}.json"
 
 
 def refresh_project_domain_brief(youk_root: Path, project_root: Path, project: str) -> str:
