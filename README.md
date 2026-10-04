@@ -248,7 +248,7 @@ git clone https://github.com/ajinkyabhanudas/youk "$HOME\.claude\youk"
 cd "$HOME\.claude\youk"; Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\scripts\install.ps1
 ```
 
-One command — builds the Docker images, registers the MCP servers with Claude Code, and patches your `CLAUDE.md`. First run ~2 min; re-runs are idempotent. Then open a session and just work — youk activates itself. For Codex or another MCP host, run the install, then register the two MCP URLs in that host: [docs/hosts.md](docs/hosts.md).
+One command — builds the Docker images, registers the MCP servers with your agent host, and adds youk's block to that host's instructions file. The host is Claude Code or Codex, detected from `PATH` or chosen with `YOUK_HOST=claude-code|codex|none` (`none` starts the servers and prints the two MCP URLs). First run ~2 min; re-runs are idempotent. Then open a session and just work — youk activates itself. What is tested for each host: [docs/hosts.md](docs/hosts.md).
 
 **Installing a specific version.** Both installers take `YOUK_REF`, which accepts any tag or branch and defaults to the latest on `main`. Released versions are listed under [Releases](https://github.com/ajinkyabhanudas/youk/releases).
 
@@ -264,7 +264,7 @@ A ref that does not exist stops the install and names it, rather than quietly fa
 
 A pinned install stays pinned. Re-running the installer will not drag it back to `main`, and `make update` rebuilds at the pinned version instead of pulling.
 
-**Prerequisites:** Docker Desktop (running) · an MCP-capable agent host (Claude Code is installed automatically; Codex and others: [docs/hosts.md](docs/hosts.md)) · Python 3.11+
+**Prerequisites:** Docker Desktop (running) · an MCP-capable agent host on your `PATH` (Claude Code or Codex; with neither, youk installs its servers only) · Python 3.11+
 **Verify anytime:** `bash ~/.claude/youk/scripts/doctor.sh` — checks every dependency and prints a `Fix:` line for anything broken.
 
 Full platform-by-platform walkthrough: **[docs/getting-started.md](docs/getting-started.md)**.

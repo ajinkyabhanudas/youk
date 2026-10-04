@@ -27,7 +27,7 @@ youk is a compounding engineering system. Every session, it:
 
 The longer you use it, the more it adapts to exactly how you build.
 
-**Full youk requires:** Docker Desktop + an MCP-capable agent host + `make install` (~2 min). Claude Code and Codex have hook adapters; the installer registers Claude Code, and any other host needs the two MCP URLs added by hand. Support matrix and what is verified: [docs/hosts.md](docs/hosts.md).
+**Full youk requires:** Docker Desktop + an MCP-capable agent host + `make install` (~2 min). Claude Code and Codex have hook adapters, and the installer registers whichever it finds (or `YOUK_HOST=...`); any other host needs the two MCP URLs added by hand. Support matrix and what is verified: [docs/hosts.md](docs/hosts.md).
 **youk-lite (any agent):** copy the CLAUDE.md template from [docs/youk-lite.md](docs/youk-lite.md) — zero setup.
 
 ---

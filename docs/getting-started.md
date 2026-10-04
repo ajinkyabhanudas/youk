@@ -43,7 +43,7 @@ Just say a working agreement aloud — Claude writes it immediately (no "remembe
 
 ## Path B — full youk (agent host + Docker)
 
-> The installer registers youk with **Claude Code**. For Codex or another MCP host, do steps 1–3, then register the two MCP URLs in that host yourself and see [hosts.md](hosts.md) and "Agent-host selection" below.
+> The installer registers youk with **Claude Code or Codex**: it detects which CLI is on `PATH`, or you choose with `YOUK_HOST=claude-code|codex|none`. It also adds youk's block to that host's instructions file (`CLAUDE.md` or `AGENTS.md`). With `none` it starts the servers and prints the two MCP URLs for you to add. The steps below show the Claude Code commands; [hosts.md](hosts.md) has the Codex equivalents, what is tested, and the install paths. On Windows, run `install.sh` under Git Bash or WSL2 for any host; `install.ps1` is Claude Code only.
 
 ### No `make`? Use these equivalents
 

@@ -12,6 +12,11 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ### Fixed
 
+- `youk://context/{project}` read one host's per-project memory folder at a path containing the
+  author's username, so it returned nothing for anyone else. It now serves `knowledge/projects/{project}/`.
+- `youk_remove_fenced_block` and the old inline fence removal could not clobber an instructions file
+  after a failed `awk`; the library version checks the exit status.
+
 - Docs described parts of the system as Claude-only. `docs/hosts.md` now gives the real
   Claude Code and Codex capability matrix (checked against `agent_host.py` by a test), says that
   Codex hooks are wired but not yet exercised live, and lists the install paths that are still
@@ -31,6 +36,16 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
   middle" and Self-Correction Illusion citations now say what those papers show.
 
 ### Changed
+
+- Host-neutral install and runtime. `install.sh` selects an agent host (`YOUK_HOST=claude-code|codex|none`,
+  else detected from `PATH`) and only touches what that host owns: MCP registration, its instructions
+  file (`CLAUDE.md` or `AGENTS.md`), and, for Claude Code only, skill links, the hooks plugin and the
+  pre-install snapshot. `uninstall.sh`, `doctor.sh`, `validate.sh`, the Makefile and the host-side
+  scripts read the recorded host from `state/path-map.env`. New `scripts/lib/hosts.sh` (tested with
+  stub CLIs) and `servers/shared/youk_paths.py`. Existing installs are unchanged; see `docs/hosts.md`.
+- `CLAUDE_ROOT` is now `HOST_ROOT`; containers mount the host config dir at `/host` (`/claude` still
+  accepted). A host with no config dir gets an empty mount, and audit logs then live under youk's own tree.
+- The routing-loop, skill-route and project-context checks read `AGENTS.md` as well as `CLAUDE.md`.
 
 - Removed three modules with no caller, tool, skill or test-time guard: `confidence_signal.py`,
   `output_channels.py`, `comprehension_digest.py` (515 lines plus tests). They implemented an
