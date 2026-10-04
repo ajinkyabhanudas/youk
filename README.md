@@ -134,6 +134,19 @@ logic that more than one container needs belongs here, not copied into both.
 
 Full module-by-module wiring map: **[docs/system-flow.md](docs/system-flow.md)**.
 
+**Logging and tracing.** youk-core writes several real, typed JSONL logs under
+`state/` — sizing decisions, pattern entries, disposition events, domain-scope
+events, AB-experiment exposure — plus a SQLite concept graph, each read back by a
+later session or `/health` rather than written and forgotten. For maintainer-side
+tracing across a whole session, `servers/core/src/observability.py` wires into a
+self-hosted Langfuse stack (`dev/docker-compose.langfuse.yml`): one trace per
+session, repairs and health checks as spans. It's a no-op unless
+`LANGFUSE_HOST`/`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` are set, so a normal
+install never touches it, and what it's allowed to record is constrained by an
+explicit allow-list — derived scalars, enums, and hashed identifiers only, never
+raw task text, file paths, or findings (see
+[ADR-011](docs/adr-011-trace-content-invariant.md)).
+
 ---
 
 ## Start here (60 seconds)
