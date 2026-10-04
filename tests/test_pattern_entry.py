@@ -162,6 +162,41 @@ def test_promote_result_still_enforces_abstraction_guardrail():
         promote_pattern(entry, confirmed_in_projects={"youk", "other-project"})
 
 
+# --- related_pattern_ids: free relational seam, Phase F ---------------------
+
+
+def test_related_pattern_ids_defaults_to_empty_list():
+    entry = PatternEntry(**_valid_kwargs())
+    assert entry.related_pattern_ids == []
+    assert entry.to_dict()["related_pattern_ids"] == []
+
+
+def test_related_pattern_ids_round_trips_through_to_dict_and_from_dict():
+    entry = PatternEntry(**_valid_kwargs(related_pattern_ids=["pat-2", "pat-3"]))
+    assert entry.to_dict()["related_pattern_ids"] == ["pat-2", "pat-3"]
+    restored = PatternEntry.from_dict(entry.to_dict())
+    assert restored.related_pattern_ids == ["pat-2", "pat-3"]
+
+
+def test_related_pattern_ids_rejects_non_list():
+    with pytest.raises(PatternValidationError, match="related_pattern_ids"):
+        PatternEntry(**_valid_kwargs(related_pattern_ids="pat-2"))
+
+
+def test_related_pattern_ids_rejects_non_string_items():
+    with pytest.raises(PatternValidationError, match="related_pattern_ids"):
+        PatternEntry(**_valid_kwargs(related_pattern_ids=[123]))
+
+
+def test_from_dict_defaults_related_pattern_ids_when_absent():
+    """An entry written to disk before this field existed must still load --
+    this field is additive, never a breaking schema change."""
+    legacy_dict = _valid_kwargs()
+    legacy_dict["schema_version"] = "1.0"
+    restored = PatternEntry.from_dict(legacy_dict)
+    assert restored.related_pattern_ids == []
+
+
 # --- no coercion: wrong types RAISE, never silently convert ---------------
 
 

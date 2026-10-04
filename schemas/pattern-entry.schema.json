@@ -39,6 +39,10 @@
       }
     },
     "confirmed_count": {"type": "integer", "minimum": 0},
+    "related_pattern_ids": {
+      "type": "array", "items": {"type": "string"},
+      "description": "Free relational seam, added proactively per the pattern-learning-architecture-design.md 'cheap seam now, expensive engine later' decision -- no graph query engine exists yet. Populated manually when a real multi-hop relationship between two patterns is observed; empty means none recorded, never implies none exist."
+    },
     "status": {
       "type": "string",
       "enum": ["candidate", "confirmed", "promoted", "retired"],
