@@ -33,7 +33,7 @@ from knowledge_loader import (
     _scan_project_context_files,
 )
 
-from youk_paths import HOST_ROOT
+from youk_paths import HOST_ROOT, resolve_audit_dir
 YOUK_ROOT = Path("/youk")
 HOST_HOME = Path("/host-home")   # $HOME mounted :ro when install.sh adds -v $HOME:/host-home:ro
 STATE_FILE = YOUK_ROOT / "state" / "session.json"
@@ -1324,7 +1324,7 @@ def _merge_stale_checkpoint() -> None:
     Both files are deleted after being merged. Age guard: skip files < 5 min old
     (same-session race: session_start just wrote the file for THIS session).
     """
-    audit_dir = HOST_ROOT / "audit"
+    audit_dir = resolve_audit_dir(HOST_ROOT, YOUK_ROOT)
     audit_dir.mkdir(parents=True, exist_ok=True)
 
     for fname, label in [
@@ -1621,7 +1621,7 @@ def start_session(project_dir: str) -> SessionState:
     )
     _save_state(state)
 
-    audit_dir = HOST_ROOT / "audit"
+    audit_dir = resolve_audit_dir(HOST_ROOT, YOUK_ROOT)
     close_cluster_missed, orchestrate_pending = _parse_last_session_flags(audit_dir)
 
     # Pending-action TTL: if pending-action.json is >24h old, clear it.
@@ -2973,7 +2973,7 @@ def end_session(
         if phrase.lower() in summary.lower()
     ]
 
-    audit_dir = HOST_ROOT / "audit"
+    audit_dir = resolve_audit_dir(HOST_ROOT, YOUK_ROOT)
     audit_dir.mkdir(parents=True, exist_ok=True)
     month = datetime.utcnow().strftime("%Y-%m")
     audit_file = audit_dir / f"{month}.md"
@@ -3567,7 +3567,7 @@ def _record_outcome_followup(session_slug: str, outcome_result: str) -> dict:
 
     Returns: amended (bool), prior_result (str), new_result (str), audit_file (str).
     """
-    audit_dir = HOST_ROOT / "audit"
+    audit_dir = resolve_audit_dir(HOST_ROOT, YOUK_ROOT)
     if not audit_dir.exists():
         return {"error": "No audit directory found", "blocked": True, "amended": False}
 

@@ -41,13 +41,13 @@ HOST_ROOT = resolve_host_root()
 INSTRUCTIONS_FILES = {"claude-code": "CLAUDE.md", "codex": "AGENTS.md"}
 
 
-def audit_dir(host_root: Path, youk_root: Path) -> Path:
+def resolve_audit_dir(host_root: Path, youk_root: Path) -> Path:
     """Legacy location if it already exists, otherwise youk's own."""
     legacy = host_root / "audit"
     return legacy if legacy.exists() else youk_root / "audit"
 
 
-def skills_dir(host_root: Path, youk_root: Path) -> Path:
+def resolve_skills_dir(host_root: Path, youk_root: Path) -> Path:
     """The host's linked skills dir if it exists, otherwise the skills in youk's own tree."""
     linked = host_root / "skills"
     return linked if linked.exists() else youk_root / "skills"

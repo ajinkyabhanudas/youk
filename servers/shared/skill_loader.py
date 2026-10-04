@@ -3,8 +3,8 @@ from pathlib import Path
 from typing import Optional
 
 
-from youk_paths import HOST_ROOT
-SKILLS_DIR = HOST_ROOT / "skills"
+from youk_paths import HOST_ROOT, YOUK_ROOT, resolve_skills_dir
+SKILLS_DIR = resolve_skills_dir(HOST_ROOT, YOUK_ROOT)
 
 
 def load_skill(skill_name: str) -> str:

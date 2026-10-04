@@ -23,7 +23,7 @@ elif youk_paths.HOST_ROOT.exists():
 else:
     HOST_ROOT = Path.home() / ".claude"
 
-SKILLS_ROOT = youk_paths.skills_dir(HOST_ROOT, _REPO_ROOT)
+SKILLS_ROOT = youk_paths.resolve_skills_dir(HOST_ROOT, _REPO_ROOT)
 
 # Server files: always resolve from repo root — works in CI, Docker, and local dev.
 _SERVER_FILES = {

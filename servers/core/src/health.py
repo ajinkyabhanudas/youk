@@ -11,9 +11,9 @@ import sys
 sys.path.insert(0, "/shared")
 from models import HealthReport, Proposal
 
-from youk_paths import HOST_ROOT
+from youk_paths import HOST_ROOT, resolve_audit_dir, resolve_skills_dir
 YOUK_ROOT = Path("/youk")
-AUDIT_DIR = HOST_ROOT / "audit"
+AUDIT_DIR = resolve_audit_dir(HOST_ROOT, YOUK_ROOT)
 PROPOSALS_FILE = YOUK_ROOT / "knowledge" / "proposals" / "PENDING.md"
 _PROPOSALS_DB = YOUK_ROOT / "knowledge" / "shared-index.db"
 
@@ -212,7 +212,7 @@ def _allowed_write_roots() -> list[Path]:
     fixtures), and a list built once at import time would keep referencing the
     real /youk, /claude/skills regardless of that patch.
     """
-    return [YOUK_ROOT, HOST_ROOT / "skills"]
+    return [YOUK_ROOT, resolve_skills_dir(HOST_ROOT, YOUK_ROOT)]
 
 def _host_path_markers() -> tuple[tuple[str, Path], ...]:
     """health.py runs inside the youk-core container, where the host's
@@ -230,7 +230,7 @@ def _host_path_markers() -> tuple[tuple[str, Path], ...]:
     """
     return (
         (".claude/youk/", YOUK_ROOT),
-        (".claude/skills/", HOST_ROOT / "skills"),
+        (".claude/skills/", resolve_skills_dir(HOST_ROOT, YOUK_ROOT)),
     )
 
 
@@ -1350,7 +1350,7 @@ def _check_project_type_coverage() -> dict | None:
     if not expected:
         return None
 
-    skills_dir = HOST_ROOT / "skills"
+    skills_dir = resolve_skills_dir(HOST_ROOT, YOUK_ROOT)
     if not skills_dir.exists():
         skills_dir = YOUK_ROOT / "skills"
 
@@ -1741,7 +1741,7 @@ def _generate_findings(audit_texts: list[str], score: float) -> list[str]:
 
     # Proactive SKILL.md quality audit — does not wait for explicit SkillGap log entries.
     # Reads SKILL.md files directly and surfaces structurally weak skills.
-    skill_quality_findings = _audit_skill_quality(HOST_ROOT / "skills")
+    skill_quality_findings = _audit_skill_quality(resolve_skills_dir(HOST_ROOT, YOUK_ROOT))
     findings.extend(skill_quality_findings[:2])
 
     findings.extend(_structural_skill_findings(YOUK_ROOT, HOST_ROOT))
@@ -2323,7 +2323,7 @@ def _queue_promotion_proposals(candidates: list[dict]) -> tuple[int, list[str]]:
     these need Track A generation, not just a SKILL_EDIT proposal.
     """
     from datetime import datetime, UTC
-    skills_dir = HOST_ROOT / "skills"
+    skills_dir = resolve_skills_dir(HOST_ROOT, YOUK_ROOT)
     if not skills_dir.exists():
         skills_dir = YOUK_ROOT / "skills"
 
@@ -2830,7 +2830,7 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
     _gap_resolution: dict = {}
     try:
         from gap_resolution import reverify_gap_signals
-        _gap_resolution = reverify_gap_signals(skill_gap_signals, HOST_ROOT / "skills")
+        _gap_resolution = reverify_gap_signals(skill_gap_signals, resolve_skills_dir(HOST_ROOT, YOUK_ROOT))
         skill_gap_signals = _gap_resolution.get("open_signals", skill_gap_signals)
     except Exception:
         pass
@@ -2847,7 +2847,7 @@ def run_health_check_with_skill_signals(research_mode: bool = False) -> dict:
 
     # Also surface gap signals (count ≥ 2, no SKILL.md) that weren't caught by the
     # promotion threshold (count < 3 but still warrants generation).
-    skills_dir = HOST_ROOT / "skills"
+    skills_dir = resolve_skills_dir(HOST_ROOT, YOUK_ROOT)
     if not skills_dir.exists():
         skills_dir = YOUK_ROOT / "skills"
     for sig in skill_gap_signals:
@@ -3662,7 +3662,7 @@ def _compute_diff_preview(proposal: Proposal) -> dict:
         }
 
     if ct == "REFERENCE_ADD":
-        ref_path = HOST_ROOT / "skills" / proposal.target / "references" / proposal.target_section
+        ref_path = resolve_skills_dir(HOST_ROOT, YOUK_ROOT) / proposal.target / "references" / proposal.target_section
         before = ref_path.read_text() if ref_path.exists() else "(file does not exist)"
         after = proposal.content
         return {
@@ -3674,7 +3674,7 @@ def _compute_diff_preview(proposal: Proposal) -> dict:
         }
 
     if ct == "SKILL_EDIT":
-        skill_path = HOST_ROOT / "skills" / proposal.target / "SKILL.md"
+        skill_path = resolve_skills_dir(HOST_ROOT, YOUK_ROOT) / proposal.target / "SKILL.md"
         if not skill_path.exists():
             return {"error": f"SKILL.md not found at {skill_path}"}
         current = skill_path.read_text()
@@ -3781,7 +3781,7 @@ def _execute_proposal(proposal: Proposal) -> dict:
         }
 
     if ct == "REFERENCE_ADD":
-        ref_path = HOST_ROOT / "skills" / proposal.target / "references" / proposal.target_section
+        ref_path = resolve_skills_dir(HOST_ROOT, YOUK_ROOT) / proposal.target / "references" / proposal.target_section
         ref_path.parent.mkdir(parents=True, exist_ok=True)
         ref_path.write_text(proposal.content)
         return {
@@ -3792,7 +3792,7 @@ def _execute_proposal(proposal: Proposal) -> dict:
         }
 
     if ct == "SKILL_EDIT":
-        skill_path = HOST_ROOT / "skills" / proposal.target / "SKILL.md"
+        skill_path = resolve_skills_dir(HOST_ROOT, YOUK_ROOT) / proposal.target / "SKILL.md"
         if not skill_path.exists():
             return {"applied": False, "error": f"SKILL.md not found at {skill_path}"}
         current = skill_path.read_text()
@@ -3832,7 +3832,7 @@ def _execute_proposal(proposal: Proposal) -> dict:
         # Write audit trail with full diff so self-heal can detect patch→gap cycles.
         try:
             month = datetime.now(UTC).strftime("%Y-%m")
-            audit_file = HOST_ROOT / "audit" / f"{month}.md"
+            audit_file = resolve_audit_dir(HOST_ROOT, YOUK_ROOT) / f"{month}.md"
             if audit_file.exists():
                 with open(audit_file, "a") as _af:
                     _af.write(

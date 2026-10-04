@@ -28,7 +28,7 @@ from pathlib import Path
 
 YOUK_ROOT = Path("/youk")
 
-from youk_paths import HOST_ROOT
+from youk_paths import HOST_ROOT, resolve_skills_dir
 from typing import Literal
 
 # ── paths ────────────────────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ def _load_scope_matrix() -> dict:
     try:
         import yaml  # type: ignore[import]
         matrix_path = (
-            HOST_ROOT / "skills" / "dev-loop" / "references" / "skill-scope-matrix.yaml"
+            resolve_skills_dir(HOST_ROOT, YOUK_ROOT) / "dev-loop" / "references" / "skill-scope-matrix.yaml"
         )
         if not matrix_path.exists():
             return {}
@@ -570,7 +570,7 @@ def record_session_signals(audit_block: str, session_n: int, project_dir: str | 
 
 # ── Phase 2: proposal generation ─────────────────────────────────────────────
 
-_SKILL_ROOT = HOST_ROOT / "skills"
+_SKILL_ROOT = resolve_skills_dir(HOST_ROOT, YOUK_ROOT)
 _SESSION_STATE_FILE = _STATE_DIR / "session.json"
 _IMPROVEMENT_QUEUE = _STATE_DIR / "skill-improvement-queue.json"
 _APPLIED_PROPOSALS = _STATE_DIR / "applied-proposals.json"
