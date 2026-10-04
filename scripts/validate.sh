@@ -1,8 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-YOUK_DIR="$HOME/.claude/youk"
-CLAUDE_DIR="$HOME/.claude"
+YOUK_DIR="${YOUK_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# The host config dir as the installer recorded it; installs made before that were Claude Code's.
+HOST_DIR="$(sed -n 's/^HOST_CONFIG_DIR=//p' "$YOUK_DIR/state/path-map.env" 2>/dev/null | head -1)"
+HOST_DIR="${HOST_DIR:-$HOME/.claude}"
 
 ERRORS=0
 
@@ -24,7 +26,7 @@ check "youk-core image exists" "docker image inspect youk-core:latest"
 check "youk-code image exists" "docker image inspect youk-code:latest"
 
 # Critical directories
-check "skills directory accessible" "ls $CLAUDE_DIR/skills/dev-loop/SKILL.md"
+check "skills directory accessible" "ls $YOUK_DIR/skills/dev-loop/SKILL.md"
 check "youk state directory exists" "ls -d $YOUK_DIR/state"
 check "knowledge directory exists" "ls -d $YOUK_DIR/knowledge"
 check "config files present" "ls $YOUK_DIR/config/guardrails.yaml $YOUK_DIR/config/routes.yaml"
@@ -33,7 +35,7 @@ check "config files present" "ls $YOUK_DIR/config/guardrails.yaml $YOUK_DIR/conf
 echo "  Testing youk-core MCP response..."
 CORE_RESPONSE=$(echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | \
   docker run -i --rm \
-    -v "$CLAUDE_DIR:/claude" \
+    -v "$HOST_DIR:/host" \
     -v "$YOUK_DIR:/youk" \
     youk-core:latest 2>/dev/null || echo '{}')
 
@@ -47,7 +49,7 @@ fi
 echo "  Testing youk-code MCP response..."
 CODE_RESPONSE=$(echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | \
   docker run -i --rm \
-    -v "$CLAUDE_DIR:/claude:ro" \
+    -v "$HOST_DIR:/host:ro" \
     -v "$YOUK_DIR:/youk:ro" \
     youk-code:latest 2>/dev/null || echo '{}')
 

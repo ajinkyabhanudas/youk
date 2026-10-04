@@ -3,8 +3,24 @@
 # Exit code: 0 = all pass, 1 = any failure
 set -uo pipefail
 
-YOUK_DIR="${YOUK_DIR:-$HOME/.claude/youk}"
-CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
+YOUK_DIR="${YOUK_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source=lib/hosts.sh
+. "$YOUK_DIR/scripts/lib/hosts.sh"
+
+# Which agent host this install targets and where its config lives, as the installer recorded
+# them. Installs made before the host was recorded were all Claude Code.
+_map() { sed -n "s/^$1=//p" "$YOUK_DIR/state/path-map.env" 2>/dev/null | head -1; }
+YOUK_HOST_ID="${YOUK_HOST:-}"
+if [[ -z "$YOUK_HOST_ID" || "$YOUK_HOST_ID" == "auto" ]]; then YOUK_HOST_ID="$(_map YOUK_AGENT_HOST)"; fi
+if [[ -z "$YOUK_HOST_ID" ]]; then YOUK_HOST_ID="claude-code"; fi
+HOST_DIR="$(_map HOST_CONFIG_DIR)"
+if [[ -z "$HOST_DIR" ]]; then HOST_DIR="$(youk_host_dir "$YOUK_HOST_ID")"; fi
+if [[ -z "$HOST_DIR" ]]; then HOST_DIR="$YOUK_DIR/.host"; fi
+case "$YOUK_HOST_ID" in
+  claude-code) export CLAUDE_DIR="$HOST_DIR"; AUDIT_DIR="$HOST_DIR/audit"; SKILLS_PATH="$HOST_DIR/skills" ;;
+  codex)       export CODEX_HOME="$HOST_DIR"; AUDIT_DIR="$YOUK_DIR/audit"; SKILLS_PATH="$YOUK_DIR/skills" ;;
+  *)           AUDIT_DIR="$YOUK_DIR/audit"; SKILLS_PATH="$YOUK_DIR/skills" ;;
+esac
 
 # ── Platform detection ────────────────────────────────────────────────────────
 OS="$(uname -s)"
@@ -81,22 +97,22 @@ echo ""
 # ── MCP registration ──────────────────────────────────────────────────────────
 echo "MCP servers"
 
-if ! command -v claude &>/dev/null; then
-  fail "claude: Claude Code not found" \
-    "install from https://claude.ai/code"
+if [[ "$YOUK_HOST_ID" == "none" ]]; then
+  pass "agent host: none selected (add the MCP URLs to your host yourself: $YOUK_MCP_CORE_URL, $YOUK_MCP_CODE_URL)"
 else
-  if claude mcp list 2>/dev/null | grep -q "youk-core"; then
-    pass "youk-core: registered"
+  _host_cli="claude"; [[ "$YOUK_HOST_ID" == "codex" ]] && _host_cli="codex"
+  if ! command -v "$_host_cli" &>/dev/null; then
+    fail "$_host_cli: agent host CLI for '$YOUK_HOST_ID' not found" \
+      "install it, or reinstall with YOUK_HOST=none"
   else
-    fail "youk-core: not registered with Claude Code" \
-      "bash $YOUK_DIR/scripts/install.sh"
-  fi
-
-  if claude mcp list 2>/dev/null | grep -q "youk-code"; then
-    pass "youk-code: registered"
-  else
-    fail "youk-code: not registered with Claude Code" \
-      "bash $YOUK_DIR/scripts/install.sh"
+    for _server in youk-core youk-code; do
+      if youk_host_mcp_registered "$YOUK_HOST_ID" "$_server"; then
+        pass "$_server: registered with $YOUK_HOST_ID"
+      else
+        fail "$_server: not registered with $YOUK_HOST_ID" \
+          "bash $YOUK_DIR/scripts/install.sh"
+      fi
+    done
   fi
 fi
 echo ""
@@ -108,7 +124,7 @@ for dir in \
   "$YOUK_DIR/state" \
   "$YOUK_DIR/knowledge/proposals" \
   "$YOUK_DIR/knowledge/projects" \
-  "$CLAUDE_DIR/audit"
+  "$AUDIT_DIR"
 do
   if [[ -d "$dir" ]]; then
     pass "exists: ${dir/$HOME/~}"
@@ -123,16 +139,15 @@ echo ""
 echo "API key"
 
 # Priority 1: env var (CI / explicit export)
-# Priority 2: Claude Code's own key file (set when you sign in with 'claude')
-# The Docker container reads from /claude/.anthropic/api_key (mounted volume).
-# No action needed if you've already signed into Claude Code.
+# Priority 2: Claude Code's own key file (set when you sign in with 'claude'), which the
+# container reads from the mounted host dir. Other hosts provide the key through the env var.
 if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
   pass "ANTHROPIC_API_KEY: set in environment"
-elif [[ -f "$CLAUDE_DIR/.anthropic/api_key" ]] && [[ -s "$CLAUDE_DIR/.anthropic/api_key" ]]; then
-  pass "API key: found at ~/.claude/.anthropic/api_key (Claude Code signin — auto-mounted into container)"
+elif [[ -f "$HOST_DIR/.anthropic/api_key" ]] && [[ -s "$HOST_DIR/.anthropic/api_key" ]]; then
+  pass "API key: found at $HOST_DIR/.anthropic/api_key (Claude Code signin — auto-mounted into container)"
 else
   warn "API key: not found — optimize_intent and nfr_check will fall back to fast-path (no API call)" \
-    "Sign in with 'claude' or export ANTHROPIC_API_KEY=sk-ant-... before running install.sh"
+    "Export ANTHROPIC_API_KEY=sk-ant-... before running install.sh (or sign in with 'claude' on Claude Code)"
 fi
 echo ""
 
@@ -156,16 +171,16 @@ echo ""
 # ── Skills ────────────────────────────────────────────────────────────────────
 echo "Skills"
 
-if [[ -d "$CLAUDE_DIR/skills" ]]; then
-  SKILL_COUNT=$(ls "$CLAUDE_DIR/skills" 2>/dev/null | wc -l | tr -d ' ')
-  MISSING_SKILL_MD=$(find "$CLAUDE_DIR/skills" -maxdepth 1 -mindepth 1 -type d \
+if [[ -d "$SKILLS_PATH" ]]; then
+  SKILL_COUNT=$(ls "$SKILLS_PATH" 2>/dev/null | wc -l | tr -d ' ')
+  MISSING_SKILL_MD=$(find "$SKILLS_PATH" -maxdepth 1 -mindepth 1 -type d \
     -exec test ! -f {}/SKILL.md \; -print 2>/dev/null | wc -l | tr -d ' ')
   pass "skills directory: $SKILL_COUNT skills found"
   if [[ "$MISSING_SKILL_MD" -gt 0 ]]; then
     warn "skills: $MISSING_SKILL_MD skill directories missing SKILL.md (run list_skills() to identify)"
   fi
 else
-  warn "~/.claude/skills/ not found (optional — youk-code route_to_skill requires it)"
+  warn "$SKILLS_PATH not found (youk-code route_to_skill requires a skills directory)"
 fi
 echo ""
 
@@ -207,7 +222,7 @@ print(count)
 
 if docker image inspect youk-core:latest &>/dev/null 2>&1; then
   CORE_COUNT=$(_handshake_tool_count youk-core:latest \
-    -v "$CLAUDE_DIR:/claude" -v "$YOUK_DIR:/youk")
+    -v "$HOST_DIR:/host" -v "$YOUK_DIR:/youk")
   if [[ "${CORE_COUNT:-0}" -gt 0 ]]; then
     pass "youk-core: $CORE_COUNT tools"
   else
@@ -216,7 +231,7 @@ if docker image inspect youk-core:latest &>/dev/null 2>&1; then
   fi
 
   CODE_COUNT=$(_handshake_tool_count youk-code:latest \
-    -v "$CLAUDE_DIR:/claude:ro" -v "$YOUK_DIR:/youk:ro")
+    -v "$HOST_DIR:/host:ro" -v "$YOUK_DIR:/youk:ro")
   if [[ "${CODE_COUNT:-0}" -gt 0 ]]; then
     pass "youk-code: $CODE_COUNT tools"
   else
@@ -279,18 +294,20 @@ echo ""
 # ── Revert readiness ──────────────────────────────────────────────────────────
 echo "Revert readiness"
 
-if [[ -f "$CLAUDE_DIR/youk-restore/latest/manifest.json" ]]; then
+if [[ "$YOUK_HOST_ID" != "claude-code" ]]; then
+  pass "pre-install snapshot: not used for $YOUK_HOST_ID (it covers Claude Code files only)"
+elif [[ -f "$HOST_DIR/youk-restore/latest/manifest.json" ]]; then
   pass "pre-install snapshot: present (uninstall can restore pre-youk state)"
 else
-  warn "pre-install snapshot: missing — a pre-youk install predates snapshots. It will be created on next 'make update' (or 'make install'). Uninstall falls back to fence removal."
+  warn "pre-install snapshot: missing — a pre-youk install predates snapshots. It will be created on next 'make update' (or 'make install')"
 fi
 
-CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
-if [[ -f "$CLAUDE_MD" ]] && grep -q "youk-core.session_start" "$CLAUDE_MD" 2>/dev/null; then
-  if grep -qF "<!-- BEGIN youk (managed) -->" "$CLAUDE_MD" 2>/dev/null; then
-    pass "CLAUDE.md youk block: fenced (clean surgical removal available)"
+INSTRUCTIONS_FILE="$(youk_host_instructions_file "$YOUK_HOST_ID")"
+if [[ -n "$INSTRUCTIONS_FILE" && -f "$INSTRUCTIONS_FILE" ]] && grep -q "youk-core.session_start" "$INSTRUCTIONS_FILE" 2>/dev/null; then
+  if grep -qF "<!-- BEGIN youk (managed) -->" "$INSTRUCTIONS_FILE" 2>/dev/null; then
+    pass "$(basename "$INSTRUCTIONS_FILE") youk block: fenced (clean surgical removal available)"
   else
-    warn "CLAUDE.md youk block: unfenced (legacy) — run 'make update' to add fence markers"
+    warn "$(basename "$INSTRUCTIONS_FILE") youk block: unfenced (legacy) — run 'make update' to add fence markers"
   fi
 fi
 echo ""
@@ -307,7 +324,7 @@ if [[ $FAIL -eq 0 ]]; then
   echo "  Workflow note:"
   echo "  • servers/ code changes are live immediately (no rebuild needed)."
   echo "  • After changing requirements.txt or servers/shared/, run: make build"
-  echo "  • After make build, restart Claude Code to pick up new dependencies."
+  echo "  • After make build, restart your agent host to pick up new dependencies."
   exit 0
 else
   echo "  $FAIL check(s) failed. Fix the items above, then re-run:"

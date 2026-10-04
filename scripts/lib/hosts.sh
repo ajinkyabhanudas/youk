@@ -154,14 +154,16 @@ youk_remove_fenced_block() { # file
   [ -f "$file" ] || return 1
   grep -qF "$YOUK_FENCE_BEGIN" "$file" && grep -qF "$YOUK_FENCE_END" "$file" || return 1
   tmp="$(mktemp)"
-  awk -v begin="$YOUK_FENCE_BEGIN" -v end="$YOUK_FENCE_END" '
+  # A file that was only youk's block may legitimately become empty, but a failed awk (disk
+  # full, interrupted) must not replace the file with a partial result: require a clean exit.
+  if awk -v begin="$YOUK_FENCE_BEGIN" -v end="$YOUK_FENCE_END" '
     $0 == begin { skip=1; next }
     $0 == end   { skip=0; next }
     !skip       { print }
-  ' "$file" > "$tmp"
-  # An instructions file that was only youk's block may legitimately become empty, but a
-  # failed awk (disk full) must not clobber the file, so require a clean exit.
-  if [ -f "$tmp" ]; then mv "$tmp" "$file"; return 0; fi
+  ' "$file" > "$tmp"; then
+    mv "$tmp" "$file"
+    return 0
+  fi
   rm -f "$tmp"
   return 2
 }

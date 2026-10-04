@@ -8,7 +8,7 @@
 # current :latest SHA are never touched.
 set -uo pipefail
 
-YOUK_DIR="${YOUK_DIR:-$HOME/.claude/youk}"
+YOUK_DIR="${YOUK_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 LOG="$YOUK_DIR/state/cleanup.log"
 
 mkdir -p "$(dirname "$LOG")"

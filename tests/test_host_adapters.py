@@ -214,3 +214,43 @@ def test_makefile_takes_the_youk_dir_from_its_own_location_and_the_host_dir_from
 def test_makefile_falls_back_to_the_claude_dir_for_installs_without_a_map(tmp_path):
     _, (_, host_dir) = _make_vars(tmp_path, path_map=None)
     assert host_dir == str(tmp_path / "h" / ".claude")
+
+
+# --- the uninstaller, end to end, for a Codex install --------------------------------
+
+def test_uninstall_reverts_a_codex_install_and_touches_nothing_of_claude_code(tmp_path):
+    import shutil
+    root = tmp_path / "install"
+    shutil.copytree(Path(__file__).parent.parent / "scripts", root / "scripts")
+    (root / "state").mkdir()
+    codex_home = tmp_path / "codexhome"
+    codex_home.mkdir()
+    (root / "state" / "path-map.env").write_text(
+        f"YOUK_AGENT_HOST=codex\nYOUK_HOST_DIR={root}\nHOST_CONFIG_DIR={codex_home}\nHOST_SKILLS_LINKED=0\n")
+    (codex_home / "AGENTS.md").write_text(
+        "my rules\n\n<!-- BEGIN youk (managed) -->\n# youk\ncall youk-core.session_start\n<!-- END youk -->\nmy footer\n")
+
+    bin_dir, log = tmp_path / "bin", tmp_path / "calls.log"
+    bin_dir.mkdir()
+    for cli in ("codex", "claude", "docker", "launchctl"):
+        (bin_dir / cli).write_text(f'#!/bin/sh\necho "{cli} $*" >> "{log}"\nexit 0\n')
+        (bin_dir / cli).chmod(0o755)
+
+    out = subprocess.run(
+        ["bash", str(root / "scripts" / "uninstall.sh"), "--keep-images"],
+        capture_output=True, text=True, timeout=60,
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path / "home")},
+    )
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert (codex_home / "AGENTS.md").read_text() == "my rules\n\nmy footer\n"
+    calls = log.read_text().splitlines()
+    assert "codex mcp remove youk-core" in calls and "codex mcp remove youk-code" in calls
+    assert not any(c.startswith("claude") for c in calls)
+    assert "Skipped: the hooks plugin is Claude Code's" in out.stdout
+    assert "Skipped: skills were not linked into codex" in out.stdout
+
+
+@pytest.mark.parametrize("script", ["install.sh", "uninstall.sh", "doctor.sh", "lib/hosts.sh", "lib/snapshot.sh"])
+def test_every_host_touching_script_parses(script):
+    path = Path(__file__).parent.parent / "scripts" / script
+    assert subprocess.run(["bash", "-n", str(path)], capture_output=True).returncode == 0
