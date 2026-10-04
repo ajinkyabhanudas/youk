@@ -76,10 +76,9 @@ def test_is_same_lesson_respects_custom_threshold():
 
 
 class TestClusterBySimilarity:
-    """Found 2026-10-04: a pairwise is_same_lesson loop re-encodes text on
-    every single comparison. Real cross-project contract counts (dozens
-    across 10+ real projects) made that unusably slow -- a live call never
-    returned within 60s. cluster_by_similarity batch-encodes once; these
+    """A pairwise is_same_lesson loop re-encodes text on every single
+    comparison -- unusably slow once real cross-project contract counts
+    reach the dozens. cluster_by_similarity batch-encodes once; these
     tests prove the clustering result is still correct, not just faster."""
 
     def test_empty_input_returns_empty(self):

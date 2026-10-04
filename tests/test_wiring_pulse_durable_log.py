@@ -1,12 +1,10 @@
-"""2026-10-04: wiring_pulse/pipeline_pulse warnings were capped at 5 in
-session-start text, and since check_wiring's orphan order is deterministic
-(file order), the SAME first 5 orphans were the only ones ever shown --
-anything past slot 5 was never individually named, in any session, ever.
-This proved real: 8+ real orphans existed and were never surfaced beyond
-whatever happened to be in the first 5 slots.
+"""wiring_pulse/pipeline_pulse warnings are capped at 5 in session-start
+text, and check_wiring's orphan order is deterministic (file order), so
+the same first 5 orphans would be the only ones ever shown -- anything
+past slot 5 never individually named, in any session.
 
-Fix: _check_doc_freshness (which, despite its name, also runs the wiring and
-pipeline pulse checks) now appends the FULL, uncapped result to a durable
+_check_doc_freshness (which, despite its name, also runs the wiring and
+pipeline pulse checks) appends the FULL, uncapped result to a durable
 JSONL log every time it runs, so the data exists even if nobody reads the
 capped session-start text that run.
 """

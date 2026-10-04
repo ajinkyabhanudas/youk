@@ -182,11 +182,10 @@ class TestWriteConcepts:
         assert result["project_slug"] == "canopy"
 
     def test_cross_session_same_label_updates_existing_row(self, tmp_path):
-        """Real bug found 2026-10-04: the same concept re-extracted on every
-        /learn run was stored as a new row each time (keyed on session_n),
-        inflating a real project's concept count ~9-14x with no new
-        knowledge. A repeat label must update the existing row, not
-        duplicate it."""
+        """The same concept re-extracted on every /learn run must update
+        the existing row, not duplicate it -- keying on session_n instead
+        of just (label, project_slug) inflates the count with no new
+        knowledge."""
         db = _make_db(tmp_path)
         c1 = extract_concepts(["auth gate"], [], "youk", 1)
         c2 = extract_concepts(["auth gate"], [], "youk", 2)

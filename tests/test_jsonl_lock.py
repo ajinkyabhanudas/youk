@@ -1,11 +1,9 @@
-"""Tests for jsonl_lock (2026-10-04): real concurrent-write safety.
+"""Tests for jsonl_lock: real concurrent-write safety.
 
-Found live this session: every append_* function across disposition_event.py,
-domain_scope_event.py, reversal_check.py, pattern_promotion.py used a bare
-`open(path, "a")` -- no lock -- while this very session had two separate
-processes (a Codex session and this Claude Code session) connected to the
-same youk-core server at once. These tests prove the fix actually holds
-under real concurrent writers, not just that the code compiles.
+Two real concurrent writers to the same JSONL file (e.g. a Codex session
+and a Claude Code session both connected to youk-core) can interleave
+writes with a bare `open(path, "a")`. These tests prove the fix actually
+holds under real concurrent writers, not just that the code compiles.
 """
 from __future__ import annotations
 

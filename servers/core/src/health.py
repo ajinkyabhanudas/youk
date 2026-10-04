@@ -2064,9 +2064,6 @@ def _load_pending_proposals(project_slug: str | None = None) -> list[Proposal]:
 def is_still_pending(proposal: Proposal) -> bool:
     """True if a proposal's free-text status means it's still open.
 
-    Found 2026-10-04: get_proposals() returned every row from
-    _load_pending_proposals() with no status filter at all, so a real
-    backlog of months-old APPLIED/CLOSED proposals was reported as pending.
     "APPLIED" and "CLOSED" (and their dated variants, e.g.
     "APPLIED — 2026-07-02") are the two real terminal statuses seen in
     production data; anything else, including a bare "PENDING", is open.

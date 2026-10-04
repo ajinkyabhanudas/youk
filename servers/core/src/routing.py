@@ -267,6 +267,7 @@ def route_task(
     _size_order = {"XS": 1, "S": 2, "M": 3, "L": 4, "XL": 5}
     _size_mismatch_flag = False
     _size_mismatch_note = ""
+    _llm_estimated_size = ""
 
     # An LLM judging the size of its own task, unchecked, is the same
     # self-confirmation gap every other high-stakes judgment call in this
@@ -277,6 +278,7 @@ def route_task(
     if intent_brief and not intent_brief.get("ambiguity_detected"):
         brief_size = intent_brief.get("estimated_size", "")
         if brief_size in ("XS", "S", "M", "L", "XL"):
+            _llm_estimated_size = brief_size
             if _size_order[brief_size] < _size_order[deterministic_size.value]:
                 size = deterministic_size
                 _size_mismatch_flag = True
@@ -291,6 +293,19 @@ def route_task(
             size = deterministic_size
     else:
         size = deterministic_size
+
+    try:
+        from sizing_decision import log_sizing_decision
+        log_sizing_decision(
+            task=task,
+            deterministic_size=deterministic_size.value,
+            llm_estimated_size=_llm_estimated_size,
+            resolved_size=size.value,
+            mismatch_flag=_size_mismatch_flag,
+            log_path=YOUK_ROOT / "state" / "sizing-decisions.jsonl",
+        )
+    except Exception:
+        pass  # logging must never block the real routing decision
 
     # Scope escalation (CIR-150 item 2 / CIR-151): a pending, unconsumed
     # write_scope_escalation() signal for this slug forces a floor on the size

@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://youk.dev/schemas/sizing-decision.schema.json",
+  "title": "SizingDecision",
+  "type": "object",
+  "required": ["id", "task", "deterministic_size", "llm_estimated_size", "resolved_size", "mismatch_flag", "timestamp"],
+  "properties": {
+    "id": {"type": "string"},
+    "task": {"type": "string", "description": "The real task text route_task was called with."},
+    "deterministic_size": {
+      "type": "string",
+      "enum": ["", "XS", "S", "M", "L", "XL"],
+      "description": "The keyword-scoring result (_score_size) -- same input always gives the same output."
+    },
+    "llm_estimated_size": {
+      "type": "string",
+      "enum": ["", "XS", "S", "M", "L", "XL"],
+      "description": "optimize_intent's own self-reported size. Empty when no intent_brief was provided for this call."
+    },
+    "resolved_size": {
+      "type": "string",
+      "enum": ["", "XS", "S", "M", "L", "XL"],
+      "description": "The size route_task actually used -- the larger of deterministic_size and llm_estimated_size when both exist."
+    },
+    "mismatch_flag": {
+      "type": "boolean",
+      "description": "True when llm_estimated_size under-reported relative to deterministic_size."
+    },
+    "timestamp": {"type": "string", "format": "date-time"}
+  }
+}

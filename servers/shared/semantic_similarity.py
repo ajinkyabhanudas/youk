@@ -1,12 +1,10 @@
 """Local semantic similarity for cross-project pattern/contract matching.
 
-Found 2026-10-04: cross-project contract recurrence detection and dedup both
-matched on lowercase-stripped exact text, so the same lesson phrased
-differently across two projects was invisible. Exact-match is the wrong
-tool for a meaning question; this module is the right one -- a small,
-local, offline sentence-embedding model (all-MiniLM-L6-v2, ~22MB), not a
-call to any LLM vendor's API. No network access at runtime: the model
-weights are baked into the Docker image at build time.
+Exact-match text comparison is the wrong tool for a meaning question. This
+module is the right one -- a small, local, offline sentence-embedding model
+(all-MiniLM-L6-v2, ~22MB), not a call to any LLM vendor's API. No network
+access at runtime: the model weights are baked into the Docker image at
+build time.
 """
 from __future__ import annotations
 

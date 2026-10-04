@@ -49,6 +49,9 @@ token_budgets:
 """)
     import routing
     monkeypatch.setattr(routing, "ROUTES_FILE", routes)
+    # route_task's breadcrumb/sizing-decision writes use YOUK_ROOT directly
+    # with no override -- sandboxed so M+ tests never touch real state.
+    monkeypatch.setattr(routing, "YOUK_ROOT", tmp_path)
 
 
 class TestScopeCollapseGate:
