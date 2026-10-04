@@ -204,26 +204,30 @@
   writes: [state/disposition-log.jsonl]
   real_log: state/disposition-log.jsonl
 
+# detect_reversals/confirm_reversed_pattern/find_promotion_candidates/
+# promote_group have no live caller -- self_heal wiring was reverted after
+# duplicating _detect_cross_project_patterns -> promote_to_global_contracts
+# below. "self-heal AUDIT phase" never existed in the live system.
 - name: detect_reversals
   grounding: deterministic
   subsystem: pattern-learning-architecture
-  triggers_on: "self-heal AUDIT phase, once per project with a real Domain Brief — rebuilds the brief fresh, diffs it against the known-sources ledger for new entries, cross-references real dismissed DispositionEvents by bounded_context keyword overlap"
+  triggers_on: "ORPHANED -- no live caller. Real, tested function; reachable only by direct import."
   reads: [DECISIONS.md, knowledge/projects/youk/decisions.md, state/domain-brief-known-sources/, state/disposition-log.jsonl]
   writes: [state/domain-brief-known-sources/]
-  real_log: null  # mechanical, no separate judgment log needed (the design doc's own example for this exact function)
+  real_log: null
 
 - name: reversal_domain_naming_judgment
   grounding: llm_judgment
   subsystem: pattern-learning-architecture
-  triggers_on: "detect_reversals returns a non-empty reversal list — domain/sub_domain named and justified before confirm_reversed_pattern is called"
+  triggers_on: "ORPHANED -- paired with detect_reversals, which has no live caller"
   reads: []
   writes: []
-  real_log: null  # the [REVERSAL CONFIRMED] block is session output; the durable record is written by the separate confirm_reversed_pattern call
+  real_log: null
 
 - name: confirm_reversed_pattern
   grounding: hybrid
   subsystem: pattern-learning-architecture
-  triggers_on: "immediately after the [REVERSAL CONFIRMED] block names domain/sub_domain for a real reversal pair"
+  triggers_on: "ORPHANED -- no live caller. Real, tested function; reachable only by direct import."
   reads: []
   writes: [state/confirmed-patterns.jsonl]
   real_log: state/confirmed-patterns.jsonl
@@ -231,25 +235,33 @@
 - name: find_promotion_candidates
   grounding: deterministic
   subsystem: pattern-learning-architecture
-  triggers_on: "self-heal AUDIT phase, after the reversal check step, once per run across all projects' confirmed patterns — groups confirmed PatternEntry rows by (domain, sub_domain), keeps only groups spanning >=2 projects whose statements all abstract with confident=True"
+  triggers_on: "ORPHANED -- no live caller. Real, tested function; reachable only by direct import."
   reads: [state/confirmed-patterns.jsonl]
   writes: []
-  real_log: null  # read-only grouping/filtering; the resulting group is not itself persisted
+  real_log: null
 
 - name: promotion_statement_selection_judgment
   grounding: llm_judgment
   subsystem: pattern-learning-architecture
-  triggers_on: "find_promotion_candidates returns a group with more than one distinct abstracted statement (the trivial single-wording case needs no real judgment)"
+  triggers_on: "ORPHANED -- paired with find_promotion_candidates, which has no live caller"
   reads: []
   writes: []
-  real_log: null  # the [PROMOTION CANDIDATE] block is session output; the durable record is written by the separate promote_group call
+  real_log: null
 
 - name: promote_group
   grounding: hybrid
   subsystem: pattern-learning-architecture
-  triggers_on: "after chosen_statement is settled (trivially, or via promotion_statement_selection_judgment's [PROMOTION CANDIDATE] block) for a real promotion-candidate group"
+  triggers_on: "ORPHANED -- no live caller. state/global-patterns.jsonl is now written by promote_to_global_contracts (below), a different real function, not this one."
   reads: []
   writes: [state/global-patterns.jsonl]
+  real_log: state/global-patterns.jsonl
+
+- name: promote_to_global_contracts
+  grounding: hybrid
+  subsystem: pattern-learning-architecture
+  triggers_on: "_detect_cross_project_patterns finds a contract recurring across >=2 real projects; caller names domain/sub_domain and calls this to write it as a tagged PatternEntry"
+  reads: [state/global-patterns.jsonl]
+  writes: [state/global-patterns.jsonl, knowledge/global/contracts.md]
   real_log: state/global-patterns.jsonl
 
 - name: query_global_patterns
@@ -259,3 +271,11 @@
   reads: [state/global-patterns.jsonl]
   writes: []
   real_log: null  # read-only query
+
+- name: check_proposal_backlog_gate
+  grounding: deterministic
+  subsystem: system-observability
+  triggers_on: "self_heal() -- deterministically checks whether the real pending-proposal count meets proposal-review's own SKILL.md trigger threshold (>=3), instead of relying on a model noticing the count"
+  reads: []
+  writes: []
+  real_log: null  # read-only check; its result is returned inline from self_heal, not separately logged
