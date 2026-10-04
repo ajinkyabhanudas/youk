@@ -25,7 +25,7 @@ import re
 from pathlib import Path
 
 YOUK_ROOT = Path("/youk")
-from youk_paths import HOST_ROOT
+from youk_paths import HOST_ROOT, instruction_files
 
 # Tools invoked directly by the user/model via slash-commands or docs, not by other code.
 # Allow-listed so they don't count as orphans. Keep this SMALL and justified — every entry
@@ -54,10 +54,10 @@ def _defined_tools(server_py: Path) -> list[str]:
 
 
 def _routing_loop_text(host_root: Path) -> str:
-    """CLAUDE.md — the routing loop the model actually executes. A tool NAMED here (the model
-    is instructed to call it) counts as wired, even without a '(' since the model calls it."""
-    claude_md = host_root / "CLAUDE.md"
-    return claude_md.read_text() if claude_md.exists() else ""
+    """The host's instructions file (CLAUDE.md, AGENTS.md) — the routing loop the model actually
+    executes. A tool NAMED here (the model is instructed to call it) counts as wired, even
+    without a '(' since the model calls it."""
+    return "\n".join(f.read_text() for f in instruction_files(host_root))
 
 
 def _live_call_corpus(youk_root: Path) -> str:

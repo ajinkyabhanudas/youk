@@ -9,6 +9,7 @@ import json
 import re
 
 from state_paths import resolve_project_path as _resolve_project_path
+from youk_paths import instruction_files
 
 
 def _load_l2_context(project_dir: str) -> tuple[str, str]:
@@ -47,7 +48,7 @@ def _scan_project_context_files(project_dir: str) -> dict:
     """Scan the project directory for standard context files.
 
     Reads — but caps aggressively to avoid overloading initial context:
-    - CLAUDE.md (root) — full, max 1200 chars (project system instructions)
+    - CLAUDE.md or AGENTS.md (root) — full, max 1200 chars (project system instructions)
     - README.md — first description paragraph only (max 400 chars)
     - docs/ — filenames only, no content (surface availability, not dump content)
     - .claude/CLAUDE.md — project-local youk instructions (max 1200 chars)
@@ -62,7 +63,10 @@ def _scan_project_context_files(project_dir: str) -> dict:
         "context_level": "L1",
     }
 
-    for candidate in [p / "CLAUDE.md", p / ".claude" / "CLAUDE.md"]:
+    # The project's own instructions: CLAUDE.md or AGENTS.md at the root (whichever host the
+    # project uses), else Claude Code's project-local .claude/CLAUDE.md. The result key keeps
+    # its original name, claude_md, because the session state and brief already use it.
+    for candidate in [*instruction_files(p), p / ".claude" / "CLAUDE.md"]:
         if candidate.exists():
             try:
                 text = candidate.read_text()[:1200]

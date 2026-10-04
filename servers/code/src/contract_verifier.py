@@ -144,10 +144,7 @@ def verify_contracts() -> dict:
 
     # 2 — collect all call sites
     call_sources: list[Path] = []
-    for name in sorted(set(youk_paths.INSTRUCTIONS_FILES.values())):
-        instructions = HOST_ROOT / name
-        if instructions.exists():
-            call_sources.append(instructions)
+    call_sources.extend(youk_paths.instruction_files(HOST_ROOT))
     call_sources.extend(_collect_skill_files())
 
     # Every registered name across both servers, so unprefixed references can be

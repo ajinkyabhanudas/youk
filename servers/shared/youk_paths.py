@@ -82,3 +82,9 @@ def locate_install(script_file: str | Path) -> tuple[Path, Path, Path]:
     mapped = read_path_map(youk_dir).get("HOST_CONFIG_DIR")
     host_dir = Path(mapped) if mapped else Path.home() / ".claude"
     return youk_dir, host_dir, resolve_audit_dir(host_dir, youk_dir)
+
+
+def instruction_files(root: Path) -> list[Path]:
+    """The project-instruction files that exist directly under `root` (a host config dir or a
+    project directory), for every host youk knows, in a stable order."""
+    return [root / name for name in sorted(set(INSTRUCTIONS_FILES.values())) if (root / name).exists()]

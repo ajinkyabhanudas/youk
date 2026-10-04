@@ -110,7 +110,7 @@ class TestDegradesSafely:
 def _referenced_skills_from(tmp_path: Path, md: str) -> set[str]:
     f = tmp_path / f"CLAUDE_{abs(hash(md))}.md"
     f.write_text(md)
-    return _referenced_skills(f)
+    return _referenced_skills([f])
 
 
 class TestHealthWiring:

@@ -1716,7 +1716,7 @@ def start_session(project_dir: str) -> SessionState:
     # finding domains are visible before the developer starts coding again.
     try:
         from failure_pattern_detector import scan_failure_patterns as _scan_patterns
-        _fpd_audit_dir = HOST_HOME / ".claude" / "audit"
+        _fpd_audit_dir = resolve_audit_dir(HOST_ROOT, YOUK_ROOT)
         _fp_alerts = _scan_patterns(
             audit_dir=_fpd_audit_dir if _fpd_audit_dir.exists() else None,
             slug=slug,

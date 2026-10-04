@@ -151,3 +151,36 @@ def test_locate_install_falls_back_to_the_claude_dir_and_honours_youk_home(tmp_p
     other.mkdir()
     monkeypatch.setenv("YOUK_HOME", str(other))
     assert youk_paths.locate_install(install / "scripts" / "x.py")[0] == other
+
+
+# --- checks that read "the routing loop" see AGENTS.md as well as CLAUDE.md ------------
+
+def test_instruction_files_lists_whichever_exist(tmp_path):
+    assert youk_paths.instruction_files(tmp_path) == []
+    (tmp_path / "AGENTS.md").write_text("a")
+    (tmp_path / "CLAUDE.md").write_text("c")
+    assert [p.name for p in youk_paths.instruction_files(tmp_path)] == ["AGENTS.md", "CLAUDE.md"]
+
+
+def test_wiring_pulse_reads_a_codex_routing_loop(tmp_path):
+    import wiring_pulse
+    (tmp_path / "AGENTS.md").write_text("call youk-core.route_task before work")
+    assert "route_task" in wiring_pulse._routing_loop_text(tmp_path)
+    assert wiring_pulse._routing_loop_text(tmp_path / "nothing") == ""
+
+
+def test_skill_route_check_resolves_routes_named_in_agents_md(tmp_path):
+    import skill_route_check
+    host, youk = tmp_path / "host", tmp_path / "youk"
+    (host / "skills" / "dev-loop").mkdir(parents=True)
+    (host / "skills" / "dev-loop" / "SKILL.md").write_text("# dev loop\nreal content here\n")
+    (host / "AGENTS.md").write_text("route_to_skill('dev-loop', task)\n")
+    out = skill_route_check.check_skill_routes(host, youk)
+    assert out["checked"] == 1 and out["healthy"] is True
+
+
+def test_project_context_scan_loads_a_projects_agents_md(tmp_path):
+    import knowledge_loader
+    (tmp_path / "AGENTS.md").write_text("project rules for any agent")
+    result = knowledge_loader._scan_project_context_files(str(tmp_path))
+    assert result["claude_md"] == "project rules for any agent" and result["context_level"] == "L5"
