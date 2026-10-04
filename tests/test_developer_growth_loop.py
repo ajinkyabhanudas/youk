@@ -282,7 +282,7 @@ class TestOrgScoreGrowthSignals:
     def _make_sessions(self, n: int, **kwargs) -> list[str]:
         return [_base_block(**kwargs)] * n
 
-    def test_deep_autonomy_scores_higher_than_surface(self, claude_root):
+    def test_deep_autonomy_scores_higher_than_surface(self, host_root):
         from health import _score_org
         deep_audit = "\n".join(self._make_sessions(
             8, autonomy_depth="nfr_check=DEEP", developer_caught="nfr_check"
@@ -290,13 +290,13 @@ class TestOrgScoreGrowthSignals:
         surface_audit = "\n".join(self._make_sessions(
             8, autonomy_depth="nfr_check=SURFACE", developer_caught="nfr_check"
         ))
-        (claude_root / "audit" / "2026-01.md").write_text(deep_audit)
+        (host_root / "audit" / "2026-01.md").write_text(deep_audit)
         deep_score = _score_org([deep_audit])
-        (claude_root / "audit" / "2026-01.md").write_text(surface_audit)
+        (host_root / "audit" / "2026-01.md").write_text(surface_audit)
         surface_score = _score_org([surface_audit])
         assert deep_score > surface_score
 
-    def test_no_violations_scores_higher_than_with_violations(self, claude_root):
+    def test_no_violations_scores_higher_than_with_violations(self, host_root):
         from health import _score_org
         clean_audit = "\n".join(self._make_sessions(6))
         violated_audit = "\n".join(self._make_sessions(

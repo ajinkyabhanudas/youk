@@ -29,7 +29,7 @@ _PY_FILES = sorted(p for d in _SRC_DIRS if d.exists() for p in d.glob("*.py"))
 
 # The root constants themselves are legitimately absolute; everything else derives.
 # The underscore forms are local shadows of the same constants.
-_ALLOWED_ABSOLUTE = {"YOUK_ROOT", "CLAUDE_ROOT", "_YOUK_ROOT", "_CLAUDE_ROOT"}
+_ALLOWED_ABSOLUTE = {"YOUK_ROOT", "HOST_ROOT", "_YOUK_ROOT", "_CLAUDE_ROOT"}
 
 
 def _is_env_fallback(node: ast.AST, literal: ast.Constant) -> bool:
@@ -90,7 +90,7 @@ def test_no_def_time_path_defaults(py):
 
 @pytest.mark.parametrize("py", _PY_FILES, ids=lambda p: p.name)
 def test_no_hardcoded_root_paths(py):
-    """Only YOUK_ROOT / CLAUDE_ROOT may spell an absolute root; the rest derive."""
+    """Only YOUK_ROOT / HOST_ROOT may spell an absolute root; the rest derive."""
     tree = ast.parse(py.read_text())
     offenders = []
     for node in ast.walk(tree):
@@ -113,7 +113,7 @@ def test_no_hardcoded_root_paths(py):
                 offenders.append(f"{names or '<expr>'} = ...{sub.value!r}")
     assert offenders == [], (
         f"{py.name} hardcodes an absolute root: {offenders}. "
-        "Derive from YOUK_ROOT / CLAUDE_ROOT so tests and alternate installs can "
+        "Derive from YOUK_ROOT / HOST_ROOT so tests and alternate installs can "
         "redirect it."
     )
 

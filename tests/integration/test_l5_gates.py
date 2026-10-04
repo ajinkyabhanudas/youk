@@ -274,7 +274,7 @@ class TestProposalLifecycle:
         # audit dir must exist so _read_recent_audit_logs doesn't crash
         audit_dir = tmp_path / "knowledge" / "audit"
         audit_dir.mkdir(parents=True)
-        monkeypatch.setattr(health, "CLAUDE_ROOT", tmp_path)
+        monkeypatch.setattr(health, "HOST_ROOT", tmp_path)
         r = health.run_health_check_with_skill_signals()
         assert "org_score" in r, f"self_heal missing org_score: {list(r.keys())}"
         assert isinstance(r["org_score"], int | float)

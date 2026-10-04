@@ -20,18 +20,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "shared"))
 # ---------------------------------------------------------------------------
 
 def _make_state(tmp_path: Path) -> tuple[Path, Path]:
-    """Return (youk_root, claude_root) with minimal state structure."""
+    """Return (youk_root, host_root) with minimal state structure."""
     youk_root = tmp_path / "youk"
-    claude_root = tmp_path / "claude"
+    host_root = tmp_path / "claude"
     (youk_root / "state").mkdir(parents=True)
     (youk_root / "knowledge" / "projects").mkdir(parents=True)
     (youk_root / "knowledge" / "proposals").mkdir(parents=True)
-    (claude_root / "audit").mkdir(parents=True)
+    (host_root / "audit").mkdir(parents=True)
     # Write slug
     (youk_root / "state" / "session-open.json").write_text(
         json.dumps({"slug": "test-project", "timestamp": "2026-07-15T10:00:00Z", "plan_items": []})
     )
-    return youk_root, claude_root
+    return youk_root, host_root
 
 
 # ---------------------------------------------------------------------------

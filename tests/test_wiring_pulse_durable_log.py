@@ -17,11 +17,11 @@ import session
 
 def test_wiring_pulse_writes_full_uncapped_result_to_durable_log(tmp_path, monkeypatch):
     youk_root = tmp_path / "youk"
-    claude_root = tmp_path / "claude"
+    host_root = tmp_path / "claude"
     (youk_root / "state").mkdir(parents=True)
-    (claude_root).mkdir(parents=True)
+    (host_root).mkdir(parents=True)
     monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
-    monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+    monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
     # No real server.py on disk in this sandbox -- check_wiring's own guard
     # (`if not server_py.exists(): return []`) means total=0, orphaned=[].
@@ -41,11 +41,11 @@ def test_wiring_pulse_writes_full_uncapped_result_to_durable_log(tmp_path, monke
 
 def test_wiring_pulse_log_is_append_only_across_multiple_runs(tmp_path, monkeypatch):
     youk_root = tmp_path / "youk"
-    claude_root = tmp_path / "claude"
+    host_root = tmp_path / "claude"
     (youk_root / "state").mkdir(parents=True)
-    claude_root.mkdir(parents=True)
+    host_root.mkdir(parents=True)
     monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
-    monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+    monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
     session._check_doc_freshness()
     session._check_doc_freshness()
@@ -60,11 +60,11 @@ def test_doc_freshness_check_never_crashes_when_server_py_absent(tmp_path, monke
     """The surrounding try/except must still degrade silently -- this check
     must never block a real session_start."""
     youk_root = tmp_path / "youk"
-    claude_root = tmp_path / "claude"
+    host_root = tmp_path / "claude"
     youk_root.mkdir(parents=True)
-    claude_root.mkdir(parents=True)
+    host_root.mkdir(parents=True)
     monkeypatch.setattr(session, "YOUK_ROOT", youk_root)
-    monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+    monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
     result = session._check_doc_freshness()
     assert isinstance(result, list)

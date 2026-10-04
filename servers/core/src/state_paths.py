@@ -21,7 +21,7 @@ from pathlib import Path
 # YOUK_ROOT is set by the caller module (session.py / server.py) via module-level
 # assignment. Tests patch it via monkeypatch. We default to the container path.
 YOUK_ROOT: Path = Path("/youk")
-CLAUDE_ROOT: Path = Path("/claude")
+from youk_paths import HOST_ROOT
 HOST_HOME: Path = Path("/host-home")
 
 # open.json entries older than this are considered stale (prior session, crashed, etc.)
@@ -225,7 +225,7 @@ def resolve_project_path(host_path: str) -> Path:
 
             if claude_host and host_path.startswith(claude_host):
                 relative = host_path[len(claude_host):].lstrip("/")
-                candidate = CLAUDE_ROOT / relative if relative else CLAUDE_ROOT
+                candidate = HOST_ROOT / relative if relative else HOST_ROOT
                 if candidate.exists():
                     return candidate
         except Exception:

@@ -57,14 +57,14 @@ def _file_age(file_path: Path) -> float | None:
     return file_path.stat().st_mtime
 
 
-def _resolve(raw_path: str, youk_root: Path, claude_root: Path) -> Path:
+def _resolve(raw_path: str, youk_root: Path, host_root: Path) -> Path:
     """
     Resolve a path string from doc-map.yaml to an absolute Path.
-    Paths beginning with '~/.claude/' map to claude_root.
+    Paths beginning with '~/.claude/' map to host_root.
     All others are relative to youk_root.
     """
     if raw_path.startswith("~/.claude/"):
-        return claude_root / raw_path[len("~/.claude/"):]
+        return host_root / raw_path[len("~/.claude/"):]
     return youk_root / raw_path
 
 
@@ -203,7 +203,7 @@ def _expand_scan_scope(scope: list[str], youk_root: Path) -> list[str]:
 def check_concept_staleness(
     concepts: list[dict],
     youk_root: Path,
-    claude_root: Path,
+    host_root: Path,
 ) -> dict:
     """
     Four-check structural audit of the concept graph.
@@ -240,7 +240,7 @@ def check_concept_staleness(
         description = c.get("description", "")
         invariant = c.get("invariant", "")
 
-        authority_path = _resolve(authority_raw, youk_root, claude_root)
+        authority_path = _resolve(authority_raw, youk_root, host_root)
 
         # Check 3: orphaned concept (authority missing)
         if not authority_path.exists():
@@ -259,7 +259,7 @@ def check_concept_staleness(
 
         # Checks 1 + 2 + 4 on explicitly listed derived_in files
         for d_raw in derived_raw:
-            derived_path = _resolve(d_raw, youk_root, claude_root)
+            derived_path = _resolve(d_raw, youk_root, host_root)
 
             # Check 2: broken link (derived file missing)
             if not derived_path.exists():

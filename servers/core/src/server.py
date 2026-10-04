@@ -101,7 +101,7 @@ _p.add_argument("--host", default="0.0.0.0")
 _server_args, _ = _p.parse_known_args()
 
 YOUK_ROOT = Path("/youk")
-CLAUDE_ROOT = Path("/claude")
+from youk_paths import HOST_ROOT
 
 _TOOL_CALL_COUNT_FILE = YOUK_ROOT / "state" / "tool-call-count.json"
 
@@ -1825,7 +1825,7 @@ def check_doc_graph() -> dict:
     from doc_graph import load_concept_graph, load_doc_map, check_concept_staleness, find_untracked_docs
     concepts = load_concept_graph(YOUK_ROOT)
     doc_map = load_doc_map(YOUK_ROOT)
-    result = check_concept_staleness(concepts, YOUK_ROOT, CLAUDE_ROOT)
+    result = check_concept_staleness(concepts, YOUK_ROOT, HOST_ROOT)
     untracked = find_untracked_docs(YOUK_ROOT, doc_map)
 
     stale = result["stale"]
@@ -2214,7 +2214,7 @@ def request_external_review(scope: str, notes: str = "") -> dict:
     Returns: folder_path, instructions for handing off to external grader.
     Does NOT affect org_score — scoring the fix for self-scoring recreates the disease.
     """
-    return _build_review_bundle(scope, notes, youk_root=YOUK_ROOT, claude_root=CLAUDE_ROOT)
+    return _build_review_bundle(scope, notes, youk_root=YOUK_ROOT, host_root=HOST_ROOT)
 
 
 # ---------------------------------------------------------------------------
@@ -2944,9 +2944,9 @@ async def report_agent_gap(request: Request) -> JSONResponse:
     # audit_file is a container-internal path (this server runs in the youk-core
     # container). A caller outside the container -- a Paperclip agent on the host,
     # or a host-side test -- cannot resolve it directly; return the path relative
-    # to CLAUDE_ROOT too, the same fix PR #126 already applied to apply_proposal's
+    # to HOST_ROOT too, the same fix PR #126 already applied to apply_proposal's
     # FILE_CREATE/REFERENCE_ADD results for the exact same reason.
-    path_relative = str(audit_file).removeprefix(str(CLAUDE_ROOT)).lstrip("/")
+    path_relative = str(audit_file).removeprefix(str(HOST_ROOT)).lstrip("/")
     return JSONResponse({"logged": True, "path": str(audit_file), "path_relative": path_relative})
 
 

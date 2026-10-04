@@ -161,10 +161,10 @@ class TestEndSessionWritesDuration:
     shape start_session leaves behind, which is all end_session's duration code
     reads from."""
 
-    def test_duration_line_appears_in_the_audit_entry(self, youk_root, claude_root, monkeypatch):
+    def test_duration_line_appears_in_the_audit_entry(self, youk_root, host_root, monkeypatch):
         import session
 
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
 
         slug = "test-project"
         slug_dir = youk_root / "state" / "sessions" / slug
@@ -181,19 +181,19 @@ class TestEndSessionWritesDuration:
         session.end_session("test summary", commits_made=False)
 
         month = time.strftime("%Y-%m", time.gmtime())
-        audit_file = claude_root / "audit" / f"{month}.md"
+        audit_file = host_root / "audit" / f"{month}.md"
         assert audit_file.exists()
         content = audit_file.read_text()
         assert "Duration:" in content
         assert "min" in content
 
-    def test_no_open_json_omits_duration_without_raising(self, youk_root, claude_root, monkeypatch):
+    def test_no_open_json_omits_duration_without_raising(self, youk_root, host_root, monkeypatch):
         import session
 
-        monkeypatch.setattr(session, "CLAUDE_ROOT", claude_root)
+        monkeypatch.setattr(session, "HOST_ROOT", host_root)
         session.end_session("test summary", commits_made=False)  # must not raise
 
         month = time.strftime("%Y-%m", time.gmtime())
-        audit_file = claude_root / "audit" / f"{month}.md"
+        audit_file = host_root / "audit" / f"{month}.md"
         assert audit_file.exists()
         assert "Duration:" not in audit_file.read_text()

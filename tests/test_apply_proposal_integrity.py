@@ -6,7 +6,7 @@ Two defects, both observed in session 93:
    tells proposal authors to pass the FULL section text, which includes its own
    heading. Every compliant proposal produced a duplicated heading.
 
-2. CLAUDE_ROOT/skills/<name> is a symlink into YOUK_ROOT/skills, so a SKILL_EDIT
+2. HOST_ROOT/skills/<name> is a symlink into YOUK_ROOT/skills, so a SKILL_EDIT
    writes to a git-tracked file. Nothing committed it and nothing warned, so a branch
    switch silently discarded an applied improvement. That happened, to this repo, to
    the verify quality bars.

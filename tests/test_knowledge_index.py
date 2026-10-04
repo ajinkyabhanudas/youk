@@ -375,7 +375,7 @@ class TestOrgScoreInvariant:
         audit_dir = tmp_path / "audit"
         audit_dir.mkdir()
         monkeypatch.setattr(health, "YOUK_ROOT", tmp_path)
-        monkeypatch.setattr(health, "CLAUDE_ROOT", tmp_path)
+        monkeypatch.setattr(health, "HOST_ROOT", tmp_path)
         monkeypatch.setattr(health, "AUDIT_DIR", audit_dir)
         monkeypatch.setattr(health, "PROPOSALS_FILE", tmp_path / "PENDING.md")
 

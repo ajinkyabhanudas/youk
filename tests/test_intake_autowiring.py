@@ -207,7 +207,7 @@ class TestSessionEndClearsIntakeRan:
 
     def test_intake_ran_deleted_on_session_end(self, youk_root, tmp_path, monkeypatch):
         import session as session_mod
-        monkeypatch.setattr(session_mod, "CLAUDE_ROOT", tmp_path / "claude")
+        monkeypatch.setattr(session_mod, "HOST_ROOT", tmp_path / "claude")
         (tmp_path / "claude" / "audit").mkdir(parents=True)
 
         state_dir = youk_root / "state"

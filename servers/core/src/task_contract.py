@@ -14,7 +14,7 @@ import yaml
 from datetime import datetime, UTC
 from pathlib import Path
 
-CLAUDE_ROOT = Path("/claude")
+from youk_paths import HOST_ROOT
 
 import sys
 sys.path.insert(0, "/shared")
@@ -26,7 +26,7 @@ _CONTRACTS_DIR = YOUK_ROOT / "state" / "task-contracts"
 _RISK_LEDGER = YOUK_ROOT / "state" / "risk-ledger.jsonl"
 _FRAMES_FILE = YOUK_ROOT / "skills" / "adversarial-planning" / "references" / "frames.md"
 _ROUTES_FILE = YOUK_ROOT / "config" / "routes.yaml"
-_AUDIT_DIR = CLAUDE_ROOT / "audit"
+_AUDIT_DIR = HOST_ROOT / "audit"
 
 # CIR-150 item 2 / CIR-151: ESCALATE added to the disposition vocabulary. Distinct
 # from the other four — IN-SCOPE/DEFER/ACCEPT-RISK/N/A all resolve a provocation

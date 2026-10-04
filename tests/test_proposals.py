@@ -27,7 +27,7 @@ def _make_proposal(id: str, project_slug: str = "youk", change_desc: str = "") -
 
 
 class TestAddProposal:
-    def test_add_single(self, youk_root, claude_root):
+    def test_add_single(self, youk_root, host_root):
         import health
         p = _make_proposal("PENDING-001")
         health.add_proposal(p)
@@ -36,7 +36,7 @@ class TestAddProposal:
         assert loaded[0].id == "PENDING-001"
         assert loaded[0].change_description == "change for PENDING-001"
 
-    def test_add_idempotent(self, youk_root, claude_root):
+    def test_add_idempotent(self, youk_root, host_root):
         import health
         p = _make_proposal("PENDING-002")
         health.add_proposal(p)
@@ -44,7 +44,7 @@ class TestAddProposal:
         loaded = health._load_pending_proposals()
         assert len([x for x in loaded if x.id == "PENDING-002"]) == 1
 
-    def test_add_concurrent_no_lost_writes(self, youk_root, claude_root):
+    def test_add_concurrent_no_lost_writes(self, youk_root, host_root):
         """Two threads writing different proposals simultaneously must both land."""
         import health
         errors = []
@@ -68,7 +68,7 @@ class TestAddProposal:
         assert "PENDING-T1" in ids
         assert "PENDING-T2" in ids
 
-    def test_add_concurrent_same_id_idempotent(self, youk_root, claude_root):
+    def test_add_concurrent_same_id_idempotent(self, youk_root, host_root):
         """Two threads racing to insert the same ID must result in exactly one row."""
         import health
         p = _make_proposal("PENDING-RACE")
@@ -87,7 +87,7 @@ class TestAddProposal:
 
 
 class TestProjectFiltering:
-    def test_filter_by_project(self, youk_root, claude_root):
+    def test_filter_by_project(self, youk_root, host_root):
         import health
         health.add_proposal(_make_proposal("PENDING-Y1", project_slug="youk"))
         health.add_proposal(_make_proposal("PENDING-C1", project_slug="canopy"))
@@ -102,7 +102,7 @@ class TestProjectFiltering:
         assert len(canopy_props) == 1
         assert len(all_props) == 3
 
-    def test_empty_project_slug_defaults_to_empty_string(self, youk_root, claude_root):
+    def test_empty_project_slug_defaults_to_empty_string(self, youk_root, host_root):
         import health
         p = _make_proposal("PENDING-NOSLUG", project_slug="")
         health.add_proposal(p)
@@ -111,7 +111,7 @@ class TestProjectFiltering:
 
 
 class TestMigration:
-    def test_migration_from_pending_md(self, youk_root, claude_root):
+    def test_migration_from_pending_md(self, youk_root, host_root):
         """Existing PENDING.md rows are migrated to SQLite on first _proposals_conn() call."""
         import health
 
@@ -133,7 +133,7 @@ class TestMigration:
         ids = {p.id for p in loaded}
         assert "PENDING-LEGACY-001" in ids
 
-    def test_migration_idempotent(self, youk_root, claude_root):
+    def test_migration_idempotent(self, youk_root, host_root):
         """Running migration twice must not duplicate rows."""
         import health
 
@@ -154,7 +154,7 @@ class TestMigration:
         loaded = health._load_pending_proposals()
         assert len([p for p in loaded if p.id == "PENDING-IDEM-001"]) == 1
 
-    def test_migration_logged_to_audit(self, youk_root, claude_root):
+    def test_migration_logged_to_audit(self, youk_root, host_root):
         """Migration writes a ProposalMigration entry to audit log."""
         import health
         import datetime as dt
@@ -168,13 +168,13 @@ class TestMigration:
         health._proposals_conn().close()
 
         month = dt.datetime.utcnow().strftime("%Y-%m")
-        audit_file = claude_root / "audit" / f"{month}.md"
+        audit_file = host_root / "audit" / f"{month}.md"
         assert audit_file.exists()
         assert "ProposalMigration" in audit_file.read_text()
 
 
 class TestApplyProposalStatusUpdate:
-    def test_status_updated_atomically(self, youk_root, claude_root, tmp_path):
+    def test_status_updated_atomically(self, youk_root, host_root, tmp_path):
         """apply_proposal marks status APPLIED in SQLite without touching PENDING.md."""
         import health
 
@@ -194,7 +194,7 @@ class TestApplyProposalStatusUpdate:
         applied = [x for x in loaded if x.id == "PENDING-APPLY-001"]
         assert applied[0].status.startswith("APPLIED")
 
-    def test_pending_md_not_written_on_add(self, youk_root, claude_root):
+    def test_pending_md_not_written_on_add(self, youk_root, host_root):
         """add_proposal must NOT write or create PENDING.md — SQLite is the write target."""
         import health
 
@@ -208,7 +208,7 @@ class TestApplyProposalStatusUpdate:
 
 
 class TestRenderView:
-    def test_render_pending_md_produces_markdown(self, youk_root, claude_root):
+    def test_render_pending_md_produces_markdown(self, youk_root, host_root):
         """_render_pending_md returns valid markdown with proposal headers."""
         import health
 

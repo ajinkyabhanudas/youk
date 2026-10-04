@@ -5,7 +5,6 @@ sys.path.insert(0, "/shared")
 
 from schemas import ErrorType
 
-from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from nfr import run_nfr_check
@@ -27,7 +26,7 @@ _p.add_argument("--port", type=int, default=8000)
 _p.add_argument("--host", default="0.0.0.0")
 _server_args, _ = _p.parse_known_args()
 
-CLAUDE_ROOT = Path("/claude")
+from youk_paths import HOST_ROOT
 
 mcp = FastMCP("youk-code", host=_server_args.host, port=_server_args.port)
 
@@ -335,7 +334,7 @@ def get_project_context(project: str) -> str:
     """Return L2 project context file for the named project."""
     # Try common locations
     candidates = [
-        CLAUDE_ROOT / "projects" / f"-Users-ajinkya-Desktop-{project}" / "memory",
+        HOST_ROOT / "projects" / f"-Users-ajinkya-Desktop-{project}" / "memory",
     ]
     for candidate in candidates:
         if candidate.exists():

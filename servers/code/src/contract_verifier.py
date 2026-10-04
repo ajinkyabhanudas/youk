@@ -6,22 +6,24 @@ import os
 import re
 from pathlib import Path
 
+import youk_paths  # servers/shared is on sys.path in both containers
+
 # Repo root is 3 levels up from this file (servers/code/src/contract_verifier.py).
 # This works in CI (repo checkout), in Docker (/claude/youk/servers/...), and locally.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# CLAUDE.md and skills live either in the Docker mount (/claude) or the host ~/.claude.
-# We resolve from YOUK_CLAUDE_ROOT env var first, then Docker, then host ~/.claude.
-_env_root = os.environ.get("YOUK_CLAUDE_ROOT")
-_docker_root = Path("/claude")
+# The host's instructions file and linked skills live in the host config root: the mounted
+# one inside Docker, or (running outside a container) YOUK_HOST_ROOT, else ~/.claude as the
+# local-development default. YOUK_CLAUDE_ROOT is the old name for YOUK_HOST_ROOT.
+_env_root = os.environ.get("YOUK_HOST_ROOT") or os.environ.get("YOUK_CLAUDE_ROOT")
 if _env_root:
-    CLAUDE_ROOT = Path(_env_root)
-elif _docker_root.exists():
-    CLAUDE_ROOT = _docker_root
+    HOST_ROOT = Path(_env_root)
+elif youk_paths.HOST_ROOT.exists():
+    HOST_ROOT = youk_paths.HOST_ROOT
 else:
-    CLAUDE_ROOT = Path.home() / ".claude"
+    HOST_ROOT = Path.home() / ".claude"
 
-SKILLS_ROOT = CLAUDE_ROOT / "skills"
+SKILLS_ROOT = youk_paths.skills_dir(HOST_ROOT, _REPO_ROOT)
 
 # Server files: always resolve from repo root — works in CI, Docker, and local dev.
 _SERVER_FILES = {
@@ -142,9 +144,10 @@ def verify_contracts() -> dict:
 
     # 2 — collect all call sites
     call_sources: list[Path] = []
-    claude_md = CLAUDE_ROOT / "CLAUDE.md"
-    if claude_md.exists():
-        call_sources.append(claude_md)
+    for name in sorted(set(youk_paths.INSTRUCTIONS_FILES.values())):
+        instructions = HOST_ROOT / name
+        if instructions.exists():
+            call_sources.append(instructions)
     call_sources.extend(_collect_skill_files())
 
     # Every registered name across both servers, so unprefixed references can be
@@ -180,7 +183,7 @@ def verify_contracts() -> dict:
                 "severity": "HIGH",
                 "server": server,
                 "tool": tool,
-                "file": str(src.relative_to(CLAUDE_ROOT) if src.is_relative_to(CLAUDE_ROOT) else src),
+                "file": str(src.relative_to(HOST_ROOT) if src.is_relative_to(HOST_ROOT) else src),
                 "detail": detail,
             })
             missing_tools.append({"server": server, "tool": tool, "referenced_in": str(src)})

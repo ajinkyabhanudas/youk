@@ -73,13 +73,13 @@ def youk_root(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def claude_root(tmp_path, monkeypatch):
-    """Isolated CLAUDE_ROOT (audit dir etc) pointing to a tmp directory."""
+def host_root(tmp_path, monkeypatch):
+    """Isolated HOST_ROOT (audit dir etc) pointing to a tmp directory."""
     root = tmp_path / "claude"
     (root / "audit").mkdir(parents=True)
 
     import health
-    monkeypatch.setattr(health, "CLAUDE_ROOT", root)
+    monkeypatch.setattr(health, "HOST_ROOT", root)
     monkeypatch.setattr(health, "AUDIT_DIR", root / "audit")
 
     return root

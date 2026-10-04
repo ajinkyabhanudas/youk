@@ -99,7 +99,7 @@ class TestDetectExperimentGapsWithExisting:
 
 @pytest.mark.skipif(not _MCP_AVAILABLE, reason="mcp<2 with FastMCP API not installed — CI installs it")
 class TestScanExperimentGapsTool:
-    def test_first_scan_adds_all_and_persists_review_required(self, youk_root, claude_root):
+    def test_first_scan_adds_all_and_persists_review_required(self, youk_root, host_root):
         server = _import_core_server()
         import health
 
@@ -115,7 +115,7 @@ class TestScanExperimentGapsTool:
         assert len(exp_proposals) == len(EXPERIMENT_GAP_CANDIDATES)
         assert all(p.review_required is True for p in exp_proposals)
 
-    def test_second_scan_is_idempotent(self, youk_root, claude_root):
+    def test_second_scan_is_idempotent(self, youk_root, host_root):
         server = _import_core_server()
         import health
 
@@ -130,7 +130,7 @@ class TestScanExperimentGapsTool:
         exp_proposals = [p for p in stored if p.change_type == "EXPERIMENT_PROPOSAL"]
         assert len(exp_proposals) == len(EXPERIMENT_GAP_CANDIDATES)
 
-    def test_apply_proposal_blocks_without_review_override(self, youk_root, claude_root):
+    def test_apply_proposal_blocks_without_review_override(self, youk_root, host_root):
         """The safety property this whole phase depends on: even an explicit apply
         call, with no safe_types restriction at all, cannot land an experiment
         proposal without a human passing review_required_override=True."""

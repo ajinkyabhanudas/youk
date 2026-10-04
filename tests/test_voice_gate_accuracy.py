@@ -218,7 +218,7 @@ class TestNoFalsePositives:
             "- project_detection.py: _detect_project_type/purpose/stack_context, PURPOSE maps\n"
             "- git_context.py: all subprocess git-log helpers, deploy freshness, commit counting\n"
             "- knowledge_loader.py: _load_l2_context, _scan_project_context_files\n"
-            "- state_paths.py: adds CLAUDE_ROOT, HOST_HOME constants and resolve_project_path()\n"
+            "- state_paths.py: adds HOST_ROOT, HOST_HOME constants and resolve_project_path()\n"
             "- session.py: imports from new modules; adds _sync_sp() to keep constants in sync\n"
             "- test_pending_build_task.py: import and monkeypatch targets updated for git_context"
         )
@@ -251,7 +251,7 @@ class TestVoiceAuditColonFilter:
             "- project_detection.py: purpose detection, stack context\n"
             "- git_context.py: git-log helpers, deploy freshness\n"
             "- knowledge_loader.py: L2 context, project file scan\n"
-            "- state_paths.py: CLAUDE_ROOT, HOST_HOME constants\n"
+            "- state_paths.py: HOST_ROOT, HOST_HOME constants\n"
             "- session.py: imports from new modules, _sync_sp() added\n"
         )
         fake_log = f"abc1234\x1frefactor: extract modules\x1f{colon_heavy_body}\x1f---END---"

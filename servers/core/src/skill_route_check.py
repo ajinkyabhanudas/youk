@@ -47,7 +47,7 @@ def _referenced_skills(claude_md: Path) -> set[str]:
     return {_normalize(n) for n in _ROUTE_PATTERN.findall(text)}
 
 
-def check_skill_routes(claude_root: Path, youk_root: Path | None = None) -> dict:
+def check_skill_routes(host_root: Path, youk_root: Path | None = None) -> dict:
     """Resolve every skill CLAUDE.md routes to.
 
     Returns {checked, unresolvable, empty, healthy, message}. Never raises: a health
@@ -59,8 +59,8 @@ def check_skill_routes(claude_root: Path, youk_root: Path | None = None) -> dict
     have different fixes: one is an install problem, the other an authoring problem.
     """
     try:
-        claude_md = claude_root / "CLAUDE.md"
-        skills_dir = claude_root / "skills"
+        claude_md = host_root / "CLAUDE.md"
+        skills_dir = host_root / "skills"
         referenced = sorted(_referenced_skills(claude_md))
 
         if not referenced:

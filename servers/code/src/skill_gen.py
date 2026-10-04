@@ -8,9 +8,9 @@ sys.path.insert(0, "/shared")
 from skill_loader import load_skill, list_skills
 
 YOUK_ROOT = Path("/youk")
-CLAUDE_ROOT = Path("/claude")
-SKILLS_DIR = CLAUDE_ROOT / "skills"
-AUDIT_DIR = CLAUDE_ROOT / "audit"
+from youk_paths import HOST_ROOT
+SKILLS_DIR = HOST_ROOT / "skills"
+AUDIT_DIR = HOST_ROOT / "audit"
 
 
 # ── Knowledge loading ───────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ def _load_cross_project_knowledge() -> str:
 
 
 def _load_stack_overlay_schema() -> str:
-    path = CLAUDE_ROOT / "skills" / "stack-overlay-schema.md"
+    path = HOST_ROOT / "skills" / "stack-overlay-schema.md"
     return path.read_text() if path.exists() else ""
 
 

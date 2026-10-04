@@ -99,7 +99,7 @@ class TestKillCriterionFlagIsRealConsequence:
             )
         return "\n".join(blocks)
 
-    def test_flag_written_when_fourth_consecutive_low_week_lands(self, youk_root, claude_root):
+    def test_flag_written_when_fourth_consecutive_low_week_lands(self, youk_root, host_root):
         from health import _compute_improvement_velocity, _score_org
 
         now = datetime.now(UTC)
@@ -126,7 +126,7 @@ class TestKillCriterionFlagIsRealConsequence:
         assert flag["triggered"] is True
         assert flag["metric"] == "skill_invocation_rate"
 
-    def test_flag_cleared_when_rate_recovers(self, youk_root, claude_root):
+    def test_flag_cleared_when_rate_recovers(self, youk_root, host_root):
         from health import _compute_improvement_velocity, _score_org
 
         flag_file = youk_root / "state" / "kill-criterion-triggered.json"
@@ -142,7 +142,7 @@ class TestKillCriterionFlagIsRealConsequence:
         assert result["kill_criterion_triggered"] is False
         assert not flag_file.exists()
 
-    def test_not_triggered_with_no_history_at_all(self, youk_root, claude_root):
+    def test_not_triggered_with_no_history_at_all(self, youk_root, host_root):
         from health import _compute_improvement_velocity, _score_org
 
         audit = self._audit_with([{"skills": "none", "close_cluster": False}])

@@ -65,7 +65,7 @@ class TestBundleContents:
             scope="HEALTH",
             notes="test",
             youk_root=review_root,
-            claude_root=ap_skill_root,
+            host_root=ap_skill_root,
             health_data=_STUB_HEALTH,
         )
         assert result.get("blocked") is not True, f"Unexpected block: {result}"
@@ -83,7 +83,7 @@ class TestBundleContents:
         result = _build_review_bundle(
             scope="INVALID",
             youk_root=review_root,
-            claude_root=ap_skill_root,
+            host_root=ap_skill_root,
             health_data=_STUB_HEALTH,
         )
         assert result.get("blocked") is True
@@ -98,7 +98,7 @@ class TestManifestR10Labels:
         result = _build_review_bundle(
             scope="HEALTH",
             youk_root=review_root,
-            claude_root=ap_skill_root,
+            host_root=ap_skill_root,
             health_data=_STUB_HEALTH,
         )
         manifest = (Path(result["folder_path"]) / "MANIFEST.md").read_text()
@@ -117,7 +117,7 @@ class TestManifestR10Labels:
         result = _build_review_bundle(
             scope="HEALTH",
             youk_root=review_root,
-            claude_root=ap_skill_root,
+            host_root=ap_skill_root,
             health_data=health_with_rates,
         )
         manifest = (Path(result["folder_path"]) / "MANIFEST.md").read_text()
@@ -145,7 +145,7 @@ class TestOrgScoreUnchanged:
         h._build_review_bundle(
             scope="HEALTH",
             youk_root=review_root,
-            claude_root=ap_skill_root,
+            host_root=ap_skill_root,
             health_data=_STUB_HEALTH,
         )
         assert len(score_calls) == before, (
@@ -161,7 +161,7 @@ class TestRubricCopy:
         result = _build_review_bundle(
             scope="HEALTH",
             youk_root=review_root,
-            claude_root=ap_skill_root,
+            host_root=ap_skill_root,
             health_data=_STUB_HEALTH,
         )
         rubric = (Path(result["folder_path"]) / "RUBRIC.md").read_text()
@@ -175,7 +175,7 @@ class TestRubricCopy:
         result = _build_review_bundle(
             scope="HEALTH",
             youk_root=review_root,
-            claude_root=ap_skill_root,
+            host_root=ap_skill_root,
             health_data=_STUB_HEALTH,
         )
         rubric = (Path(result["folder_path"]) / "RUBRIC.md").read_text()
