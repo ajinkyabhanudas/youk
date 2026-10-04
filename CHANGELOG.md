@@ -10,6 +10,21 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ## [Unreleased]
 
+### Added
+
+- OpenAI-compatible provider for `optimize_intent` (OpenAI, Ollama, vLLM, LM Studio, gateways), stdlib
+  HTTP, no redirects, tested against a real local stub server. Local hosts need no key.
+- `scripts/configure_inference.py` (`--provider`, `--model`, `--base-url`, `--key-from-env|--key-stdin`,
+  `--show`, `--check`). Keys live in `state/inference-keys/<provider>.key` (0600); config stays credential-free.
+  `install.sh` seeds the Anthropic key from `ANTHROPIC_API_KEY` on first install only; `doctor.sh` runs `--check`.
+
+### Fixed (credentials)
+
+- Docs claimed `install.sh` wired the host's sign-in into the containers. It never did: containers
+  receive no host environment and nothing read `~/.claude/.anthropic/api_key`. Claims removed; the key
+  now reaches containers through `state/inference-keys/`. `scripts/doctor.sh` no longer reports the
+  sign-in file as "auto-mounted".
+
 ### Fixed
 
 - `youk://context/{project}` read one host's per-project memory folder at a path containing the

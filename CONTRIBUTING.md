@@ -15,7 +15,7 @@ Skills (`skills/*/SKILL.md`) and knowledge files are plain markdown — no build
 - Docker Desktop 24+
 - Python 3.11+
 
-No API key is required to install or run youk — `install.sh` wires the host's existing auth into the containers (Claude Code today), and youk reads it at runtime.
+No API key is required to install or run youk. The one model call youk makes itself (`optimize_intent`) falls back to a heuristic path without one; to enable it, run `python3 scripts/configure_inference.py` (Anthropic, OpenAI, or any OpenAI-compatible endpoint). The containers do not inherit your host's sign-in.
 
 ## Setup
 

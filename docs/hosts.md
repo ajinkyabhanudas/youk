@@ -79,9 +79,9 @@ selection".
   with Codex.
 - **Project-local skills** are looked up under `<project>/.claude/skills`. Another host's project skill
   folder is not.
-- **The one LLM call youk makes itself** (`optimize_intent`) has a provider seam but only an Anthropic
-  adapter, authenticated by `ANTHROPIC_API_KEY` or a Claude Code sign-in key file. Without a key it
-  falls back to the heuristic path, so every other host works but that call is not model-assisted
-  unless the key is set.
+- **The one LLM call youk makes itself** (`optimize_intent`) runs through a provider seam with
+  Anthropic and OpenAI-compatible adapters (OpenAI, Ollama, vLLM, LM Studio, gateways), configured by
+  `scripts/configure_inference.py`. Without a configured provider it falls back to the heuristic path,
+  so every host works. `scripts/project-research.py` still calls the Anthropic client directly.
 - **File names.** `docs/claude-md-template.md` and the `claude_md` field in session state keep their
   names; the content is host-neutral.
