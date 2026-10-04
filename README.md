@@ -127,12 +127,15 @@ flowchart LR
     D[Project decision records] --> B[Domain Brief per project]
     B --> E[Invariants matched to this task by vocabulary, every task]
     E --> P[Evidence block for sizing, edge-case review]
+    S --> R[Lessons similar to this task, above a floor]
+    R --> P
     H[Past sizing decisions] --> P
 ```
 
 - **Lessons and contracts (live).** Promoted across projects with the guards above.
-  The gap: they are loaded wholesale at session start and capped at the newest 50, not
-  retrieved for the task at hand. The structured store has no retrieval caller yet.
+  Lessons similar to the task are now retrieved into the sizing evidence block (and the
+  count logged). The session-start load is still wholesale, capped at the newest 50, so
+  older lessons drop by age rather than relevance.
 - **Domain Brief (live for youk's own repo).** The stable model is reused; which
   invariants apply is decided fresh for each task, so a past task cannot bias a later one.
   It is only used when the brief was built for the current project.

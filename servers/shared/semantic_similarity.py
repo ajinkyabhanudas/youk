@@ -102,6 +102,15 @@ def cluster_by_similarity(texts: list[str], threshold: float = _SIMILARITY_THRES
 TASK_RELEVANCE_FLOOR = 0.30
 
 
+# Relevance floor for "does this cross-project lesson bear on this task". A
+# lesson is abstracted and a task is concrete, so their scores run lower than
+# task-to-task pairs; this sits at the lowest true-paraphrase score recorded
+# above (0.39) to favour leaving a lesson out over showing an unrelated one.
+# Recall is unmeasured: it may be too strict. tests/test_task_relevance_floor.py
+# checks precision (no unrelated pair clears it) wherever the model exists.
+LESSON_RELEVANCE_FLOOR = 0.40
+
+
 def _cosine(a: list[float], b: list[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b))
     na = sum(x * x for x in a) ** 0.5

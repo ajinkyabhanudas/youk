@@ -33,6 +33,7 @@
       "description": "What optimize_intent's size estimate was grounded in. 'unavailable' means retrieval could not run and the estimate was made cold. Absent on rows written before this field existed."
     },
     "precedent_count": {"type": "integer", "minimum": 0, "description": "Past sizing decisions placed in the prompt."},
-    "domain_invariant_count": {"type": "integer", "minimum": 0, "description": "Domain Brief invariants placed in the prompt."}
+    "domain_invariant_count": {"type": "integer", "minimum": 0, "description": "Domain Brief invariants placed in the prompt."},
+    "lesson_count": {"type": "integer", "minimum": 0, "description": "Cross-project lessons from state/global-patterns.jsonl placed in the prompt."}
   }
 }

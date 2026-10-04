@@ -51,3 +51,23 @@ def test_floor_separates_related_from_unrelated_tasks(scores):
     detail = f"related min={min(related):.2f} unrelated max={max(unrelated):.2f} floor={floor}"
     assert min(related) >= floor, f"floor drops a related task: {detail}"
     assert max(unrelated) < floor, f"floor admits an unrelated task: {detail}"
+
+
+# (task, lesson): an abstracted lesson that does NOT bear on the task.
+UNRELATED_LESSONS = [
+    ("add a dark mode toggle to settings", "Retrying a flaky test without root-causing it hides a real bug."),
+    ("rename a variable in the parser", "Rotate credentials on a fixed schedule, not only after an incident."),
+    ("fix a typo in the README", "A database migration must be reversible before it ships."),
+    ("speed up the search endpoint", "Release notes should name the user-visible change first."),
+    ("write tests for the login handler", "Pin the base image digest, not just its tag."),
+    ("update the footer link colours", "Idempotency keys must be stored before the side effect runs."),
+]
+
+
+def test_lesson_floor_admits_no_unrelated_lesson(scores):
+    sim = semantic_similarity.similarity
+    worst = max(sim(task, lesson) for task, lesson in UNRELATED_LESSONS)
+    assert worst < semantic_similarity.LESSON_RELEVANCE_FLOOR, (
+        f"an unrelated lesson scores {worst:.2f}, at or above LESSON_RELEVANCE_FLOOR "
+        f"{semantic_similarity.LESSON_RELEVANCE_FLOOR}"
+    )

@@ -37,8 +37,13 @@ Each item says what the evidence supports, what youk does today, and what would 
    entries the oldest are dropped by age, not relevance, and every session pays for all 50.
    `pattern_promotion.query_global_patterns` filters by domain but has no live caller.
    ExpeL (retrieve similar) and the RAG-vs-long-context result (retrieve a slice) both point
-   the other way. Done when: `route_task` ranks `state/global-patterns.jsonl` against the task
-   with `rank_by_similarity` and a floor, shows the top few, and logs how many it showed.
+   the other way. Partly done: the sizing evidence block in `optimize_intent` now ranks
+   `state/global-patterns.jsonl` against the task with `rank_by_similarity`, shows up to three
+   above `LESSON_RELEVANCE_FLOOR` (0.40), and logs `lesson_count`. The floor's precision is
+   checked in CI; its recall is unmeasured and may be too strict. Still open: the session-start
+   load of the newest 50 is unchanged, and `route_task` output does not carry lessons. Done
+   when: that wholesale load is replaced by per-task retrieval and the floor is tuned from
+   logged `lesson_count` against real tasks.
 2. **Record where a promoted learning came from.** `promote_to_global_contracts` writes
    `confirmed_count=2` and `provenance=[{"project": "cross-project"}]` for every entry, so the
    count is a constant and the source projects are lost. ExpeL's up/down-voting and ACE's

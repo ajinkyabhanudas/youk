@@ -29,6 +29,8 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 - `optimize_intent` places similar sizing precedent and the current project's Domain Brief
   invariants after the task text and records what evidence was shown (`grounding_status`,
   `precedent_count`, `domain_invariant_count` on each sizing row).
+- The sizing evidence block also includes promoted cross-project lessons similar to the task
+  (`lesson_count` is logged on each sizing row).
 - Providers return `GenerationResult`; `intent.py` no longer reads Anthropic's response object.
 - `/health` reports cold sizing estimates and frequent keyword-scorer overrides.
 - Added `docs/research-basis.md`.

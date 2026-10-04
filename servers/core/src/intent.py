@@ -423,17 +423,40 @@ def _current_project_slug() -> str:
     return "" if slug == "unknown" else slug
 
 
+def _relevant_global_patterns(task: str, path: Path, limit: int = 3) -> list[dict]:
+    """Cross-project lessons whose statement bears on this task, best first.
+    Which lessons apply is decided fresh per task by similarity; nothing about
+    relevance is stored. Raises if the embedding model is needed and absent."""
+    from jsonl_lock import locked_jsonl_read_all
+    from semantic_similarity import LESSON_RELEVANCE_FLOOR, rank_by_similarity
+
+    seen: set[str] = set()
+    rows: list[dict] = []
+    for r in locked_jsonl_read_all(path):
+        stmt = r.get("statement")
+        if r.get("scope") == "global" and isinstance(stmt, str) and stmt.strip():
+            key = stmt.strip().lower()
+            if key not in seen:
+                seen.add(key)
+                rows.append(r)
+    ranked = rank_by_similarity(
+        task, [r["statement"] for r in rows], min_score=LESSON_RELEVANCE_FLOOR, limit=limit
+    )
+    return [rows[i] for i, _ in ranked]
+
+
 def _sizing_grounding(
     raw_input: str, log_path: Path | None = None, brief_path: Path | None = None,
-    project_slug: str | None = None,
+    project_slug: str | None = None, patterns_path: Path | None = None,
 ) -> tuple[str, dict]:
     """Evidence for the estimated_size / scope judgment, plus a record of what
     was actually supplied.
 
-    A size guessed with nothing in front of the model is a cold guess. Two
+    A size guessed with nothing in front of the model is a cold guess. Three
     kinds of retrieved evidence are appended to the END of the final user
-    message: similar past sizing decisions, and the project's Domain Brief
-    invariants whose vocabulary overlaps this task. Placement: Liu et al., "Lost in the Middle" (TACL 2024), found accuracy
+    message: similar past sizing decisions, the project's Domain Brief
+    invariants whose vocabulary overlaps this task, and promoted cross-project
+    lessons similar to this task. Placement: Liu et al., "Lost in the Middle" (TACL 2024), found accuracy
     highest when relevant information is at the start or end of a long context
     and lower in the middle. That was measured on long multi-document inputs;
     it does not show the end beating the start, nor cover a short block like
@@ -444,7 +467,7 @@ def _sizing_grounding(
     Returns (block, info). info["status"] is "grounded", "no_evidence", or
     "unavailable" (retrieval failed, so the estimate is cold) -- the caller
     logs it so cold estimates are visible rather than silent."""
-    info: dict = {"status": "no_evidence", "precedent_count": 0, "domain_invariant_count": 0}
+    info: dict = {"status": "no_evidence", "precedent_count": 0, "domain_invariant_count": 0, "lesson_count": 0}
     sections: list[str] = []
     unavailable = False
 
@@ -483,6 +506,19 @@ def _sizing_grounding(
             lines.append(f"- [{inv['bounded_context']}] {inv['invariant'][:160]} ({inv['source_id']})")
         sections.append("\n".join(lines))
         info["domain_invariant_count"] = len(invariants)
+
+    try:
+        lessons = _relevant_global_patterns(
+            raw_input, patterns_path or (YOUK_ROOT / "state" / "global-patterns.jsonl")
+        )
+    except Exception:
+        lessons, unavailable = [], True
+    if lessons:
+        sections.append(
+            "Lessons that held across projects and overlap this task:\n"
+            + "\n".join(f"- {r['statement'][:200]}" for r in lessons)
+        )
+        info["lesson_count"] = len(lessons)
 
     if not sections:
         if unavailable:

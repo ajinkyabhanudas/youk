@@ -65,7 +65,7 @@ def test_past_model_undersizing_is_fed_back_into_the_prompt(bag_model, tmp_path)
     block, info = intent._sizing_grounding("redesign the architecture for the billing system",
                                            log_path=log, brief_path=tmp_path / "none.json")
     assert "the model first estimated S; keyword scoring raised it" in block
-    assert info == {"status": "grounded", "precedent_count": 1, "domain_invariant_count": 0}
+    assert info == {"status": "grounded", "precedent_count": 1, "domain_invariant_count": 0, "lesson_count": 0}
 
 
 def test_retrieval_failure_is_reported_not_silent(monkeypatch, tmp_path):
@@ -292,3 +292,53 @@ def test_a_brief_for_another_or_unknown_project_is_not_used(tmp_path):
         block, info = intent._sizing_grounding("change contract promotion", log_path=tmp_path / "none.jsonl",
                                                brief_path=brief, project_slug=slug)
         assert block == "" and info["domain_invariant_count"] == 0
+
+
+# --- reusable learnings: promoted lessons are retrieved per task ----------------
+
+def _patterns(tmp_path, statements, scope="global"):
+    p = tmp_path / "global-patterns.jsonl"
+    p.write_text("".join(json.dumps({"scope": scope, "statement": s}) + "\n" for s in statements))
+    return p
+
+
+def test_relevant_lessons_reach_the_prompt_and_unrelated_ones_do_not(bag_model, tmp_path, monkeypatch):
+    monkeypatch.setattr(semantic_similarity, "LESSON_RELEVANCE_FLOOR", 0.3)
+    patterns = _patterns(tmp_path, [
+        "retry logic for the file uploader needs a backoff cap",
+        "rotate secrets quarterly",
+    ])
+    block, info = intent._sizing_grounding(
+        "add retry logic to the file uploader", log_path=tmp_path / "none.jsonl",
+        brief_path=tmp_path / "none.json", patterns_path=patterns,
+    )
+    assert "retry logic for the file uploader needs a backoff cap" in block
+    assert "rotate secrets" not in block
+    assert info["lesson_count"] == 1 and info["status"] == "grounded"
+
+
+def test_only_global_promoted_lessons_are_used_and_duplicates_collapse(bag_model, tmp_path, monkeypatch):
+    monkeypatch.setattr(semantic_similarity, "LESSON_RELEVANCE_FLOOR", 0.3)
+    p = tmp_path / "global-patterns.jsonl"
+    rows = [{"scope": "local", "statement": "retry logic for the uploader"},
+            {"scope": "global", "statement": "Retry logic for the uploader"},
+            {"scope": "global", "statement": "retry logic for the uploader"}]
+    p.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    found = intent._relevant_global_patterns("add retry logic to the uploader", p)
+    assert [r["statement"] for r in found] == ["Retry logic for the uploader"]
+
+
+def test_no_patterns_file_is_a_normal_state_not_an_unavailable_one(tmp_path):
+    block, info = intent._sizing_grounding(
+        "anything", log_path=tmp_path / "none.jsonl", brief_path=tmp_path / "none.json",
+        project_slug="", patterns_path=tmp_path / "missing.jsonl",
+    )
+    assert block == "" and info["status"] == "no_evidence"
+
+
+def test_lesson_count_is_logged(tmp_path):
+    log = tmp_path / "s.jsonl"
+    log_sizing_decision(task="t", deterministic_size="M", llm_estimated_size="M", resolved_size="M",
+                        mismatch_flag=False, log_path=log,
+                        grounding={"status": "grounded", "lesson_count": 2})
+    assert json.loads(log.read_text())["lesson_count"] == 2
