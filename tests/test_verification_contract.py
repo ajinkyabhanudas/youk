@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from host_inventory import scan as scan_host_graph
@@ -396,6 +397,83 @@ class TestStageGraph:
             gate_claim_done(path, preferred_rework_stage=Stage.RESEARCH)
 
 
+class TestGateClaimDoneRequireIndependentReview:
+    """The Self-Confirmation Trap (an agent verifying its own work shares
+    that work's blind spots) applies to code claims the same way
+    externally_verified already addresses it for research claims. These
+    tests prove require_independent_review actually enforces that, not
+    just that the parameter exists."""
+
+    def _all_verified_claim(self):
+        claim = build_claim("youk is agent-agnostic", "host", _FAKE_GRAPH)
+        for sc in claim.sub_claims:
+            sc.status = "verified"
+        return claim
+
+    def test_passes_when_independent_review_not_required(self, tmp_path):
+        claim = self._all_verified_claim()
+        path = write_claim(tmp_path, claim)
+        assert gate_claim_done(path) is None
+
+    def test_blocks_when_required_and_nothing_is_externally_verified(self, tmp_path):
+        claim = self._all_verified_claim()
+        path = write_claim(tmp_path, claim)
+        verdict = gate_claim_done(path, require_independent_review=True)
+        assert verdict is not None
+        assert verdict["reason"] == "no_independent_review"
+        assert "externally_verified" in verdict["message"]
+
+    def test_passes_once_one_sub_claim_is_genuinely_externally_verified(self, tmp_path):
+        claim = self._all_verified_claim()
+        mark_externally_verified(claim, claim.sub_claims[0].id)
+        path = write_claim(tmp_path, claim)
+        assert gate_claim_done(path, require_independent_review=True) is None
+
+    def test_internally_checked_alone_does_not_satisfy_the_requirement(self, tmp_path):
+        """internally_checked (a grep hit in the same session) is exactly
+        the self-confirmation this requirement exists to refuse -- it must
+        not silently satisfy it."""
+        claim = self._all_verified_claim()
+        for sc in claim.sub_claims:
+            assert sc.verification_level in ("asserted", "internally_checked")
+        path = write_claim(tmp_path, claim)
+        verdict = gate_claim_done(path, require_independent_review=True)
+        assert verdict is not None
+
+    def test_an_l_sized_claim_requires_independent_review_automatically(self, tmp_path):
+        """An XL/L claim self-verifying its own work is the trap every
+        time, not an occasional risk -- the claim's own size requires this,
+        the caller does not need to opt in separately."""
+        claim = self._all_verified_claim()
+        claim.size = "L"
+        path = write_claim(tmp_path, claim)
+        verdict = gate_claim_done(path)  # require_independent_review not passed at all
+        assert verdict is not None
+        assert verdict["reason"] == "no_independent_review"
+
+    def test_an_xl_sized_claim_passes_once_independently_reviewed(self, tmp_path):
+        claim = self._all_verified_claim()
+        claim.size = "XL"
+        mark_externally_verified(claim, claim.sub_claims[0].id)
+        path = write_claim(tmp_path, claim)
+        assert gate_claim_done(path) is None
+
+    def test_a_small_claim_does_not_require_independent_review_by_default(self, tmp_path):
+        claim = self._all_verified_claim()
+        claim.size = "S"
+        path = write_claim(tmp_path, claim)
+        assert gate_claim_done(path) is None
+
+    def test_an_unspecified_size_does_not_require_independent_review(self, tmp_path):
+        """A claim predating this field (size="") must not suddenly block
+        on every session that never set it -- additive, not a silent
+        regression on old claims."""
+        claim = self._all_verified_claim()
+        assert claim.size == ""
+        path = write_claim(tmp_path, claim)
+        assert gate_claim_done(path) is None
+
+
 class TestReworkLoop:
     def test_fully_verified_on_first_round_exits_dry_with_no_rework(self, tmp_path):
         graph = {"compaction_context": _FAKE_GRAPH["compaction_context"]}
@@ -527,7 +605,7 @@ class TestVerificationLevel:
 
 
 class TestVerificationLevelMigration:
-    def _write_legacy_claim_file(self, tmp_path) -> "Path":
+    def _write_legacy_claim_file(self, tmp_path) -> Path:
         """A claim file shaped exactly like CIR-154/155/156's real claim
         files on disk before verification_level existed -- no key at all on
         any sub_claim."""

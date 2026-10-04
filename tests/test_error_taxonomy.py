@@ -1,6 +1,5 @@
 """Tests for error taxonomy, retry classification, and side effect declaration."""
 from __future__ import annotations
-import pytest
 
 
 class TestErrorType:
@@ -112,7 +111,7 @@ class TestSaveContractErrorType:
         conflicts: list = []
         base: dict = {
             "saved": added > 0,
-            "state_written": [f"knowledge/projects/test/contracts.md"] if added > 0 else [],
+            "state_written": ["knowledge/projects/test/contracts.md"] if added > 0 else [],
             "contract": "always run ruff check before committing",
             "slug": "test",
             "contracts_file": "knowledge/projects/test/contracts.md",

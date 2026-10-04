@@ -43,7 +43,7 @@ from challenge_gate import check_challenge_gate as _check_challenge_gate
 from ceremony_sequencer import record_gate as _record_gate, check_order as _check_order
 from intake_gate import check_intake_gate as _check_intake_gate
 from intent import optimize_intent as _optimize_intent
-from compaction import build_brief, write_contracts, _slug as _project_slug
+from compaction import build_brief, write_contracts
 from tokens import init_token_tracker, record_checkpoint
 from session_slug import get_session_slug as _get_session_slug_impl
 import state_paths as _sp
@@ -1305,9 +1305,17 @@ def self_heal(research_mode: bool = False) -> dict:
 
     Returns: org_score, sessions_analyzed, findings, proposals_count,
              skill_gap_signals (if any — skills needing evolution),
-             research_topics (if research_mode=True and gaps exist).
+             research_topics (if research_mode=True and gaps exist),
+             proposal_backlog_gate ({blocked, count, reason} — real pending-
+             proposal count checked deterministically, not left to a model
+             noticing it; blocked=True means run proposal-review).
     """
-    return run_health_check_with_skill_signals(research_mode=research_mode)
+    result = run_health_check_with_skill_signals(research_mode=research_mode)
+    try:
+        result["proposal_backlog_gate"] = check_proposal_backlog_gate()
+    except Exception:
+        pass
+    return result
 
 
 @mcp.tool()
@@ -1434,7 +1442,9 @@ def get_proposals(project_slug: str | None = None) -> dict:
             project_slug = "youk"
 
     # Pass slug to DB for efficient filtering; empty string = fetch all projects
+    from health import is_still_pending as _is_still_pending
     proposals = _load_pending_proposals(project_slug if project_slug else None)
+    proposals = [p for p in proposals if _is_still_pending(p)]
 
     # Legacy in-memory filter: normalize empty project_slug to "youk" for old rows
     if project_slug:
@@ -1461,6 +1471,31 @@ def get_proposals(project_slug: str | None = None) -> dict:
             for p in proposals
         ],
     }
+
+
+@mcp.tool()
+def check_proposal_backlog_gate(threshold: int = 3) -> dict:
+    """
+    Deterministic check: is the real pending-proposal count at or above the
+    threshold proposal-review's own trigger names ("any session where
+    get_proposals() returns >= 3 PENDING items")? That trigger was advisory
+    text in a SKILL.md with nothing checking the count -- a real 23-item
+    backlog, including two proposals open since 2026-09, accumulated because
+    nothing ever ran this check. Call at self_heal or session_start, not only
+    when a model happens to notice the count.
+
+    Returns: {"blocked": bool, "count": int, "reason": str}
+    blocked=True: run proposal-review before treating the backlog as clear.
+    """
+    result = get_proposals(project_slug="")
+    count = result["count"]
+    if count >= threshold:
+        return {
+            "blocked": True,
+            "count": count,
+            "reason": f"{count} pending proposals >= threshold {threshold} -- run proposal-review.",
+        }
+    return {"blocked": False, "count": count, "reason": ""}
 
 
 @mcp.tool()
@@ -1738,38 +1773,6 @@ def compact_context(project_dir: str, intent: str = "") -> dict:
 
 
 @mcp.tool()
-def checkpoint_now(project_dir: str, note: str, agent: str = "") -> dict:
-    """
-    Write a cheap, one-line save point between full checkpoints.
-
-    compact_context/task_checkpoint/session_end are heavy and only fire at big
-    moments. Between them, a decision made only in conversation is invisible to
-    a fresh session and lost entirely if the session ends without warning (a
-    usage limit, an agent switch mid-task) — nothing in youk can see that coming
-    in advance, so the fix is making saves cheap enough to call constantly
-    instead of trying to predict the cutoff.
-
-    Call this after any non-trivial decision or sub-goal change — not on every
-    tool call, but whenever losing this specific line would mean re-deriving
-    work. The note is surfaced once, automatically, at the next full checkpoint
-    (session_start, compact_context, task_checkpoint) in either Claude or Codex,
-    then consumed — it will not repeat.
-
-    project_dir: The current project directory (same as session_start).
-    note: One line — the current sub-goal or decision, not a transcript excerpt.
-          Rejected if empty or over 280 chars; write the concrete version, not
-          a paraphrase of the conversation.
-    agent: Optional — "claude" or "codex", so the next session/agent to read
-           this knows whether it's its own trail or a handoff from the other.
-
-    Returns: {ok, written, pending, state_written} or {ok: False, error_type, error}.
-    """
-    from turn_checkpoint import write_note as _write_checkpoint_note
-    slug = _project_slug(project_dir)
-    return _write_checkpoint_note(YOUK_ROOT, slug, note, agent=agent)
-
-
-@mcp.tool()
 def track_tokens(
     input_tokens: int,
     output_tokens: int,
@@ -1910,23 +1913,29 @@ def get_interpretation() -> str:
 def get_proposals_resource() -> str:
     """Pending self-heal proposals (rendered from SQLite store)."""
     from health import _load_pending_proposals, _render_pending_md
-    proposals = _load_pending_proposals()
-    pending_only = [p for p in proposals if p.status == "PENDING"]
+    pending_only = _load_pending_proposals()
     if not pending_only:
         return "No pending proposals."
     return _render_pending_md(pending_only)
 
 
 @mcp.tool()
-def promote_to_global_contracts(contracts: list[str]) -> dict:
+def promote_to_global_contracts(contracts: list[str], domain: str, sub_domain: str) -> dict:
     """Promote confirmed cross-project patterns to the user's global intelligence layer.
 
-    Appends to knowledge/global/contracts.md — loaded on every future project start.
-    Deduplicates case-insensitively. Returns {promoted: N, skipped: N, conflicts: [...]}.
+    Writes tagged PatternEntry rows to state/global-patterns.jsonl, queryable
+    via query_global_patterns by domain/sub_domain. domain/sub_domain are real
+    classification for THIS batch, named by the caller, never inferred -- a
+    batch spanning genuinely different topics should be split into separate
+    calls. knowledge/global/contracts.md is regenerated as a human-readable
+    view of the structured store, grouped by domain -- never hand-edited.
+
+    Deduplicates by exact statement match. Returns {promoted: N, skipped: N,
+    conflicts: [...], leak_blocked: [...]}.
     Call after confirming candidates from self_heal()'s global_pattern_candidates field.
     """
     from global_contracts import promote_to_global_contracts as _promote
-    return _promote(contracts, YOUK_ROOT)
+    return _promote(contracts, YOUK_ROOT, domain, sub_domain)
 
 
 @mcp.tool()
@@ -2430,66 +2439,6 @@ def render_coverage_view(
         "angles_missing": len(gaps),
         "state_written": [],
     }
-
-
-@mcp.tool()
-def admit_comprehension_item(kind: str, takeaway: str, context: str = "") -> dict:
-    """
-    Record one load-bearing item for the comprehension channel.
-
-    output_channels defines the two-channel split — execution reasoning collapses to one
-    glanceable line, and only genuinely load-bearing items reach the human, paced to a
-    boundary rather than fired per step. It shipped with tests and no caller, so the split
-    existed as a data model and changed nothing. This is the write half.
-
-    Items accrue in a project-scoped file and surface only when render_task_view is called.
-    Admitting is cheap and continuous; surfacing is rare and paced. Per-step teaching is
-    the firehose this exists to prevent.
-
-    kind: "tradeoff" (a real decision with a rejected alternative), "foreclosure" (an
-        irreversible door closed, which the human may want to veto), or "pattern" (a
-        reusable pattern worth internalising). These three are the whole filter. If an
-        item is none of them it belongs in the execution channel, not here.
-    takeaway: the one thing the reader's mental model should update with. Capped at 280
-        characters and REJECTED rather than truncated when over: this store holds extracted
-        takeaways, and truncating would quietly let it become a transcript log instead.
-    context: optional pointer to what it attaches to — a file, a decision. Capped at 120.
-
-    Returns: {ok, admitted, pending, state_written} or {ok: False, error_type, error}.
-    admitted=False with ok=True means it duplicated an item already pending, not a failure.
-    """
-    from comprehension_digest import admit as _admit
-    try:
-        slug = _get_session_slug()
-    except Exception:
-        slug = ""
-    return _admit(YOUK_ROOT, kind, takeaway, context, session_slug=slug)
-
-
-@mcp.tool()
-def render_task_view(mark_surfaced: bool = True) -> dict:
-    """
-    Render the pending comprehension items as the paced digest, at a task or session
-    boundary. Surface `view` verbatim; it is pre-rendered.
-
-    Rendering marks items surfaced, it does not delete them. A session that ended without
-    rendering — a crash, a closed tab, a switch to another model mid-task — leaves its
-    items pending, so the next session picks up what the previous one never showed. The
-    file is project-scoped for that reason: a slug-scoped path would be invisible to the
-    next session and the handoff would silently never happen.
-
-    An empty digest renders to an empty string. Nothing load-bearing happened is a valid
-    and common result, and manufacturing teaching where none occurred is the exact failure
-    this channel was built to avoid.
-
-    mark_surfaced: pass False to preview without consuming — the items stay pending.
-
-    Returns: {ok, view, item_count, origin_sessions?, state_written?}.
-    origin_sessions appears when the items came from earlier sessions, so a handoff digest
-    is distinguishable from one this session produced.
-    """
-    from comprehension_digest import render as _render
-    return _render(YOUK_ROOT, mark_surfaced=mark_surfaced)
 
 
 @mcp.tool()

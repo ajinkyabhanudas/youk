@@ -1013,15 +1013,16 @@ def _check_doc_freshness() -> list[str]:
     Returns a combined list of gap strings (capped at 2 concept warnings).
     """
     doc_map_file = YOUK_ROOT / "docs" / "doc-map.yaml"
-    if not doc_map_file.exists():
-        return []
-
     undocumented: list[str] = []
 
-    # Part 1: undocumented MCP tools
+    # Part 1: undocumented MCP tools. Only this part needs doc_map_file --
+    # the absence check is scoped here, not a whole-function early return,
+    # so Parts 2-5c (wiring pulse, pipeline pulse, etc.) still run.
     try:
         import re
         import yaml  # already a dep (health.py uses it)
+        if not doc_map_file.exists():
+            raise FileNotFoundError
         doc_map = yaml.safe_load(doc_map_file.read_text()) or {}
         mcp_tools = doc_map.get("mcp_tools", {})
         mapped_tools: set[str] = set()
@@ -1118,6 +1119,20 @@ def _check_doc_freshness() -> list[str]:
         from wiring_pulse import check_wiring, format_wiring_warnings
         wiring = check_wiring(YOUK_ROOT, CLAUDE_ROOT)
         undocumented.extend(format_wiring_warnings(wiring, cap=5))
+        # The in-session text above is capped at 5; the full result is
+        # recorded here so no orphan depends on a model reading capped text.
+        from jsonl_lock import locked_jsonl_append
+        import json as _json
+        from datetime import UTC as _UTC, datetime as _datetime
+        locked_jsonl_append(
+            YOUK_ROOT / "state" / "wiring-pulse-log.jsonl",
+            _json.dumps({
+                "timestamp": _datetime.now(_UTC).isoformat(),
+                "total": wiring.get("total"),
+                "wired": len(wiring.get("wired", [])) if isinstance(wiring.get("wired"), list) else wiring.get("wired"),
+                "orphaned": wiring.get("orphaned", []),
+            }),
+        )
     except Exception:
         pass
 
@@ -1128,6 +1143,16 @@ def _check_doc_freshness() -> list[str]:
         from pipeline_pulse import check_pipeline_contracts, format_pipeline_warnings
         pipeline = check_pipeline_contracts()
         undocumented.extend(format_pipeline_warnings(pipeline))
+        from jsonl_lock import locked_jsonl_append
+        import json as _json
+        from datetime import UTC as _UTC, datetime as _datetime
+        locked_jsonl_append(
+            YOUK_ROOT / "state" / "pipeline-pulse-log.jsonl",
+            _json.dumps({
+                "timestamp": _datetime.now(_UTC).isoformat(),
+                "contracts": pipeline,
+            }),
+        )
     except Exception:
         pass
 

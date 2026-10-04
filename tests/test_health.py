@@ -1163,6 +1163,30 @@ class TestDetectCrossProjectPatterns:
         # shared1 appears in 3 projects, shared2 in 2 — should be sorted desc
         assert result[0]["count"] >= result[-1]["count"]
 
+    def test_catches_the_same_lesson_phrased_differently(self, youk_root):
+        """The real gap exact-match had: the same lesson, worded closely
+        enough across two projects, used to be invisible. This is the case
+        semantic matching exists to close."""
+        self._write_contracts(youk_root, {
+            "canopy": ["Playwright test screenshots should never be checked into the repo"],
+            "youk": ["never commit screenshot files from Playwright testing"],
+        })
+        from health import _detect_cross_project_patterns
+        result = _detect_cross_project_patterns()
+        assert result
+        assert result[0]["count"] == 2
+
+    def test_does_not_merge_distinct_lessons_sharing_a_theme(self, youk_root):
+        """Two different, real lessons about verification must stay
+        separate -- merging them would corrupt the knowledge base, which is
+        a worse failure than missing a recurrence."""
+        self._write_contracts(youk_root, {
+            "canopy": ["always verify root cause empirically before guessing"],
+            "youk": ["before stating a conclusion, find the evidence that resolves it"],
+        })
+        from health import _detect_cross_project_patterns
+        assert _detect_cross_project_patterns() == []
+
 
 # ── add_proposal deduplication ────────────────────────────────────────────────
 
@@ -1205,6 +1229,45 @@ class TestAddProposal:
         descs = {p.change_description for p in loaded}
         assert "description one" in descs
         assert "description two" in descs
+
+
+class TestProposalBacklogCount:
+    """proposal-review's own SKILL.md trigger is 'any session where
+    get_proposals() returns >= 3 PENDING items' -- real text, never checked
+    deterministically. Worse: get_proposals() applied no status filter at
+    all, so months of real APPLIED/CLOSED history inflated the count to 53
+    when checked live. is_still_pending() is the real fix -- these tests
+    prove it, and that _load_pending_proposals() itself still returns
+    everything (status is free text, not a clean enum)."""
+
+    def _make_proposal(self, id, desc="do X", status="PENDING"):
+        from models import Proposal
+        return Proposal(
+            id=id, target="skills/learn/SKILL.md", change_description=desc,
+            reason="test", before="old", after="new", status=status,
+            proposed_date="2026-07-10", change_type="SKILL_EDIT",
+            target_section="Phase 1", content="new content",
+        )
+
+    def test_count_matches_real_pending_rows(self, youk_root, claude_root):
+        import health
+        for i in range(5):
+            health.add_proposal(self._make_proposal(f"PENDING-BL{i}"))
+        assert len(health._load_pending_proposals()) == 5
+
+    def test_applied_proposals_are_not_counted_as_still_pending(self, youk_root, claude_root):
+        import health
+        health.add_proposal(self._make_proposal("PENDING-BL-APPLIED", status="APPLIED — 2026-07-02"))
+        health.add_proposal(self._make_proposal("PENDING-BL-OPEN"))
+        all_rows = health._load_pending_proposals()
+        assert len(all_rows) == 2  # loader still returns everything
+        still_open = [p for p in all_rows if health.is_still_pending(p)]
+        assert len(still_open) == 1
+        assert still_open[0].id == "PENDING-BL-OPEN"
+
+    def test_zero_proposals_when_none_added(self, youk_root, claude_root):
+        import health
+        assert health._load_pending_proposals() == []
 
 
 # ── _compute_diff_preview (SKILL_EDIT, FILE_CREATE, unknown) ──────────────────

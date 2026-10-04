@@ -29,6 +29,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from jsonl_lock import locked_jsonl_append
+
 import jsonschema
 
 _SCHEMA_PATH = Path(__file__).resolve().parent.parent.parent / "schemas" / "disposition-event.schema.json"
@@ -144,7 +146,5 @@ def append_disposition_event(
         disposition=disposition,
         timestamp=datetime.now(UTC).isoformat(),
     )
-    resolved_log_path.parent.mkdir(parents=True, exist_ok=True)
-    with resolved_log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(event.to_dict()) + "\n")
+    locked_jsonl_append(resolved_log_path, json.dumps(event.to_dict()))
     return event

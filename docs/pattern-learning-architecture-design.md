@@ -5,6 +5,13 @@
 > here — same discipline as docs/problem-space-modeling-design.md, which
 > this initiative builds directly on top of.
 
+> **STATUS:** Phase C/D's wiring into `self_heal` was reverted: it
+> duplicated `_detect_cross_project_patterns` -> `promote_to_global_contracts`,
+> which already had 65 real entries against zero here. The "self-heal AUDIT
+> phase" named below never existed in the live system. The functions remain
+> real and tested with no live caller. `global-patterns.jsonl` is now backed
+> by `promote_to_global_contracts` (`global_contracts.py`), not `promote_group`.
+
 ## The outcome this exists to serve
 
 From the founder, verbatim, earlier in this session: youk should understand

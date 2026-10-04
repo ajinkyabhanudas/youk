@@ -21,7 +21,6 @@ appeared to silently no-op on a REFERENCE_ADD:
 """
 from __future__ import annotations
 
-from pathlib import Path
 
 from models import Proposal
 
@@ -66,7 +65,7 @@ class TestResolveWriteTarget:
 
     def test_host_absolute_path_under_dot_claude_youk_translates(self, youk_root, claude_root):
         import health
-        raw = f"/Users/someone/.claude/youk/knowledge/x.md"
+        raw = "/Users/someone/.claude/youk/knowledge/x.md"
         resolved = health._resolve_write_target(raw)
         assert resolved == (youk_root / "knowledge" / "x.md").resolve()
 

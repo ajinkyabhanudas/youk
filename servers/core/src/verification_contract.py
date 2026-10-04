@@ -185,6 +185,11 @@ class Claim:
     stage_history: list[str] = field(default_factory=list)
     rework_rounds: int = 0
     rework_log: list[dict] = field(default_factory=list)
+    # Routing size (XS/S/M/L/XL), set by the caller from route_task's own
+    # answer. "" means unknown -- a claim predating this field, or created
+    # without a size being threaded through. gate_claim_done treats L/XL as
+    # requiring independent review by default (see require_independent_review).
+    size: str = ""
 
     def all_verified(self) -> bool:
         return all(sc.status == "verified" for sc in self.sub_claims)
@@ -200,6 +205,7 @@ class Claim:
             "all_verified": self.all_verified(),
             "stage": self.stage.value,
             "stage_history": list(self.stage_history),
+            "size": self.size,
             "rework_rounds": self.rework_rounds,
             "rework_log": list(self.rework_log),
         }
@@ -343,8 +349,8 @@ def generate_sub_claims(
     return sub_claims
 
 
-def build_claim(statement: str, dimension: str, graph: dict, root: Path | None = None) -> Claim:
-    return Claim(statement=statement, dimension=dimension,
+def build_claim(statement: str, dimension: str, graph: dict, root: Path | None = None, size: str = "") -> Claim:
+    return Claim(statement=statement, dimension=dimension, size=size,
                  sub_claims=generate_sub_claims(
                      dimension, graph, claim_statement=statement, root=root,
                  ))
@@ -429,7 +435,12 @@ def load_claim(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def gate_claim_done(path: Path, *, preferred_rework_stage: Stage | None = None) -> dict | None:
+def gate_claim_done(
+    path: Path,
+    *,
+    preferred_rework_stage: Stage | None = None,
+    require_independent_review: bool = False,
+) -> dict | None:
     """Mirrors check_m_plus_write_gate's contract (plugin/scripts/
     youk_hook_utils.py, CIR-150 item 4): returns None to allow, or a deny
     dict ({"reason", "message", "stage", "routed_to"}) to block.
@@ -444,33 +455,66 @@ def gate_claim_done(path: Path, *, preferred_rework_stage: Stage | None = None) 
     `preferred_rework_stage`, otherwise this defaults to DECOMPOSE (the gate
     itself has no signal to distinguish "domain incomplete" from
     "decomposition missed it" the way a human running VERIFY interactively
-    would)."""
+    would).
+
+    require_independent_review: the Self-Confirmation Trap (a session
+    verifying its own work shares that work's own blind spots) applies to
+    code claims the same way it applies to research claims --
+    externally_verified already exists for exactly this on the research
+    side (two independent passes agreeing, or a human statement). A
+    claim's own size (L/XL) requires the same bar automatically -- the
+    founder's own call: an XL build self-verifying its own work is exactly
+    the trap, every time, not an occasional risk. Pass
+    require_independent_review=True to force it on a smaller claim too;
+    False here never turns it OFF for a claim whose own size already
+    requires it."""
     if not path.exists():
         return None
     data = load_claim(path)
     unresolved = [sc for sc in data.get("sub_claims", []) if sc.get("status") != "verified"]
-    if not unresolved:
-        return None
-    target = preferred_rework_stage or Stage.DECOMPOSE
-    if target not in REWORK_EDGES[Stage.GATE]:
-        raise InvalidStageTransition(
-            f"gate -> {target.value} is not a declared rework edge"
+    if unresolved:
+        target = preferred_rework_stage or Stage.DECOMPOSE
+        if target not in REWORK_EDGES[Stage.GATE]:
+            raise InvalidStageTransition(
+                f"gate -> {target.value} is not a declared rework edge"
+            )
+        detail = ", ".join(f"{sc['id']} ({sc['status']})" for sc in unresolved)
+        return {
+            "reason": "unverified_sub_claims",
+            "stage": Stage.GATE.value,
+            "routed_to": target.value,
+            "message": (
+                f"[YOUK] claim {data.get('statement')!r} has unresolved sub_claims: "
+                f"{detail}. Routing back to {target.value} — every sub_claim the "
+                "checker generated must be status=\"verified\" before this claim "
+                "can be reported done."
+            ),
+        }
+
+    if require_independent_review or data.get("size") in ("L", "XL"):
+        has_independent = any(
+            sc.get("verification_level") == "externally_verified"
+            for sc in data.get("sub_claims", [])
         )
-    detail = ", ".join(f"{sc['id']} ({sc['status']})" for sc in unresolved)
-    return {
-        "reason": "unverified_sub_claims",
-        "stage": Stage.GATE.value,
-        "routed_to": target.value,
-        "message": (
-            f"[YOUK] claim {data.get('statement')!r} has unresolved sub_claims: "
-            f"{detail}. Routing back to {target.value} — every sub_claim the "
-            "checker generated must be status=\"verified\" before this claim "
-            "can be reported done."
-        ),
-    }
+        if not has_independent:
+            target = preferred_rework_stage or Stage.DECOMPOSE
+            return {
+                "reason": "no_independent_review",
+                "stage": Stage.GATE.value,
+                "routed_to": target.value,
+                "message": (
+                    f"[YOUK] claim {data.get('statement')!r} has every sub_claim "
+                    "verified, but none carries verification_level="
+                    "\"externally_verified\" -- this claim opted into "
+                    "require_independent_review, so a self-check within the same "
+                    "session is not enough. A genuinely separate agent/session "
+                    "must re-derive and confirm at least one sub_claim."
+                ),
+            }
+    return None
 
 
-def gate_all_claims(root: Path) -> dict | None:
+def gate_all_claims(root: Path, *, require_independent_review: bool = False) -> dict | None:
     """Same contract as gate_claim_done, aggregated across every claim on
     record under this YOUK_ROOT. Wired into plugin/scripts/pre_tool_use.py's
     existing mcp__youk-core__ PreToolUse boundary (CIR-150 item 4's own
@@ -481,7 +525,7 @@ def gate_all_claims(root: Path) -> dict | None:
         return None
     messages = []
     for path in sorted(cdir.glob("*.json")):
-        verdict = gate_claim_done(path)
+        verdict = gate_claim_done(path, require_independent_review=require_independent_review)
         if verdict is not None:
             messages.append(verdict["message"])
     if not messages:
@@ -594,7 +638,7 @@ def append_pattern_library_entries(root: Path, claim: Claim, how_found: str) -> 
     return new_entries
 
 
-def run_checker(root: Path, statement: str, dimension: str, graph: dict, how_found: str) -> Claim:
+def run_checker(root: Path, statement: str, dimension: str, graph: dict, how_found: str, size: str = "") -> Claim:
     """Build a claim against the scanner's graph, persist it immediately
     (WRITE PATH requirement: live, not buffered to a final report), and
     record any newly-found failure in the pattern library. The single
@@ -610,7 +654,7 @@ def run_checker(root: Path, statement: str, dimension: str, graph: dict, how_fou
     DECOMPOSE directly rather than faking a walk through stages that never
     ran. CIR-160: build_claim is given `root` so pattern_hint lookups are
     populated from the real pattern library too."""
-    claim = build_claim(statement, dimension, graph, root=root)
+    claim = build_claim(statement, dimension, graph, root=root, size=size)
     claim_id = _slug(statement)
     claim.stage = Stage.DECOMPOSE
     advance(claim, Stage.VERIFY, root=root, claim_id=claim_id)
@@ -717,6 +761,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("statement", nargs="?", help='e.g. "youk is agent-agnostic"')
     parser.add_argument("--dimension", default="host")
+    parser.add_argument(
+        "--size", default="", choices=["", "XS", "S", "M", "L", "XL"],
+        help="Routing size from route_task's own answer. L/XL requires "
+             "independent review before this claim can gate done.",
+    )
     parser.add_argument("--how-found", default="verification_contract checker run")
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     parser.add_argument(
@@ -746,7 +795,7 @@ def main() -> int:
     graph_path = args.graph or (args.root / "state" / "verification-contracts" / "host-inventory-graph.json")
     graph = json.loads(graph_path.read_text(encoding="utf-8"))
 
-    claim = run_checker(args.root, args.statement, args.dimension, graph, args.how_found)
+    claim = run_checker(args.root, args.statement, args.dimension, graph, args.how_found, size=args.size)
     print(json.dumps(claim.to_dict(), indent=2, sort_keys=True))
 
     if not claim.all_verified():

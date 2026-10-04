@@ -52,8 +52,9 @@ class TestRecordSessionPatterns:
 
     def test_hint_activates_at_threshold(self, tmp_path):
         p = tmp_path / "profile.json"
-        for i in range(HINT_THRESHOLD):
-            r = record_session_patterns(["learn"], commits_made=True, path=p)
+        for i in range(HINT_THRESHOLD - 1):
+            record_session_patterns(["learn"], commits_made=True, path=p)
+        r = record_session_patterns(["learn"], commits_made=True, path=p)
         assert "humanize:commit" in r["hints_activated"]
         profile = json.loads(p.read_text())
         assert profile["hints"]["humanize:commit"]["active"] is True
@@ -68,7 +69,7 @@ class TestRecordSessionPatterns:
     def test_idempotent_on_active_hint(self, tmp_path):
         p = tmp_path / "profile.json"
         for _ in range(HINT_THRESHOLD + 3):
-            r = record_session_patterns(["learn"], commits_made=True, path=p)
+            record_session_patterns(["learn"], commits_made=True, path=p)
         profile = json.loads(p.read_text())
         assert profile["hints"]["humanize:commit"]["active"] is True
         # Activated only fires once (the session it crosses the threshold)
@@ -156,10 +157,10 @@ class TestScanAuditForPatterns:
             skills = ", ".join(s.get("skills", ["none"]))
             commits = "yes" if s.get("commits", False) else "no"
             lines.append(f"\n### Session — 2026-08-{i+1:02d} 12:00 UTC")
-            lines.append(f"Project: youk")
-            lines.append(f"Summary text")
+            lines.append("Project: youk")
+            lines.append("Summary text")
             lines.append(f"Skills: {skills}")
-            lines.append(f"CloseCluster: yes")
+            lines.append("CloseCluster: yes")
             lines.append(f"Commits: {commits}")
         path.write_text("\n".join(lines))
 

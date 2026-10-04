@@ -572,7 +572,6 @@ class TestCompoundingGap:
     """end_session writes CompoundingGap: yes/no to audit entry."""
 
     def _read_audit(self, tmp_path):
-        import session
         audit_dir = tmp_path / "claude" / "audit"
         files = sorted(audit_dir.glob("*.md"))
         return files[-1].read_text() if files else ""
@@ -1963,8 +1962,12 @@ class TestPromoteToGlobalContractsIdempotency:
         """Same contract promoted twice must appear once in the file."""
         import global_contracts as gc
 
-        r1 = gc.promote_to_global_contracts(["always run ruff before committing"], youk_root)
-        r2 = gc.promote_to_global_contracts(["always run ruff before committing"], youk_root)
+        r1 = gc.promote_to_global_contracts(
+            ["always run ruff before committing"], youk_root, "ci-hygiene", "lint"
+        )
+        r2 = gc.promote_to_global_contracts(
+            ["always run ruff before committing"], youk_root, "ci-hygiene", "lint"
+        )
 
         assert r1["promoted"] == 1
         assert r2["skipped"] == 1
@@ -1979,22 +1982,61 @@ class TestPromoteToGlobalContractsIdempotency:
         """After a successful promote, no .tmp file must be left on disk."""
         import global_contracts as gc
 
-        gc.promote_to_global_contracts(["never skip tests"], youk_root)
+        gc.promote_to_global_contracts(["never skip tests"], youk_root, "testing", "coverage")
 
         tmp = youk_root / "knowledge" / "global" / "contracts.tmp"
         assert not tmp.exists(), ".tmp file must be cleaned up after atomic rename"
 
     def test_new_contracts_append_to_existing(self, youk_root):
-        """Second call with a different contract must append, not overwrite."""
+        """Second call with a genuinely different contract must append, not
+        overwrite or get semantically deduped against the first."""
         import global_contracts as gc
 
-        gc.promote_to_global_contracts(["rule A"], youk_root)
-        gc.promote_to_global_contracts(["rule B"], youk_root)
+        gc.promote_to_global_contracts(["always run ruff before committing"], youk_root, "misc", "general")
+        gc.promote_to_global_contracts(["never commit screenshot files from Playwright"], youk_root, "misc", "general")
 
         global_file = youk_root / "knowledge" / "global" / "contracts.md"
         content = global_file.read_text()
-        assert "rule A" in content
-        assert "rule B" in content
+        assert "ruff" in content
+        assert "Playwright" in content
+
+    def test_contracts_are_tagged_and_queryable_by_domain(self, youk_root):
+        """The real point of this redesign: a promoted contract must be
+        retrievable as a scoped, tagged PatternEntry, not just flat text."""
+        import global_contracts as gc
+        from pattern_promotion import query_global_patterns
+
+        gc.promote_to_global_contracts(
+            ["always verify root cause empirically before guessing"],
+            youk_root, "verification-discipline", "evidence-over-assertion",
+        )
+        gc.promote_to_global_contracts(
+            ["never commit screenshot files from Playwright"],
+            youk_root, "ci-hygiene", "git-workflow",
+        )
+
+        verification_only = query_global_patterns(
+            youk_root, domain="verification-discipline"
+        )
+        assert len(verification_only) == 1
+        assert verification_only[0].sub_domain == "evidence-over-assertion"
+
+        all_patterns = query_global_patterns(youk_root)
+        assert len(all_patterns) == 2
+
+    def test_contracts_md_is_regenerated_from_structured_store(self, youk_root):
+        """contracts.md must be a generated view, grouped by domain --
+        never a hand-appended flat line again."""
+        import global_contracts as gc
+
+        gc.promote_to_global_contracts(
+            ["always read the CI config before assuming the lint tool"],
+            youk_root, "ci-hygiene", "project-commands",
+        )
+        content = (youk_root / "knowledge" / "global" / "contracts.md").read_text()
+        assert "GENERATED from state/global-patterns.jsonl" in content
+        assert "## ci-hygiene" in content
+        assert "[project-commands]" in content
 
 
 # ── Mechanical skill-invocation fallback ────────────────────────────────────

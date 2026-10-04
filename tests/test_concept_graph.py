@@ -181,13 +181,22 @@ class TestWriteConcepts:
         result = write_concepts([], "canopy", 1, db_path=db)
         assert result["project_slug"] == "canopy"
 
-    def test_cross_session_same_label_stored_separately(self, tmp_path):
+    def test_cross_session_same_label_updates_existing_row(self, tmp_path):
+        """The same concept re-extracted on every /learn run must update
+        the existing row, not duplicate it -- keying on session_n instead
+        of just (label, project_slug) inflates the count with no new
+        knowledge."""
         db = _make_db(tmp_path)
         c1 = extract_concepts(["auth gate"], [], "youk", 1)
         c2 = extract_concepts(["auth gate"], [], "youk", 2)
         write_concepts(c1, "youk", 1, db_path=db)
-        write_concepts(c2, "youk", 2, db_path=db)
-        assert _row_count(db, "concepts") == 2
+        result = write_concepts(c2, "youk", 2, db_path=db)
+        assert _row_count(db, "concepts") == 1
+        assert result["written"] == 0  # updated an existing row, not a new concept
+        import sqlite3
+        conn = sqlite3.connect(db)
+        session_n = conn.execute("SELECT session_n FROM concepts WHERE label = 'auth gate'").fetchone()[0]
+        assert session_n == 2  # refreshed to the latest session
 
 
 # ---------------------------------------------------------------------------

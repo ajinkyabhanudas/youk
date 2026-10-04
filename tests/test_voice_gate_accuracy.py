@@ -21,7 +21,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "core" / "src"))
 from voice_fingerprint import check_text
@@ -261,7 +260,8 @@ class TestVoiceAuditColonFilter:
             mock_run.return_value = _sp.CompletedProcess(
                 args=[], returncode=0, stdout=fake_log, stderr=""
             )
-            import tempfile, pathlib
+            import tempfile
+            import pathlib
             with tempfile.TemporaryDirectory() as tmp:
                 result = audit_recent_commits(pathlib.Path(tmp), n=1)
 
@@ -285,7 +285,8 @@ class TestVoiceAuditColonFilter:
             mock_run.return_value = _sp.CompletedProcess(
                 args=[], returncode=0, stdout=fake_log, stderr=""
             )
-            import tempfile, pathlib
+            import tempfile
+            import pathlib
             with tempfile.TemporaryDirectory() as tmp:
                 result = audit_recent_commits(pathlib.Path(tmp), n=1)
 

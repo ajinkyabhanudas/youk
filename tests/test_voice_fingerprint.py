@@ -16,7 +16,6 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
 
 # voice_fingerprint is in servers/core/src (conftest puts it on sys.path)
 from voice_fingerprint import check_text, profile_corpus
@@ -253,7 +252,7 @@ class TestCaptureVoiceSample:
         capture_voice_sample(tmp_path, msg, slug="p", register="chat")
         capture_voice_sample(tmp_path, msg + " second", slug="p", register="chat")
         corpus = tmp_path / "knowledge" / "voice-corpus.jsonl"
-        lines = [l for l in corpus.read_text().splitlines() if l.strip()]
+        lines = [line for line in corpus.read_text().splitlines() if line.strip()]
         assert len(lines) == 2
 
     def test_silent_fail_on_unwritable_path(self, tmp_path):

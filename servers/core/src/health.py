@@ -2031,6 +2031,11 @@ def _check_git_outcomes(sessions: list[dict]) -> list[str]:
 def _load_pending_proposals(project_slug: str | None = None) -> list[Proposal]:
     """Load proposals from SQLite. Optionally filter by project_slug.
 
+    Returns ALL rows regardless of status -- status is free text (e.g.
+    "APPLIED — 2026-07-02", not a clean enum), so callers that need only
+    still-open proposals filter with is_still_pending() below, not an exact
+    status match here.
+
     Returns empty list if the DB is unavailable (e.g. read-only filesystem in tests
     that don't use the youk_root fixture). Raises RuntimeError only when the DB path
     is reachable but the query fails (a genuine DB error worth surfacing).
@@ -2054,6 +2059,16 @@ def _load_pending_proposals(project_slug: str | None = None) -> list[Proposal]:
     except sqlite3.OperationalError as e:
         conn.close()
         raise RuntimeError(f"proposals DB unavailable: {e}") from e
+
+
+def is_still_pending(proposal: Proposal) -> bool:
+    """True if a proposal's free-text status means it's still open.
+
+    "APPLIED" and "CLOSED" (and their dated variants, e.g.
+    "APPLIED — 2026-07-02") are the two real terminal statuses seen in
+    production data; anything else, including a bare "PENDING", is open.
+    """
+    return "APPLIED" not in proposal.status and "CLOSED" not in proposal.status
 
 
 def _extract_field(text: str, field_name: str) -> str:
@@ -2133,7 +2148,7 @@ def run_health_check() -> HealthReport:
     audit_texts = _read_recent_audit_logs(days=30)
     score = _score_org(audit_texts)
     findings = _generate_findings(audit_texts, score)
-    proposals = _load_pending_proposals()
+    proposals = [p for p in _load_pending_proposals() if is_still_pending(p)]
 
     sessions = _parse_audit_sessions(audit_texts)
     real_sessions = sum(
@@ -3443,18 +3458,37 @@ def _detect_cross_project_patterns(min_projects: int = 2) -> list[dict]:
     if len(project_contracts) < min_projects:
         return []
 
-    # Find contracts appearing in min_projects or more distinct projects
-    contract_to_projects: dict[str, list[str]] = {}
-    for slug, contracts in project_contracts.items():
-        for c in contracts:
-            contract_to_projects.setdefault(c, [])
-            if slug not in contract_to_projects[c]:
-                contract_to_projects[c].append(slug)
+    # Cluster contracts recurring across projects by semantic similarity, not
+    # exact text -- the same lesson phrased differently across two projects
+    # used to be invisible to this check. Identical text always clusters
+    # together (similarity 1.0), so this is a strict superset of the old
+    # exact-match behavior, never a regression on what it already caught.
+    # cluster_by_similarity batch-encodes once; a pairwise is_same_lesson
+    # loop re-encodes on every comparison and is unusably slow (minutes,
+    # not seconds) once real contract counts reach the dozens.
+    from semantic_similarity import cluster_by_similarity
+
+    flat: list[tuple[str, str]] = [
+        (slug, c) for slug, contracts in project_contracts.items() for c in contracts
+    ]
+    index_groups = cluster_by_similarity([c for _, c in flat])
+    clusters = [
+        {
+            "canonical": flat[indices[0]][1],
+            "projects": list(dict.fromkeys(flat[i][0] for i in indices)),
+        }
+        for indices in index_groups
+    ]
 
     candidates = [
-        {"contract": c, "projects": slugs, "count": len(slugs), "theme": _classify_theme(c)}
-        for c, slugs in contract_to_projects.items()
-        if len(slugs) >= min_projects
+        {
+            "contract": cl["canonical"],
+            "projects": cl["projects"],
+            "count": len(cl["projects"]),
+            "theme": _classify_theme(cl["canonical"]),
+        }
+        for cl in clusters
+        if len(cl["projects"]) >= min_projects
     ]
     candidates = sorted(candidates, key=lambda x: x["count"], reverse=True)
 

@@ -5,6 +5,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /
 COPY servers/core/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
+# Bake the embedding model weights into the image so semantic_similarity.py
+# never needs network access at runtime -- local-first, not a hidden API call.
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
 COPY servers/shared/ /shared/
 
 # Source is NOT baked in — read live from /youk volume mount.

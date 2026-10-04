@@ -264,16 +264,48 @@ def route_task(
         _write_medium_risk_question(_medium_risk_question, slug=slug)
 
     routes = _load_routes()
-    # If a resolved intent brief was provided, prefer its estimated size over
-    # keyword scoring — the brief has already reasoned about the problem.
+    _size_order = {"XS": 1, "S": 2, "M": 3, "L": 4, "XL": 5}
+    _size_mismatch_flag = False
+    _size_mismatch_note = ""
+    _llm_estimated_size = ""
+
+    # An LLM judging the size of its own task, unchecked, is the same
+    # self-confirmation gap every other high-stakes judgment call in this
+    # codebase has a deterministic check for. estimated_size is always
+    # cross-checked against route_task's own keyword scoring of the same
+    # text; the larger of the two wins, never the smaller self-reported one.
+    deterministic_size = _score_size(task, routes)
     if intent_brief and not intent_brief.get("ambiguity_detected"):
         brief_size = intent_brief.get("estimated_size", "")
         if brief_size in ("XS", "S", "M", "L", "XL"):
-            size = TaskSize(brief_size)
+            _llm_estimated_size = brief_size
+            if _size_order[brief_size] < _size_order[deterministic_size.value]:
+                size = deterministic_size
+                _size_mismatch_flag = True
+                _size_mismatch_note = (
+                    f"optimize_intent estimated {brief_size}, but deterministic "
+                    f"keyword scoring of the same task text found {deterministic_size.value} "
+                    f"— using {deterministic_size.value} (the larger, safer size)."
+                )
+            else:
+                size = TaskSize(brief_size)
         else:
-            size = _score_size(task, routes)
+            size = deterministic_size
     else:
-        size = _score_size(task, routes)
+        size = deterministic_size
+
+    try:
+        from sizing_decision import log_sizing_decision
+        log_sizing_decision(
+            task=task,
+            deterministic_size=deterministic_size.value,
+            llm_estimated_size=_llm_estimated_size,
+            resolved_size=size.value,
+            mismatch_flag=_size_mismatch_flag,
+            log_path=YOUK_ROOT / "state" / "sizing-decisions.jsonl",
+        )
+    except Exception:
+        pass  # logging must never block the real routing decision
 
     # Scope escalation (CIR-150 item 2 / CIR-151): a pending, unconsumed
     # write_scope_escalation() signal for this slug forces a floor on the size
@@ -365,6 +397,8 @@ def route_task(
         plan_hook=plan_hook,
         overengineering_flag=_overeng_flag,
         overengineering_note=_overeng_note,
+        size_mismatch_flag=_size_mismatch_flag,
+        size_mismatch_note=_size_mismatch_note,
         scope_escalated=scope_escalated,
         scope_escalation_reason=scope_escalation_reason,
     )

@@ -414,6 +414,32 @@ def _record_generation(model: str, response: object, duration_s: float) -> None:
         pass
 
 
+def _build_sizing_precedent_block(raw_input: str, log_path: Path | None = None) -> str:
+    """Retrieval-grounding for estimated_size: a judgment made cold is less
+    reliable than one anchored to real precedent. This is appended at the
+    END of the final user message, not folded into the system prompt --
+    the position right before generation gets the strongest attention in
+    a transformer (recency), while position bias toward the middle of a
+    long context is structural to the architecture, not something a
+    bigger prompt fixes. Returns "" when no real precedent exists yet --
+    never invents one."""
+    try:
+        from sizing_decision import find_similar_sizing_precedents
+        precedents = find_similar_sizing_precedents(
+            raw_input, limit=3,
+            log_path=log_path or (YOUK_ROOT / "state" / "sizing-decisions.jsonl"),
+        )
+    except Exception:
+        return ""
+    if not precedents:
+        return ""
+    lines = ["\n\nReal precedent -- similar past tasks and the size they actually resolved to:"]
+    for p in precedents:
+        lines.append(f"- \"{p['task'][:100]}\" -> {p['resolved_size']}")
+    lines.append("Weigh estimated_size against these; do not contradict them without a stated reason.")
+    return "\n".join(lines)
+
+
 def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dict:
     """
     Compress raw user input into a structured intent brief.
@@ -462,6 +488,7 @@ def optimize_intent(raw_input: str, clarified_context: str | None = None) -> dic
     user_content = f"Raw input: {raw_input}"
     if clarified_context:
         user_content += f"\n\nAdditional context from conversation: {clarified_context}"
+    user_content += _build_sizing_precedent_block(raw_input)
 
     _model = _PROVIDER.capability.model
     try:

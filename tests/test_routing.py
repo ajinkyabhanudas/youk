@@ -49,6 +49,9 @@ token_budgets:
 """)
     import routing
     monkeypatch.setattr(routing, "ROUTES_FILE", routes)
+    # route_task's breadcrumb/sizing-decision writes use YOUK_ROOT directly
+    # with no override -- sandboxed so M+ tests never touch real state.
+    monkeypatch.setattr(routing, "YOUK_ROOT", tmp_path)
 
 
 class TestScopeCollapseGate:
@@ -152,6 +155,40 @@ class TestIntentBriefSizeOverride:
         from routing import route_task
         decision = route_task("implement new feature")
         assert decision.size.value == "M"
+
+
+class TestSizeMismatchCrossCheck:
+    """An LLM self-reporting the size of its own task, unchecked, is the
+    same self-confirmation gap every other high-stakes judgment call in
+    this codebase has a deterministic check for. estimated_size must never
+    silently under-report relative to route_task's own keyword scoring of
+    the same text."""
+
+    def test_brief_size_larger_than_keyword_score_wins_no_mismatch_flag(self):
+        from routing import route_task
+        # "fix the bug" keyword-scores S; brief says L -- larger wins, no mismatch.
+        brief = {"ambiguity_detected": False, "estimated_size": "L", "clarifying_questions": []}
+        decision = route_task("fix the bug in the authentication module", intent_brief=brief)
+        assert decision.size.value == "L"
+        assert decision.size_mismatch_flag is False
+
+    def test_brief_size_smaller_than_keyword_score_is_overridden(self):
+        from routing import route_task
+        # "architecture" alone keyword-scores L; brief under-reports S.
+        brief = {"ambiguity_detected": False, "estimated_size": "S", "clarifying_questions": []}
+        decision = route_task("design the new architecture for the payment system", intent_brief=brief)
+        assert decision.size.value == "L"  # the deterministic, larger size wins
+        assert decision.size_mismatch_flag is True
+        assert "S" in decision.size_mismatch_note
+        assert "L" in decision.size_mismatch_note
+
+    def test_matching_brief_and_keyword_score_has_no_mismatch(self):
+        from routing import route_task
+        brief = {"ambiguity_detected": False, "estimated_size": "M", "clarifying_questions": []}
+        decision = route_task("implement new feature", intent_brief=brief)
+        assert decision.size.value == "M"
+        assert decision.size_mismatch_flag is False
+        assert decision.size_mismatch_note == ""
 
 
 class TestNetScoreRouting:

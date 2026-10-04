@@ -22,7 +22,12 @@ jobs:
         # mcp is required by tests/test_mcp_tool_contracts.py, which imports the real
         # server modules and executes every registered tool. Without it those tests
         # skip, and the route_task null-output class of bug ships again unnoticed.
-        run: pip install ruff pyyaml pytest pytest-cov "mcp>=1.0.0,<2"
+        # torch/sentence-transformers back servers/shared/semantic_similarity.py (CPU-only
+        # wheel, same source as servers/core/requirements.txt) -- without them every test
+        # that imports semantic_similarity fails at import time, not at an assertion.
+        run: |
+          pip install ruff pyyaml pytest pytest-cov "mcp>=1.0.0,<2"
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu "torch>=2.0.0" "sentence-transformers>=3.0.0"
 
       - name: Ruff check
         run: ruff check servers/

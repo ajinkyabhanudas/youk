@@ -84,6 +84,7 @@ class PatternEntry:
     constraint_set: list[str] = field(default_factory=list)
     confirmed_count: int = 0
     updated_at: str = ""
+    related_pattern_ids: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.schema_version != _SCHEMA_VERSION:
@@ -128,6 +129,11 @@ class PatternEntry:
         ):
             raise PatternValidationError("constraint_set must be a list of str")
 
+        if not isinstance(self.related_pattern_ids, list) or not all(
+            isinstance(p, str) for p in self.related_pattern_ids
+        ):
+            raise PatternValidationError("related_pattern_ids must be a list of str")
+
         if not isinstance(self.confirmed_count, int) or isinstance(self.confirmed_count, bool):
             raise PatternValidationError("confirmed_count must be an int")
         if self.confirmed_count < 0:
@@ -155,6 +161,7 @@ class PatternEntry:
             "confirmed_count": self.confirmed_count,
             "status": self.status,
             "created_at": self.created_at,
+            "related_pattern_ids": self.related_pattern_ids,
         }
         if self.updated_at:
             d["updated_at"] = self.updated_at
@@ -178,6 +185,7 @@ class PatternEntry:
             status=d.get("status", ""),
             created_at=d.get("created_at", ""),
             updated_at=d.get("updated_at", ""),
+            related_pattern_ids=d.get("related_pattern_ids", []),
         )
 
 

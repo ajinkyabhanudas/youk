@@ -1,7 +1,6 @@
 """Tests for servers/shared/capability_ledger.py (CIR-156 item 2)."""
 from __future__ import annotations
 
-from pathlib import Path
 
 from agent_host import HostCapability
 from capability_ledger import (

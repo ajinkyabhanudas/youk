@@ -16,14 +16,14 @@
 
 ## The one-minute version
 
-A normal AI agent gets sharper as a conversation goes — you correct it, it adapts. Then the session ends and it's back to zero. Next session you're re-explaining the same context and re-making the same corrections. youk keeps that progress instead of dropping it, and pushes it further.
+A normal AI agent gets sharper as a conversation goes — you correct it, it adapts. Then the session ends and it's back to zero. Next session you're re-explaining the same context and re-making the same corrections. youk saves that progress to disk and builds on it.
 
-- **It builds what it's missing.** Hit a task youk has no skill for, and it writes one from what you were actually doing. When a skill trips up during a session, youk fixes that skill before the session ends.
-- **It treats a typo differently from a rewrite.** Bigger changes go through gates first — scope, non-functional requirements, a review pass — before any code gets written.
-- **It proves its claims instead of just making them.** "Agent-agnostic," "works across hosts," "handles the edge case" — these are claims, and youk decomposes each one into the specific sub-claims that would have to be true, checks every sub-claim against real evidence (a grep hit, a test run, a live call), and grades how strong that evidence is. A claim with any sub-claim left unresolved can't be reported done — that's enforced at the tool boundary, the same one on every host, not left to a model remembering to check.
-- **It watches its own health.** Every session, youk checks whether the things it built are actually wired into the real loop and being used. Run `/health` for a score and a trend.
+- **Skills from your actual work.** Hit a task with no matching skill, and youk writes one from what you were doing. A skill that misfires gets patched before the session ends.
+- **Sized work.** A typo and a rewrite go through different gates — scope, requirements, review — scaled to how big the change actually is.
+- **Claims checked against evidence.** A claim ("works across hosts," "handles the edge case") gets broken into the sub-claims it depends on, each checked against a grep hit, a test run, or a live call. Anything unresolved blocks "done," enforced at the tool boundary so it isn't a step a model can skip by forgetting.
+- **A health score.** `/health` reports whether what got built is actually wired into the real loop and used, with a trend over time.
 
-Underneath all that is plain memory: your working agreements, decisions, and resume point saved to files that survive a `git clone`. Plenty of tools remember context now. The part worth having is what youk does on top of it.
+Underneath all that is plain memory: working agreements, decisions, and resume points saved to files that survive a `git clone`.
 
 youk's core policy is agent-host neutral. Claude Code and Codex integrations declare
 their capabilities at the boundary; a missing safety capability blocks rather than
@@ -51,6 +51,38 @@ You don't change how you work. You just install it.
 | Remembers your context | Remembers, and builds skills on top of it |
 
 > **Status:** v1.2.1. Compounding starts on day one; the gains get obvious around session 10–20 as youk tunes to your patterns and the audit log fills.
+
+---
+
+## How it stays grounded
+
+Every decision point in youk is tagged deterministic (code decides, same input always
+gives the same answer) or judgment (a model makes a real call). The two paths are kept
+separate end to end rather than folded into one generic "the LLM handles it" step.
+
+Patterns, contracts, and sizing decisions are stored as typed records — a Python
+dataclass checked against a committed JSON Schema — so a malformed entry raises
+immediately instead of surfacing as a mystery three sessions later. A claim like "works
+across both hosts" or "the gate is wired" is broken into the sub-claims it actually
+depends on and checked against evidence: a grep hit, a test run, a live call. Any
+sub-claim left unresolved blocks the claim from being reported done, enforced at the
+tool boundary rather than relying on a model to remember to check. Large claims (L/XL)
+also need a confirmation from a separate session, since a session checking its own work
+inherits that work's blind spots.
+
+Judging whether two differently-worded lessons are the same lesson is a meaning
+problem, so that comparison runs through a small, local, offline sentence-embedding
+model (~22MB) instead of a string match or another API call — no vendor dependency,
+nothing leaves the machine. Sizing a new task draws on logged precedent: past sizing
+decisions are retrieved by similarity and appended at the end of the prompt, the
+position a transformer attends to most strongly, rather than left in the middle where
+it's easy to under-weight.
+
+youk also checks, every session, whether what it built is actually called from the live
+routing loop — not just present in the codebase.
+
+None of this runs with zero human involvement, and it isn't meant to. Detection is
+automatic and logged durably; deciding what to do about a finding is still a human call.
 
 ---
 
@@ -110,23 +142,23 @@ Full platform-by-platform walkthrough: **[docs/getting-started.md](docs/getting-
 
 ## What youk does, in five ideas
 
-youk exists so your ability **compounds** rather than resetting each session. A session
-that invokes no capability skill and never closes teaches it nothing, which is why the
-close ritual is tracked: `close_cluster` marks a session that ran review, encoded what
-it learned, and closed properly. Sessions that close this way are what the score rewards.
+youk exists so your ability with the agent compounds instead of resetting every
+session. `close_cluster` marks a session that ran review, encoded what it learned, and
+closed properly — that's what the score below rewards.
 
+1. **Skills from your work.** No skill for the task at hand? youk writes one, shaped by what you're actually doing. A skill that fails gets fixed the same session. Repeated gaps turn into a proposal you approve once.
 
-1. **It builds skills from your work.** No skill for what you're doing? youk writes one, shaped by your task and your stack. A skill that fails gets fixed in the session it failed. Repeated gaps turn into proposals you approve once.
+2. **Sized work.** A one-liner and a new subsystem run through different gates — scope, requirements, review — scaled to the size of the change.
 
-2. **It sizes the work.** A one-liner and a new subsystem don't get the same handling. Anything substantial runs through gates — scope, non-functional requirements, review — before code.
+3. **A behavioural score.** `org_score` (0–10) tracks `capability_skill_rate` (weight 2.0) and session close rate (0.5), with bonuses for autonomy, challenge-loop quality, and outcomes. A skill that fails to load or a repo skill that's unreachable caps the score at 6.5–8.0 regardless of the behavioural numbers, since a skill that never loads simply never gets invoked and would otherwise look like a developer's choice. Three sessions in a row with no capability skill also caps it at 6.5. Full formula: [docs/well-architected.md](docs/well-architected.md).
 
-3. **It checks itself.** Every session, youk reports an `org_score` (0–10) you can watch over time. The score is driven primarily by `capability_skill_rate` (weight 2.0) and session close rate (0.5), with bonuses for autonomy, challenge loop quality, and outcomes. Those are behavioural rates, so they are capped by a structural check: if a skill youk routes to will not load, or a repo skill is unreachable at runtime, the score is held at 6.5 or 8.0 and the reason is the first finding. That ceiling exists because behavioural rates cannot see a broken capability — a skill that never loads is simply never invoked, which looks like developer choice. Three consecutive sessions with no capability skills also cap the score at 6.5. Full formula: [docs/well-architected.md](docs/well-architected.md). That check is what stops youk from quietly turning into the tech debt it's meant to save you from.
+4. **Claim verification.** Where `org_score` tracks behaviour, this checks whether a given task's output is actually correct. A claim gets decomposed into its sub-claims, each checked against evidence — a grep hit, a test run, a live call — and graded by how strong that evidence is. Anything unresolved blocks "done," at the same tool boundary on every host. Gaps a check turns up get logged so the same shape of claim is checked against them next time.
 
-4. **It verifies its own claims.** `org_score` watches youk's behaviour; this watches the correctness of what any given task produced. A claim ("this works across hosts," "the gate is wired," "the fix handles the edge case") gets decomposed into the specific sub-claims that make it true, each one checked against real evidence — a grep hit against the actual code, a real test run, a live call — and graded by how strong that evidence is (seen-in-the-repo vs. independently confirmed outside it). A claim with any sub-claim left unresolved is blocked from being reported done, at the same tool boundary on every host, so this can't be skipped by a model that forgot to check or chose not to. When a check turns up a gap it missed before, that gap is logged to a real pattern library so the same shape of claim gets checked against it next time.
-
-5. **It remembers.** Your agreements, decisions, and resume point live in files that reload each session and survive a `git clone`. Groundwork for the four above.
+5. **Memory.** Agreements, decisions, and the resume point live in files that reload each session and survive a `git clone`.
 
 Deeper on any of these: **[docs/well-architected.md](docs/well-architected.md)** · **[PHILOSOPHY.md](PHILOSOPHY.md)** · [Wiki](https://github.com/ajinkyabhanudas/youk/wiki).
+
+---
 
 ---
 

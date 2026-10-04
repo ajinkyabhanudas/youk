@@ -9,7 +9,6 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "servers" / "core" / "src"))
 from voice_profile import rebuild_voice_profiles

@@ -940,7 +940,6 @@ class TestBanditAutoFeed:
 from skill_signals import (
     _load_skill_md,
     _skill_search_roots,
-    _skill_md_path,
     _current_project_dir,
 )
 

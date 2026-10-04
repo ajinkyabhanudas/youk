@@ -62,6 +62,14 @@ class RoutingDecision:
     # without a second tool call.
     overengineering_flag: bool = False
     overengineering_note: str | None = None
+    # size_mismatch_flag: True when optimize_intent's self-reported estimated_size
+    # disagreed with route_task's own deterministic keyword scoring of the same
+    # task text. The larger of the two always wins -- an LLM judging the size of
+    # its own task, unchecked, is exactly the self-confirmation gap a deterministic
+    # cross-check exists to close; the final size is never silently the smaller,
+    # self-reported one.
+    size_mismatch_flag: bool = False
+    size_mismatch_note: str = ""
     # scope_escalated: True when this call's size was raised by a pending
     # state/sessions/{slug}/scope-escalation.json signal (CIR-150 item 2 / CIR-151)
     # rather than route_task's own keyword scoring. Written by
