@@ -185,6 +185,11 @@ class Claim:
     stage_history: list[str] = field(default_factory=list)
     rework_rounds: int = 0
     rework_log: list[dict] = field(default_factory=list)
+    # Routing size (XS/S/M/L/XL), set by the caller from route_task's own
+    # answer. "" means unknown -- a claim predating this field, or created
+    # without a size being threaded through. gate_claim_done treats L/XL as
+    # requiring independent review by default (see require_independent_review).
+    size: str = ""
 
     def all_verified(self) -> bool:
         return all(sc.status == "verified" for sc in self.sub_claims)
@@ -200,6 +205,7 @@ class Claim:
             "all_verified": self.all_verified(),
             "stage": self.stage.value,
             "stage_history": list(self.stage_history),
+            "size": self.size,
             "rework_rounds": self.rework_rounds,
             "rework_log": list(self.rework_log),
         }
@@ -343,8 +349,8 @@ def generate_sub_claims(
     return sub_claims
 
 
-def build_claim(statement: str, dimension: str, graph: dict, root: Path | None = None) -> Claim:
-    return Claim(statement=statement, dimension=dimension,
+def build_claim(statement: str, dimension: str, graph: dict, root: Path | None = None, size: str = "") -> Claim:
+    return Claim(statement=statement, dimension=dimension, size=size,
                  sub_claims=generate_sub_claims(
                      dimension, graph, claim_statement=statement, root=root,
                  ))
@@ -455,11 +461,13 @@ def gate_claim_done(
     verifying its own work shares that work's own blind spots) applies to
     code claims the same way it applies to research claims --
     externally_verified already exists for exactly this on the research
-    side (two independent passes agreeing, or a human statement). Opt a
-    high-stakes claim into the same bar here: at least one sub_claim must
-    carry verification_level="externally_verified" -- set by a genuinely
-    separate agent/session re-deriving the evidence, not the one that
-    built the fix. False by default; existing callers are unaffected."""
+    side (two independent passes agreeing, or a human statement). A
+    claim's own size (L/XL) requires the same bar automatically -- the
+    founder's own call: an XL build self-verifying its own work is exactly
+    the trap, every time, not an occasional risk. Pass
+    require_independent_review=True to force it on a smaller claim too;
+    False here never turns it OFF for a claim whose own size already
+    requires it."""
     if not path.exists():
         return None
     data = load_claim(path)
@@ -483,7 +491,7 @@ def gate_claim_done(
             ),
         }
 
-    if require_independent_review:
+    if require_independent_review or data.get("size") in ("L", "XL"):
         has_independent = any(
             sc.get("verification_level") == "externally_verified"
             for sc in data.get("sub_claims", [])
@@ -630,7 +638,7 @@ def append_pattern_library_entries(root: Path, claim: Claim, how_found: str) -> 
     return new_entries
 
 
-def run_checker(root: Path, statement: str, dimension: str, graph: dict, how_found: str) -> Claim:
+def run_checker(root: Path, statement: str, dimension: str, graph: dict, how_found: str, size: str = "") -> Claim:
     """Build a claim against the scanner's graph, persist it immediately
     (WRITE PATH requirement: live, not buffered to a final report), and
     record any newly-found failure in the pattern library. The single
@@ -646,7 +654,7 @@ def run_checker(root: Path, statement: str, dimension: str, graph: dict, how_fou
     DECOMPOSE directly rather than faking a walk through stages that never
     ran. CIR-160: build_claim is given `root` so pattern_hint lookups are
     populated from the real pattern library too."""
-    claim = build_claim(statement, dimension, graph, root=root)
+    claim = build_claim(statement, dimension, graph, root=root, size=size)
     claim_id = _slug(statement)
     claim.stage = Stage.DECOMPOSE
     advance(claim, Stage.VERIFY, root=root, claim_id=claim_id)
@@ -753,6 +761,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("statement", nargs="?", help='e.g. "youk is agent-agnostic"')
     parser.add_argument("--dimension", default="host")
+    parser.add_argument(
+        "--size", default="", choices=["", "XS", "S", "M", "L", "XL"],
+        help="Routing size from route_task's own answer. L/XL requires "
+             "independent review before this claim can gate done.",
+    )
     parser.add_argument("--how-found", default="verification_contract checker run")
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     parser.add_argument(
@@ -782,7 +795,7 @@ def main() -> int:
     graph_path = args.graph or (args.root / "state" / "verification-contracts" / "host-inventory-graph.json")
     graph = json.loads(graph_path.read_text(encoding="utf-8"))
 
-    claim = run_checker(args.root, args.statement, args.dimension, graph, args.how_found)
+    claim = run_checker(args.root, args.statement, args.dimension, graph, args.how_found, size=args.size)
     print(json.dumps(claim.to_dict(), indent=2, sort_keys=True))
 
     if not claim.all_verified():

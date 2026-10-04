@@ -439,6 +439,39 @@ class TestGateClaimDoneRequireIndependentReview:
         verdict = gate_claim_done(path, require_independent_review=True)
         assert verdict is not None
 
+    def test_an_l_sized_claim_requires_independent_review_automatically(self, tmp_path):
+        """An XL/L claim self-verifying its own work is the trap every
+        time, not an occasional risk -- the claim's own size requires this,
+        the caller does not need to opt in separately."""
+        claim = self._all_verified_claim()
+        claim.size = "L"
+        path = write_claim(tmp_path, claim)
+        verdict = gate_claim_done(path)  # require_independent_review not passed at all
+        assert verdict is not None
+        assert verdict["reason"] == "no_independent_review"
+
+    def test_an_xl_sized_claim_passes_once_independently_reviewed(self, tmp_path):
+        claim = self._all_verified_claim()
+        claim.size = "XL"
+        mark_externally_verified(claim, claim.sub_claims[0].id)
+        path = write_claim(tmp_path, claim)
+        assert gate_claim_done(path) is None
+
+    def test_a_small_claim_does_not_require_independent_review_by_default(self, tmp_path):
+        claim = self._all_verified_claim()
+        claim.size = "S"
+        path = write_claim(tmp_path, claim)
+        assert gate_claim_done(path) is None
+
+    def test_an_unspecified_size_does_not_require_independent_review(self, tmp_path):
+        """A claim predating this field (size="") must not suddenly block
+        on every session that never set it -- additive, not a silent
+        regression on old claims."""
+        claim = self._all_verified_claim()
+        assert claim.size == ""
+        path = write_claim(tmp_path, claim)
+        assert gate_claim_done(path) is None
+
 
 class TestReworkLoop:
     def test_fully_verified_on_first_round_exits_dry_with_no_rework(self, tmp_path):
