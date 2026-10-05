@@ -1958,17 +1958,18 @@ def start_session(project_dir: str) -> SessionState:
     except Exception:
         pass  # non-critical — compact_context degrades gracefully without it
 
-    # Build compact brief inline so Claude can paste it verbatim in the first response.
-    # This anchors contracts before any context pressure, eliminating the need for a
-    # separate compact_context call at session open (saves 1 MCP round-trip per session).
+    # Build compact brief inline as model context (also delivered by the SessionStart hook).
+    # Eliminates a separate compact_context call at session open (saves 1 MCP round-trip).
     # Correct sequencing: session-plan.json was just written above, so build_brief reads
     # fresh data.
     try:
         _brief_result = _build_brief(project_dir)
         brief = _brief_result.get("brief", "")
+        digest = _brief_result.get("digest", "")
         _verbatim_lines = _brief_result.get("verbatim_lines", [])
     except Exception:
         brief = ""
+        digest = ""
         _verbatim_lines = []
 
     # Write a session stub to the audit dir immediately at session open.
@@ -2210,6 +2211,7 @@ def start_session(project_dir: str) -> SessionState:
         session_counter=counter,
         health_check_due=health_check_due,
         kill_criterion_decision_packet=_kill_criterion_decision_packet,
+        digest=digest,
         verbatim_lines=_verbatim_lines,
         project_type=project_type,
         contracts=contracts,
@@ -2452,7 +2454,8 @@ def task_checkpoint(
     When the same gap_type appears 2+ times across checkpoints, returns
     pattern_trigger so Claude can act immediately (mid-session adaptation).
 
-    Returns: brief (paste verbatim), checkpoint_written, pattern_trigger (if any).
+    Returns: digest (show the user), brief (model context, do not paste), checkpoint_written,
+    pattern_trigger (if any).
     """
     # Write session stub on first checkpoint so tab-close leaves a breadcrumb
     current_state = _load_state()
@@ -2548,8 +2551,9 @@ def task_checkpoint(
 
     result = {
         "brief": brief_result.get("brief", ""),
+        "digest": brief_result.get("digest", ""),
         "checkpoint_written": checkpoint_written,
-        "instruction": "Paste the 'brief' verbatim in your response to anchor context.",
+        "instruction": brief_result.get("instruction", ""),
     }
     if routing_missed:
         result["routing_missed"] = True

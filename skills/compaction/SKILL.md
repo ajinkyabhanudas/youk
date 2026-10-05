@@ -55,20 +55,22 @@ filesystem is unavailable. The brief is the primary output; file persistence is 
 
 ---
 
-## Recurring Gap: Verbatim-Paste Framing Is Probabilistic, Not Deterministic
+## Recurring Gap: Echoing the Brief Is Not a Preservation Mechanism
 
-**Pattern:** CLAUDE.md framing implied that pasting the `brief` verbatim "protects
-contracts from auto-compaction." This is misleading — verbatim-paste only improves the
-odds by making the brief recent context; actual durability requires writing to file.
+**Pattern:** CLAUDE.md told the model to paste the `brief` verbatim "to survive
+compaction". It did not help. The brief is rebuilt from files on every call, the
+SessionStart hook already delivers it, and the PreCompact hook injects contracts
+into the summarizer at the moment that matters. Pasting only put the same text in
+context two or three times and in front of the user.
 
-**Correct mental model:**
-- Verbatim-paste → brief survives the *next* compaction cycle (because it's recent)
-- File write → brief survives every compaction cycle, forever
-- Tab-close without `/done` → conversation context is gone; only file-written contracts survive
+**Layers, one job each:**
+- `contracts.md` + `build_brief()`: durable source of truth, survives everything
+- SessionStart hook: puts the `brief` in model context at open
+- PreCompact hook (`pre_compact.py`): tells the summarizer what to keep
+- `digest`: the only text shown to the user (<= 6 lines: next action, warnings, counts)
 
-**Implication for CLAUDE.md:** The instruction to paste verbatim is still correct and
-valuable — it keeps the brief in the recent context window. But it must not be framed as
-a durability guarantee. Durability = write to file.
+**Rule:** never paste `brief`. Show `digest`. Housekeeping plan items (PULSE, doc
+sync, file index, survey nags) stay in the brief and are counted, not listed, in the digest.
 
 ---
 
@@ -76,8 +78,6 @@ a durability guarantee. Durability = write to file.
 
 - `compact_context` is called proactively (not on a timer) — triggers are event-based:
   after commits, after M+ tasks, after 8+ tool calls without compacting.
-- The `brief` field returned by `compact_context` must be pasted verbatim in the
-  response — not summarized, not reformatted. Paraphrasing causes precision loss on
-  the next compaction cycle.
+- The `brief` field is model context. Show the user `digest`, never the raw `brief`.
 - `contracts.md` is the durable store; `session_state/*.json` is ephemeral session state.
   When in doubt about which file to read, read `contracts.md`.
