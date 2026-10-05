@@ -305,3 +305,11 @@
   reads: [state/global-patterns.jsonl]
   writes: [state/global-patterns.jsonl]
   real_log: state/global-patterns.jsonl  # append-only: a retired copy with status "retired" and a reason supersedes the live row
+
+- name: event_ledger_emit
+  grounding: deterministic
+  subsystem: value-instrumentation
+  triggers_on: "any hook or server code calling events.emit (wired by the hook taps and server spans, docs/value-plan cards S03 and S04); rejects anything that is not an enum, identifier, number or hashed id"
+  reads: []
+  writes: [state/events/]
+  real_log: null  # sharded per project and month under state/events/{slug}/{YYYY-MM}.jsonl, not one file; the value report (S05) is its reader
