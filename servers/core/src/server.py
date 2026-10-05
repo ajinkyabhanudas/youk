@@ -46,6 +46,7 @@ from intent import optimize_intent as _optimize_intent
 from compaction import build_brief, write_contracts
 from tokens import init_token_tracker, record_checkpoint
 from session_slug import get_session_slug as _get_session_slug_impl
+from phrases import has_loop_correction
 from tool_spans import install_tool_spans
 import state_paths as _sp
 from graph import (
@@ -460,14 +461,8 @@ def session_end(
     # Structural correction detection: scan the summary for post-verdict correction language.
     # This is server-side — doesn't rely on Claude passing loop_correction_detected=True.
     # The summary is the only cross-session artifact we can scan reliably.
-    _CORRECTION_PHRASES = [
-        "you missed", "what about", "unchallenged", "you didn't consider",
-        "still not at floor", "loop not dry", "not at floor", "still not done",
-        "angle unchallenged", "you forgot", "missed this",
-    ]
     if not loop_correction_detected and summary:
-        summary_lower = summary.lower()
-        loop_correction_detected = any(p in summary_lower for p in _CORRECTION_PHRASES)
+        loop_correction_detected = has_loop_correction(summary)
 
     # Persist correction state to loop-correction.json so check_loop_dry can read it
     # structurally (without re-scanning the summary). Written here, read by check_loop_dry.

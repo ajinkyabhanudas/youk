@@ -7,7 +7,7 @@ judgment against the user's actual next message. This module is the
 independent check — pure pattern matching on raw text, no LLM call, callable
 from the UserPromptSubmit hook where no agent cooperation is available.
 
-Reuses `_CORRECTION_PHRASES` and `_BUILD_SIGNALS` from `youk_hook_utils.py`
+Reuses PUSHBACK_PHRASES from phrases.py and `_BUILD_SIGNALS` from `youk_hook_utils.py`
 rather than reforking them — this module adds only the acknowledgment list
 and the 4-bucket decision, not a second phrase taxonomy for the same
 underlying signals.
@@ -21,7 +21,8 @@ _plugin_scripts = Path(__file__).resolve().parents[2] / "plugin" / "scripts"
 if str(_plugin_scripts) not in sys.path:
     sys.path.insert(0, str(_plugin_scripts))
 
-from youk_hook_utils import _CORRECTION_PHRASES, _BUILD_SIGNALS  # noqa: E402
+from phrases import PUSHBACK_PHRASES as _CORRECTION_PHRASES  # noqa: E402
+from youk_hook_utils import _BUILD_SIGNALS  # noqa: E402
 
 REACTIONS = ("correction", "redirect", "acknowledgment", "silent_proceed")
 

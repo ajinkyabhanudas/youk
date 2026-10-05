@@ -17,6 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "servers" / "shared"))
 from contracts import global_contracts, project_contracts  # noqa: E402
+from phrases import PUSHBACK_PHRASES, is_pushback  # noqa: E402
 
 
 # ── Path resolution ────────────────────────────────────────────────────────────
@@ -737,28 +738,13 @@ def build_health_nudge(health: dict) -> str | None:
 # model produced a response the developer found incomplete or wrong, and pushed.
 # Captured in knowledge/corrections.jsonl (gitignored, personal data).
 
-_CORRECTION_PHRASES = [
-    "you missed", "that's wrong", "not quite", "are you sure", "sure?",
-    "what about", "you didn't", "incorrect", "that's not", "wrong approach",
-    "is this all", "fight the urge", "fight your", "directionally biased",
-    "you're missing", "still missing", "not complete", "incomplete",
-    "you forgot", "what else", "anything else", "keep going", "go deeper",
-    "that's not all", "is that all", "is this it", "only this",
-]
+_CORRECTION_PHRASES = PUSHBACK_PHRASES  # one definition: servers/shared/phrases.py
 
 _CORRECTIONS_FILE = "knowledge/corrections.jsonl"
 _CORRECTIONS_CAP = 200
 
 
-def _is_correction(prompt: str) -> bool:
-    """Return True if the prompt is a correction of the model's prior response."""
-    lower = prompt.lower().strip()
-    # Short correction phrases — check directly
-    if len(lower) <= 80:
-        return any(phrase in lower for phrase in _CORRECTION_PHRASES)
-    # Longer prompts — only fire if correction phrase appears in first 60 chars
-    # (avoids false positives where "are you sure" appears in a code snippet)
-    return any(phrase in lower[:60] for phrase in _CORRECTION_PHRASES)
+_is_correction = is_pushback
 
 
 def _extract_prior_assistant_turn(transcript_path: str) -> str:
