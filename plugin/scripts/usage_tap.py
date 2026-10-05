@@ -125,6 +125,7 @@ def main() -> None:
     if root is None:
         return
 
+    from arms import current_arm
     from events import emit  # after sys.path is set
 
     event_name = payload.get("hook_event_name", "")
@@ -133,7 +134,7 @@ def main() -> None:
     slug = project_slug(payload.get("cwd", "") or ".")
     common = {
         "session": str(payload.get("session_id", "")),
-        "arm": os.environ.get("YOUK_ARM", ""),
+        "arm": current_arm(root, slug),
         "src": "hook",
     }
 
