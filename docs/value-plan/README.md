@@ -81,7 +81,7 @@ Items 2 to 4 apply once S02, S06 and S01 land.
 | S04 | Server spans and gate events | M | S02 | todo |
 | S05 | Value report | M | S03, S04 | todo |
 | S06 | Registry completeness gate | M | S02 | todo |
-| S07 | Contracts unification | M | none | todo |
+| S07 | Contracts unification | M | none | done |
 | S08 | Replay battery | M | none | todo |
 | S09 | Arm router | M | S02, S03 | todo |
 | S10 | Headless runner and analysis | L | S05, S08, S09 | todo |
@@ -125,6 +125,11 @@ Each lacks a measured need today.
 ## State of the world
 
 (append newest first, 5 lines max per session)
+
+- S07 done (branch vp/07-contracts). `servers/shared/contracts.py`: `project_contracts`, `global_contracts(root, cap)`, `effective_contracts`, `classify_contract`; session.py, compaction.py and the hook utils all call it. `effective_patterns` moved there (global_contracts.py re-exports it).
+  Fixed: brief said "none saved" beside "Active contract". The plan line is gone; the brief counts global contracts; `verbatim_lines` and the digest count global (top 10) plus project. PreCompact hook now injects defaults plus best-supported learnings, not the first lines of the rendered file.
+  Real data (`scripts/classify_contracts.py --root ~/.claude/youk`): 208 unique contracts, 16 mechanical (ruff before commit, never commit screenshots, never read .env, branch before PR, never --force), 192 judgment. The 16 are the S12 compile candidates; review by hand first.
+  Not done: the correction phrase lists at youk_hook_utils, server.py:458 and the test copy are still three copies; post_tool_use.py still reads `tool_result` (host sends `tool_response`).
 
 - S01 done (branch vp/06-footprint). `make footprint` / `scripts/footprint.py`; budget in `bench/footprint-baseline.json`, enforced by `tests/test_footprint_budget.py` (ratchet: template, AGENTS.md, skill descriptions).
   Baseline 11,050 tokens. Skill descriptions are 71% of it; largest: surface-options 359, adversarial-planning 276, forward-deployed-pod 230. S11 target: total at or under 3,000.

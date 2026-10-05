@@ -29,6 +29,8 @@ from pathlib import Path
 import sys
 sys.path.insert(0, "/shared")
 
+from contracts import global_contracts, project_contracts
+
 YOUK_ROOT = Path("/youk")
 
 # Session-plan items that are system upkeep, not the user's next move. They stay in the
@@ -69,6 +71,8 @@ def build_digest(slug: str, session_n, plan: list[str], contracts_count: int) ->
 # Not load-bearing for continuity — that guarantee is build_brief() re-reading the
 # CONTRACT tier from files on every call, independent of these tags or of any
 # host's cooperation. See this module's docstring and verbatim_lines below.
+_VERBATIM_GLOBAL_CAP = 10  # same cap the PreCompact hook uses
+
 TIER_CONTRACT = "[TIER:CONTRACT — PRESERVE VERBATIM]"
 TIER_DECISION = "[TIER:DECISION — key fact + rationale, 1-2 sentences max]"
 TIER_EXPLORATION = "[TIER:EXPLORATION — compress to 1 sentence]"
@@ -80,14 +84,7 @@ def _slug(project_dir: str) -> str:
 
 
 def _load_contracts(slug: str) -> list[str]:
-    f = YOUK_ROOT / "knowledge" / "projects" / slug / "contracts.md"
-    if not f.exists():
-        return []
-    return [
-        line.strip()
-        for line in f.read_text().splitlines()
-        if line.strip() and not line.startswith("#") and not line.startswith("---")
-    ]
+    return project_contracts(YOUK_ROOT, slug)
 
 
 def _load_decisions(slug: str) -> list[str]:
@@ -294,6 +291,11 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
     """
     slug = _slug(project_dir)
     contracts = _load_contracts(slug)
+    # Global contracts are counted in the brief, not listed: session_start already returns them
+    # and the PreCompact hook re-injects them. They are part of verbatim_lines, so a host with no
+    # such hook still preserves them.
+    global_lines = global_contracts(YOUK_ROOT, _VERBATIM_GLOBAL_CAP)
+    global_count = len(global_lines)
     decisions = _load_decisions(slug)
     state = _load_task_state()
     session_plan = _load_session_plan(slug)
@@ -353,15 +355,17 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
         # Full model: everything (session_start, compact_context)
         # Each section is tagged with its compaction tier so Claude's auto-compaction
         # honors the CONTRACT > DECISION > EXPLORATION > CLARIFICATION hierarchy.
-        if contracts:
-            sections.append(f"## Pinned Contracts {TIER_CONTRACT}")
-            for c in contracts:
-                sections.append(f"- {c}")
-        else:
+        sections.append(f"## Pinned Contracts {TIER_CONTRACT}")
+        for c in contracts:
+            sections.append(f"- {c}")
+        if global_count:
+            lead = "" if contracts else "No project contracts. "
             sections.append(
-                f"## Pinned Contracts {TIER_CONTRACT}\n"
-                "(none saved yet — call session_end to capture working agreements)"
+                f"({lead}{global_count} global contract(s) also apply: loaded at session start "
+                f"and re-injected before compaction.)"
             )
+        elif not contracts:
+            sections.append("(none saved yet — call session_end to capture working agreements)")
 
         # Decisions: tagged as DECISION tier — summarize to key fact + rationale
         if decisions:
@@ -466,15 +470,16 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
     return {
         "brief": brief,
         # digest: the only part meant for the user's eyes. `brief` is model context.
-        "digest": build_digest(slug, state.get("session_counter", "?"), session_plan, len(contracts)),
+        "digest": build_digest(slug, state.get("session_counter", "?"), session_plan,
+                               len(global_lines) + len(contracts)),
         # verbatim_lines (CIR-150 item 5 / CIR-151): the CONTRACT tier as a flat,
         # tag-free list — structurally separate from the [TIER:CONTRACT]-tagged
         # prose in `brief`. A host without a pre-compaction hook to interpret
         # those tags (e.g. Codex, see agent_host.CodexHost.render_session_context)
         # can still reconstruct the preservation guarantee from this field
         # directly, without needing to parse tag syntax out of running text.
-        "verbatim_lines": list(contracts),
-        "contracts_count": len(contracts),
+        "verbatim_lines": global_lines + list(contracts),
+        "contracts_count": len(global_lines) + len(contracts),
         "decisions_count": len(decisions),
         "session_plan_items": len(session_plan),
         "slug": slug,

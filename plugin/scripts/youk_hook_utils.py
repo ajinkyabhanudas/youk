@@ -15,6 +15,9 @@ import os
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "servers" / "shared"))
+from contracts import global_contracts, project_contracts  # noqa: E402
+
 
 # ── Path resolution ────────────────────────────────────────────────────────────
 
@@ -39,28 +42,12 @@ def slug_from_cwd(cwd: str) -> str:
 # ── State file readers ─────────────────────────────────────────────────────────
 
 def load_contracts(root: Path, slug: str) -> list[str]:
-    f = root / "knowledge" / "projects" / slug / "contracts.md"
-    if not f.exists():
-        return []
-    return [
-        line.strip()
-        for line in f.read_text().splitlines()
-        if line.strip() and not line.startswith("#") and not line.startswith("---")
-    ]
+    return project_contracts(root, slug)
 
 
 def load_global_contracts(root: Path, cap: int = 10) -> list[str]:
-    f = root / "knowledge" / "global" / "contracts.md"
-    if not f.exists():
-        return []
-    lines = []
-    for line in f.read_text().splitlines():
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            lines.append(stripped)
-            if len(lines) >= cap:
-                break
-    return lines
+    """Defaults first, then the best-supported live learnings (servers/shared/contracts.py)."""
+    return global_contracts(root, cap)
 
 
 def load_session_plan(root: Path, slug: str) -> list[str]:
