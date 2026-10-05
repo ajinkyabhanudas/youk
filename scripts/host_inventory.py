@@ -52,6 +52,7 @@ CAPABILITY_HOOK_EVENT: dict[str, str] = {
     "compaction_context": "PreCompact",
     "prompt_context": "UserPromptSubmit",
     "pre_tool_guard": "PreToolUse",
+    "usage_capture": "PostToolUse",
 }
 
 # Extra grep terms that count as real wiring evidence for a capability even
@@ -64,6 +65,7 @@ CAPABILITY_EXTRA_TERMS: dict[str, list[str]] = {
     "compaction_context": ["verbatim_lines"],
     "prompt_context": [],
     "pre_tool_guard": ["check_m_plus_write_gate"],
+    "usage_capture": ["usage_tap"],
 }
 
 PY_SCAN_DIRS = ["servers", "plugin"]

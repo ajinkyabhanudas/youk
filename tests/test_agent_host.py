@@ -164,3 +164,14 @@ def test_host_configuration_rollback_restores_prior_selection(tmp_path):
     previous = save_host_configuration(path, HostConfiguration("claude-code"))
     rollback_host_configuration(path, previous)
     assert load_host_configuration(path) == original
+
+
+def test_usage_capture_is_advisory_and_both_hosts_declare_it():
+    """It records what happened; losing it costs measurement, never safety."""
+    from agent_host import ClaudeCodeHost
+    for host in (ClaudeCodeHost.capabilities, CodexHost.capabilities):
+        decision = evaluate_capability(host, HostCapability.USAGE_CAPTURE)
+        assert decision.status.value == "available"
+    undeclared = HostCapabilities(host_id="other", schema_version=1, supported=frozenset())
+    degraded = evaluate_capability(undeclared, HostCapability.USAGE_CAPTURE)
+    assert degraded.status.value == "degraded" and degraded.requirement.value == "advisory"

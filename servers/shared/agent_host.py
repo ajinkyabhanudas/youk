@@ -20,6 +20,7 @@ class HostCapability(StrEnum):
     COMPACTION_CONTEXT = "compaction_context"
     PROMPT_CONTEXT = "prompt_context"
     PRE_TOOL_GUARD = "pre_tool_guard"
+    USAGE_CAPTURE = "usage_capture"
 
 
 class CapabilityRequirement(StrEnum):
@@ -48,6 +49,9 @@ _REQUIREMENTS: Final[dict[HostCapability, CapabilityRequirement]] = {
     HostCapability.COMPACTION_CONTEXT: CapabilityRequirement.ADVISORY,
     HostCapability.PROMPT_CONTEXT: CapabilityRequirement.ADVISORY,
     HostCapability.PRE_TOOL_GUARD: CapabilityRequirement.SAFETY,
+    # Records what happened (tool calls, test runs, session end) for the value report. Losing it
+    # costs measurement, never safety, so a host without it degrades rather than blocks.
+    HostCapability.USAGE_CAPTURE: CapabilityRequirement.ADVISORY,
 }
 CAPABILITY_SCHEMA_VERSION: Final = 1
 
@@ -207,6 +211,7 @@ class CodexHost:
             HostCapability.COMPACTION_CONTEXT,
             HostCapability.PRE_TOOL_GUARD,
             HostCapability.PROMPT_CONTEXT,
+            HostCapability.USAGE_CAPTURE,
         }),
     )
 

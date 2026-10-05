@@ -19,6 +19,7 @@ def test_claude_code_declares_every_known_capability():
     declared = extract_declared_capabilities()
     assert declared["claude-code"] == {
         "session_context", "compaction_context", "prompt_context", "pre_tool_guard",
+        "usage_capture",
     }
 
 
@@ -33,6 +34,7 @@ def test_codex_declares_every_known_capability_cir_155_closed_the_prompt_context
     declared = extract_declared_capabilities()
     assert declared["codex"] == {
         "session_context", "compaction_context", "pre_tool_guard", "prompt_context",
+        "usage_capture",
     }
 
 

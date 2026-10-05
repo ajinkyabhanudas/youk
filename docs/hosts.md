@@ -23,6 +23,7 @@ separately confirms each declared capability is wired to a real hook in the repo
 | compaction_context | advisory | yes | yes |
 | prompt_context | advisory | yes | yes |
 | pre_tool_guard | safety | yes | yes |
+| usage_capture | advisory | yes | yes |
 
 A safety capability a host does not declare is **blocked** (fails closed); a missing
 advisory capability is **degraded**. An unregistered host declares nothing, so it gets the
@@ -50,7 +51,7 @@ are relative to it. The installer records its choices in `state/path-map.env`
 location. Installs made before it existed have no file and are treated as Claude Code installs, so
 nothing about an existing install moves.
 
-Codex hooks (session start, prompt submit, pre-tool guard) are not written by the installer. They
+Codex hooks (session start, prompt submit, pre-tool guard, usage capture) are not written by the installer. They
 live in `~/.codex/hooks.json` or `config.toml`; see [getting-started](getting-started.md), "Agent-host
 selection".
 

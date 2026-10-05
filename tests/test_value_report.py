@@ -89,6 +89,20 @@ class TestV2:
         assert "pending" in g["v2"]["first_pass_acceptance"]
 
 
+class TestUnknownOutcomes:
+    def test_a_run_with_no_exit_code_is_not_a_pass_and_is_reported_as_unknown(self, tmp_path):
+        _emit(tmp_path, kind="test", name="pytest", src="hook", session="a", status="unknown")
+        _emit(tmp_path, kind="test", name="pytest", src="hook", session="b", status="ok")
+        (g,) = _group(tmp_path)
+        assert g["v2"]["last_test_green"] == 1 and g["v2"]["unknown_test_runs"] == 1
+        assert "1 with no exit code from the host" in vr.render(vr.summarize(vr.load(tmp_path)))
+
+    def test_an_unknown_commit_is_not_counted(self, tmp_path):
+        _emit(tmp_path, kind="commit", name="git", src="hook", session="a", status="unknown")
+        (g,) = _group(tmp_path)
+        assert g["v2"]["commits"] == 0
+
+
 class TestV3AndGates:
     def test_latency_percentiles_and_session_start(self, tmp_path):
         for ms in (10, 20, 30, 40, 100):

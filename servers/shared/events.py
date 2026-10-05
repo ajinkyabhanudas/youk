@@ -36,7 +36,9 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9_.:/+-]{1,64}$")
 _SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 KINDS = frozenset({"tool", "skill", "gate", "hook", "correction", "test", "commit", "outcome", "session"})
-STATUSES = frozenset({"ok", "fail", "block"})
+# "unknown": the host did not say how it ended (for example no exit code in the payload). It is
+# never counted as a pass.
+STATUSES = frozenset({"ok", "fail", "block", "unknown"})
 
 # Every key an event line may carry, with its default. Adding a field is a deliberate act and
 # has to be added here; tests/test_events.py fails if a written key falls outside this set.

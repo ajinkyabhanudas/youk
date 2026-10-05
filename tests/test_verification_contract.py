@@ -260,7 +260,7 @@ class TestRealAgentAgnosticClaimAgainstTheRealScanner:
         verdict = gate_all_claims(tmp_path)
         assert verdict is None
 
-    def test_agent_agnostic_claim_through_the_generalized_stage_model_is_still_8_of_8(self, tmp_path):
+    def test_agent_agnostic_claim_through_the_generalized_stage_model_is_still_fully_verified(self, tmp_path):
         """CIR-156 regression: re-running the exact same real claim, this
         time through run_rework_loop's stage-aware machinery instead of a
         single bare run_checker call, must still produce the same real,
@@ -277,7 +277,8 @@ class TestRealAgentAgnosticClaimAgainstTheRealScanner:
         assert outcome.cap_hit is False
         assert outcome.message is None
         assert outcome.claim.all_verified() is True
-        assert len(outcome.claim.sub_claims) == 8
+        # One sub-claim per (host, capability) pair: 5 capabilities x 2 hosts.
+        assert len(outcome.claim.sub_claims) == 10
         assert outcome.rounds[0].round_number == 1
         assert outcome.rounds[0].unresolved == []
         # Fully verified on round 1 -- no rework transition should have

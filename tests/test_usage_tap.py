@@ -193,3 +193,46 @@ class TestHooksJson:
                 for hook in group["hooks"]:
                     script = hook["command"].split("scripts/")[1].rstrip('"')
                     assert (REPO / "plugin" / "scripts" / script).exists(), script
+
+
+class TestCodexPayloads:
+    """Codex sends PostToolUse with tool_response but documents no duration or exit code. It names
+    shell commands Bash, edits apply_patch, and has no Skill tool."""
+
+    def test_a_test_run_with_no_exit_code_is_unknown_not_a_pass(self, tmp_path):
+        _run(TAP, {"hook_event_name": "PostToolUse", "tool_name": "Bash", "cwd": "/w/proj",
+                   "session_id": "s", "tool_use_id": "t1",
+                   "tool_input": {"command": "pytest -q"}, "tool_response": "3 failed, 10 passed"},
+             tmp_path)
+        (test,) = [e for e in _ledger(tmp_path) if e["kind"] == "test"]
+        assert test["status"] == "unknown" and "n" not in test
+
+    def test_a_commit_with_no_exit_code_is_not_counted_as_one(self, tmp_path):
+        _run(TAP, {"hook_event_name": "PostToolUse", "tool_name": "Bash", "cwd": "/w/proj",
+                   "session_id": "s", "tool_use_id": "t1",
+                   "tool_input": {"command": "git commit -m x"}, "tool_response": {"stdout": "[main abc] x"}},
+             tmp_path)
+        (commit,) = [e for e in _ledger(tmp_path) if e["kind"] == "commit"]
+        assert commit["status"] == "unknown"
+
+    def test_apply_patch_is_recorded_without_latency(self, tmp_path):
+        _run(TAP, {"hook_event_name": "PostToolUse", "tool_name": "apply_patch", "cwd": "/w/proj",
+                   "session_id": "s", "tool_use_id": "t1", "tool_input": {"patch": "*** Begin Patch"}},
+             tmp_path)
+        (tool,) = [e for e in _ledger(tmp_path) if e["kind"] == "tool"]
+        assert tool["name"] == "apply_patch" and "ms" not in tool
+
+    def test_mcp_tool_names_use_the_same_pattern(self, tmp_path):
+        _run(TAP, _post("mcp__youk-core__session_start"), tmp_path)
+        assert [e["name"] for e in _ledger(tmp_path) if e["kind"] == "tool"] == [
+            "mcp__youk-core__session_start"]
+
+    def test_session_end_works_without_a_reason(self, tmp_path):
+        _run(TAP, {"hook_event_name": "SessionEnd", "cwd": "/w/proj", "session_id": "s"}, tmp_path)
+        assert [e["name"] for e in _ledger(tmp_path) if e["kind"] == "session"] == ["end.other"]
+
+    def test_a_real_exit_code_still_gives_ok_and_fail(self, tmp_path):
+        _run(TAP, _post("Bash", {"command": "pytest"}, {"exit_code": 0}), tmp_path)
+        _run(TAP, _post("Bash", {"command": "ruff check"}, {"exit_code": 1}, tool_use_id="t2"), tmp_path)
+        got = {e["name"]: e["status"] for e in _ledger(tmp_path) if e["kind"] == "test"}
+        assert got == {"pytest": "ok", "ruff": "fail"}
