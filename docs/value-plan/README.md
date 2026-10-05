@@ -1,7 +1,7 @@
 # Value plan (anchor)
 
 Every session on this plan reads this file and its own card in `cards/`, and nothing else by default.
-Keep this file under ~1,500 tokens. Update the status table and "State of the world" at session end.
+Keep this file under ~3,000 tokens. At session end update the status table and add an entry to `log.md`; promote to "Facts later cards rely on" only what every later card needs.
 
 ## Thesis
 
@@ -22,6 +22,29 @@ enforcement, (4) a small always-on footprint, (5) review-ready evidence on every
 - Always-on, measured by `scripts/footprint.py` (chars/4): CLAUDE.md template 2.3k, AGENTS.md 0.8k, 54 skill descriptions 7.9k, total 11.1k tokens, plus the brief. Not always loaded: skill bodies 147k, MCP docstrings 16k (86 tools).
 - Research: context files cost +20% and gain ~0-4% ([arXiv 2602.11988](https://arxiv.org/abs/2602.11988)); instruction compliance decays with count; METR found devs 19% slower while feeling 20% faster; developers name verification as the top bottleneck.
 - youk's own learned patterns already say this: put deterministic rules in code, replace proxy metrics with outcome metrics.
+
+## Start here (next session: S08 to S10)
+
+Read this file, then cards S08, S09 and S10, and nothing else by default.
+Work in a git worktree off `origin/main`; do not switch branches in `~/.claude/youk` (live bind mount, see Operating notes).
+
+**Status.** Phase 1 (S00 to S07) is merged (#177 to #187), plus follow-ups in #189. The live install is not updated:
+`~/.claude/youk` sits on an old branch and youk-core has not restarted, so no real events exist yet. Build and test
+S08 to S10 against fixtures; check the first real ledger with `make value-report` once the install is updated.
+
+**Decisions only Ajinkya can make (ask in the first message, do not guess):**
+1. Dollar cap for the S10 battery. Recommended: $50 for the first run, about 12 to 20 tasks x 3 arms x 1 repetition,
+   and more repetitions only after seeing the variance. Cost per run is an estimate, not measured.
+2. Repos S08 may mine: youk, stencil, canopy (confirm; write them to `bench/repos.yaml`).
+3. Permission to install Superpowers into an isolated config directory for the third arm.
+
+**Can finish without them:** S08 miner and its tests on a fixture repo, S09 arm router, S10 runner with `--dry-run`
+plus the analysis script. **Waits for 1 and 3:** the first real battery run.
+
+**Stop at G1.** After the first real run, record the arm comparison and stop. S11 and S12 scope depends on it.
+
+**Ceremony.** The global CLAUDE.md routing (route_task, challenge, nfr_check) calls youk-core, and the first call
+restarts the stale server through the freshness gate. The NFR answers are pre-filled under "NFR defaults" below.
 
 ## First goal (M1: youk can see itself)
 
@@ -49,7 +72,7 @@ Any component with no movement on V1, V2, V3 or B after its review date is remov
 3. It emits a typed event asserted in a test, or is tagged `diagnostic: true` with a reason.
 4. Token cost declared; footprint budget not exceeded.
 5. Metric and kill criterion plus review date written in the card.
-6. Card status and 5-line state of the world updated here; `/learn` run.
+6. Card status updated here, 5-line entry added to `log.md`; `/learn` run.
 
 Items 2 to 4 apply once S02, S06 and S01 land.
 
@@ -67,7 +90,7 @@ Items 2 to 4 apply once S02, S06 and S01 land.
 - Load: this file, your card, the files the card lists under "Load". Nothing else.
 - If a card needs more than ~8 files or ~3k lines of reading, split it before starting.
 - Cards name "Verify first" assumptions. Check them in the first 10 minutes; if one is false, stop and amend the card.
-- End: set card status, append a 5-line state of the world below, run `/learn`.
+- End: set card status, add a 5-line entry to `log.md`, run `/learn`.
 - Task graph: `tasks.json` holds ids and edges for `create_task_graph`. Not loaded yet (youk-core busy).
 
 ## Status
@@ -96,12 +119,12 @@ Items 2 to 4 apply once S02, S06 and S01 land.
 | S17 | Portable install and lean pack | M | G2, S15 | todo |
 | S18 | Evidence page | S | G2, S10 | todo |
 
-## Phase 1 status (S00 to S07): code complete, PRs open
+## Phase 1 status (S00 to S07): merged
 
-Stacked PRs, merge in order, retargeting as each lands: #177 make-version-skip, #178 digest, #179 plan docs,
-#180 uv (S00), #181 event ledger (S02), #182 hook taps (S03), #183 footprint (S01), #184 contracts (S07),
-#185 server spans (S04), #186 value report (S05), #187 registry gate (S06). Nothing is live until they merge
-and youk-core restarts; the ledger stays empty until the plugin hooks reload in a new session.
+#177 make-version-skip, #178 digest, #179 plan docs, #180 uv (S00), #181 event ledger (S02), #182 hook taps (S03),
+#183 footprint (S01), #184 contracts (S07), #185 server spans (S04), #186 value report (S05), #187 registry gate (S06),
+all merged to main. Follow-ups (phrase lists, `tool_response`) in #189. Nothing runs live until `~/.claude/youk` is
+updated to main and youk-core restarts; the ledger stays empty until the plugin hooks reload in a new session.
 
 ## Operating notes
 
@@ -140,44 +163,11 @@ Each lacks a measured need today.
 - Superpowers arm uses its default config on my sandbox. Results are not a statement about its best case.
 - Hook and CLI behaviour in cards is "verify first", not assumed.
 
-## State of the world
+## Facts later cards rely on
 
-(append newest first, 5 lines max per session)
-
-- Phase 1 follow-ups done (branch vp/11-phrases-and-tool-response). Phrase lists: there were two distinct lists plus a pasted test copy, not three copies; each now lives once in `servers/shared/phrases.py` (`PUSHBACK_PHRASES`, `LOOP_CORRECTION_PHRASES`, `CONTRACT_PHRASES`) and a test fails on any other definition.
-  `post_tool_use.py` now reads `tool_response` (a dict for Bash), falling back to `tool_result`. Before this, `last_signal` in active_task.json was never filled from command output, so briefs showed an empty "last signal" for Bash.
-
-- S06 done (branch vp/10-registry-gate). Phase 1 (S00-S07) complete. `tests/test_registry_gate.py`: stages must declare real_log, emits or untraced_reason; every hook script has an entry; every check_*_gate is in GATE_CHECKS; the tap matches `Skill`; no tool is orphaned (check moved from startup to CI).
-  Registry is now 44 stages (5 hook entries added, subsystem `host-hooks`): 10 traced via ledger, 17 declared untraced with a reason, the rest have a real_log. `session_start_hook` added to the wiring allow-list (called by the host hook, never by name).
-  Fixed on the way: `coverage-tree` frontmatter was invalid YAML; `verify` had `skill:` and no `name:`.
-  Correction: `domain_edge_case_review.py` is not dead on main (nfr.py uses it); it stays.
-
-- S05 done (branch vp/09-value-report). `make value-report` / `scripts/value_report.py [--by arm,week] [--json]`; export_stats points to it as the headline. 15 tests on ledgers with known answers.
-  Counting rule: calls and corrections from `src=hook`; latency, gates, M+ task counts from `src=server`. Intervals only with 10+ sessions.
-  Reported now: V1 corrections per M+ task and per session; V2 inputs (last test run green per session, failed runs, commits); V3 hook and tool latency and footprint; gate checks and blocks.
-  Not measurable yet: first-pass acceptance (needs S13), tokens per task (no token events), repeat-gap rate (needs audit logs; enum events cannot identify a repeat). S09 must give server events an arm or per-arm M+ rates break.
-
-- S04 done (branch vp/08-server-spans). `servers/shared/tool_spans.py`: `install_tool_spans(mcp, get_root, get_slug)` wraps every `@mcp.tool` at registration on both servers; a test asserts every registered tool is wrapped (core and code).
-  Events carry `src=server`. Counting rule for the report (S05): call counts from `src=hook`, latency and errors from `src=server`. Server also emits gate (`nfr`, `challenge`, `intake`, `task_contract`, `proposal_backlog`, `set.<gate>`, `route.<size>`) and outcome (`task_done`, `checkpoint.<size>`, `session_end`) events.
-  Task id: only where a call carries one (set_gate, mark_task_done), hashed. Other events join by session (`<slug>-<counter>` hashed) and time; a persisted current-task was left out until a report needs it. Wrapper overhead under 2 ms per call (asserted).
-  Not live: the running youk-core must restart to pick this up (it is a live bind mount, so merge-then-restart).
-
-- S07 done (branch vp/07-contracts). `servers/shared/contracts.py`: `project_contracts`, `global_contracts(root, cap)`, `effective_contracts`, `classify_contract`; session.py, compaction.py and the hook utils all call it. `effective_patterns` moved there (global_contracts.py re-exports it).
-  Fixed: brief said "none saved" beside "Active contract". The plan line is gone; the brief counts global contracts; `verbatim_lines` and the digest count global (top 10) plus project. PreCompact hook now injects defaults plus best-supported learnings, not the first lines of the rendered file.
-  Real data (`scripts/classify_contracts.py --root ~/.claude/youk`): 208 unique contracts, 16 mechanical (ruff before commit, never commit screenshots, never read .env, branch before PR, never --force), 192 judgment. The 16 are the S12 compile candidates; review by hand first.
-  Not done: the correction phrase lists at youk_hook_utils, server.py:458 and the test copy are still three copies; post_tool_use.py still reads `tool_result` (host sends `tool_response`).
-
-- S01 done (branch vp/06-footprint). `make footprint` / `scripts/footprint.py`; budget in `bench/footprint-baseline.json`, enforced by `tests/test_footprint_budget.py` (ratchet: template, AGENTS.md, skill descriptions).
-  Baseline 11,050 tokens. Skill descriptions are 71% of it; largest: surface-options 359, adversarial-planning 276, forward-deployed-pod 230. S11 target: total at or under 3,000.
-  Lower the baseline with `--write-baseline` whenever a card reduces it.
-
-- S03 done (branch vp/05-hook-taps). `plugin/scripts/usage_tap.py` handles PostToolUse, PostToolUseFailure, SessionEnd; the prompt and session-start hooks emit correction and session events. Registered in plugin/hooks/hooks.json.
-  Verified: PostToolUse carries `duration` and Bash `exit_code`; matcher `Skill` works; payload key names vary (`skill`/`skill_name`, `prompt`), so the tap accepts both. Not verified live: whether a failing Bash arrives as PostToolUseFailure; both paths are handled.
-  Latency incl. interpreter: p50 41 ms, p95 45-54 ms with `python3 -S` (stdlib only), 57/67 ms without it. Budget 50 ms p95 is met on a good run and borderline on a noisy one.
-  `hook` events are sampled 1 in 10 (field n=10 is the weight). events.py dropped dataclass/enum to stay import-light.
-  Found, not fixed: post_tool_use.py reads `tool_result` but the payload field is `tool_response`; phrase lists are duplicated in youk_hook_utils, server.py:458 and tests (S07 should unify).
-
-- S02 done (branch vp/04-event-ledger). `servers/shared/events.py`: `emit(root, slug, kind=, name=, ...)` never raises; `read_events(root, slug, since, kinds)` streams.
-  Schema v1 kinds: tool, skill, gate, hook, correction, test, commit, outcome, session. Statuses: ok, fail, block. Session and task ids are hashed on emit.
-  Shards: state/events/{slug}/{YYYY-MM}.jsonl. Append p95 0.12 ms (budget 5 ms). Registry entry `event_ledger_emit` has `real_log: null` because the log is sharded.
-  Subsystem `value-instrumentation` added to the registry test. Environment: uv (S00 done) plus GNU make 4 for two Makefile tests.
+- Ledger: `events.emit(root, slug, kind=, name=, ...)`; kinds tool, skill, gate, hook, correction, test, commit, outcome, session; ids hashed; never raises.
+- Counting rule: calls and corrections from `src=hook`, latency, gates and M+ task counts from `src=server`.
+- Server events have no arm yet (the container has no `YOUK_ARM`); S09 must give them one or per-arm M+ rates break.
+- Hook cost: about 41 ms p50 per call including interpreter start, with `python3 -S`. Hook `hook` events are sampled 1 in 10 (`n=10` is the weight).
+- `make value-report`, `make footprint` (budget 11,050 tokens), `scripts/classify_contracts.py` (16 mechanical contracts of 208, for S12).
+- Per-card detail: `log.md`.
