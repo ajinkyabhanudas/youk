@@ -19,7 +19,7 @@ enforcement, (4) a small always-on footprint, (5) review-ready evidence on every
 - Skill-invocation log holds 1 record across all sessions. Model-reported logging does not work.
 - STATS.md: org_score measures gates fired, not code quality. Developer autonomy 0/87.
 - No per-call usage trace exists. The wiring pulse checks that a tool name appears somewhere, not that it ran.
-- Always-on estimate (chars/4, S01 replaces it): CLAUDE.md ~2.3k, AGENTS.md ~0.7k, 54 skill descriptions ~8.4k, brief ~1k.
+- Always-on, measured by `scripts/footprint.py` (chars/4): CLAUDE.md template 2.3k, AGENTS.md 0.8k, 54 skill descriptions 7.9k, total 11.1k tokens, plus the brief. Not always loaded: skill bodies 147k, MCP docstrings 16k (86 tools).
 - Research: context files cost +20% and gain ~0-4% ([arXiv 2602.11988](https://arxiv.org/abs/2602.11988)); instruction compliance decays with count; METR found devs 19% slower while feeling 20% faster; developers name verification as the top bottleneck.
 - youk's own learned patterns already say this: put deterministic rules in code, replace proxy metrics with outcome metrics.
 
@@ -75,7 +75,7 @@ Items 2 to 4 apply once S02, S06 and S01 land.
 | Id | Title | Size | Depends | Status |
 |---|---|---|---|---|
 | S00 | Move dependency management to uv | M | none | todo |
-| S01 | Footprint baseline and budget | S | none | todo |
+| S01 | Footprint baseline and budget | S | none | done |
 | S02 | Event ledger core | M | none | done |
 | S03 | Hook taps | M | S02 | done |
 | S04 | Server spans and gate events | M | S02 | todo |
@@ -125,6 +125,10 @@ Each lacks a measured need today.
 ## State of the world
 
 (append newest first, 5 lines max per session)
+
+- S01 done (branch vp/06-footprint). `make footprint` / `scripts/footprint.py`; budget in `bench/footprint-baseline.json`, enforced by `tests/test_footprint_budget.py` (ratchet: template, AGENTS.md, skill descriptions).
+  Baseline 11,050 tokens. Skill descriptions are 71% of it; largest: surface-options 359, adversarial-planning 276, forward-deployed-pod 230. S11 target: total at or under 3,000.
+  Lower the baseline with `--write-baseline` whenever a card reduces it.
 
 - S03 done (branch vp/05-hook-taps). `plugin/scripts/usage_tap.py` handles PostToolUse, PostToolUseFailure, SessionEnd; the prompt and session-start hooks emit correction and session events. Registered in plugin/hooks/hooks.json.
   Verified: PostToolUse carries `duration` and Bash `exit_code`; matcher `Skill` works; payload key names vary (`skill`/`skill_name`, `prompt`), so the tap accepts both. Not verified live: whether a failing Bash arrives as PostToolUseFailure; both paths are handled.
