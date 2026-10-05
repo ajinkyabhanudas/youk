@@ -79,7 +79,7 @@ Items 2 to 4 apply once S02, S06 and S01 land.
 | S02 | Event ledger core | M | none | done |
 | S03 | Hook taps | M | S02 | done |
 | S04 | Server spans and gate events | M | S02 | done |
-| S05 | Value report | M | S03, S04 | todo |
+| S05 | Value report | M | S03, S04 | done |
 | S06 | Registry completeness gate | M | S02 | todo |
 | S07 | Contracts unification | M | none | done |
 | S08 | Replay battery | M | none | todo |
@@ -125,6 +125,11 @@ Each lacks a measured need today.
 ## State of the world
 
 (append newest first, 5 lines max per session)
+
+- S05 done (branch vp/09-value-report). `make value-report` / `scripts/value_report.py [--by arm,week] [--json]`; export_stats points to it as the headline. 15 tests on ledgers with known answers.
+  Counting rule: calls and corrections from `src=hook`; latency, gates, M+ task counts from `src=server`. Intervals only with 10+ sessions.
+  Reported now: V1 corrections per M+ task and per session; V2 inputs (last test run green per session, failed runs, commits); V3 hook and tool latency and footprint; gate checks and blocks.
+  Not measurable yet: first-pass acceptance (needs S13), tokens per task (no token events), repeat-gap rate (needs audit logs; enum events cannot identify a repeat). S09 must give server events an arm or per-arm M+ rates break.
 
 - S04 done (branch vp/08-server-spans). `servers/shared/tool_spans.py`: `install_tool_spans(mcp, get_root, get_slug)` wraps every `@mcp.tool` at registration on both servers; a test asserts every registered tool is wrapped (core and code).
   Events carry `src=server`. Counting rule for the report (S05): call counts from `src=hook`, latency and errors from `src=server`. Server also emits gate (`nfr`, `challenge`, `intake`, `task_contract`, `proposal_backlog`, `set.<gate>`, `route.<size>`) and outcome (`task_done`, `checkpoint.<size>`, `session_end`) events.

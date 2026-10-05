@@ -266,6 +266,9 @@ simulate: ## Run simulate-experience skill — developer experience audit, feeds
 	    youk-code:latest 2>/dev/null | python3 -m json.tool || true
 
 .PHONY: lint
+value-report: ## Outcome and overhead report from the event ledger (V1 corrections, V2 inputs, V3 latency), by arm
+	uv run python scripts/value_report.py
+
 footprint: ## Always-on token footprint; fails if it grew past bench/footprint-baseline.json
 	uv run python scripts/footprint.py --live --check
 

@@ -18,7 +18,7 @@ a tiny CLAUDE.md that defers to the hook payload.
 **Build.**
 - Arm in {full, lean, bare}, assigned per session by hash, overridable by `YOUK_ARM`.
 - `bench/arms/{arm}/context.md` injected by the hook. `bare` injects nothing but events still flow.
-- Arm written into every event and the session record.
+- Arm written into every event and the session record. The container has no `YOUK_ARM`, so the server reads the session's arm from a state file and `tool_spans` attaches it; without that, M+ task counts (server events) cannot be grouped by arm and the V1 rate breaks.
 
 **Tests.** Deterministic assignment, override wins, bare disables gates, all events carry arm.
 
