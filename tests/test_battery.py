@@ -153,6 +153,71 @@ class TestArmCommands:
             rb.arm_setup("gold", tmp_path, None)
 
 
+class TestAuth:
+    ENV = {"ANTHROPIC_API_KEY": "k", "ANTHROPIC_AUTH_TOKEN": "t", "CLAUDE_CODE_OAUTH_TOKEN": "o",
+           "PATH": "/bin"}
+
+    def test_subscription_mode_strips_every_api_credential(self):
+        env = rb.auth_env(self.ENV, "subscription")
+        assert "ANTHROPIC_API_KEY" not in env and "ANTHROPIC_AUTH_TOKEN" not in env
+        assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "o" and env["PATH"] == "/bin"
+
+    def test_api_key_mode_keeps_the_key_and_drops_the_oauth_token(self):
+        env = rb.auth_env(self.ENV, "api-key")
+        assert env["ANTHROPIC_API_KEY"] == "k" and "CLAUDE_CODE_OAUTH_TOKEN" not in env
+
+    def test_the_input_environment_is_not_mutated(self):
+        base = dict(self.ENV)
+        rb.auth_env(base, "subscription")
+        assert base == self.ENV
+
+    def test_a_missing_credential_is_explained_before_any_run(self):
+        assert "setup-token" in rb.check_auth({"ANTHROPIC_API_KEY": "k"}, "subscription")
+        assert rb.check_auth({"CLAUDE_CODE_OAUTH_TOKEN": "o"}, "subscription") == ""
+        assert "ANTHROPIC_API_KEY" in rb.check_auth({}, "api-key")
+        assert rb.check_auth({"ANTHROPIC_API_KEY": "k"}, "api-key") == ""
+
+    def test_an_error_with_no_tokens_is_infrastructure_not_a_failed_task(self):
+        not_logged_in = {"is_error": True, "result": "Not logged in", "usage": {
+            "input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0}}
+        assert rb.is_infra_failure(not_logged_in)
+        ran_out_of_budget = {"is_error": True, "subtype": "error_max_budget_usd",
+                             "usage": {"input_tokens": 500, "output_tokens": 20}}
+        assert not rb.is_infra_failure(ran_out_of_budget)
+        assert not rb.is_infra_failure({"is_error": False, "usage": {}})
+
+    def test_repeated_infrastructure_failures_stop_the_run(self, battery):
+        calls = []
+
+        def boom(spec, workdir, ctx):
+            calls.append(spec.key)
+            return rb.AgentOutcome(status="infra_error", error="Not logged in")
+
+        summary = _run(battery, agent=boom)
+        assert summary["ran"] == len(calls) == rb.MAX_CONSECUTIVE_INFRA
+        assert "infrastructure errors in a row" in summary["stopped"]
+
+
+class TestCleanup:
+    def test_removes_only_bench_entries_under_knowledge_projects_and_state(self, tmp_path):
+        home = tmp_path / "youk"
+        keep = [home / "knowledge" / "projects" / "youk" / "contracts.md",
+                home / "state" / "events" / "youk" / "2026-10.jsonl",
+                home / "knowledge" / "projects" / "benchmark-notes" / "x.md"]
+        drop = [home / "knowledge" / "projects" / "bench-canopy" / "contracts.md",
+                home / "state" / "events" / "bench-youk" / "2026-10.jsonl",
+                home / "state" / "bench-stencil.json"]
+        for f in keep + drop:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("x")
+        removed = rb.cleanup_bench_state(home)
+        assert len(removed) == 3
+        assert all(f.exists() for f in keep) and not any(f.exists() for f in drop)
+
+    def test_a_missing_home_is_fine(self, tmp_path):
+        assert rb.cleanup_bench_state(tmp_path / "nope") == []
+
+
 class TestClaudeOutput:
     RESULT = {"type": "result", "subtype": "success", "is_error": False, "num_turns": 7,
               "total_cost_usd": 0.42, "usage": {"input_tokens": 100, "cache_read_input_tokens": 900,

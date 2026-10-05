@@ -31,11 +31,8 @@ Work in a git worktree off `origin/main`; do not switch branches in `~/.claude/y
 **Status.** Phases 1 and 2 are built (S00 to S10): ledger, taps, report, registry gate, miner, arm router, headless runner, analysis.
 No real battery run has happened. The live install is not updated, so the ledger holds no real events.
 
-**Decisions only Ajinkya can make (the first real run waits for them):**
-1. Dollar cap for the run. Recommended: $50 for the first run, 12 to 20 tasks x 3 arms x 1 repetition.
-2. Permission to put a Superpowers checkout on disk for the third arm (`--superpowers-dir`; the runner never installs).
-3. Auth for the isolated config dirs (`ANTHROPIC_API_KEY`, or one login per arm config dir).
-4. Fairness review of `bench/tasks/*.yaml` prompts (`mine_tasks.py --review`; delete any that give the answer away).
+**Decided (2026-10-05):** $50 cap, notional (subscription only; API keys supported in code, never used unless `--auth api-key`). First run is bare and full; Superpowers is added later. Prompt fairness review was done on 2026-10-05 (see log); Ajinkya can still audit with `mine_tasks.py --review`.
+**Still needed from Ajinkya before the first real run:** `claude setup-token`, then `export CLAUDE_CODE_OAUTH_TOKEN=...` in the shell that runs the battery.
 
 **Stop at G1.** After the first real run, record the arm comparison with `analyze.py --decision` and stop. S11 and S12 scope depends on it.
 

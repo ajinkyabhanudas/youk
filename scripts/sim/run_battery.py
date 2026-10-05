@@ -10,11 +10,17 @@ Arms:
   full          youk as installed: hooks, brief, CLAUDE.md template, youk-core and youk-code tools
   superpowers   the Superpowers plugin from a checkout you give with --superpowers-dir, no youk
 
+Auth: subscription by default. API keys are supported (`--auth api-key`) and never used unless asked:
+in the default mode ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN are removed from the agent's
+environment, and CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) is required, because each
+isolated config dir has no login of its own. Under a subscription `total_cost_usd` is notional,
+what the same tokens would cost at API rates, so the cap limits tokens used, not dollars billed.
+
 Money: --cap-usd is required for a real run. Each run also gets --max-budget-usd, so one runaway
 cannot spend the cap. The loop stops before a run it expects to push spending over the cap.
 Order is repetition, then task, then arm, so stopping early leaves paired data, not one full arm.
 
-    python3 scripts/sim/run_battery.py --dry-run                      fake agent, no money
+    python3 scripts/sim/run_battery.py --dry-run --arms bare,full,superpowers   fake agent, no money
     python3 scripts/sim/run_battery.py --cap-usd 50 --k 1             first real run
     python3 scripts/sim/run_battery.py --cap-usd 50 --k 1 --limit 2   smoke test on two tasks
 Re-running appends only the (task, arm, rep) combinations the results file lacks.
@@ -46,6 +52,10 @@ RESULTS_DIR = REPO_ROOT / "bench" / "results"
 ARMS = ("bare", "full", "superpowers")
 DEFAULT_WORK = Path.home() / ".cache" / "youk-bench"
 DEFAULT_TIMEOUT_S = 900
+MAX_CONSECUTIVE_INFRA = 3     # stop instead of burning through the task list on a broken setup
+AUTH_MODES = ("subscription", "api-key")
+KEY_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 DEFAULT_MAX_RUN_USD = 3.0
 YOUK_MCP = {"mcpServers": {
     "youk-core": {"type": "http", "url": "http://127.0.0.1:8001/mcp"},
@@ -148,8 +158,39 @@ def outcome_from_json(data: dict) -> AgentOutcome:
     )
 
 
+def auth_env(base: dict, mode: str) -> dict:
+    """The environment the agent runs in. Subscription mode removes every API credential so a key
+    in the shell can never be billed by accident; api-key mode removes the OAuth token instead."""
+    if mode not in AUTH_MODES:
+        raise ValueError(f"unknown auth mode {mode!r}")
+    env = dict(base)
+    drop = KEY_VARS if mode == "subscription" else (TOKEN_VAR,)
+    for name in drop:
+        env.pop(name, None)
+    return env
+
+
+def check_auth(base: dict, mode: str) -> str:
+    """"" if the chosen mode has its credential, else what to do about it."""
+    if mode == "subscription" and not base.get(TOKEN_VAR):
+        return (f"subscription mode needs {TOKEN_VAR}. Run `claude setup-token` in your terminal "
+                f"and export the token it prints, or pass --auth api-key to use a key.")
+    if mode == "api-key" and not base.get("ANTHROPIC_API_KEY"):
+        return "api-key mode needs ANTHROPIC_API_KEY in the environment."
+    return ""
+
+
+def is_infra_failure(data: dict) -> bool:
+    """An error result that never reached the model (not logged in, rate limit, network). Zero
+    tokens and an error means the agent did not get to try the task."""
+    usage = data.get("usage") or {}
+    spent = sum(int(usage.get(k) or 0) for k in ("input_tokens", "output_tokens",
+                                                "cache_creation_input_tokens"))
+    return bool(data.get("is_error")) and spent == 0
+
+
 def make_claude_agent(work: Path, superpowers_dir: Path | None, model: str | None,
-                      max_run_usd: float, timeout_s: int) -> Agent:
+                      max_run_usd: float, timeout_s: int, auth: str = "subscription") -> Agent:
     def agent(spec: RunSpec, workdir: Path, ctx: dict) -> AgentOutcome:
         setup = arm_setup(spec.arm, work, superpowers_dir)
         mcp_file = None
@@ -158,7 +199,7 @@ def make_claude_agent(work: Path, superpowers_dir: Path | None, model: str | Non
             mcp_file.write_text(json.dumps(setup["mcp"]))
         cmd = agent_command(spec, setup, spec.task["prompt"], ctx["session_id"], model,
                             max_run_usd, mcp_file)
-        env = {**os.environ, **{k: str(v) for k, v in setup["env"].items()},
+        env = {**auth_env(dict(os.environ), auth), **{k: str(v) for k, v in setup["env"].items()},
                "CLAUDE_CONFIG_DIR": str(setup["config_dir"]), "YOUK_ROOT": str(ctx["youk_root"]),
                "YOUK_CORE_URL": os.environ.get("YOUK_CORE_URL", "http://127.0.0.1:8001")}
         try:
@@ -176,8 +217,9 @@ def make_claude_agent(work: Path, superpowers_dir: Path | None, model: str | Non
             return AgentOutcome(status="infra_error",
                                 error=(done.stderr.strip().splitlines() or ["no output"])[-1][:80])
         out = outcome_from_json(data)
-        if data.get("is_error") and "auth" in json.dumps(data).lower():
+        if is_infra_failure(data):
             out.status = "infra_error"
+            out.error = str(data.get("result", "error"))[:80]
         return out
     return agent
 
@@ -291,12 +333,16 @@ def run_battery(tasks: list[dict], arms: list[str], k: int, agent: Agent, repos:
     done = load_done(out_path)
     specs = plan(tasks, arms, k, done)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    spent, costs, ran, stopped = 0.0, [], 0, ""
+    spent, costs, ran, stopped, streak = 0.0, [], 0, "", 0
     for spec in specs:
         if over_cap(spent, costs, cap, max_run_usd):
             stopped = f"cap ${cap:g} reached after ${spent:.2f}"
             break
+        if streak >= MAX_CONSECUTIVE_INFRA:
+            stopped = f"{streak} infrastructure errors in a row; fix the setup and rerun"
+            break
         row = execute_run(spec, repos, work, agent, youk_root)
+        streak = streak + 1 if row["status"] == "infra_error" else 0
         with out_path.open("a") as handle:
             handle.write(json.dumps(row) + "\n")
         spent += row["cost_usd"]
@@ -308,6 +354,24 @@ def run_battery(tasks: list[dict], arms: list[str], k: int, agent: Agent, repos:
             "stopped": stopped}
 
 
+def cleanup_bench_state(youk_home: Path) -> list[str]:
+    """Remove what the full arm's live youk-core left for the battery's project slugs. Only
+    entries whose name starts with `bench-` under knowledge/projects and state are touched."""
+    removed = []
+    for base in (youk_home / "knowledge" / "projects", youk_home / "state"):
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("bench-*")):
+            if not path.name.startswith("bench-") or path.is_symlink():
+                continue
+            try:
+                shutil.rmtree(path) if path.is_dir() else path.unlink()
+                removed.append(str(path.relative_to(youk_home)))
+            except OSError:
+                pass
+    return removed
+
+
 def estimate_line(n_runs: int, max_run: float, cap: float | None) -> str:
     worst = n_runs * max_run
     return (f"{n_runs} runs; worst case ${worst:.0f} at ${max_run:g} per run"
@@ -316,7 +380,8 @@ def estimate_line(n_runs: int, max_run: float, cap: float | None) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--arms", default=",".join(ARMS))
+    ap.add_argument("--arms", default="bare,full",
+                    help="comma-separated; add superpowers once you have --superpowers-dir")
     ap.add_argument("--k", type=int, default=1, help="repetitions per task and arm")
     ap.add_argument("--cap-usd", type=float, help="total spend limit; required unless --dry-run")
     ap.add_argument("--max-run-usd", type=float, default=DEFAULT_MAX_RUN_USD)
@@ -324,6 +389,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model")
     ap.add_argument("--limit", type=int, help="use only the first N tasks (smoke test)")
     ap.add_argument("--tasks", help="comma-separated task ids")
+    ap.add_argument("--auth", choices=AUTH_MODES, default="subscription",
+                    help="subscription (default, needs CLAUDE_CODE_OAUTH_TOKEN) or api-key")
+    ap.add_argument("--youk-home", type=Path, default=Path.home() / ".claude" / "youk",
+                    help="live youk install whose bench-* state is removed after the run")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--superpowers-dir", type=Path)
     ap.add_argument("--work-dir", type=Path, default=DEFAULT_WORK)
@@ -339,7 +408,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dry_run and args.cap_usd is None:
         ap.error("--cap-usd is required for a real run (set the dollar limit deliberately)")
 
-    tasks = mine_tasks.load_tasks(args.tasks_dir)
+    tasks = mine_tasks.usable(mine_tasks.load_tasks(args.tasks_dir))
     if args.tasks:
         wanted = set(args.tasks.split(","))
         tasks = [t for t in tasks if t["id"] in wanted]
@@ -360,13 +429,19 @@ def main(argv: list[str] | None = None) -> int:
             arm_setup(arm, work, args.superpowers_dir)       # fail fast on a missing checkout
         if shutil.which("claude") is None:
             ap.error("the claude CLI is not on PATH")
+        problem = check_auth(dict(os.environ), args.auth)
+        if problem:
+            ap.error(problem)
         agent = make_claude_agent(work, args.superpowers_dir, args.model, args.max_run_usd,
-                                  args.timeout)
+                                  args.timeout, args.auth)
     print(estimate_line(len(plan(tasks, arms, args.k, load_done(out))), args.max_run_usd,
                         args.cap_usd))
     summary = run_battery(tasks, arms, args.k, agent, repos, work, out, youk_root,
                           args.cap_usd, args.max_run_usd)
     print(json.dumps(summary))
+    if not args.dry_run:
+        gone = cleanup_bench_state(args.youk_home)
+        print(f"removed {len(gone)} bench-* state entries from {args.youk_home}")
     print(f"results: {out}")
     return 0
 
