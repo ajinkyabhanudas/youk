@@ -191,17 +191,25 @@ def test_the_library_is_syntactically_valid_bash_3_compatible():
 # --- Makefile: no hardcoded install or host dir -------------------------------------
 
 def _make_vars(tmp_path, *, path_map: str | None):
+    import re
     import shutil
-    if shutil.which("make") is None:
+    make = shutil.which("make")
+    if make is None:
         pytest.skip("make not installed")
+    # The Makefile needs GNU make 4+ (--eval with target recipes). macOS ships 3.81 and
+    # would fail with an unrelated unpack error, so skip rather than mislead.
+    banner = subprocess.run([make, "--version"], capture_output=True, text=True).stdout
+    found = re.search(r"GNU Make (\d+)", banner)
+    if not found or int(found.group(1)) < 4:
+        pytest.skip("GNU make 4+ required")
     root = tmp_path / "installdir"
     (root / "state").mkdir(parents=True)
     shutil.copy(Path(__file__).parent.parent / "Makefile", root / "Makefile")
     if path_map is not None:
         (root / "state" / "path-map.env").write_text(path_map)
     out = subprocess.run(
-        ["make", "-s", "-C", str(root), "--eval", 'show: ; @echo "$(YOUK_DIR)|$(HOST_DIR)"', "show"],
-        capture_output=True, text=True, env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path / "h")},
+        [make, "-s", "-C", str(root), "--eval", 'show: ; @echo "$(YOUK_DIR)|$(HOST_DIR)"', "show"],
+        capture_output=True, text=True, env={"PATH": f"{Path(make).parent}:/usr/bin:/bin", "HOME": str(tmp_path / "h")},
     )
     return root, out.stdout.strip().split("|")
 
