@@ -1,0 +1,203 @@
+{
+  "_note": "Payload for youk-core.create_task_graph(tasks, edges). Not loaded yet because youk-core is in use by another task. Ids match docs/value-plan/cards/.",
+  "tasks": [
+    {
+      "id": "VP-S00",
+      "label": "Move dependency management to uv (M)"
+    },
+    {
+      "id": "VP-S01",
+      "label": "Footprint baseline and budget (S)"
+    },
+    {
+      "id": "VP-S02",
+      "label": "Event ledger core (M)"
+    },
+    {
+      "id": "VP-S03",
+      "label": "Hook taps (M)"
+    },
+    {
+      "id": "VP-S04",
+      "label": "Server spans and gate events (M)"
+    },
+    {
+      "id": "VP-S05",
+      "label": "Value report (M)"
+    },
+    {
+      "id": "VP-S06",
+      "label": "Registry completeness gate (M)"
+    },
+    {
+      "id": "VP-S07",
+      "label": "Contracts unification (M)"
+    },
+    {
+      "id": "VP-S08",
+      "label": "Replay battery (M)"
+    },
+    {
+      "id": "VP-S09",
+      "label": "Arm router (M)"
+    },
+    {
+      "id": "VP-S10",
+      "label": "Headless runner and analysis (L)"
+    },
+    {
+      "id": "VP-G1",
+      "label": "Gate G1: baseline numbers decide S11, S12 scope"
+    },
+    {
+      "id": "VP-S11",
+      "label": "Slim always-on (M)"
+    },
+    {
+      "id": "VP-S12",
+      "label": "Gates as code (L)"
+    },
+    {
+      "id": "VP-S13",
+      "label": "Evidence packet (M)"
+    },
+    {
+      "id": "VP-S14",
+      "label": "Startup and pulse consolidation (M)"
+    },
+    {
+      "id": "VP-S15",
+      "label": "Reload-safe ops (L)"
+    },
+    {
+      "id": "VP-S16",
+      "label": "Skill pruning, time-gated (S)"
+    },
+    {
+      "id": "VP-G2",
+      "label": "Gate G2: lean noninferior to full"
+    },
+    {
+      "id": "VP-S17",
+      "label": "Portable install and lean pack (M)"
+    },
+    {
+      "id": "VP-S18",
+      "label": "Evidence page (S)"
+    }
+  ],
+  "edges": [
+    [
+      "VP-S00",
+      "VP-S08"
+    ],
+    [
+      "VP-S00",
+      "VP-S07"
+    ],
+    [
+      "VP-S00",
+      "VP-S02"
+    ],
+    [
+      "VP-S00",
+      "VP-S01"
+    ],
+    [
+      "VP-S02",
+      "VP-S03"
+    ],
+    [
+      "VP-S02",
+      "VP-S04"
+    ],
+    [
+      "VP-S02",
+      "VP-S06"
+    ],
+    [
+      "VP-S02",
+      "VP-S09"
+    ],
+    [
+      "VP-S03",
+      "VP-S05"
+    ],
+    [
+      "VP-S04",
+      "VP-S05"
+    ],
+    [
+      "VP-S03",
+      "VP-S09"
+    ],
+    [
+      "VP-S03",
+      "VP-S13"
+    ],
+    [
+      "VP-S03",
+      "VP-S16"
+    ],
+    [
+      "VP-S05",
+      "VP-S10"
+    ],
+    [
+      "VP-S08",
+      "VP-S10"
+    ],
+    [
+      "VP-S09",
+      "VP-S10"
+    ],
+    [
+      "VP-S05",
+      "VP-S14"
+    ],
+    [
+      "VP-S10",
+      "VP-G1"
+    ],
+    [
+      "VP-G1",
+      "VP-S11"
+    ],
+    [
+      "VP-S01",
+      "VP-S11"
+    ],
+    [
+      "VP-G1",
+      "VP-S12"
+    ],
+    [
+      "VP-S07",
+      "VP-S12"
+    ],
+    [
+      "VP-S11",
+      "VP-G2"
+    ],
+    [
+      "VP-S12",
+      "VP-G2"
+    ],
+    [
+      "VP-G2",
+      "VP-S17"
+    ],
+    [
+      "VP-G2",
+      "VP-S18"
+    ],
+    [
+      "VP-S10",
+      "VP-S18"
+    ],
+    [
+      "VP-S15",
+      "VP-S17"
+    ]
+  ]
+}
