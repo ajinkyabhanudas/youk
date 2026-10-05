@@ -1,0 +1,24 @@
+{
+  "method": "chars/4, approx +/-15%",
+  "sources": {
+    "claude_md_template": 2349,
+    "agents_md": 842,
+    "skill_descriptions": 7859
+  },
+  "informational": {
+    "mcp_tool_docstrings": 16106,
+    "skill_bodies": 146940
+  },
+  "skills": {
+    "count": 54,
+    "largest_descriptions": {
+      "surface-options": 359,
+      "adversarial-planning": 276,
+      "forward-deployed-pod": 230,
+      "proposal-review": 222,
+      "schema-migration-audit": 212
+    }
+  },
+  "mcp_tools": 86,
+  "total_tokens": 11050
+}

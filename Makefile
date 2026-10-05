@@ -266,6 +266,9 @@ simulate: ## Run simulate-experience skill — developer experience audit, feeds
 	    youk-code:latest 2>/dev/null | python3 -m json.tool || true
 
 .PHONY: lint
+footprint: ## Always-on token footprint; fails if it grew past bench/footprint-baseline.json
+	uv run python scripts/footprint.py --live --check
+
 lint: ## Run ruff on servers/
 	uv run ruff check servers/
 
