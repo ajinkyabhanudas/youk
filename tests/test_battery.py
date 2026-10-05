@@ -123,7 +123,8 @@ class TestArmCommands:
     def test_bare_has_youk_hooks_but_no_tools_and_an_empty_claude_md(self, tmp_path):
         setup, cmd = self._cmd("bare", tmp_path)
         assert setup["env"] == {"YOUK_ARM": "bare"} and setup["mcp"] is None
-        assert "--mcp-config" not in cmd and "--plugin-dir" in cmd
+        assert "--plugin-dir" in cmd and "--strict-mcp-config" in cmd
+        assert json.loads(cmd[cmd.index("--mcp-config") + 1]) == {"mcpServers": {}}
         assert (setup["config_dir"] / "CLAUDE.md").read_text() == ""
 
     def test_full_adds_the_youk_servers_and_the_template(self, tmp_path):
