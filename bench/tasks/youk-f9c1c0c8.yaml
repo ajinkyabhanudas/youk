@@ -18,17 +18,23 @@ prompt: 'Add an opt-in independent-review requirement to gate_claim_done
 
   the equivalent for code claims -- a session could self-verify within its
 
-  own context and gate_claim_done would accept it.'
+  own context and gate_claim_done would accept it.
+
+
+  The tests for this change use these names (create or adapt them as needed): no_independent_review, require_independent_review.'
 test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
 hidden_tests:
 - tests/test_verification_contract.py
 runnable_tests:
 - tests/test_verification_contract.py
 added_tests: []
+interface:
+- no_independent_review
+- require_independent_review
 source_files:
 - servers/core/src/verification_contract.py
 files: 2
 lines: 128
 review:
-  fair: null
-  note: ''
+  fair: true
+  note: 'claude review 2026-10-05: states a problem or a behaviour the tests check; not a code-level fix'

@@ -14,6 +14,7 @@ hidden_tests:
 runnable_tests:
 - tests/test_cache.py
 added_tests: []
+interface: []
 source_files:
 - src/canopy/_json.py
 - src/canopy/cache.py
@@ -21,5 +22,5 @@ source_files:
 files: 4
 lines: 69
 review:
-  fair: null
-  note: ''
+  fair: true
+  note: 'claude review 2026-10-05: states a problem or a behaviour the tests check; not a code-level fix'

@@ -92,14 +92,6 @@ class TestPromptFairness:
         out = mt.clean_prompt(msg, ["a.py"])
         assert "retried forever" in out and "max_retries" not in out and "Claude-Session" not in out
 
-    def test_a_prompt_naming_an_identifier_the_commit_adds_is_rejected(self, repo):
-        commit(repo, {"calc.py": "def add(a, b):\n    return a + b\n\ndef clamp_total(a):\n"
-                                 "    return a\n",
-                      "tests/test_clamp.py": "from calc import clamp_total\n\ndef test_c():\n"
-                                             "    assert clamp_total(1) == 2\n"},
-               "Add clamp_total so totals stay in range for the report")
-        assert mt.mine_repo(cfg(repo), limit=5, verify_tests=False) == []
-
     def test_a_prompt_describing_only_the_problem_is_kept(self, repo):
         commit(repo, {"calc.py": "def add(a, b):\n    return a + b\n\ndef clamp_total(a):\n"
                                  "    return a\n",
@@ -107,6 +99,24 @@ class TestPromptFairness:
                                              "    assert clamp_total(1) == 2\n"},
                "Totals in the report can exceed the allowed range and nothing stops them")
         assert len(mt.mine_repo(cfg(repo), limit=5, verify_tests=False)) == 1
+
+    def test_names_the_tests_call_are_given_as_interface_not_rejected(self, repo):
+        commit(repo, {"calc.py": "def add(a, b):\n    return a + b\n\ndef clamp_total(a):\n"
+                                 "    return a\n",
+                      "tests/test_clamp.py": "from calc import clamp_total\n\ndef test_c():\n"
+                                             "    assert clamp_total(1) == 1\n"},
+               "Add clamp_total so totals stay in range for the report")
+        (task,) = mt.mine_repo(cfg(repo), limit=5, verify_tests=False)
+        assert task.interface == ["clamp_total"]
+        assert "clamp_total" in task.prompt and "tests for this change use these names" in task.prompt
+
+    def test_a_name_in_the_prompt_that_the_tests_do_not_call_is_still_a_leak(self, repo):
+        commit(repo, {"calc.py": "def add(a, b):\n    return a + b\n\ndef helper_split(a):\n"
+                                 "    return a\n\ndef clamp_total(a):\n    return a\n",
+                      "tests/test_clamp.py": "from calc import clamp_total\n\ndef test_c():\n"
+                                             "    assert clamp_total(1) == 1\n"},
+               "Totals escape their range because helper_split never clamps them")
+        assert mt.mine_repo(cfg(repo), limit=5, verify_tests=False) == []
 
     def test_a_name_that_already_existed_is_not_a_leak(self, repo):
         commit(repo, {"calc.py": "def add(a, b):\n    return a + b + 0\n",
@@ -192,6 +202,23 @@ class TestOutputs:
         loaded = yaml.safe_load(path.read_text())
         assert loaded["id"] == task.id and loaded["review"] == {"fair": None, "note": ""}
         assert mt.load_tasks(tmp_path / "tasks")[0]["sha"] == task.sha
+
+    def test_a_remine_keeps_the_human_review_verdict(self, repo, tmp_path):
+        commit(repo, {"calc.py": "def add(a, b):\n    return a + b\n\nZ = 1\n",
+                      "tests/test_z.py": "def test_z():\n    assert False\n"},
+               "Expose the Z constant for the report module")
+        task = mt.mine_repo(cfg(repo), limit=1, verify_tests=False)[0]
+        path = mt.write_task(task, tmp_path / "tasks")
+        data = yaml.safe_load(path.read_text())
+        data["review"] = {"fair": False, "note": "gives the fix away"}
+        path.write_text(yaml.safe_dump(data))
+        mt.write_task(task, tmp_path / "tasks")
+        assert yaml.safe_load(path.read_text())["review"]["fair"] is False
+
+    def test_unfair_tasks_are_dropped_and_unreviewed_ones_kept(self):
+        rows = [{"id": "a", "review": {"fair": False}}, {"id": "b", "review": {"fair": True}},
+                {"id": "c", "review": {"fair": None}}, {"id": "d"}]
+        assert [t["id"] for t in mt.usable(rows)] == ["b", "c", "d"]
 
     def test_summary_flags_the_kill_criterion_below_twelve(self):
         rows = [{"repo": "a", "language": "python"}] * 3

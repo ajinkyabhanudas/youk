@@ -15,10 +15,11 @@ hidden_tests:
 runnable_tests:
 - tests/test_verification_contract.py
 added_tests: []
+interface: []
 source_files:
 - servers/core/src/verification_contract.py
 files: 2
 lines: 68
 review:
-  fair: null
-  note: ''
+  fair: true
+  note: 'claude review 2026-10-05: states a problem or a behaviour the tests check; not a code-level fix'

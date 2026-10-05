@@ -1,0 +1,45 @@
+id: canopy-ee167384
+repo: canopy
+language: python
+sha: ee1673840d83895b3b0111442b8b43cbb22376e9
+parent_sha: 6eef0efaf8aa107db83aa27de48a77b064d263bf
+prompt: 'fix: drop superseded typo from history when a fuzzy suggestion is clicked
+
+
+  Clicking a "did you mean X?" suggestion previously left the original
+
+  mistyped question sitting in the history sidebar alongside the corrected
+
+  one. Re-running that entry later hit the same 0-row result and forced the
+
+  user through the same suggestion click again. _run_query_handler now
+
+  accepts an optional superseded_question, captured from question_box at
+
+  click-time and used to drop the dead-end entry from history instead of
+
+  just deduping on exact string match. Live-verified in Docker against a
+
+  real LLM: after clicking a suggestion, only the corrected question remains
+
+  in history.
+
+
+  The tests for this change use these names (create or adapt them as needed): superseded_question.'
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/e2e/test_fuzzy_suggestions.py
+- tests/test_ui.py
+runnable_tests:
+- tests/e2e/test_fuzzy_suggestions.py
+- tests/test_ui.py
+added_tests: []
+interface:
+- superseded_question
+source_files:
+- src/canopy/ui/app.py
+files: 3
+lines: 93
+review:
+  fair: true
+  note: 'claude review 2026-10-05: states a problem or a behaviour the tests check; not a code-level fix'

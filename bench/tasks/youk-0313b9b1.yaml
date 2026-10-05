@@ -16,17 +16,22 @@ prompt: 'Persist real claim stage transitions to disk + add events.jsonl (CIR-15
 
   instead of the claim its own rework()/_walk_forward_to() calls were
 
-  actually mutating. Dashboard stage values were hand-typed as a result.'
+  actually mutating. Dashboard stage values were hand-typed as a result.
+
+
+  The tests for this change use these names (create or adapt them as needed): events_log_path.'
 test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
 hidden_tests:
 - tests/test_verification_contract.py
 runnable_tests:
 - tests/test_verification_contract.py
 added_tests: []
+interface:
+- events_log_path
 source_files:
 - servers/core/src/verification_contract.py
 files: 2
 lines: 192
 review:
-  fair: null
-  note: ''
+  fair: true
+  note: 'claude review 2026-10-05: states a problem or a behaviour the tests check; not a code-level fix'

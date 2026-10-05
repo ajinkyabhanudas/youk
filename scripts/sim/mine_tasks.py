@@ -3,8 +3,9 @@
 
 A task is a commit that changed source and tests together, small enough to be one
 unit of work, whose tests fail on the parent code and pass at the commit. Its prompt is the
-commit message's problem statement (subject and first paragraph), and a commit whose prompt
-names an identifier the commit itself introduces is rejected, since that gives the answer away. The agent
+commit message's problem statement (subject and first paragraph), plus the new names the hidden
+tests call (without them no agent could pass). A commit whose prompt names other identifiers the
+commit introduces is rejected, since that describes the solution. The agent
 gets the parent checkout with the commit's new tests removed and a prompt taken from
 the commit message. Success is the hidden tests passing after the agent's change.
 
@@ -81,6 +82,7 @@ class Task:
     hidden_tests: list[str]      # every test-side file the commit touched; restored before grading
     runnable_tests: list[str]    # the subset the test command runs
     added_tests: list[str]       # removed from the agent's checkout
+    interface: list[str]         # new names the hidden tests use; appended to the prompt
     source_files: list[str]
     files: int
     lines: int
@@ -193,9 +195,18 @@ def new_identifiers(repo: Path, cand: Candidate) -> set[str]:
     return found
 
 
-def leaked_names(prompt: str, new_names: set[str]) -> list[str]:
-    """New names the prompt mentions. A prompt that names the function to add is not a task."""
-    return sorted(set(_IDENT.findall(prompt)) & new_names)
+def test_interface(repo: Path, cand: Candidate, new_names: set[str], runnable: list[str]) -> list[str]:
+    """New names the hidden tests themselves use. The agent cannot guess these, so the prompt has
+    to supply them; without them no arm could pass and the task would only add noise."""
+    text = " ".join(_git(repo, "show", f"{cand.sha}:{p}", check=False) for p in runnable)
+    used = set(_IDENT.findall(text)) & new_names
+    return sorted(n for n in used if not (n.startswith("__") or n.startswith("test_")))[:8]
+
+
+def leaked_names(prompt: str, new_names: set[str], interface: list[str] | None = None) -> list[str]:
+    """New names the prompt mentions beyond the interface the tests need. A prompt that names the
+    function to add, when the tests do not call it, is describing the solution."""
+    return sorted(set(_IDENT.findall(prompt)) & (new_names - set(interface or [])))
 
 
 def _expand(test_cmd: str, tests: list[str]) -> list[str]:
@@ -262,7 +273,14 @@ def _run_shell(cwd: Path, command: str) -> bool:
         return False
 
 
-def build_task(repo_cfg: dict, cand: Candidate) -> Task:
+def with_interface(prompt: str, interface: list[str]) -> str:
+    if not interface:
+        return prompt
+    return (f"{prompt}\n\nThe tests for this change use these names (create or adapt them as "
+            f"needed): {', '.join(interface)}.")
+
+
+def build_task(repo_cfg: dict, cand: Candidate, interface: list[str] | None = None) -> Task:
     repo = Path(repo_cfg["path"]).expanduser()
     paths = [p for p, _, _ in cand.files]
     # a test file the commit deleted cannot be restored or run, so it is not part of the grade
@@ -275,11 +293,12 @@ def build_task(repo_cfg: dict, cand: Candidate) -> Task:
         language=language_of(sources[0]) or repo_cfg.get("language", "unknown"),
         sha=cand.sha,
         parent_sha=cand.parent,
-        prompt=clean_prompt(cand.message, paths),
+        prompt=with_interface(clean_prompt(cand.message, paths), interface or []),
         test_cmd=repo_cfg["test_cmd"],
         hidden_tests=hidden,
         runnable_tests=[p for p in hidden if is_runnable_test(p)],
         added_tests=added,
+        interface=interface or [],
         source_files=sources,
         files=len(paths),
         lines=cand.lines,
@@ -304,10 +323,13 @@ def mine_repo(repo_cfg: dict, limit: int, verify_tests: bool = True,
         task = build_task(repo_cfg, cand)
         if not task.runnable_tests:
             continue
-        leaks = leaked_names(task.prompt, new_identifiers(repo, cand))
+        new_names = new_identifiers(repo, cand)
+        interface = test_interface(repo, cand, new_names, task.runnable_tests)
+        leaks = leaked_names(task.prompt, new_names, interface)
         if leaks:
             log(f"  reject {cand.sha[:8]}: prompt names new identifiers {leaks[:3]}")
             continue
+        task = build_task(repo_cfg, cand, interface)
         if verify_tests:
             reason = verify(repo, cand, task.test_cmd, task.runnable_tests, repo_cfg.get("setup"))
             if reason:
@@ -322,12 +344,20 @@ def write_task(task: Task, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{task.id}.yaml"
     data = {k: getattr(task, k) for k in task.__dataclass_fields__}
+    if path.exists():                       # a remine must not erase a human verdict
+        previous = yaml.safe_load(path.read_text()) or {}
+        data["review"] = previous.get("review", data["review"])
     path.write_text(yaml.safe_dump(data, sort_keys=False, width=100))
     return path
 
 
 def load_tasks(tasks_dir: Path = TASKS_DIR) -> list[dict]:
     return [yaml.safe_load(p.read_text()) for p in sorted(tasks_dir.glob("*.yaml"))]
+
+
+def usable(tasks: list[dict]) -> list[dict]:
+    """Tasks not marked unfair in review. `fair: null` (not yet reviewed) counts as usable."""
+    return [t for t in tasks if (t.get("review") or {}).get("fair") is not False]
 
 
 def summary(tasks: list[dict | Task]) -> str:

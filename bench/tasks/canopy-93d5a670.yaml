@@ -17,10 +17,11 @@ hidden_tests:
 runnable_tests:
 - tests/test_fuzzy_match.py
 added_tests: []
+interface: []
 source_files:
 - src/canopy/query/fuzzy_match.py
 files: 2
 lines: 33
 review:
-  fair: null
-  note: ''
+  fair: true
+  note: 'claude review 2026-10-05: states a problem or a behaviour the tests check; not a code-level fix'

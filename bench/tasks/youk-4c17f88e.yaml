@@ -1,0 +1,45 @@
+id: youk-4c17f88e
+repo: youk
+language: python
+sha: 4c17f88e551e73fb6c416de2cd8d1bc8be943105
+parent_sha: 976b11b480aa88f1da5b9f6d88e419cad95a8ce8
+prompt: 'Add lightweight pattern-library retrieval to claim decomposition (CIR-160)
+
+
+  generate_sub_claims now optionally checks the real pattern library
+
+  (state/verification-pattern-library.jsonl) for structurally similar past
+
+  claim shapes that previously missed a sub_claim, via a new
+
+  retrieve_similar_patterns helper, and surfaces the match as a pattern_hint
+
+  on the matching sub_claim. Plain stdlib difflib.SequenceMatcher similarity
+
+  over claim_shape strings -- no embeddings or vector DB, since the real
+
+  corpus is a handful of rows and anything heavier would sit unexercised.
+
+  Both new parameters default to None so every existing caller is unaffected.
+
+
+  The tests for this change use these names (create or adapt them as needed): SequenceMatcher, claim_statement,
+  pattern_hint, retrieve_similar_patterns.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_verification_contract.py
+runnable_tests:
+- tests/test_verification_contract.py
+added_tests: []
+interface:
+- SequenceMatcher
+- claim_statement
+- pattern_hint
+- retrieve_similar_patterns
+source_files:
+- servers/core/src/verification_contract.py
+files: 2
+lines: 181
+review:
+  fair: false
+  note: 'claude review 2026-10-05: prompt describes the whole mechanism; a spec, not a problem'

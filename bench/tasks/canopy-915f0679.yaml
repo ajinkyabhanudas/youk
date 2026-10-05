@@ -3,17 +3,23 @@ repo: canopy
 language: python
 sha: 915f067989ed540ababce5b4d31ae268ef60c770
 parent_sha: 422483b198445f2bf9a9361d9d1a79ffa348f79e
-prompt: add always-visible status bar, intent explanation, and human-readable messages
+prompt: 'add always-visible status bar, intent explanation, and human-readable messages
+
+
+  The tests for this change use these names (create or adapt them as needed): status_md.'
 test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
 hidden_tests:
 - tests/test_ui.py
 runnable_tests:
 - tests/test_ui.py
 added_tests: []
+interface:
+- status_md
 source_files:
 - src/canopy/ui/app.py
 files: 2
 lines: 179
 review:
-  fair: null
-  note: ''
+  fair: false
+  note: 'claude review 2026-10-05: thin prompt; hidden tests depend on UI text and structure no prompt
+    gives'

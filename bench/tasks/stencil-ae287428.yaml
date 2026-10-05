@@ -7,17 +7,25 @@ prompt: 'Make attrition traceable by sample identity
 
 
   Store missing sample IDs and unscored record IDs because counts cannot support evidence tracing on their
-  own. D7 can now connect every exclusion to the available source evidence.'
+  own. D7 can now connect every exclusion to the available source evidence.
+
+
+  The tests for this change use these names (create or adapt them as needed): baseline_missing_sample_ids,
+  treatment_missing_sample_ids, treatment_unscored_score_ids.'
 test_cmd: uv run pytest {tests} -q -p no:cacheprovider
 hidden_tests:
 - tests/test_statistics.py
 runnable_tests:
 - tests/test_statistics.py
 added_tests: []
+interface:
+- baseline_missing_sample_ids
+- treatment_missing_sample_ids
+- treatment_unscored_score_ids
 source_files:
 - src/stencil/statistics.py
 files: 3
 lines: 38
 review:
-  fair: null
-  note: ''
+  fair: true
+  note: 'claude review 2026-10-05: states a problem or a behaviour the tests check; not a code-level fix'

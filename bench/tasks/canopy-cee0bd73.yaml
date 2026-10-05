@@ -14,10 +14,11 @@ hidden_tests:
 runnable_tests:
 - tests/test_ui.py
 added_tests: []
+interface: []
 source_files:
 - src/canopy/ui/app.py
 files: 2
 lines: 17
 review:
-  fair: null
-  note: ''
+  fair: false
+  note: 'claude review 2026-10-05: prompt states the exact API calls and ids that fix it'

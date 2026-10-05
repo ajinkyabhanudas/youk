@@ -37,10 +37,11 @@ hidden_tests:
 runnable_tests:
 - tests/test_reversal_check.py
 added_tests: []
+interface: []
 source_files:
 - servers/core/src/reversal_check.py
 files: 2
 lines: 57
 review:
-  fair: null
-  note: ''
+  fair: false
+  note: 'claude review 2026-10-05: prompt includes the root cause and fix approach'

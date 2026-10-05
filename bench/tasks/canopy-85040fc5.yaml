@@ -13,10 +13,12 @@ hidden_tests:
 runnable_tests:
 - tests/test_cache.py
 added_tests: []
+interface: []
 source_files:
 - src/canopy/cache.py
 files: 2
 lines: 56
 review:
-  fair: null
-  note: ''
+  fair: false
+  note: 'claude review 2026-10-05: prompt lists the exact fix (Lock, prune order, 32 hex chars); a spec,
+    not a problem'

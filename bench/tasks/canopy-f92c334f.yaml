@@ -10,10 +10,11 @@ hidden_tests:
 runnable_tests:
 - tests/test_executor.py
 added_tests: []
+interface: []
 source_files:
 - src/canopy/query/executor.py
 files: 2
 lines: 5
 review:
-  fair: null
-  note: ''
+  fair: true
+  note: 'claude review 2026-10-05: states a problem or a behaviour the tests check; not a code-level fix'
