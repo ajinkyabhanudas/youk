@@ -64,6 +64,7 @@ def _resolve_project_path(host_path: str) -> Path:
     _sync_sp()
     return _sp.resolve_project_path(host_path)
 
+from contracts import global_contracts, project_contracts
 from phrases import CONTRACT_PHRASES as _CONTRACT_PHRASES
 
 import re as _re
@@ -426,71 +427,12 @@ def _update_resume_point(slug: str, resume_text: str) -> None:
 
 
 def _load_contracts(slug: str) -> list[str]:
-    contracts_file = YOUK_ROOT / "knowledge" / "projects" / slug / "contracts.md"
-    if not contracts_file.exists():
-        return []
-    try:
-        return [
-            line.strip()
-            for line in contracts_file.read_text().splitlines()
-            if line.strip() and not line.startswith("#")
-        ]
-    except Exception:
-        return []
-
-
-def _ranked_global_lessons(room: int) -> list[str] | None:
-    """Live cross-project learnings from state/global-patterns.jsonl, best
-    supported first (real confirmed_count, then newest), as the same
-    "- [sub_domain] statement" lines contracts.md renders. Retired learnings
-    are excluded. None when there is no store, so the caller can fall back to
-    the rendered file."""
-    store = YOUK_ROOT / "state" / "global-patterns.jsonl"
-    if not store.exists():
-        return None
-    try:
-        from global_contracts import effective_patterns
-        from jsonl_lock import locked_jsonl_read_all
-
-        rows = [r for r in effective_patterns(locked_jsonl_read_all(store)) if r.get("statement")]
-    except Exception:
-        return None
-    if not rows:
-        return None
-    rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
-    rows.sort(key=lambda r: -int(r.get("confirmed_count") or 0))  # stable: newest first within a count
-    return [f"- [{r.get('sub_domain', 'general')}] {r['statement']}" for r in rows[:room]]
+    return project_contracts(YOUK_ROOT, slug)
 
 
 def _load_global_contracts(cap: int = 50) -> list[str]:
-    """Load cross-project behavioral contracts from two sources:
-    1. knowledge/default-contracts.md — committed to repo, inherited by all installs.
-    2. Personal learnings — the best-supported live entries of state/global-patterns.jsonl,
-       or knowledge/global/contracts.md (newest first) when there is no store.
-    Defaults are always kept; personal learnings fill the remaining room up to `cap`.
-    Choosing by evidence rather than age means a lesson confirmed in several projects
-    outlives a newer one-off, and a retired learning never loads."""
-
-    def _read(path: Path) -> list[str]:
-        if not path.exists():
-            return []
-        try:
-            return [
-                line.strip()
-                for line in path.read_text().splitlines()
-                if line.strip() and not line.startswith("#")
-            ]
-        except Exception:
-            return []
-
-    defaults = _read(YOUK_ROOT / "knowledge" / "default-contracts.md")[:cap]
-    room = cap - len(defaults)
-    if room <= 0:
-        return defaults
-    personal = _ranked_global_lessons(room)
-    if personal is None:
-        personal = _read(YOUK_ROOT / "knowledge" / "global" / "contracts.md")[-room:]
-    return defaults + personal
+    """Defaults plus the best-supported live learnings; see servers/shared/contracts.py."""
+    return global_contracts(YOUK_ROOT, cap)
 
 
 _CAPABILITY_SKILLS = frozenset({
@@ -1012,10 +954,6 @@ def _generate_session_plan(
     if ai_ctx:
         names = ", ".join(entry["file"] for entry in ai_ctx if isinstance(entry, dict))
         plan.append(f"Other AI context found: {names} — check for conflicts with youk contracts")
-
-    # 7. Contract reminder if contracts exist (first one only — most load-bearing)
-    if contracts:
-        plan.append(f"Active contract: {contracts[0]}")
 
     # 8. Available spec/design docs (first session only hint — low priority)
     if docs_available and not resume_point.startswith("Resume:"):

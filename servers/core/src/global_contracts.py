@@ -9,15 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
-def effective_patterns(rows: list[dict]) -> list[dict]:
-    """The store is append-only: a later row with the same id supersedes the
-    earlier one (retirement appends a copy with status "retired"). Returns the
-    live rows -- last row per id, retired ones dropped -- in first-seen order."""
-    latest: dict[str, dict] = {}
-    for i, r in enumerate(rows):
-        key = r.get("id")
-        latest[key if key is not None else f"\x00row{i}"] = r  # id-less rows are each their own
-    return [r for r in latest.values() if r.get("status") != "retired"]
+from contracts import effective_patterns  # noqa: F401  (moved to shared; re-exported for callers)
 
 
 def retire_global_pattern(youk_root: Path, pattern_id: str, reason: str) -> dict:
