@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -28,6 +29,14 @@ from youk_paths import locate_install  # noqa: E402
 
 
 def default_db() -> Path:
+    """The live install's graph. A worktree has its own empty state/, so the script's own
+    location is the wrong place to look: use YOUK_HOME, else ~/.claude/youk, else this repo."""
+    env = os.environ.get("YOUK_HOME")
+    if env:
+        return Path(env) / "state" / "task-graph.db"
+    home = Path.home() / ".claude" / "youk"
+    if (home / "state" / "task-graph.db").exists():
+        return home / "state" / "task-graph.db"
     youk_dir, _, _ = locate_install(__file__)
     return youk_dir / "state" / "task-graph.db"
 

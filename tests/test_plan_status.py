@@ -119,3 +119,17 @@ class TestPlanStatus:
         labels = {t["id"]: t["label"] for t in json.loads(PLAN.read_text())["tasks"]}
         text = plan_status.render(plan_status.status(db, "youk", PLAN), labels)
         assert "STOPPED MID-TASK  VP-S02" in text and "1 of" in text
+
+
+class TestDefaultDatabase:
+    def test_youk_home_wins(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("YOUK_HOME", str(tmp_path))
+        assert plan_status.default_db() == tmp_path / "state" / "task-graph.db"
+
+    def test_a_worktree_reads_the_live_install_not_its_own_empty_state(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("YOUK_HOME", raising=False)
+        live = tmp_path / ".claude" / "youk" / "state"
+        live.mkdir(parents=True)
+        (live / "task-graph.db").write_text("")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+        assert plan_status.default_db() == live / "task-graph.db"
