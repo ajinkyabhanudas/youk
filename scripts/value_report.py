@@ -147,6 +147,7 @@ def summarize(rows: list[dict], by: tuple[str, ...] = ("arm",), footprint: dict 
                 "sessions_with_tests": len(last_test),
                 "last_test_green": sum(1 for v in last_test.values() if v == "ok"),
                 "failed_test_runs": sum(1 for e in tests if e["status"] == "fail"),
+                "unknown_test_runs": sum(1 for e in tests if e["status"] == "unknown"),
                 "test_runs": len(tests),
                 "commits": commits,
                 "first_pass_acceptance": "pending (needs the evidence packet)",
@@ -194,7 +195,9 @@ def render(summary: dict) -> str:
                 f"  95% CI {_fmt_ci(v1['ci'])}",
                 "V2 review-ready inputs",
                 f"  last test run green in {v2['last_test_green']} of {v2['sessions_with_tests']} sessions with tests",
-                f"  failed test runs {v2['failed_test_runs']} of {v2['test_runs']}; commits {v2['commits']}",
+                f"  failed test runs {v2['failed_test_runs']} of {v2['test_runs']}"
+                + (f" ({v2['unknown_test_runs']} with no exit code from the host)" if v2["unknown_test_runs"] else "")
+                + f"; commits {v2['commits']}",
                 f"  first-pass acceptance: {v2['first_pass_acceptance']}",
                 "V3 overhead",
                 f"  hook script ms p50 {v3['hook_ms_p50']} p95 {v3['hook_ms_p95']} "

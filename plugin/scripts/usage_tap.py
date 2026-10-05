@@ -97,8 +97,15 @@ def _tool_events(payload: dict, failed: bool) -> list[dict]:
     if tool == "Bash":
         command = str(tool_input.get("command", ""))
         code = _exit_code(payload, failed)
-        # A non-zero exit is a fail even if the host delivered it as a normal result.
-        cmd_status = "fail" if failed or (code not in (None, 0)) else "ok"
+        # A non-zero exit is a fail even if the host delivered it as a normal result. With no exit
+        # code in the payload the outcome is unknown, never assumed to be a pass: Codex documents
+        # tool_response only as "tool-specific", so a failing test run must not count as green.
+        if failed or code not in (None, 0):
+            cmd_status = "fail"
+        elif code == 0:
+            cmd_status = "ok"
+        else:
+            cmd_status = "unknown"
         found = [name for name, rx in _RUNNERS if rx.search(command)][:_MAX_RUNNERS]
         for name in found:
             out.append({"kind": "test", "name": name, "status": cmd_status, "n": code})
@@ -135,6 +142,9 @@ def main() -> None:
         events = [{"kind": "session", "name": f"end.{reason}"[:64]}]
         always_hook = True
     elif event_name in ("PostToolUse", "PostToolUseFailure"):
+        # Codex registers this same script for PostToolUse and SessionEnd (docs/getting-started.md).
+        # It names shell commands "Bash" and edits "apply_patch", and documents no duration or
+        # exit code, so both are optional here.
         events = _tool_events(payload, failed=event_name == "PostToolUseFailure")
         always_hook = False
     else:

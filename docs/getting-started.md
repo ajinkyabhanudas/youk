@@ -454,6 +454,55 @@ Adjust the path if youk is installed somewhere other than the default
 `~/.claude/youk`. Review and trust it with `/hooks`, same as the other Codex
 hooks above.
 
+### Codex usage capture hooks
+
+The usage tap (`plugin/scripts/usage_tap.py`) records tool calls, test runs, commits and session end
+into the event ledger that `make value-report` reads. Codex has `PostToolUse` and `SessionEnd` hooks,
+so the same script runs there. Register it once in `~/.codex/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|apply_patch|mcp__youk-.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -S \"$HOME/.claude/youk/plugin/scripts/usage_tap.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -S \"$HOME/.claude/youk/plugin/scripts/usage_tap.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+What differs from Claude Code, and how the tap handles it:
+
+- Codex documents no `duration` or `exit_code` in the `PostToolUse` payload. Tool events carry no latency,
+  and a test run or commit with no exit code is recorded with status `unknown`, never `ok`, so it cannot
+  count as a pass. The report shows how many runs had no exit code.
+- Codex has no `Skill` tool and no separate failure event, so there are no skill events and failures are
+  only seen when an exit code is present.
+- Edits arrive as `apply_patch` and are recorded as tool events.
+- Server-side events (tool latency, gates, route and checkpoint outcomes) and the resume state come from
+  youk-core and are the same on every host.
+
+Not exercised against a live Codex session; treat it as designed, not proven.
+
 ### Claude Code SessionStart hook
 
 Session context for Claude Code is delivered by a real `SessionStart` hook
