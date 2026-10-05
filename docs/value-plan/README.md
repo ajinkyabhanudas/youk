@@ -74,7 +74,7 @@ Items 2 to 4 apply once S02, S06 and S01 land.
 
 | Id | Title | Size | Depends | Status |
 |---|---|---|---|---|
-| S00 | Move dependency management to uv | M | none | todo |
+| S00 | Move dependency management to uv | M | none | done |
 | S01 | Footprint baseline and budget | S | none | done |
 | S02 | Event ledger core | M | none | done |
 | S03 | Hook taps | M | S02 | done |
@@ -95,6 +95,24 @@ Items 2 to 4 apply once S02, S06 and S01 land.
 | G2 | Gate: lean noninferior to full | decision | S11, S12 | todo |
 | S17 | Portable install and lean pack | M | G2, S15 | todo |
 | S18 | Evidence page | S | G2, S10 | todo |
+
+## Phase 1 status (S00 to S07): code complete, PRs open
+
+Stacked PRs, merge in order, retargeting as each lands: #177 make-version-skip, #178 digest, #179 plan docs,
+#180 uv (S00), #181 event ledger (S02), #182 hook taps (S03), #183 footprint (S01), #184 contracts (S07),
+#185 server spans (S04), #186 value report (S05), #187 registry gate (S06). Nothing is live until they merge
+and youk-core restarts; the ledger stays empty until the plugin hooks reload in a new session.
+
+## Operating notes
+
+- Work in a git worktree. `~/.claude/youk` is bind-mounted into the youk containers as `/youk` and `/shared`,
+  so switching branches there changes the code the running server reads.
+- The deploy-freshness gate (`plugin/scripts/server_freshness.py`) auto-restarts youk-core on the next youk tool
+  call when a commit under `servers/` or `skills/` is newer than the container's boot. On 2026-10-05 it already
+  counted three such commits before this work, so the first youk call from any session restarts the server.
+- Local environment: `uv sync`, then `uv run pytest`. GNU make 4 is needed for two Makefile tests (macOS ships 3.81;
+  `brew install make`). The pre-commit contract runs the full suite through `uv run --frozen`.
+- Hook payload field names in S03 are partly unverified live; check the first real ledger with `make value-report`.
 
 ## Order
 
