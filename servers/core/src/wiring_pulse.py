@@ -42,6 +42,9 @@ _TERMINAL_TOOLS: frozenset[str] = frozenset({
     # Periodic/ad-hoc self-measurement, same pattern as self_heal above: run when the
     # developer wants the number, not as a per-task routing step.
     "check_ab_pilot_status", "compare_youk_vs_no_youk", "scan_experiment_gaps",
+    # Called by the host's SessionStart hook (the Codex mcp_tool path), never by name from
+    # CLAUDE.md or other code, so it can only ever read as an orphan.
+    "session_start_hook",
 })
 
 

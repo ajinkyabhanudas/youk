@@ -80,7 +80,7 @@ Items 2 to 4 apply once S02, S06 and S01 land.
 | S03 | Hook taps | M | S02 | done |
 | S04 | Server spans and gate events | M | S02 | done |
 | S05 | Value report | M | S03, S04 | done |
-| S06 | Registry completeness gate | M | S02 | todo |
+| S06 | Registry completeness gate | M | S02 | done |
 | S07 | Contracts unification | M | none | done |
 | S08 | Replay battery | M | none | todo |
 | S09 | Arm router | M | S02, S03 | todo |
@@ -125,6 +125,11 @@ Each lacks a measured need today.
 ## State of the world
 
 (append newest first, 5 lines max per session)
+
+- S06 done (branch vp/10-registry-gate). Phase 1 (S00-S07) complete. `tests/test_registry_gate.py`: stages must declare real_log, emits or untraced_reason; every hook script has an entry; every check_*_gate is in GATE_CHECKS; the tap matches `Skill`; no tool is orphaned (check moved from startup to CI).
+  Registry is now 44 stages (5 hook entries added, subsystem `host-hooks`): 10 traced via ledger, 17 declared untraced with a reason, the rest have a real_log. `session_start_hook` added to the wiring allow-list (called by the host hook, never by name).
+  Fixed on the way: `coverage-tree` frontmatter was invalid YAML; `verify` had `skill:` and no `name:`.
+  Correction: `domain_edge_case_review.py` is not dead on main (nfr.py uses it); it stays.
 
 - S05 done (branch vp/09-value-report). `make value-report` / `scripts/value_report.py [--by arm,week] [--json]`; export_stats points to it as the headline. 15 tests on ledgers with known answers.
   Counting rule: calls and corrections from `src=hook`; latency, gates, M+ task counts from `src=server`. Intervals only with 10+ sessions.

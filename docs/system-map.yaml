@@ -26,7 +26,8 @@
   triggers_on: "a Claim is constructed with no explicit stage (Claim dataclass default = Stage.INTAKE)"
   reads: []
   writes: []
-  real_log: null  # the default construction state is never itself event-logged; only transitions away from it are
+  real_log: null
+  untraced_reason: "the default construction state is never itself event-logged; only transitions away from it are"
 
 - name: abstract_claim
   grounding: deterministic
@@ -34,7 +35,8 @@
   triggers_on: "a claim statement needs proprietary terms stripped (glossary + path/ticket-ID + identifier-pattern rules) before anything goes to external research"
   reads: []
   writes: []
-  real_log: null  # pure function; verification_contract.run_checker's docstring says ABSTRACT is not yet run by that entrypoint, so this stage has no wired event-log path today
+  real_log: null
+  untraced_reason: "pure function; verification_contract.run_checker's docstring says ABSTRACT is not yet run by that entrypoint, so this stage has no wired event-log path today"
 
 - name: bound
   grounding: deterministic
@@ -50,7 +52,8 @@
   triggers_on: "Stage.RESEARCH — an abstracted question needs two independent research passes before DIFF"
   reads: []
   writes: []
-  real_log: null  # run_dual_pass_research's fan-out (pass_a(question), pass_b(question)) is mechanical and deterministic every time, but the FactSet it produces is entirely a function of whatever real research passes are injected — in real use those are LLM-driven research, so the stage's actual output rides on an upstream judgment call it has zero mechanical check over. Classified hybrid, not deterministic, for that reason.
+  real_log: null
+  untraced_reason: "run_dual_pass_research's fan-out (pass_a(question), pass_b(question)) is mechanical and deterministic every time, but the FactSet it produces is entirely a function of whatever real research passes are injected — in real use those are LLM-driven research, so the stage's actual output rides on an upstream judgment call it has zero mechanical check over. Classified hybrid, not deterministic, for that reason."
 
 - name: diff_fact_sets
   grounding: deterministic
@@ -58,7 +61,8 @@
   triggers_on: "Stage.DIFF — two independently-produced FactSets from RESEARCH need comparing, topic by topic"
   reads: []
   writes: []
-  real_log: null  # diff_stage_outcome (the function that drives the real advance()/rework() transition off this result) is called with no `root` argument anywhere in this codebase, so neither the DIFF->DECOMPOSE advance nor the DIFF->RESEARCH rework it triggers is captured in events.jsonl today — a real, specific gap this registry surfaces rather than papering over
+  real_log: null
+  untraced_reason: "diff_stage_outcome (the function that drives the real advance()/rework() transition off this result) is called with no `root` argument anywhere in this codebase, so neither the DIFF->DECOMPOSE advance nor the DIFF->RESEARCH rework it triggers is captured in events.jsonl today — a real, specific gap this registry surfaces rather than papering over"
 
 - name: generate_sub_claims
   grounding: deterministic
@@ -90,7 +94,8 @@
   triggers_on: "Stage.RETRIEVE (reserved, no forward wiring in FORWARD_EDGES yet) — generate_sub_claims called with claim_statement+root runs a stdlib difflib pass over the pattern library for a pattern_hint"
   reads: [state/verification-pattern-library.jsonl]
   writes: []
-  real_log: null  # read-only retrieval; nothing persisted by this function itself
+  real_log: null
+  untraced_reason: "read-only retrieval; nothing persisted by this function itself"
 
 - name: gate_claim_done
   grounding: deterministic
@@ -98,7 +103,8 @@
   triggers_on: "Stage.GATE — one claim is checked for unresolved sub_claims before it may be reported done"
   reads: [state/verification-contracts/claims/]
   writes: []
-  real_log: null  # returns an in-memory deny dict; the claims it reads are the only durable record
+  real_log: null
+  untraced_reason: "returns an in-memory deny dict; the claims it reads are the only durable record"
 
 - name: gate_all_claims
   grounding: deterministic
@@ -107,6 +113,7 @@
   reads: [state/verification-contracts/claims/]
   writes: []
   real_log: null
+  untraced_reason: "returns an in-memory deny at the PreToolUse boundary; the claims it reads are the durable record (S12 adds a gate event here)"
 
 - name: run_checker
   grounding: deterministic
@@ -138,7 +145,8 @@
   triggers_on: "nfr-check Phase 1 (CLASSIFY-adjacent), M/L/XL task — task text keyword-matched against a project's real Domain Brief vocabulary"
   reads: [state/domain-brief.json]
   writes: []
-  real_log: null  # pure read + score; the disposition each candidate earns is logged separately by append_disposition_event
+  real_log: null
+  untraced_reason: "pure read + score; the disposition each candidate earns is logged separately by append_disposition_event"
 
 - name: domain_edge_case_disposition_judgment
   grounding: llm_judgment
@@ -146,7 +154,8 @@
   triggers_on: "nfr-check Phase 1, for each non-empty domain_edge_case_candidates entry — judged against the task text and assigned accepted/dismissed/ignored"
   reads: []
   writes: []
-  real_log: null  # the judgment itself is session output ([no fixed block name] — logged via the separate append_disposition_event call, not persisted directly by this step
+  real_log: null
+  untraced_reason: "the judgment itself is session output ([no fixed block name] — logged via the separate append_disposition_event call, not persisted directly by this step"
 
 - name: domain_brief_fallback
   grounding: llm_judgment
@@ -154,7 +163,8 @@
   triggers_on: "nfr-check Phase 1, domain_edge_case_candidates is empty AND state/domain-brief.json is missing or every source shows format_recognized false/null — codebase examined directly to infer 2-4 bounded contexts"
   reads: [state/domain-brief.json]
   writes: []
-  real_log: null  # deliberately never written back to state/domain-brief.json — a session-local, lower-confidence hypothesis by design (skills/nfr-check/SKILL.md's own instruction)
+  real_log: null
+  untraced_reason: "deliberately never written back to state/domain-brief.json — a session-local, lower-confidence hypothesis by design (skills/nfr-check/SKILL.md's own instruction)"
 
 - name: reframe_and_package_review
   grounding: deterministic
@@ -162,7 +172,8 @@
   triggers_on: "every nfr_check result with domain edge-case candidates: nfr._domain_edge_case_fields reframes them (reframe_candidates) and attaches a self-contained review request (build_independent_review_request) for a fresh session or subagent where the host has one"
   reads: []
   writes: []
-  real_log: null  # pure in-memory transform/packaging; whether the host dispatches it to a separate session is the host's choice
+  real_log: null
+  untraced_reason: "pure in-memory transform/packaging; whether the host dispatches it to a separate session is the host's choice"
 
 - name: domain_scope_naming
   grounding: llm_judgment
@@ -170,7 +181,8 @@
   triggers_on: "nfr-check CLASSIFY phase, M+ task — 2-4 knowledge domains beyond generic software engineering named fresh for this task, never cached from a prior answer"
   reads: []
   writes: []
-  real_log: null  # the [DOMAIN SCOPE] block is session output; the durable record is written by the separate append_domain_scope_event call
+  real_log: null
+  untraced_reason: "the [DOMAIN SCOPE] block is session output; the durable record is written by the separate append_domain_scope_event call"
 
 - name: build_domain_research_invocation
   grounding: deterministic
@@ -178,7 +190,8 @@
   triggers_on: "immediately after domain_scope_naming logs 2-4 domains for this task — constructs the scoped /research invocation for youk-research's existing WebSearch -> extract -> propose loop"
   reads: []
   writes: []
-  real_log: null  # constructs an invocation string only; the research run itself produces no dedicated log file this function writes to
+  real_log: null
+  emits: [tool]  # constructs an invocation string only; the research run itself produces no dedicated log file this function writes to
 
 - name: challenge_lens3_external_evidence
   grounding: llm_judgment
@@ -186,7 +199,8 @@
   triggers_on: "challenge Lens 3 (hidden assumptions), when nfr_check already named domain scope and ran domain research for this task — reads what that research found before asserting a hidden-assumption objection from internal reasoning alone"
   reads: []
   writes: []
-  real_log: null  # a no-op when no domain research ran for this task (S-task, or nfr_check hasn't fired); when it does run, the citation lands in the challenge's own output, not a separate persisted file
+  real_log: null
+  untraced_reason: "a no-op when no domain research ran for this task (S-task, or nfr_check hasn't fired); when it does run, the citation lands in the challenge's own output, not a separate persisted file"
 
 - name: append_domain_scope_event
   grounding: deterministic
@@ -217,6 +231,7 @@
   reads: [DECISIONS.md, knowledge/projects/youk/decisions.md, state/domain-brief-known-sources/, state/disposition-log.jsonl]
   writes: [state/domain-brief-known-sources/]
   real_log: null
+  emits: [tool]
 
 - name: reversal_domain_naming_judgment
   grounding: llm_judgment
@@ -225,6 +240,7 @@
   reads: []
   writes: []
   real_log: null
+  untraced_reason: "session output; the pair it names is recorded by confirm_domain_reversal once confirmed"
 
 - name: confirm_reversed_pattern
   grounding: hybrid
@@ -241,6 +257,7 @@
   reads: [state/confirmed-patterns.jsonl]
   writes: []
   real_log: null
+  emits: [tool]
 
 - name: promotion_statement_selection_judgment
   grounding: llm_judgment
@@ -249,6 +266,7 @@
   reads: []
   writes: []
   real_log: null
+  untraced_reason: "session output; the chosen wording is recorded by promote_pattern_group in state/global-patterns.jsonl"
 
 - name: promote_group
   grounding: hybrid
@@ -272,7 +290,8 @@
   triggers_on: "a caller needs promoted cross-project patterns, optionally filtered by domain and/or sub_domain"
   reads: [state/global-patterns.jsonl]
   writes: []
-  real_log: null  # read-only query
+  real_log: null
+  untraced_reason: "read-only query; nothing persisted"
 
 - name: check_proposal_backlog_gate
   grounding: deterministic
@@ -280,7 +299,8 @@
   triggers_on: "self_heal() -- deterministically checks whether the real pending-proposal count meets proposal-review's own SKILL.md trigger threshold (>=3), instead of relying on a model noticing the count"
   reads: []
   writes: []
-  real_log: null  # read-only check; its result is returned inline from self_heal, not separately logged
+  real_log: null
+  emits: [gate]  # read-only check; its result is returned inline from self_heal, not separately logged
 
 - name: optimize_intent_size_estimate
   grounding: llm_judgment
@@ -312,7 +332,8 @@
   triggers_on: "any hook or server code calling events.emit (wired by the hook taps and server spans, docs/value-plan cards S03 and S04); rejects anything that is not an enum, identifier, number or hashed id"
   reads: []
   writes: [state/events/]
-  real_log: null  # sharded per project and month under state/events/{slug}/{YYYY-MM}.jsonl, not one file; the value report (S05) is its reader
+  real_log: null
+  emits: [tool, skill, gate, hook, correction, test, commit, outcome, session]  # sharded per project and month under state/events/{slug}/{YYYY-MM}.jsonl, not one file; the value report (S05) is its reader
 
 - name: usage_tap_events
   grounding: deterministic
@@ -320,7 +341,8 @@
   triggers_on: "PostToolUse, PostToolUseFailure and SessionEnd hooks (plugin/scripts/usage_tap.py): records tool, skill, test-runner, commit and session-end events from the host payload, classified by regex, never the command text"
   reads: [plugin/scripts/usage_tap.py]
   writes: [state/events/]
-  real_log: null  # sharded per project and month under state/events/; the value report (S05) is its reader
+  real_log: null
+  emits: [tool, skill, test, commit, session, hook]  # sharded per project and month under state/events/; the value report (S05) is its reader
 
 - name: correction_event_capture
   grounding: deterministic
@@ -328,7 +350,8 @@
   triggers_on: "UserPromptSubmit hook: a prompt matching the pushback phrase list or the stated-rule phrase list (servers/shared/phrases.py) is counted as a correction event, name only, never the prompt text"
   reads: [servers/shared/phrases.py]
   writes: [state/events/]
-  real_log: null  # same sharded ledger as usage_tap_events
+  real_log: null
+  emits: [correction]  # same sharded ledger as usage_tap_events
 
 - name: server_tool_spans
   grounding: deterministic
@@ -336,4 +359,50 @@
   triggers_on: "every MCP tool call on youk-core and youk-code (install_tool_spans wraps each @mcp.tool at registration): records the tool's own latency and ok, fail or block status, plus gate, task_done, route, checkpoint and session_end events"
   reads: [servers/shared/tool_spans.py]
   writes: [state/events/]
-  real_log: null  # same sharded ledger as usage_tap_events; events carry src=server, hook events carry src=hook
+  real_log: null
+  emits: [tool, gate, outcome]  # same sharded ledger as usage_tap_events; events carry src=server, hook events carry src=hook
+
+- name: pre_tool_use_gates
+  grounding: deterministic
+  subsystem: host-hooks
+  triggers_on: "PreToolUse hook (plugin/scripts/pre_tool_use.py): denies M+ writes without routing, destructive commands, calls to a stale server, and session_end with unresolved claims"
+  reads: [plugin/scripts/pre_tool_use.py]
+  writes: []
+  real_log: null
+  untraced_reason: "a denial is returned to the host and is not yet recorded as an event; S12 adds a gate event at this boundary"
+
+- name: post_tool_use_active_task
+  grounding: deterministic
+  subsystem: host-hooks
+  triggers_on: "PostToolUse hook (plugin/scripts/post_tool_use.py) after Bash, Read, Write and Edit: keeps state/active_task.json current"
+  reads: [plugin/scripts/post_tool_use.py]
+  writes: []
+  real_log: null
+  untraced_reason: "overwrites one state file; usage of the same calls is recorded by usage_tap.py"
+
+- name: pre_compact_brief
+  grounding: deterministic
+  subsystem: host-hooks
+  triggers_on: "PreCompact hook (plugin/scripts/pre_compact.py): injects contracts, the active task and the plan before the host compacts"
+  reads: [plugin/scripts/pre_compact.py]
+  writes: []
+  real_log: null
+  untraced_reason: "output goes to the host and leaves no record; a compaction event is a candidate once the value report needs it"
+
+- name: session_start_brief
+  grounding: deterministic
+  subsystem: host-hooks
+  triggers_on: "SessionStart hook (plugin/scripts/session_start.py): delivers the session brief to the model and records the session start"
+  reads: [plugin/scripts/session_start.py]
+  writes: [state/events/]
+  real_log: null
+  emits: [session]
+
+- name: user_prompt_submit_brief
+  grounding: deterministic
+  subsystem: host-hooks
+  triggers_on: "UserPromptSubmit hook (plugin/scripts/user_prompt_submit.py): counts corrections and injects the intent-gated brief"
+  reads: [plugin/scripts/user_prompt_submit.py]
+  writes: [state/events/]
+  real_log: null
+  emits: [correction]

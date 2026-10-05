@@ -1,6 +1,7 @@
 ---
 name: coverage-tree
-description: Post-task completeness surface. After an M+ task, render a MECE coverage tree of the concepts the task's domains require, mark what was covered, then (stakes-gated) spawn a STRIPPED adversary subagent to attack the tree for missed concepts. Gaps and contested nodes surface at the top of review — a missed CONCEPT is caught cheaply before anyone descends into a diff. Triggers on: M+ task completion before code-review, "coverage tree", "what did we miss", "completeness check", any review where a concept (not just a bug) could have been skipped. Does NOT trigger on XS/S tasks or pure Q&A. Distinct from code-review (which checks correctness of what was done) — this checks completeness of what was considered.
+description: >-
+  Post-task completeness surface. After an M+ task, render a MECE coverage tree of the concepts the task's domains require, mark what was covered, then (stakes-gated) spawn a STRIPPED adversary subagent to attack the tree for missed concepts. Gaps and contested nodes surface at the top of review — a missed CONCEPT is caught cheaply before anyone descends into a diff. Triggers on: M+ task completion before code-review, "coverage tree", "what did we miss", "completeness check", any review where a concept (not just a bug) could have been skipped. Does NOT trigger on XS/S tasks or pure Q&A. Distinct from code-review (which checks correctness of what was done) — this checks completeness of what was considered.
 ---
 
 # coverage-tree — completeness before correctness

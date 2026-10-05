@@ -49,6 +49,7 @@ SYSTEM_MAP_PATH = REPO_ROOT / "docs" / "system-map.yaml"
 
 NEVER_FIRED = "never fired"
 NO_REAL_LOG = "no real log exists for this stage"
+TRACED = "traced via the event ledger"
 FIRED = "fired"
 
 _JUDGMENT_GROUNDINGS = {"llm_judgment", "hybrid"}
@@ -76,6 +77,7 @@ class StageReport:
     last_timestamp: str | None = None
     judgment_rows: list[dict] = field(default_factory=list)
     judgment_via: str | None = None  # paired stage name, if content came from one
+    note: str | None = None  # emitted ledger kinds, or why the stage is untraced
 
 
 def load_stages(path: Path = SYSTEM_MAP_PATH) -> list[dict]:
@@ -183,13 +185,15 @@ def build_report(root: Path, stages: list[dict]) -> list[StageReport]:
                 judgment_via = paired["name"]
 
         if effective_log is None:
+            emits = stage.get("emits")
             reports.append(
                 StageReport(
                     name=stage["name"],
                     subsystem=stage["subsystem"],
                     grounding=grounding,
                     real_log=None,
-                    state=NO_REAL_LOG,
+                    state=TRACED if emits else NO_REAL_LOG,
+                    note=("kinds: " + ", ".join(emits)) if emits else stage.get("untraced_reason"),
                 )
             )
             continue
@@ -237,16 +241,21 @@ def render_report(reports: list[StageReport]) -> str:
 
     fired = sum(1 for r in reports if r.state == FIRED)
     never = sum(1 for r in reports if r.state == NEVER_FIRED)
+    traced = sum(1 for r in reports if r.state == TRACED)
     no_log = sum(1 for r in reports if r.state == NO_REAL_LOG)
-    lines.append(f"system_status: {len(reports)} stages — {fired} fired, {never} never fired, {no_log} no real log")
+    lines.append(
+        f"system_status: {len(reports)} stages — {fired} fired, {never} never fired, "
+        f"{traced} traced via ledger, {no_log} no real log"
+    )
     lines.append("")
 
     for subsystem in sorted(by_subsystem):
         lines.append(f"== {subsystem} ==")
         for r in by_subsystem[subsystem]:
             tag = f"[{r.grounding}]"
-            if r.state == NO_REAL_LOG:
-                lines.append(f"  {r.name:<45} {tag:<16} {NO_REAL_LOG}")
+            if r.state in (NO_REAL_LOG, TRACED):
+                note = f" ({r.note[:90]})" if r.note else ""
+                lines.append(f"  {r.name:<45} {tag:<16} {r.state}{note}")
                 continue
             via = f" (via {r.judgment_via})" if r.judgment_via else ""
             lines.append(
