@@ -15,7 +15,7 @@ import json
 
 from disposition_event import append_disposition_event
 from domain_scope_event import append_domain_scope_event
-from system_status import NEVER_FIRED, NO_REAL_LOG, build_report, load_stages, render_report
+from system_status import NEVER_FIRED, NO_REAL_LOG, TRACED, build_report, load_stages, render_report
 
 _TASK = "Add a billing feature that stores card tokens for repeat customers."
 _DOMAINS = [
@@ -352,4 +352,4 @@ def test_real_system_map_produces_a_report_for_every_stage():
 
     assert len(reports) == len(stages)
     states = {r.state for r in reports}
-    assert states <= {"fired", NEVER_FIRED, NO_REAL_LOG}
+    assert states <= {"fired", NEVER_FIRED, NO_REAL_LOG, TRACED}

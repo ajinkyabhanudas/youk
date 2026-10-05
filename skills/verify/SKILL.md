@@ -1,4 +1,5 @@
 ---
+name: verify
 skill: verify
 rationale_why: "Code that passes review can still be wrong. Verify tests the actual behaviour, not the intention — golden path, edge cases, and failure states before they reach users."
 version: "1.0"
