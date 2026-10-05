@@ -329,3 +329,11 @@
   reads: [servers/shared/phrases.py]
   writes: [state/events/]
   real_log: null  # same sharded ledger as usage_tap_events
+
+- name: server_tool_spans
+  grounding: deterministic
+  subsystem: value-instrumentation
+  triggers_on: "every MCP tool call on youk-core and youk-code (install_tool_spans wraps each @mcp.tool at registration): records the tool's own latency and ok, fail or block status, plus gate, task_done, route, checkpoint and session_end events"
+  reads: [servers/shared/tool_spans.py]
+  writes: [state/events/]
+  real_log: null  # same sharded ledger as usage_tap_events; events carry src=server, hook events carry src=hook

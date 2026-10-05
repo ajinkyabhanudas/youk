@@ -78,7 +78,7 @@ Items 2 to 4 apply once S02, S06 and S01 land.
 | S01 | Footprint baseline and budget | S | none | done |
 | S02 | Event ledger core | M | none | done |
 | S03 | Hook taps | M | S02 | done |
-| S04 | Server spans and gate events | M | S02 | todo |
+| S04 | Server spans and gate events | M | S02 | done |
 | S05 | Value report | M | S03, S04 | todo |
 | S06 | Registry completeness gate | M | S02 | todo |
 | S07 | Contracts unification | M | none | done |
@@ -125,6 +125,11 @@ Each lacks a measured need today.
 ## State of the world
 
 (append newest first, 5 lines max per session)
+
+- S04 done (branch vp/08-server-spans). `servers/shared/tool_spans.py`: `install_tool_spans(mcp, get_root, get_slug)` wraps every `@mcp.tool` at registration on both servers; a test asserts every registered tool is wrapped (core and code).
+  Events carry `src=server`. Counting rule for the report (S05): call counts from `src=hook`, latency and errors from `src=server`. Server also emits gate (`nfr`, `challenge`, `intake`, `task_contract`, `proposal_backlog`, `set.<gate>`, `route.<size>`) and outcome (`task_done`, `checkpoint.<size>`, `session_end`) events.
+  Task id: only where a call carries one (set_gate, mark_task_done), hashed. Other events join by session (`<slug>-<counter>` hashed) and time; a persisted current-task was left out until a report needs it. Wrapper overhead under 2 ms per call (asserted).
+  Not live: the running youk-core must restart to pick this up (it is a live bind mount, so merge-then-restart).
 
 - S07 done (branch vp/07-contracts). `servers/shared/contracts.py`: `project_contracts`, `global_contracts(root, cap)`, `effective_contracts`, `classify_contract`; session.py, compaction.py and the hook utils all call it. `effective_patterns` moved there (global_contracts.py re-exports it).
   Fixed: brief said "none saved" beside "Active contract". The plan line is gone; the brief counts global contracts; `verbatim_lines` and the digest count global (top 10) plus project. PreCompact hook now injects defaults plus best-supported learnings, not the first lines of the rendered file.
