@@ -33,7 +33,13 @@ YOUK_ROOT="$(git rev-parse --show-toplevel)"
 cd "$YOUK_ROOT"
 
 echo "[youk] Running contract pre-commit checks..."
+
+# Run Python tooling through uv when the repo has a lockfile, so the hook uses the locked
+# environment and not whichever python happens to be first on PATH.
+if command -v uv >/dev/null 2>&1 && [ -f uv.lock ]; then RUN="uv run --frozen"; else RUN=""; fi
 """
+
+_PYTHON_TOOLS = ("ruff", "python", "python3", "pytest")
 
 _HOOK_FOOTER = """\
 echo "[youk] Pre-commit contracts satisfied."
@@ -101,7 +107,9 @@ def generate_hook(contracts_path: Path) -> str:
 
     blocks = [_HOOK_HEADER]
     for cmd, contract_text in commands:
-        blocks.append(_COMMAND_BLOCK.format(command=cmd, contract_text=contract_text))
+        first = cmd.split()[0] if cmd.split() else ""
+        runner = "$RUN " if first in _PYTHON_TOOLS else ""
+        blocks.append(_COMMAND_BLOCK.format(command=runner + cmd, contract_text=contract_text))
     blocks.append(_HOOK_FOOTER)
     return "\n".join(blocks)
 

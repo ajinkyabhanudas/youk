@@ -13,31 +13,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.13"
-          cache: pip
+          enable-cache: true
 
-      - name: Install lint dependencies
-        # mcp is required by tests/test_mcp_tool_contracts.py, which imports the real
-        # server modules and executes every registered tool. Without it those tests
-        # skip, and the route_task null-output class of bug ships again unnoticed.
-        # torch/sentence-transformers back servers/shared/semantic_similarity.py (CPU-only
-        # wheel, same source as servers/core/requirements.txt) -- without them every test
-        # that imports semantic_similarity fails at import time, not at an assertion.
-        run: |
-          pip install ruff pyyaml pytest pytest-cov "mcp>=1.0.0,<2"
-          pip install --extra-index-url https://download.pytorch.org/whl/cpu "torch>=2.0.0" "sentence-transformers>=3.0.0"
+      - name: Install dependencies from the lockfile
+        # One source of truth: pyproject.toml pins the dependencies and uv.lock resolves them,
+        # so CI, the Docker images and local runs install the same versions. Includes mcp (below
+        # 2.x, required by tests/test_mcp_tool_contracts.py, which imports the real server
+        # modules) and the CPU-only torch wheel behind servers/shared/semantic_similarity.py.
+        run: uv sync --frozen
 
       - name: Ruff check
-        run: ruff check servers/
+        run: uv run ruff check servers/
 
       - name: Unit tests
-        run: pytest tests/ -v --cov=servers/core/src --cov-report=json
+        run: uv run pytest tests/ -v --cov=servers/core/src --cov-report=json
 
       - name: Enforce health.py coverage ≥85%
         run: |
-          python - <<'EOF'
+          uv run python - <<'EOF'
           import json, sys
           data = json.load(open("coverage.json"))
           key = next(k for k in data["files"] if k.endswith("servers/core/src/health.py"))
@@ -52,7 +47,7 @@ jobs:
 
       - name: Validate config YAML
         run: |
-          python - <<'EOF'
+          uv run python - <<'EOF'
           import yaml, sys
           files = ["config/guardrails.yaml", "config/routes.yaml", "config/variants.yaml"]
           failed = []
@@ -75,9 +70,8 @@ jobs:
           YOUK_DIR: ${{ github.workspace }}
           CLAUDE_DIR: ${{ github.workspace }}
         run: |
-          pip install pyyaml
           mkdir -p state config knowledge skills docs
-          pytest \
+          uv run pytest \
             tests/integration/test_l0_environment.py \
             tests/integration/test_l4_integrity.py::TestStaticIntegrity \
             "tests/integration/test_l5_gates.py::TestNfrGate" \
