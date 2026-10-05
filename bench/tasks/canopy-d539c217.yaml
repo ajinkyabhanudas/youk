@@ -1,0 +1,34 @@
+id: canopy-d539c217
+repo: canopy
+language: python
+sha: d539c217c93394830508561f82300af9cb2ea9bd
+parent_sha: a2608fc24ed6a7cd77be61600912106e44e02e93
+prompt: "fix: replace misleading \"Found 0/1/4\" retry status with a refining message\n\nA retry-worthy\
+  \ question (a typo, or the model narrowing its query) can\ntrigger several execute_sql calls in one\
+  \ turn, each streaming its own\n\"Found N detections\" status. The sequence read as nonsensical progress\n\
+  rather than the model correcting course \u2014 e.g. \"Found 0\" then \"Found 1\"\nthen \"Found 100\"\
+  \ for what was actually one failed attempt followed by a\nsuccessful retry with a corrected literal.\
+  \ Any execute_sql call whose\nresult is_empty_result() now shows \"Refining the search\u2026\" (an existing\
+  \ but\npreviously unwired locale string) instead of a row count; only a call that\nactually finds something\
+  \ reports \"Found N\".\n\nThe tests for this change use these names (create or adapt them as needed):\
+  \ effective_count, species_id, status_refining."
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_fuzzy_match.py
+- tests/test_query_loop_agent.py
+runnable_tests:
+- tests/test_fuzzy_match.py
+- tests/test_query_loop_agent.py
+added_tests: []
+interface:
+- effective_count
+- species_id
+- status_refining
+source_files:
+- src/canopy/query/fuzzy_match.py
+- src/canopy/query/loop.py
+files: 4
+lines: 152
+review:
+  fair: true
+  note: 'claude review 2026-10-05: states a problem or a behaviour the tests check; not a code-level fix'

@@ -34,6 +34,7 @@ import os
 import sys
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "servers", "shared"))
@@ -43,21 +44,27 @@ _YOUK_CORE_URL = os.environ.get("YOUK_CORE_URL", "http://127.0.0.1:8001")
 _TIMEOUT_SECONDS = 8
 
 
-def _emit_session_start(data: dict, cwd: str) -> None:
-    """Record the session opening in the ledger. Never raises, never blocks."""
+def _open_session(data: dict, cwd: str) -> str:
+    """Choose this session's arm, record it where the server can read it, and log the start.
+    Returns the arm. Never raises, never blocks; on failure the session runs as `full`."""
     try:
+        from arms import DEFAULT_ARM, assign_arm, write_session_arm
         from events import emit
         from project_identity import project_slug
         from youk_hook_utils import youk_root
 
+        arm = assign_arm(str(data.get("session_id", "")))
         root = youk_root()
         if root is None:
-            return
+            return arm
+        slug = project_slug(cwd)
+        write_session_arm(root, slug, arm)
         source = str(data.get("source") or "startup")
-        emit(root, project_slug(cwd), kind="session", name=f"start.{source}"[:64],
-             session=str(data.get("session_id", "")), arm=os.environ.get("YOUK_ARM", ""), src="hook")
+        emit(root, slug, kind="session", name=f"start.{source}"[:64],
+             session=str(data.get("session_id", "")), arm=arm, src="hook")
+        return arm or DEFAULT_ARM
     except Exception:
-        pass
+        return "full"
 
 
 def main() -> None:
@@ -66,7 +73,7 @@ def main() -> None:
     if not cwd:
         sys.exit(0)
 
-    _emit_session_start(data, cwd)
+    arm = _open_session(data, cwd)
 
     query = urllib.parse.urlencode({"project_dir": cwd})
     url = f"{_YOUK_CORE_URL}/session-start-hook?{query}"
@@ -78,9 +85,17 @@ def main() -> None:
         # pre-existing CLAUDE.md manual-call path (if any) still covers this.
         sys.exit(0)
 
-    brief = payload.get("brief", "")
-    if brief:
-        print(brief)
+    # The server call above still runs for every arm: it advances the session counter that server
+    # events join on. Only what reaches the model differs.
+    if arm == "full":
+        text = payload.get("brief", "")
+    elif arm == "lean":
+        from arms import arm_context
+        text = arm_context(Path(__file__).resolve().parents[2], arm)
+    else:  # bare
+        text = ""
+    if text:
+        print(text)
     sys.exit(0)
 
 

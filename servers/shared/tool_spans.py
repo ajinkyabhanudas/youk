@@ -22,6 +22,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from arms import current_arm
 from events import emit
 
 # check_*_gate tools return {"blocked": bool}; the gate name is the event name.
@@ -96,9 +97,11 @@ def _record(root: Path, slug: str, name: str, args: dict, result, status: str, m
             src: str) -> None:
     try:
         session = _session_id(root, slug)
-        emit(root, slug, kind="tool", name=name, status=status, ms=ms, src=src, session=session)
+        arm = current_arm(root, slug)
+        emit(root, slug, kind="tool", name=name, status=status, ms=ms, src=src, session=session,
+             arm=arm)
         for extra in _extra_events(name, args, result, status):
-            emit(root, slug, src=src, session=session, **extra)
+            emit(root, slug, src=src, session=session, arm=arm, **extra)
     except Exception:
         pass
 

@@ -1,0 +1,25 @@
+id: youk-d336f922
+repo: youk
+language: python
+sha: d336f922e7487c614715fbcfbc19f87c83f845b2
+parent_sha: f9c1c0c8321ac9fe98d2fa4ba5c98d1415b5abf2
+prompt: 'Make L/XL claims require independent review automatically, not by opt-in
+
+
+  Founder decision: an XL build self-verifying its own work is the Self-
+
+  Confirmation Trap every time, not an occasional risk worth an opt-in flag.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_verification_contract.py
+runnable_tests:
+- tests/test_verification_contract.py
+added_tests: []
+interface: []
+source_files:
+- servers/core/src/verification_contract.py
+files: 2
+lines: 68
+review:
+  fair: true
+  note: 'claude review 2026-10-05: states a problem or a behaviour the tests check; not a code-level fix'

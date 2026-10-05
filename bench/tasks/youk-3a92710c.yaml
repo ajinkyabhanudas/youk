@@ -1,0 +1,49 @@
+id: youk-3a92710c
+repo: youk
+language: python
+sha: 3a92710ca9954625d443e2495e8fc7c0b9240ca0
+parent_sha: d336f922e7487c614715fbcfbc19f87c83f845b2
+prompt: 'Cross-check optimize_intent''s self-reported task size against keyword scoring
+
+
+  Real question that surfaced this: the new L/XL independent-review
+
+  requirement only works if size is actually correct. route_task had two
+
+  real mechanisms for size -- a deterministic keyword scorer
+
+  (_score_size, same input always gives the same output) and
+
+  optimize_intent''s own self-reported estimated_size -- but only used the
+
+  deterministic one as a fallback. Once an intent_brief existed, its
+
+  self-reported size was trusted outright with no cross-check at all: an
+
+  LLM judging the size of its own task, unchecked, the same self-
+
+  confirmation gap every other high-stakes call in this codebase already
+
+  has a deterministic check for.
+
+
+  The tests for this change use these names (create or adapt them as needed): estimated_size, size_mismatch_flag,
+  size_mismatch_note.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_routing.py
+runnable_tests:
+- tests/test_routing.py
+added_tests: []
+interface:
+- estimated_size
+- size_mismatch_flag
+- size_mismatch_note
+source_files:
+- servers/core/src/routing.py
+- servers/shared/models.py
+files: 3
+lines: 71
+review:
+  fair: true
+  note: 'claude review 2026-10-05: states a problem or a behaviour the tests check; not a code-level fix'

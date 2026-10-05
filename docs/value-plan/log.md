@@ -4,6 +4,17 @@ One entry per finished card, newest first. Read the entries for the cards yours 
 
 (append newest first, 5 lines max per session)
 
+- S10 built, first real run NOT done (branch vp/12-replay-battery). `scripts/sim/run_battery.py` (clone at parent sha, hidden tests removed, `claude -p --output-format json` per arm in its own config dir, hidden tests restored and graded, one JSONL row per run, `--cap-usd` required, `--max-budget-usd` per run, resumable, rep-task-arm order) and `analyze.py` (task-level bootstrap, paired diff and cost ratio vs bare, G1 verdict, DECISIONS entry). `--dry-run` fake agent drives it end to end in tests. See `battery.md`.
+  Spent: $0. Blocked on: dollar cap, Superpowers checkout, auth for the isolated config dirs. Unverified live: the exact `claude -p` JSON field names (`total_cost_usd`, `usage`, `num_turns`) and whether a fresh config dir can authenticate; the smoke test in `battery.md` step 3 checks both for under $5.
+
+- S09 done (branch vp/12-replay-battery). `servers/shared/arms.py`; arm in {full, lean, bare}; every emitter (usage tap, prompt hook, session hook, server spans) reads it through `current_arm(root, slug)`; SessionStart writes `state/session-arm/{slug}` so container events carry it. Default arm is `full`; `YOUK_ARM` pins, `YOUK_ARM_MODE=randomize` hashes by session. Decision: not random by default, so ordinary work is never silently ungated.
+  Hook behaviour per arm: full injects the server brief, lean injects `bench/arms/lean/context.md` (placeholder until S11), bare injects nothing and skips the Edit/Write and close gates. The server call still runs for every arm so the session counter advances.
+  Cannot do: replace CLAUDE.md from a hook (it adds context only), so arms in the battery get CLAUDE.md through separate config dirs. Limit: two sessions open in one project share the arm slot.
+
+- S08 done (branch vp/12-replay-battery). `scripts/sim/mine_tasks.py`, `bench/repos.yaml` (youk, stencil, canopy), `bench/tasks/*.yaml`: 22 mined and verified by running (pass at the commit, fail on the parent), 14 usable after fairness review: youk 6, canopy 6, stencil 2. All Python, bug-fix and small-feature heavy. 14 is above the kill-criterion floor of 12 with little margin; stencil is thin (13 commits).
+  Fairness, in two parts. Automatic: prompt is the commit's subject and first paragraph with file names stripped; new names the hidden tests call are appended as an interface list (without them no arm can pass); a commit is rejected if its prompt names other new identifiers. Manual (Claude, 2026-10-05, stored in each task's `review`): 8 of 22 marked unfair because the prompt spells out the fix or the tests depend on text no prompt gives. `usable()` drops them; a remine keeps verdicts. Ajinkya can overrule any with `review.fair`.
+  Old youk history predates the lockfile, so youk tasks run with the host venv (`{python}` in repos.yaml); canopy needs `PYTHONPATH=src` and its own interpreter.
+
 - Phase 1 follow-ups done (branch vp/11-phrases-and-tool-response). Phrase lists: there were two distinct lists plus a pasted test copy, not three copies; each now lives once in `servers/shared/phrases.py` (`PUSHBACK_PHRASES`, `LOOP_CORRECTION_PHRASES`, `CONTRACT_PHRASES`) and a test fails on any other definition.
   `post_tool_use.py` now reads `tool_response` (a dict for Bash), falling back to `tool_result`. Before this, `last_signal` in active_task.json was never filled from command output, so briefs showed an empty "last signal" for Bash.
 

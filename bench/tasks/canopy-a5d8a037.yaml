@@ -1,0 +1,28 @@
+id: canopy-a5d8a037
+repo: canopy
+language: python
+sha: a5d8a037686f7db884381770b2af03b019880f94
+parent_sha: 1613e38f9c43beb7679fb81a0901606bbe23ccfd
+prompt: 'render response as Markdown and show timing line in UI
+
+
+  The tests for this change use these names (create or adapt them as needed): db_s, llm_calls, llm_s,
+  total_s.'
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_ui.py
+runnable_tests:
+- tests/test_ui.py
+added_tests: []
+interface:
+- db_s
+- llm_calls
+- llm_s
+- total_s
+source_files:
+- src/canopy/ui/app.py
+files: 2
+lines: 52
+review:
+  fair: false
+  note: 'claude review 2026-10-05: thin prompt; hidden tests depend on timing-line format no prompt gives'

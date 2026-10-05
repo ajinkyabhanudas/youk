@@ -1,0 +1,31 @@
+id: youk-12343343
+repo: youk
+language: python
+sha: 123433439223c445fc69b345ac494d37cd3410d5
+parent_sha: 2f58a170aba7c2d3ed25b11d7b93ed7dc0c01a40
+prompt: 'Fix concept-graph duplication: dedupe on label+project, not label+project+session
+
+
+  The real uniqueness key was (label, project_slug, session_n). Since session_n
+
+  changes every /learn run, the same unchanged concept was inserted as a new
+
+  row every time instead of being recognized as a repeat. Real production
+
+  impact: youk''s own concept count was 1,577 rows for 167 distinct labels, a
+
+  9.4x inflation; one concept appeared 12 times, once per /learn run.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_concept_graph.py
+runnable_tests:
+- tests/test_concept_graph.py
+added_tests: []
+interface: []
+source_files:
+- servers/core/src/concept_graph.py
+files: 2
+lines: 43
+review:
+  fair: true
+  note: 'claude review 2026-10-05: states a problem or a behaviour the tests check; not a code-level fix'

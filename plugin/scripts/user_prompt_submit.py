@@ -33,7 +33,6 @@ leaving plenty of room and avoiding auto-compaction at 70%.
 """
 from __future__ import annotations
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -142,12 +141,13 @@ def _emit_correction_events(root: Path, slug: str, data: dict, prompt: str) -> N
     """Count this prompt in the ledger as pushback and/or a stated rule. Enum names only,
     never the prompt text. Never raises."""
     try:
+        from arms import current_arm
         from events import emit
         from phrases import has_contract_phrase
 
         common = {
             "session": str(data.get("session_id", "")),
-            "arm": os.environ.get("YOUK_ARM", ""),
+            "arm": current_arm(root, slug),
             "src": "hook",
         }
         if _is_correction(prompt):

@@ -82,6 +82,13 @@ from verification_contract import gate_all_claims
 _MCP_YOUK_TOOL_RE = re.compile(r"^mcp__(youk-core|youk-code)__")
 
 
+def _gates_on(root: Path, cwd: str) -> bool:
+    """The `bare` arm runs without the blocking gates (servers/shared/arms.py). Freshness and
+    checkpoints are infrastructure, not gates, and stay on for every arm."""
+    from arms import current_arm, gates_active
+    return gates_active(current_arm(root, slug_from_cwd(cwd)))
+
+
 def main() -> None:
     data = read_stdin()
     tool_name = data.get("tool_name", "")
@@ -92,7 +99,8 @@ def main() -> None:
     if mcp_match:
         root = youk_root()
         if root is not None:
-            if tool_name.endswith("__session_end") and tool_input.get("close_cluster"):
+            if (tool_name.endswith("__session_end") and tool_input.get("close_cluster")
+                    and _gates_on(root, cwd)):
                 claim_verdict = gate_all_claims(root)
                 if claim_verdict is not None:
                     deny(claim_verdict["message"])
@@ -116,7 +124,7 @@ def main() -> None:
         root = youk_root()
         if root is not None:
             slug = slug_from_cwd(cwd)
-            verdict = check_m_plus_write_gate(root, slug)
+            verdict = check_m_plus_write_gate(root, slug) if _gates_on(root, cwd) else None
             if verdict is not None:
                 deny(verdict["message"])
                 return

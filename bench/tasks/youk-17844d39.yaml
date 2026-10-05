@@ -1,0 +1,49 @@
+id: youk-17844d39
+repo: youk
+language: python
+sha: 17844d39a2cc311f6f06ac615b797921a0b8cb76
+parent_sha: a59cb6eabd1a37be0487ae2648e772b9dc64abaa
+prompt: 'Close a real abstraction leak: PascalCase identifiers passed through unflagged
+
+
+  Found by independent verification of Phase D, not by any existing test:
+
+  abstract_claim''s identifier catch-all only matched snake_case
+
+  (underscore-joined lowercase), on the stated reasoning that "ordinary
+
+  prose doesn''t use underscores" -- true, but ordinary prose also doesn''t
+
+  glue multiple capitalized words into one compound token the way a real
+
+  class or service name does. "PaymentGatewayRetryHandlerV3 overwhelmed
+
+  AcmeCorpBillingService" passed through confident=True, completely
+
+  unflagged -- exactly the proprietary-name leak this function exists to
+
+  prevent, and it would have let Phase D silently promote a pattern
+
+  carrying real company/service names into the global store.
+
+
+  The tests for this change use these names (create or adapt them as needed): AcmeCorpBillingService,
+  PascalCase, PaymentGatewayRetryHandlerV3.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_verification_research.py
+runnable_tests:
+- tests/test_verification_research.py
+added_tests: []
+interface:
+- AcmeCorpBillingService
+- PascalCase
+- PaymentGatewayRetryHandlerV3
+source_files:
+- servers/core/src/verification_research.py
+files: 2
+lines: 48
+review:
+  fair: false
+  note: 'claude review 2026-10-05: describes the fix target; interface list is noise from example strings
+    in prose'

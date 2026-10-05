@@ -1,0 +1,40 @@
+id: youk-f9c1c0c8
+repo: youk
+language: python
+sha: f9c1c0c8321ac9fe98d2fa4ba5c98d1415b5abf2
+parent_sha: 1fd4863ab5dab089a2c2b3ad72e8d110d12023f3
+prompt: 'Add an opt-in independent-review requirement to gate_claim_done
+
+
+  Research check against real published work (EDV, arxiv 2608.27311) names
+
+  the Self-Confirmation Trap: an agent verifying its own work is still
+
+  subject to the same blind spots that produced it. youk already has the
+
+  right answer for research claims (externally_verified requires two
+
+  independent passes agreeing, or a human statement) but nothing enforced
+
+  the equivalent for code claims -- a session could self-verify within its
+
+  own context and gate_claim_done would accept it.
+
+
+  The tests for this change use these names (create or adapt them as needed): no_independent_review, require_independent_review.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_verification_contract.py
+runnable_tests:
+- tests/test_verification_contract.py
+added_tests: []
+interface:
+- no_independent_review
+- require_independent_review
+source_files:
+- servers/core/src/verification_contract.py
+files: 2
+lines: 128
+review:
+  fair: true
+  note: 'claude review 2026-10-05: states a problem or a behaviour the tests check; not a code-level fix'

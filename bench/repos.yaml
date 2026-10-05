@@ -1,0 +1,19 @@
+# Repos the replay battery may mine (S08). Paths are local checkouts; nothing here is pushed anywhere.
+# {python} is the interpreter running the miner, so the repo that hosts the battery supplies pytest
+# and the dependencies (history older than the uv lockfile cannot use `uv run --frozen`).
+# test_cmd runs from the checkout root; {tests} expands to the commit's test files.
+# setup (optional) runs once in each fresh worktree before tests, for example a dependency sync.
+repos:
+  - name: youk
+    path: ~/.claude/youk
+    language: python
+    test_cmd: "{python} -m pytest {tests} -q -p no:cacheprovider --no-cov"
+  - name: stencil
+    path: ~/Desktop/stencil
+    language: python
+    test_cmd: "uv run pytest {tests} -q -p no:cacheprovider"
+  # canopy needs its own interpreter (the host venv lacks its dependencies) and src/ on the path
+  - name: canopy
+    path: ~/Desktop/Jocotoco/canopy
+    language: python
+    test_cmd: "env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider"
