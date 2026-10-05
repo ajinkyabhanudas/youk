@@ -1,6 +1,6 @@
 # S18 Evidence page
 
-Size S. Depends: G2, S10. Status: todo. Metric: external credibility.
+Size S. Depends: G2, S10. Metric: external credibility.
 
 **Goal.** Publish what the numbers show, with method and limits. Nothing the data does not support.
 

@@ -1,6 +1,6 @@
 # S02 Event ledger core
 
-Size M. Depends: none. Status: todo. Metric: enables V1 to V3 and B.
+Size M. Depends: none. Metric: enables V1 to V3 and B.
 
 **Goal.** One typed, append-only event ledger that every later card writes to. Nothing is wired yet.
 

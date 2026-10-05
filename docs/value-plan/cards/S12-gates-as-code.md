@@ -1,6 +1,6 @@
 # S12 Gates as code
 
-Size L (split S12a protocol, S12b legacy removal). Depends: G1, S10. Status: todo. Metric: V3, B, gate compliance.
+Size L (split S12a protocol, S12b legacy removal). Depends: G1, S10. Metric: V3, B, gate compliance.
 
 **Goal.** The model no longer holds the 8-step routing chain. A hook enforces order, and each youk tool returns the single next required action.
 

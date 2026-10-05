@@ -1,6 +1,6 @@
 # S14 Startup and pulse consolidation
 
-Size M. Depends: S05. Status: todo. Metric: V3 (session_start ms, plan noise).
+Size M. Depends: S05. Metric: V3 (session_start ms, plan noise).
 
 **Goal.** Session start does only what the session needs. Upkeep moves to CI or explicit commands.
 

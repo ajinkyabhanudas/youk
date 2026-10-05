@@ -1,6 +1,6 @@
 # S00 Move dependency management to uv
 
-Size M. Depends: none. Status: todo. Metric: V3 (setup time), reproducibility.
+Size M. Depends: none. Metric: V3 (setup time), reproducibility.
 
 **Goal.** One source of truth for dependencies (`pyproject.toml`), a committed lockfile (`uv.lock`), and every entry point
 (local, pre-commit, CI, both Dockerfiles) running through uv.

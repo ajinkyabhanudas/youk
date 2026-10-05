@@ -1,6 +1,6 @@
 # S07 Contracts unification
 
-Size M. Depends: none. Status: todo. Metric: V1 (repeat-gap rate), V3.
+Size M. Depends: none. Metric: V1 (repeat-gap rate), V3.
 
 **Goal.** One function returns the effective contracts, and every consumer uses it.
 

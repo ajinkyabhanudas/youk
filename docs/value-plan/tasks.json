@@ -1,5 +1,5 @@
 {
-  "_note": "Payload for youk-core.create_task_graph(tasks, edges). Not loaded yet because youk-core is in use by another task. Ids match docs/value-plan/cards/.",
+  "_note": "The plan's definition: ids, labels and dependencies, loaded into the task graph by scripts/plan_status.py --load. Status is not stored here; it lives in the graph. Ids match docs/value-plan/cards/.",
   "tasks": [
     {
       "id": "VP-S00",

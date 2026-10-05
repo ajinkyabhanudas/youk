@@ -1,6 +1,6 @@
 # S10 Headless runner and analysis
 
-Size L (split S10a runner, S10b analysis if the first overruns). Depends: S05, S08, S09. Status: todo. Metric: B.
+Size L (split S10a runner, S10b analysis if the first overruns). Depends: S05, S08, S09. Metric: B.
 
 **Goal.** Run task x arm x repetitions headlessly, then compare arms with intervals. First run is the G1 baseline.
 

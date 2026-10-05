@@ -1,6 +1,6 @@
 # S15 Reload-safe ops
 
-Size L (investigate first, then implement). Depends: none. Status: todo. Metric: restart under load causes zero failed calls.
+Size L (investigate first, then implement). Depends: none. Metric: restart under load causes zero failed calls.
 
 **Goal.** Restarting or updating youk-core never disrupts another running task.
 

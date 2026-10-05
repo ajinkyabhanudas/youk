@@ -1,6 +1,6 @@
 # S17 Portable install and lean pack
 
-Size M. Depends: G2. Status: todo. Metric: time to first value.
+Size M. Depends: G2. Metric: time to first value.
 
 **Goal.** A new user gets the lean arm in about 60 seconds with no Docker, unless S15 concluded otherwise.
 
