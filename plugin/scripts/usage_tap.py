@@ -121,7 +121,9 @@ def main() -> None:
     from events import emit  # after sys.path is set
 
     event_name = payload.get("hook_event_name", "")
-    slug = Path(payload.get("cwd", "") or ".").name or "unknown"
+    from project_identity import project_slug
+
+    slug = project_slug(payload.get("cwd", "") or ".")
     common = {
         "session": str(payload.get("session_id", "")),
         "arm": os.environ.get("YOUK_ARM", ""),

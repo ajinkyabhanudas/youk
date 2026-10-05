@@ -46,16 +46,15 @@ _TIMEOUT_SECONDS = 8
 def _emit_session_start(data: dict, cwd: str) -> None:
     """Record the session opening in the ledger. Never raises, never blocks."""
     try:
-        from pathlib import Path
-
         from events import emit
+        from project_identity import project_slug
         from youk_hook_utils import youk_root
 
         root = youk_root()
         if root is None:
             return
         source = str(data.get("source") or "startup")
-        emit(root, Path(cwd).name or "unknown", kind="session", name=f"start.{source}"[:64],
+        emit(root, project_slug(cwd), kind="session", name=f"start.{source}"[:64],
              session=str(data.get("session_id", "")), arm=os.environ.get("YOUK_ARM", ""), src="hook")
     except Exception:
         pass

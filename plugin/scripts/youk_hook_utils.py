@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "servers" / "shared"))
 from contracts import global_contracts, project_contracts  # noqa: E402
 from phrases import PUSHBACK_PHRASES, is_pushback  # noqa: E402
+from project_identity import project_slug  # noqa: E402
 
 
 # ── Path resolution ────────────────────────────────────────────────────────────
@@ -37,7 +38,7 @@ def youk_root() -> Path | None:
 
 
 def slug_from_cwd(cwd: str) -> str:
-    return Path(cwd).name or "unknown"
+    return project_slug(cwd)
 
 
 # ── State file readers ─────────────────────────────────────────────────────────
