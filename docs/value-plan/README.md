@@ -23,28 +23,21 @@ enforcement, (4) a small always-on footprint, (5) review-ready evidence on every
 - Research: context files cost +20% and gain ~0-4% ([arXiv 2602.11988](https://arxiv.org/abs/2602.11988)); instruction compliance decays with count; METR found devs 19% slower while feeling 20% faster; developers name verification as the top bottleneck.
 - youk's own learned patterns already say this: put deterministic rules in code, replace proxy metrics with outcome metrics.
 
-## Start here (next session: S08 to S10)
+## Start here (next session: the first real battery run, then G1)
 
-Run `python3 scripts/plan_status.py` to see where the plan stands, read this file, then the card it names as next. Nothing else by default.
+Run `python3 scripts/plan_status.py` to see where the plan stands, read this file, then `battery.md`. Nothing else by default.
 Work in a git worktree off `origin/main`; do not switch branches in `~/.claude/youk` (live bind mount, see Operating notes).
 
-**Status.** Phase 1 (S00 to S07) is merged (#177 to #187), plus follow-ups in #189 and the resume-state rework in #190. The live install is not updated:
-`~/.claude/youk` sits on an old branch and youk-core has not restarted, so no real events exist yet. Build and test
-S08 to S10 against fixtures; check the first real ledger with `make value-report` once the install is updated.
+**Status.** Phases 1 and 2 are built (S00 to S10): ledger, taps, report, registry gate, miner, arm router, headless runner, analysis.
+No real battery run has happened. The live install is not updated, so the ledger holds no real events.
 
-**Decisions only Ajinkya can make (ask in the first message, do not guess):**
-1. Dollar cap for the S10 battery. Recommended: $50 for the first run, about 12 to 20 tasks x 3 arms x 1 repetition,
-   and more repetitions only after seeing the variance. Cost per run is an estimate, not measured.
-2. Repos S08 may mine: youk, stencil, canopy (confirm; write them to `bench/repos.yaml`).
-3. Permission to install Superpowers into an isolated config directory for the third arm.
+**Decisions only Ajinkya can make (the first real run waits for them):**
+1. Dollar cap for the run. Recommended: $50 for the first run, 12 to 20 tasks x 3 arms x 1 repetition.
+2. Permission to put a Superpowers checkout on disk for the third arm (`--superpowers-dir`; the runner never installs).
+3. Auth for the isolated config dirs (`ANTHROPIC_API_KEY`, or one login per arm config dir).
+4. Fairness review of `bench/tasks/*.yaml` prompts (`mine_tasks.py --review`; delete any that give the answer away).
 
-**Can finish without them:** S08 miner and its tests on a fixture repo, S09 arm router, S10 runner with `--dry-run`
-plus the analysis script. **Waits for 1 and 3:** the first real battery run.
-
-**Stop at G1.** After the first real run, record the arm comparison and stop. S11 and S12 scope depends on it.
-
-**Ceremony.** The global CLAUDE.md routing (route_task, challenge, nfr_check) calls youk-core, and the first call
-restarts the stale server through the freshness gate. The NFR answers are pre-filled under "NFR defaults" below.
+**Stop at G1.** After the first real run, record the arm comparison with `analyze.py --decision` and stop. S11 and S12 scope depends on it.
 
 ## First goal (M1: youk can see itself)
 
@@ -108,6 +101,10 @@ doing the work. See `docs/resume-state.md`.
 all merged to main. Follow-ups (phrase lists, `tool_response`) in #189. Nothing runs live until `~/.claude/youk` is
 updated to main and youk-core restarts; the ledger stays empty until the plugin hooks reload in a new session.
 
+## Phase 2 status (S08 to S10): built, first run pending
+
+Branch vp/12-replay-battery. `scripts/sim/mine_tasks.py`, `run_battery.py`, `analyze.py`, `servers/shared/arms.py`, `bench/repos.yaml`, `bench/tasks/`, `bench/arms/`. See `battery.md` to run it.
+
 ## Operating notes
 
 - Work in a git worktree. `~/.claude/youk` is bind-mounted into the youk containers as `/youk` and `/shared`,
@@ -121,7 +118,7 @@ updated to main and youk-core restarts; the ledger stays empty until the plugin 
 
 ## Order
 
-S00 (reproducible env first), S02, S03, S01, S07 (quick fix, visible bug), S04, S05, S06, S08, S09, S10, G1, then S11, S12, S13, S14 in
+S00 (reproducible env first), S02, S03, S01, S07 (quick fix, visible bug), S04, S05, S06, S08, S09, S10 (built; first run pending), G1, then S11, S12, S13, S14 in
 that order. S15 runs whenever youk-core can be restarted safely. S16 waits for data.
 
 ## Gates
@@ -152,4 +149,6 @@ Each lacks a measured need today.
 - Server events have no arm yet (the container has no `YOUK_ARM`); S09 must give them one or per-arm M+ rates break.
 - Hook cost: about 41 ms p50 per call including interpreter start, with `python3 -S`. Hook `hook` events are sampled 1 in 10 (`n=10` is the weight).
 - `make value-report`, `make footprint` (budget 11,050 tokens), `scripts/classify_contracts.py` (16 mechanical contracts of 208, for S12).
+- Arms: `servers/shared/arms.py`. Default arm is `full`; `YOUK_ARM` pins, `YOUK_ARM_MODE=randomize` hashes. Every emitter reads the arm through `current_arm(root, slug)` (state file `state/session-arm/{slug}`), so server events carry it.
+- Battery: `run_battery.py` needs `--cap-usd`; results in `bench/results/`; `analyze.py` resamples tasks, not runs.
 - Per-card detail: `log.md`.
