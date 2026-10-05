@@ -144,6 +144,9 @@ Each lacks a measured need today.
 
 (append newest first, 5 lines max per session)
 
+- Phase 1 follow-ups done (branch vp/11-phrases-and-tool-response). Phrase lists: there were two distinct lists plus a pasted test copy, not three copies; each now lives once in `servers/shared/phrases.py` (`PUSHBACK_PHRASES`, `LOOP_CORRECTION_PHRASES`, `CONTRACT_PHRASES`) and a test fails on any other definition.
+  `post_tool_use.py` now reads `tool_response` (a dict for Bash), falling back to `tool_result`. Before this, `last_signal` in active_task.json was never filled from command output, so briefs showed an empty "last signal" for Bash.
+
 - S06 done (branch vp/10-registry-gate). Phase 1 (S00-S07) complete. `tests/test_registry_gate.py`: stages must declare real_log, emits or untraced_reason; every hook script has an entry; every check_*_gate is in GATE_CHECKS; the tap matches `Skill`; no tool is orphaned (check moved from startup to CI).
   Registry is now 44 stages (5 hook entries added, subsystem `host-hooks`): 10 traced via ledger, 17 declared untraced with a reason, the rest have a real_log. `session_start_hook` added to the wiring allow-list (called by the host hook, never by name).
   Fixed on the way: `coverage-tree` frontmatter was invalid YAML; `verify` had `skill:` and no `name:`.
