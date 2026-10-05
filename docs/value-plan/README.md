@@ -1,7 +1,7 @@
 # Value plan (anchor)
 
 Every session on this plan reads this file and its own card in `cards/`, and nothing else by default.
-Keep this file under ~3,000 tokens. At session end update the status table and add an entry to `log.md`; promote to "Facts later cards rely on" only what every later card needs.
+Keep this file under ~3,000 tokens. At session end finish the task with `task_checkpoint` and add an entry to `log.md`; promote to "Facts later cards rely on" only what every later card needs.
 
 ## Thesis
 
@@ -25,10 +25,10 @@ enforcement, (4) a small always-on footprint, (5) review-ready evidence on every
 
 ## Start here (next session: S08 to S10)
 
-Read this file, then cards S08, S09 and S10, and nothing else by default.
+Run `python3 scripts/plan_status.py` to see where the plan stands, read this file, then the card it names as next. Nothing else by default.
 Work in a git worktree off `origin/main`; do not switch branches in `~/.claude/youk` (live bind mount, see Operating notes).
 
-**Status.** Phase 1 (S00 to S07) is merged (#177 to #187), plus follow-ups in #189. The live install is not updated:
+**Status.** Phase 1 (S00 to S07) is merged (#177 to #187), plus follow-ups in #189 and the resume-state rework in #190. The live install is not updated:
 `~/.claude/youk` sits on an old branch and youk-core has not restarted, so no real events exist yet. Build and test
 S08 to S10 against fixtures; check the first real ledger with `make value-report` once the install is updated.
 
@@ -72,7 +72,7 @@ Any component with no movement on V1, V2, V3 or B after its review date is remov
 3. It emits a typed event asserted in a test, or is tagged `diagnostic: true` with a reason.
 4. Token cost declared; footprint budget not exceeded.
 5. Metric and kill criterion plus review date written in the card.
-6. Card status updated here, 5-line entry added to `log.md`; `/learn` run.
+6. Task finished via `task_checkpoint`, 5-line entry added to `log.md`; `/learn` run.
 
 Items 2 to 4 apply once S02, S06 and S01 land.
 
@@ -90,34 +90,16 @@ Items 2 to 4 apply once S02, S06 and S01 land.
 - Load: this file, your card, the files the card lists under "Load". Nothing else.
 - If a card needs more than ~8 files or ~3k lines of reading, split it before starting.
 - Cards name "Verify first" assumptions. Check them in the first 10 minutes; if one is false, stop and amend the card.
-- End: set card status, add a 5-line entry to `log.md`, run `/learn`.
-- Task graph: `tasks.json` holds ids and edges for `create_task_graph`. Not loaded yet (youk-core busy).
+- End: finish the task with `task_checkpoint` (it marks the task done), add a 5-line entry to `log.md`, run `/learn`.
+- Task graph: `tasks.json` holds ids and edges; `plan_status.py --load` puts them in the graph.
 
 ## Status
 
-| Id | Title | Size | Depends | Status |
-|---|---|---|---|---|
-| S00 | Move dependency management to uv | M | none | done |
-| S01 | Footprint baseline and budget | S | none | done |
-| S02 | Event ledger core | M | none | done |
-| S03 | Hook taps | M | S02 | done |
-| S04 | Server spans and gate events | M | S02 | done |
-| S05 | Value report | M | S03, S04 | done |
-| S06 | Registry completeness gate | M | S02 | done |
-| S07 | Contracts unification | M | none | done |
-| S08 | Replay battery | M | none | todo |
-| S09 | Arm router | M | S02, S03 | todo |
-| S10 | Headless runner and analysis | L | S05, S08, S09 | todo |
-| G1 | Gate: baseline numbers decide S11, S12 scope | decision | S10 | todo |
-| S11 | Slim always-on | M | S01, G1 | todo |
-| S12 | Gates as code | L | G1, S10, S07 | todo |
-| S13 | Evidence packet | M | S03 | todo |
-| S14 | Startup and pulse consolidation | M | S05 | todo |
-| S15 | Reload-safe ops | L | none | todo |
-| S16 | Skill pruning (time-gated) | S | S03 + 20 sessions | todo |
-| G2 | Gate: lean noninferior to full | decision | S11, S12 | todo |
-| S17 | Portable install and lean pack | M | G2, S15 | todo |
-| S18 | Evidence page | S | G2, S10 | todo |
+Not kept in any document. It lives in the task graph: `python3 scripts/plan_status.py` prints what is done,
+what stopped mid-task and what is next. `tasks.json` defines the plan (ids, labels, dependencies) and
+`plan_status.py --load` adds any task the graph lacks. Work that names a task ("build S08") is routed to that
+task's node, started by `route_task` and finished by `task_checkpoint`, so status updates as a side effect of
+doing the work. See `docs/resume-state.md`.
 
 ## Phase 1 status (S00 to S07): merged
 

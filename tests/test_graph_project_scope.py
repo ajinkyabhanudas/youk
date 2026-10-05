@@ -49,14 +49,14 @@ def test_next_task_no_project_is_unchanged_behavior(tmp_path):
     assert result["task"]["id"] == "some-task"
 
 
-def test_untagged_legacy_task_visible_to_project_query(tmp_path):
-    """A pre-migration task (project=NULL) is unscoped — visible to any project query,
-    so nothing silently disappears when the column is added."""
+def test_untagged_task_is_never_a_projects_next(tmp_path):
+    """route_task used to seed nodes with no project, and next_task(project) also matched
+    project=NULL, so another project's stub could come back as this project's next task.
+    An untagged row now belongs to nobody."""
     db = tmp_path / "g.db"
-    _ready(db, "legacy", project=None)
-    result = next_task(project="youk", db_path=db)
-    assert result["found"]
-    assert result["task"]["id"] == "legacy"
+    _ready(db, "stub", project=None)
+    assert next_task(project="youk", db_path=db)["found"] is False
+    assert next_task(db_path=db)["found"] is True  # still visible when no project is asked for
 
 
 def test_migration_adds_project_column_to_old_db(tmp_path):
@@ -76,9 +76,10 @@ def test_migration_adds_project_column_to_old_db(tmp_path):
     conn.close()
 
     # Opening through graph.py runs the migration.
-    result = next_task(project="youk", db_path=db)
+    result = next_task(db_path=db)
     assert result["found"]
-    assert result["task"]["id"] == "pre-existing"  # old row survived + is unscoped
+    assert result["task"]["id"] == "pre-existing"  # old row survived the migration, unscoped
+    assert next_task(project="youk", db_path=db)["found"] is False
 
     # Column now exists.
     conn = sqlite3.connect(str(db))

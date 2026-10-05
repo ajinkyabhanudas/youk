@@ -161,7 +161,6 @@ server.py (MCP tool surface)
       loop-correction.json      ← loop correction state
       active_task.json          ← current task, routing_context, files touched
       session-plan.json         ← session plan items
-      pre-close.json            ← written by session_end, consumed by next session_start
       convergence-state.json    ← iterative convergence tracking
       pending-action.json       ← deferred pending action
       session-goal.json         ← stated goal for drift detection
@@ -262,8 +261,7 @@ The agent calls session_end(summary, commits_made, close_cluster)
   → server.py → session.py: end_session()
       deletes: state/sessions/{slug}/open.json
                state/sessions/{slug}/challenge-ran.json (and other session flags)
-      writes:  state/sessions/{slug}/pre-close.json (if commits or skills fired)
-               state/session.json (updated counter, org_score)
+      writes:  state/session.json (updated counter, org_score)
                state/knowledge/projects/{slug}/ (contracts, decisions)
   → returns: session_delta block
 ```

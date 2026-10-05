@@ -1,6 +1,6 @@
 # S04 Server spans and gate events
 
-Size M. Depends: S02. Status: todo. Metric: V3, gate compliance.
+Size M. Depends: S02. Metric: V3, gate compliance.
 
 **Goal.** Record what only the server knows: internal latency, gate transitions, task lifecycle.
 

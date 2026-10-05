@@ -157,33 +157,6 @@ class SessionPlan:
 
 
 @dataclass
-class ResumePointer:
-    """The project-scoped "what's next" pointer (ADR contract R3).
-
-    Written automatically at session_end from the project's own validated task graph.
-    `text` is guarded against the recursive-wrapping bug that motivated this task.
-    """
-
-    slug: str
-    text: str
-
-    def __post_init__(self) -> None:
-        _require_str(self.slug, "resume_pointer.slug", allow_empty=False)
-        _require_str(self.text, "resume_pointer.text")
-        _reject_recursive_wrapping(self.text, "resume_pointer.text", "Resume:")
-        _reject_recursive_wrapping(self.text, "resume_pointer.text", "Last working on:")
-
-    def to_dict(self) -> dict:
-        return {"slug": self.slug, "text": self.text}
-
-    @classmethod
-    def from_dict(cls, d: dict) -> ResumePointer:
-        if not isinstance(d, dict):
-            raise StateValidationError("resume_pointer must be a JSON object")
-        return cls(slug=d.get("slug", ""), text=d.get("text", ""))
-
-
-@dataclass
 class PendingAction:
     """state/pending-action.json — a deferred action to run at next session start."""
 

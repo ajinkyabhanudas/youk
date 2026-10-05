@@ -42,8 +42,10 @@ def youk_root(tmp_path, monkeypatch):
     import compaction
     import review
     import task_contract
+    import graph
     import knowledge_index
 
+    monkeypatch.setattr(graph, "_DB_PATH", root / "state" / "task-graph.db")
     monkeypatch.setattr(session, "YOUK_ROOT", root)
     monkeypatch.setattr(session, "STATE_FILE", root / "state" / "session.json")
     monkeypatch.setattr(health, "YOUK_ROOT", root)

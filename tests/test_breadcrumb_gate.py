@@ -102,7 +102,6 @@ class TestTaskCheckpointBreadcrumbGate:
         monkeypatch.setattr("session._build_brief", lambda _: {"brief": "TEST BRIEF"})
         monkeypatch.setattr("session._load_state", lambda: {"last_project": "test", "session_counter": 1})
         monkeypatch.setattr("session._write_session_stub", lambda *a: None)
-        monkeypatch.setattr("session._update_resume_point", lambda *a: None)
         monkeypatch.setattr("session._check_session_goal", lambda _: None)
         return state_dir
 

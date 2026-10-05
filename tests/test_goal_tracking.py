@@ -237,8 +237,6 @@ class TestTaskCheckpointGoalCheck:
             "session._slug", return_value="youk"
         ), patch(
             "session._write_session_stub", return_value=None
-        ), patch(
-            "session._update_resume_point", return_value=None
         ):
             result = _tcp(str(tmp_path), "fixed a bug", "M")
 
@@ -260,8 +258,6 @@ class TestTaskCheckpointGoalCheck:
             "session._slug", return_value="youk"
         ), patch(
             "session._write_session_stub", return_value=None
-        ), patch(
-            "session._update_resume_point", return_value=None
         ):
             result = _tcp(str(tmp_path), "some task", "M")
 

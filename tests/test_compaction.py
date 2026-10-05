@@ -173,7 +173,9 @@ class TestBuildBrief:
         assert len(digest.splitlines()) <= 6
         assert "PULSE" in result["brief"]  # model-side brief keeps everything
 
-    def test_resume_candidate_skips_housekeeping(self, youk_root, tmp_path):
+    def test_checkpoint_stores_no_resume_pointer(self, youk_root, tmp_path):
+        """Where a project stopped is derived on read (resume.py), so the checkpoint that a
+        dropped session leaves behind must not carry a prose resume candidate."""
         self._seed(youk_root, "testproj", [])
         (youk_root / "state" / "session-plan.json").write_text(json.dumps({
             "slug": "testproj",
@@ -182,7 +184,7 @@ class TestBuildBrief:
         from compaction import build_brief
         build_brief(str(tmp_path / "testproj"))
         data = json.loads((youk_root / "state" / "session-checkpoint.json").read_text())
-        assert data["resume_candidate"] == "Resume: finish D6 stats"
+        assert "resume_candidate" not in data
 
     def test_writes_checkpoint(self, youk_root, tmp_path):
         self._seed(youk_root, "testproj", ["rule A"])

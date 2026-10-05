@@ -1,6 +1,6 @@
 # S09 Arm router
 
-Size M. Depends: S02, S03. Status: todo. Metric: enables arm comparison.
+Size M. Depends: S02, S03. Metric: enables arm comparison.
 
 **Goal.** The SessionStart hook chooses what context to inject per arm, and every event carries the arm.
 

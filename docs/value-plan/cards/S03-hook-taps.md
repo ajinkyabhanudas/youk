@@ -1,6 +1,6 @@
 # S03 Hook taps
 
-Size M. Depends: S02. Status: todo. Metric: V1, V3 inputs.
+Size M. Depends: S02. Metric: V1, V3 inputs.
 
 **Goal.** Capture usage mechanically from hooks, with no cooperation from the model.
 

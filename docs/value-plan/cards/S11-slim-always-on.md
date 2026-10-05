@@ -1,6 +1,6 @@
 # S11 Slim always-on
 
-Size M. Depends: S01, G1. Status: todo. Metric: V3, B (noninferior).
+Size M. Depends: S01, G1. Metric: V3, B (noninferior).
 
 **Goal.** Cut what is loaded every session without losing results. This builds the `lean` arm's content.
 

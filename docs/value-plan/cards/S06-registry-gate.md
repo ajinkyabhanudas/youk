@@ -1,6 +1,6 @@
 # S06 Registry completeness gate
 
-Size M. Depends: S02. Status: todo. Metric: traceability of anything new.
+Size M. Depends: S02. Metric: traceability of anything new.
 
 **Goal.** CI fails if a new tool, skill, hook or gate is not registered and traceable. This is the rule that keeps
 the system honest as it grows.

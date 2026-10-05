@@ -34,6 +34,7 @@ VALID_SUBSYSTEMS = {
     "intent-sizing",
     "value-instrumentation",
     "host-hooks",
+    "project-state",
 }
 # Runtime-created (state/) or instance-local-gitignored (knowledge/) -- never
 # guaranteed to exist in a fresh checkout, by design.

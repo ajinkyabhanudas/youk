@@ -1,6 +1,6 @@
 # S08 Replay battery
 
-Size M. Depends: none. Status: todo. Metric: B.
+Size M. Depends: none. Metric: B.
 
 **Goal.** A fixed, replayable set of real tasks with hidden tests, mined from Ajinkya's own git history.
 This is the programmatic simulation: repeatable, many runs, no live-work dependency.

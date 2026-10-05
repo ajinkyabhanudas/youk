@@ -1,6 +1,6 @@
 # S05 Value report
 
-Size M. Depends: S03, S04. Status: todo. Metric: makes V1 to V3 visible.
+Size M. Depends: S03, S04. Metric: makes V1 to V3 visible.
 
 **Goal.** One report that answers: is youk helping, per arm, per week. It replaces org_score as the headline.
 

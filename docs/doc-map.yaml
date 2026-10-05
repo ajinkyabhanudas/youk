@@ -123,6 +123,8 @@ src_files:
   - {file: servers/core/src/tokens.py, refs: [README.md]}
   - {file: servers/shared/models.py, refs: [README.md]}
   - {file: servers/shared/tool_spans.py, refs: [docs/value-plan/README.md]}
+  - {file: servers/shared/project_identity.py, refs: [docs/resume-state.md]}
+  - {file: servers/core/src/resume.py, refs: [docs/resume-state.md]}
   - {file: servers/shared/contracts.py, refs: [docs/value-plan/README.md]}
   - {file: servers/shared/phrases.py, refs: [docs/value-plan/README.md]}
   - {file: servers/shared/events.py, refs: [docs/value-plan/README.md, docs/adr-011-trace-content-invariant.md]}

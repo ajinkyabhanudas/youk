@@ -1,6 +1,6 @@
 # S13 Evidence packet
 
-Size M. Depends: S03. Status: todo. Metric: V2.
+Size M. Depends: S03. Metric: V2.
 
 **Goal.** Every M+ change ends with a deterministic, review-ready summary produced by code, not by the model.
 

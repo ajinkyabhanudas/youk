@@ -1,6 +1,6 @@
 # S16 Skill pruning (time-gated)
 
-Size S. Depends: S03 plus at least 20 real sessions of skill events. Status: todo. Metric: V3, usage.
+Size S. Depends: S03 plus at least 20 real sessions of skill events. Metric: V3, usage.
 
 **Goal.** Archive skills that data shows are unused, with Ajinkya's approval.
 

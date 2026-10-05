@@ -1,6 +1,6 @@
 # S01 Footprint baseline and budget
 
-Size S. Depends: none. Status: todo. Metric: V3.
+Size S. Depends: none. Metric: V3.
 
 **Goal.** Measure what youk puts in front of the model every session, and make growth fail CI.
 
