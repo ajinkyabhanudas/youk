@@ -19,7 +19,7 @@ help: ## Show this help
 
 .PHONY: coverage-badge
 coverage-badge: ## Run health.py coverage and print the badge URL with current number
-	@PCT=$$(python -m pytest tests/ -q --cov=servers/core/src --cov-report=term 2>&1 \
+	@PCT=$$(uv run pytest tests/ -q --cov=servers/core/src --cov-report=term 2>&1 \
 	  | grep 'servers/core/src/health\.py' | tail -1 | awk '{print $$4}' | tr -d '%'); \
 	echo "health.py coverage: $${PCT}%"; \
 	echo "Badge URL: https://img.shields.io/badge/health.py%20coverage-$${PCT}%25-4CAF50"; \
@@ -30,8 +30,8 @@ coverage-badge: ## Run health.py coverage and print the badge URL with current n
 #   install:       bash scripts/install.sh               (Windows: .\scripts\install.ps1)
 #   update:        git pull --rebase && bash scripts/install.sh
 #   build:         docker build -t youk-core:latest -f servers/core/Dockerfile . && docker build -t youk-code:latest -f servers/code/Dockerfile .
-#   checkup-fast:  python3 -m pytest tests/integration/test_l0_environment.py tests/integration/test_l1_infrastructure.py -v --tb=short -m integration --no-cov
-#   test-unit:     python3 -m pytest tests/ -v -m "not integration"
+#   checkup-fast:  uv run pytest tests/integration/test_l0_environment.py tests/integration/test_l1_infrastructure.py -v --tb=short -m integration --no-cov
+#   test-unit:     uv run pytest tests/ -v -m "not integration"
 #   verify-mcp:    bash scripts/doctor.sh                (Windows: wsl bash scripts/doctor.sh)
 
 .PHONY: install
@@ -87,7 +87,7 @@ _prune-stale-containers:
 rebuild: clean build ## Full rebuild from scratch (removes cached layers)
 
 # Note: servers/ source code is live from the volume mount — no rebuild needed for code changes.
-# Only rebuild when requirements.txt or servers/shared/ changes.
+# Only rebuild when pyproject.toml, uv.lock or servers/shared/ changes.
 # After rebuild, restart Claude Code to pick up new dependencies.
 
 
@@ -148,30 +148,30 @@ doctor: checkup-fast ## Alias for checkup-fast (backwards compat — use checkup
 .PHONY: checkup
 checkup: ## Full body checkup L0–L6 — hierarchical integration tests (requires Docker images)
 	@echo "==> youk full body checkup"
-	@python3 -m pytest tests/integration/test_l0_environment.py -q --tb=short -m integration --no-cov || \
+	@uv run pytest tests/integration/test_l0_environment.py -q --tb=short -m integration --no-cov || \
 	  { echo "L0 FAIL — fix environment first"; exit 1; }
-	@python3 -m pytest tests/integration/test_l1_infrastructure.py -q --tb=short -m integration --no-cov || \
+	@uv run pytest tests/integration/test_l1_infrastructure.py -q --tb=short -m integration --no-cov || \
 	  { echo "L1 FAIL — fix infrastructure (make build)"; exit 1; }
-	@python3 -m pytest tests/integration/test_l2_routing.py -q --tb=short -m integration --no-cov || \
+	@uv run pytest tests/integration/test_l2_routing.py -q --tb=short -m integration --no-cov || \
 	  { echo "L2 FAIL — fix routing before skill tests"; exit 1; }
-	@python3 -m pytest tests/integration/test_l3_skills.py -q --tb=short -m integration --no-cov || \
+	@uv run pytest tests/integration/test_l3_skills.py -q --tb=short -m integration --no-cov || \
 	  { echo "L3 FAIL — fix skill registry (check SKILL-REGISTRY.md vs skills/)"; exit 1; }
-	@python3 -m pytest tests/integration/test_l4_integrity.py -q --tb=short -m integration --no-cov || \
+	@uv run pytest tests/integration/test_l4_integrity.py -q --tb=short -m integration --no-cov || \
 	  { echo "L4 FAIL — fix YAML/doc integrity before gate tests"; exit 1; }
-	@python3 -m pytest tests/integration/test_l5_gates.py -q --tb=short -m integration --no-cov || \
+	@uv run pytest tests/integration/test_l5_gates.py -q --tb=short -m integration --no-cov || \
 	  { echo "L5 FAIL — fix gate/guardrail logic before end-to-end test"; exit 1; }
-	@python3 -m pytest tests/integration/test_l6_e2e.py -q --tb=short -m integration --no-cov || \
+	@uv run pytest tests/integration/test_l6_e2e.py -q --tb=short -m integration --no-cov || \
 	  { echo "L6 FAIL — end-to-end session trace failed"; exit 1; }
 	@echo "youk health: HEALTHY"
 
 .PHONY: checkup-fast
 checkup-fast: ## L0 + L1 only — environment + Docker check (< 20s). Replaces make doctor.
-	@python3 -m pytest tests/integration/test_l0_environment.py \
+	@uv run pytest tests/integration/test_l0_environment.py \
 	  tests/integration/test_l1_infrastructure.py -v --tb=short -m integration --no-cov
 
 .PHONY: checkup-static
 checkup-static: ## L0 + L3 filesystem + L4a static — no Docker required
-	@python3 -m pytest tests/integration/test_l0_environment.py \
+	@uv run pytest tests/integration/test_l0_environment.py \
 	  tests/integration/test_l3_skills.py -k "not mcp and not sandbox" \
 	  tests/integration/test_l4_integrity.py -k "Static" \
 	  -v --tb=short -m integration --no-cov
@@ -181,7 +181,7 @@ test: test-unit test-core test-code ## Run all tests: unit + MCP handshakes
 
 .PHONY: test-unit
 test-unit: ## Run unit tests (no Docker required)
-	pytest tests/ -v -m "not integration"
+	uv run pytest tests/ -v -m "not integration"
 
 MCP_INIT = {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}
 MCP_DONE = {"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
@@ -267,7 +267,7 @@ simulate: ## Run simulate-experience skill — developer experience audit, feeds
 
 .PHONY: lint
 lint: ## Run ruff on servers/
-	ruff check servers/
+	uv run ruff check servers/
 
 .PHONY: cleanup-gate-files
 cleanup-gate-files: ## Remove legacy JSON gate files after task-graph.db migration is confirmed healthy

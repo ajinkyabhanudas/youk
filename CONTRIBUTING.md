@@ -73,14 +73,16 @@ This keeps the audit trail clean and lets `assess_skill` track the change.
 
 After any server change:
 ```bash
-ruff check servers/   # must pass clean
+uv sync               # once: installs the locked environment into .venv
+uv run ruff check servers/   # must pass clean
 make test             # MCP handshake must succeed on both servers
 make build            # rebuild Docker images before testing behavior
 ```
 
 Note: `servers/shared/` changes take effect immediately without a rebuild (live volume mount).
 `servers/core/` and `servers/code/` changes also take effect live — only rebuild when
-`requirements.txt` or `Dockerfile` changes.
+`pyproject.toml`, `uv.lock` or a `Dockerfile` changes. Dependencies live in
+`pyproject.toml` and are pinned by `uv.lock`: change one, run `uv lock`, commit both.
 
 ### Knowledge files (`knowledge/`)
 
@@ -92,7 +94,7 @@ Edit these directly — they're read at runtime, no rebuild needed.
 
 ## Code style
 
-- Python: `ruff check servers/` must pass before any PR
+- Python: `uv run ruff check servers/` must pass before any PR
 - No type: ignore comments without an explanation
 - Functions under 40 lines where possible — split at natural boundaries
 - No new dependencies without a documented reason in the PR description

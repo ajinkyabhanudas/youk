@@ -1,3 +1,43 @@
+[project]
+name = "youk"
+version = "0.0.0"
+description = "youk: engineering memory and routing for coding agents"
+# One Python for the lockfile, CI and the Docker images (python:3.13-slim).
+requires-python = ">=3.13,<3.14"
+# Shared by both servers (the code server needs nothing beyond this).
+dependencies = [
+    # Pinned below 2.0: mcp 2.x renames FastMCP to MCPServer and changes the tool API.
+    # server.py imports mcp.server.fastmcp, which does not exist in 2.x.
+    "mcp>=1.0.0,<2",
+    "anthropic>=0.112.0",
+    "pyyaml>=6.0",
+    "jsonschema>=4.25.0",
+]
+
+[dependency-groups]
+dev = ["pytest", "pytest-cov", "ruff"]
+# Extra dependencies of the core server only. torch backs the local semantic similarity
+# (semantic_similarity.py): no GPU, offline, no vendor API.
+core-server = [
+    "langfuse>=2.0.0",
+    "torch>=2.0.0",
+    "sentence-transformers>=3.0.0",
+]
+
+[tool.uv]
+package = false
+default-groups = ["dev", "core-server"]
+
+# CPU-only torch wheel on linux (CI and the Docker images) to avoid the ~2GB CUDA build.
+# macOS resolves torch from PyPI.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
 [tool.pytest.ini_options]
 addopts = "--cov=servers --cov-report=term-missing --cov-fail-under=45 -m 'not integration'"
 markers = [

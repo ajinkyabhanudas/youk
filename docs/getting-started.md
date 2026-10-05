@@ -54,9 +54,9 @@ Every `make` target has a direct shell equivalent. Pick whichever works on your 
 | First install | `make install` | `bash scripts/install.sh` | `.\scripts\install.ps1` |
 | Update + rebuild | `make update` | `git pull --rebase && bash scripts/install.sh` | `git pull --rebase; .\scripts\install.ps1` |
 | Uninstall / revert | `make uninstall` | `bash scripts/uninstall.sh` | `.\scripts\uninstall.ps1` |
-| Fast checkup | `make checkup-fast` | `python3 -m pytest tests/integration/test_l0_environment.py tests/integration/test_l1_infrastructure.py -v --tb=short -m integration --no-cov` | same (in Git Bash or WSL2) |
+| Fast checkup | `make checkup-fast` | `uv run pytest tests/integration/test_l0_environment.py tests/integration/test_l1_infrastructure.py -v --tb=short -m integration --no-cov` | same (in Git Bash or WSL2) |
 | Build images | `make build` | `docker build -t youk-core:latest -f servers/core/Dockerfile . && docker build -t youk-code:latest -f servers/code/Dockerfile .` | same |
-| Unit tests | `make test-unit` | `python3 -m pytest tests/ -v -m "not integration"` | same |
+| Unit tests | `make test-unit` | `uv run pytest tests/ -v -m "not integration"` | same |
 | MCP handshake | `make verify-mcp` | `bash scripts/doctor.sh` | `wsl bash scripts/doctor.sh` |
 
 ### Step 1: Prerequisites
@@ -266,9 +266,9 @@ youk mounts its source code as a live Docker volume (`-v ~/.claude/youk:/youk`).
 | Change type | What to do | Example |
 |-------------|-----------|---------|
 | Code only (`.py` files inside `servers/`) | Restart Claude Code | Bug fix in `session.py`, new skill signal logic |
-| Dependency or shared model change | Rebuild + restart: `make build` then restart Claude Code | New package in `requirements.txt`, new field in `servers/shared/models.py` |
+| Dependency or shared model change | Rebuild + restart: `make build` then restart Claude Code | New package in `pyproject.toml` (then `uv lock`), new field in `servers/shared/models.py` |
 
-**How to tell which tier:** If `requirements.txt` or `servers/shared/` changed, rebuild. Otherwise, restart only.
+**How to tell which tier:** If `pyproject.toml`, `uv.lock` or `servers/shared/` changed, rebuild. Otherwise, restart only.
 
 ```bash
 # Code-only change — restart Claude Code (close and reopen the terminal)

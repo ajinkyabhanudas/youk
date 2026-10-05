@@ -18,7 +18,7 @@ venv and requirements files, not TOML.
 **Build.**
 - `[project]` with `requires-python >=3.13`, `package = false`, shared deps, and dependency groups: `dev` (pytest, pytest-cov, ruff), `core-server` (adds langfuse, torch, sentence-transformers), `code-server`.
 - torch from the PyTorch CPU index on linux only; keep the `mcp<2` pin and its comment.
-- Commit `uv.lock` and `.python-version`.
+- Commit `uv.lock`. Python is pinned once, by `requires-python` in `pyproject.toml`.
 - Dockerfiles install with `uv sync --frozen --no-install-project --only-group ...` using the uv image copy.
 - CI uses `astral-sh/setup-uv`, `uv sync --frozen`, `uv run`.
 - Pre-commit hook generator runs `uv run --frozen` when uv exists, else the old commands.

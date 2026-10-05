@@ -320,7 +320,7 @@ if [[ $FAIL -eq 0 ]]; then
   echo ""
   echo "  Workflow note:"
   echo "  • servers/ code changes are live immediately (no rebuild needed)."
-  echo "  • After changing requirements.txt or servers/shared/, run: make build"
+  echo "  • After changing pyproject.toml, uv.lock or servers/shared/, run: make build"
   echo "  • After make build, restart your agent host to pick up new dependencies."
   exit 0
 else
