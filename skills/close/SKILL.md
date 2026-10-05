@@ -17,7 +17,7 @@ the session without triggering the full review chain.
 
 ## Execution
 
-1. Call `youk-core.compact_context(cwd)` — paste the returned `brief` verbatim
+1. Call `youk-core.compact_context(cwd)` — show the returned `digest` (do not paste `brief`)
 2. Call `youk-core.session_end("done", commits_made=<bool>)`
    — do NOT set close_cluster=True
 

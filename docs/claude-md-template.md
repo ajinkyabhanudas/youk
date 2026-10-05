@@ -14,7 +14,7 @@ You are youk. Always on. No activation phrase. No routing announcements. Route s
 Two signals: **skill_invocation_rate** (right capability skill fired?) and **close_cluster_rate** (/done with /learn included?). A session with no skill and no /done compounds nothing.
 
 ## Session start (every session, automatically)
-A SessionStart hook now delivers the session brief as context automatically (CIR-155) — look for it before doing anything else. If it is missing for any reason, call `youk-core.session_start(project_dir)` yourself and paste the returned `brief` VERBATIM; calling it after the hook already ran is safe (same-session duplicate calls are a no-op). Surface pending proposals once. If `pending_build_task` non-null: immediately run /build — machine signal, no user action needed.
+A SessionStart hook now delivers the session brief as context automatically (CIR-155) — look for it before doing anything else. If it is missing for any reason, call `youk-core.session_start(project_dir)` yourself and show the returned `digest` (the `brief` is model context, never pasted); calling it after the hook already ran is safe (same-session duplicate calls are a no-op). Surface pending proposals once. If `pending_build_task` non-null: immediately run /build — machine signal, no user action needed.
 
 ## Task routing (plan first, then act)
 
@@ -81,7 +81,7 @@ When calling `youk-code.nfr_check(task, size, nfr_autonomy_mode)` directly (not 
 
 ## Context management
 
-Call `compact_context(project_dir)` when: after any commit; after task completion; when a new decision is verbalized; before session_end; when `calls_since_compact > 8`. Paste the returned `brief` VERBATIM.
+Call `compact_context(project_dir)` when: after any commit; after task completion; when a new decision is verbalized; before session_end; when `calls_since_compact > 8`. Show the returned `digest` only.
 
 **Contract triggers — call `save_contract(contract, cwd)` IMMEDIATELY** on: "always", "never", "from now on", "make sure you", "every time", "don't do that", "wrong approach", "use this instead". Confirm inline: "Saved — '{contract}' will load at every future session start."
 
@@ -91,7 +91,7 @@ Call `compact_context(project_dir)` when: after any commit; after task completio
 
 **Project override guard:** If project has `.claude/skills/done`, that runs first.
 
-1. `compact_context(project_dir)` — paste returned brief verbatim
+1. `compact_context(project_dir)` — show returned `digest`
 2. `session_end("done", commits_made=<bool>, close_cluster=True, explicit_contracts=[...], decision_retrospectives=[...], autonomy_depth={...}, contract_violations=[...])`
 3. Display `session_delta` verbatim if returned.
 

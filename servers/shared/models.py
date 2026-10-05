@@ -132,10 +132,11 @@ class SessionState:
     project_context_files: dict = field(default_factory=dict)
     # one-line trend hint from audit logs — surfaced in session card footer
     dashboard_summary: str = ""
-    # compact context brief — paste this VERBATIM in your first response to anchor
-    # contracts before any context pressure exists. Eliminates the need for a separate
-    # compact_context call at session open.
+    # compact context brief — model-side context, not shown to the user. Eliminates the
+    # need for a separate compact_context call at session open.
     brief: str = ""
+    # human-facing summary (<= 6 lines) — the only brief-derived text shown to the user
+    digest: str = ""
     # count of mid-session skill adaptations applied this session (via assess_skill +
     # apply_proposal within the session, before session_end). Lets self_heal know that
     # some gaps were already addressed and shouldn't be re-flagged.
@@ -217,6 +218,7 @@ class SessionState:
             "project_context_files": self.project_context_files,
             "dashboard_summary": self.dashboard_summary,
             "brief": self.brief,
+            "digest": self.digest,
             "mid_session_adaptations_applied": self.mid_session_adaptations_applied,
             "nfr_autonomy_mode": self.nfr_autonomy_mode,
             "developer_autonomy_rate": self.developer_autonomy_rate,

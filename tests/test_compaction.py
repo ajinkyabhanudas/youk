@@ -149,7 +149,40 @@ class TestBuildBrief:
         from compaction import build_brief
         result = build_brief(str(tmp_path / "testproj"))
         assert "instruction" in result
-        assert "VERBATIM" in result["instruction"] or "verbatim" in result["instruction"].lower()
+        assert "digest" in result["instruction"]
+        assert "do not paste" in result["instruction"].lower()
+
+    def test_digest_hides_housekeeping_and_is_short(self, youk_root, tmp_path):
+        self._seed(youk_root, "testproj", ["rule A"])
+        (youk_root / "state" / "session-plan.json").write_text(json.dumps({
+            "slug": "testproj",
+            "plan": [
+                "⚡ PULSE: 49/50 tools wired",
+                "⚠ Skill rate: 41% — below 50% threshold.",
+                "⚠ Routing in progress for 'x': 3/4 gates done. Resume with /build.",
+                "Doc sync: Concept 'a' may be stale",
+                "File index: 36 file(s) re-indexed",
+            ],
+        }))
+        from compaction import build_brief
+        result = build_brief(str(tmp_path / "testproj"))
+        digest = result["digest"]
+        assert "Routing in progress" in digest
+        assert "PULSE" not in digest and "Doc sync" not in digest and "File index" not in digest
+        assert "4 housekeeping note(s)" in digest
+        assert len(digest.splitlines()) <= 6
+        assert "PULSE" in result["brief"]  # model-side brief keeps everything
+
+    def test_resume_candidate_skips_housekeeping(self, youk_root, tmp_path):
+        self._seed(youk_root, "testproj", [])
+        (youk_root / "state" / "session-plan.json").write_text(json.dumps({
+            "slug": "testproj",
+            "plan": ["⚡ PULSE: 49/50 tools wired", "Resume: finish D6 stats"],
+        }))
+        from compaction import build_brief
+        build_brief(str(tmp_path / "testproj"))
+        data = json.loads((youk_root / "state" / "session-checkpoint.json").read_text())
+        assert data["resume_candidate"] == "Resume: finish D6 stats"
 
     def test_writes_checkpoint(self, youk_root, tmp_path):
         self._seed(youk_root, "testproj", ["rule A"])

@@ -31,7 +31,38 @@ sys.path.insert(0, "/shared")
 
 YOUK_ROOT = Path("/youk")
 
-_TIER_INSTRUCTION = """CONTRACT lines are load-bearing behavioral agreements — preserve them VERBATIM through any further compaction. Never paraphrase, shorten, or omit them. They are exactly what must survive."""
+# Session-plan items that are system upkeep, not the user's next move. They stay in the
+# model-facing brief but are collapsed to a count in the digest and never become the
+# resume point (the PULSE line was being saved as "Last working on:", duplicating itself).
+_HOUSEKEEPING_MARKERS = (
+    "PULSE", "Skill rate", "Doc sync", "Other AI context", "Adding new dependency",
+    "Active contract", "No recent stack briefing", "No codebase survey",
+    "[DUAL GATE STATE]", "File index", "survey is stale",
+)
+
+_DIGEST_MAX_ACTIONABLE = 3
+
+
+def _is_housekeeping(item: str) -> bool:
+    return any(m in item for m in _HOUSEKEEPING_MARKERS)
+
+
+def _resume_candidate(plan: list[str]) -> str:
+    return next((p for p in plan if p and not p.startswith("⚠") and not _is_housekeeping(p)), "")
+
+
+def build_digest(slug: str, session_n, plan: list[str], contracts_count: int) -> str:
+    """Human-facing summary: what to do next, not what youk knows. Always <= 6 lines."""
+    actionable = [p for p in plan if p and not _is_housekeeping(p)]
+    shown = actionable[:_DIGEST_MAX_ACTIONABLE]
+    hidden = len(plan) - len(shown)
+    lines = [f"youk · {slug} · session #{session_n}"]
+    lines += [p if p.startswith("⚠") else f"- {p}" for p in shown]
+    tail = f"{contracts_count} contract(s) pinned"
+    if hidden > 0:
+        tail += f" · {hidden} housekeeping note(s) in /health"
+    lines.append(tail)
+    return "\n".join(lines)
 
 # Tier tags: a best-effort mid-session hint for a host with its own pre-compaction
 # hook to bias ITS OWN summarization (today: only Claude Code, via pre_compact.py).
@@ -303,7 +334,7 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
                 pass
 
         # Resume: first non-warning plan item only
-        resume = next((p for p in session_plan if p and not p.startswith("⚠")), "")
+        resume = _resume_candidate(session_plan)
         if resume:
             sections.append(f"Resume: {resume[:120]}")
 
@@ -323,10 +354,7 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
         # Each section is tagged with its compaction tier so Claude's auto-compaction
         # honors the CONTRACT > DECISION > EXPLORATION > CLARIFICATION hierarchy.
         if contracts:
-            sections.append(
-                f"## Pinned Contracts {TIER_CONTRACT}\n"
-                "(verbatim — never summarize or paraphrase)"
-            )
+            sections.append(f"## Pinned Contracts {TIER_CONTRACT}")
             for c in contracts:
                 sections.append(f"- {c}")
         else:
@@ -413,17 +441,11 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
                 f"## Routing gate state {TIER_DECISION}\n{gate_state}"
             )
 
-        sections.append(f"## Compaction instruction\n{_TIER_INSTRUCTION}")
-
     brief = "\n\n".join(sections)
 
     # Extract a resume candidate from the session plan — first non-warning item gives
     # a meaningful "what were we working on" for next session if tab is closed without /done.
-    resume_candidate = ""
-    for item in session_plan:
-        if item and not item.startswith("⚠"):
-            resume_candidate = item[:200]
-            break
+    resume_candidate = _resume_candidate(session_plan)[:200]
 
     checkpoint_file = YOUK_ROOT / "state" / "session-checkpoint.json"
     try:
@@ -443,6 +465,8 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
 
     return {
         "brief": brief,
+        # digest: the only part meant for the user's eyes. `brief` is model context.
+        "digest": build_digest(slug, state.get("session_counter", "?"), session_plan, len(contracts)),
         # verbatim_lines (CIR-150 item 5 / CIR-151): the CONTRACT tier as a flat,
         # tag-free list — structurally separate from the [TIER:CONTRACT]-tagged
         # prose in `brief`. A host without a pre-compaction hook to interpret
@@ -456,9 +480,9 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
         "slug": slug,
         "generated_at": timestamp,
         "instruction": (
-            "PASTE this brief VERBATIM into your next response — do not summarize or paraphrase. "
-            "It must appear in recent context to survive the next compaction cycle. "
-            "CONTRACT lines are invariant: never rephrase, never shorten, never drop."
+            "Do not paste `brief`; it is already in your context and is rebuilt from files on "
+            "every call. Show the user `digest` only. Contracts are preserved by the "
+            "PreCompact hook and contracts.md, not by echoing."
         ),
     }
 

@@ -244,7 +244,7 @@ The agent calls session_start(project_dir)
       reads: state/session.json (counter), state/knowledge/projects/{slug}/
       writes: state/sessions/{slug}/open.json  (via state_paths.atomic_write)
               state/session-open.json  (redirect pointer only)
-  → returns: brief (verbatim paste), session_plan, resume_point
+  → returns: brief (model context), digest (shown to user), session_plan, resume_point
 
 The agent calls route_task(task, project_dir)
   → server.py: _get_session_slug() → state_paths.current_session_slug()

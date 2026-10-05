@@ -155,7 +155,7 @@ Scan the conversation to collect three growth signals (answered by reading conte
 **Step 6 — Close**
 
 Call `youk-core.track_tokens(approx_input, approx_output, "final")`
-Call `youk-core.compact_context(project_dir)`  — paste the returned `brief` verbatim
+Call `youk-core.compact_context(project_dir)`  — show the returned `digest` (do not paste `brief`)
 Call `youk-core.session_end("done", commits_made=<bool>, explicit_contracts=explicit_contracts, close_cluster=True, loop_correction_detected=<bool>, loop_gap_detected=<bool>, challenge_rounds=<int>, decision_retrospectives=decision_retrospectives, autonomy_depth=autonomy_depth, contract_violations=contract_violations, outcome=outcome, outcome_result=outcome_result, findings=findings, finding_categories=finding_categories)`
 
 ---

@@ -1664,7 +1664,7 @@ def task_checkpoint(
     - M+: compact + appends a structured entry to state/task-checkpoints.jsonl,
       which session_end rolls up into the final audit entry.
 
-    Paste the returned 'brief' verbatim in your response to anchor context.
+    Show the user the returned 'digest'. 'brief' is model context; do not paste it.
 
     project_dir: Current project directory (same as session_start).
     task_label: Short description of the completed task (e.g. "fixed login bug").
@@ -1675,7 +1675,7 @@ def task_checkpoint(
       When the same gap_type appears 2+ times across checkpoints, returns
       pattern_trigger so Claude acts immediately (mid-session adaptation).
 
-    Returns: brief (paste verbatim), checkpoint_written, pattern_trigger (if any),
+    Returns: digest (show), brief (context only), checkpoint_written, pattern_trigger (if any),
              goal_check (if a session goal is active — goal_met: bool, goal_gap: str),
              calls_since_compact (int — compact if > 8).
              IMPORTANT: if goal_check.goal_met is False, do NOT close the session.
@@ -1759,14 +1759,13 @@ def compact_context(project_dir: str, intent: str = "") -> dict:
     keep that decision block intact through subsequent compaction cycles.
     Example: compact_context(cwd, intent="payment webhook idempotency")
 
-    Use the returned 'brief' as your working context anchor: state it
-    explicitly in your response so it appears in recent context and
-    survives the next compaction cycle.
+    Use the returned 'brief' as working context; it is rebuilt from files on every
+    call, so echoing it adds nothing. Show the user only 'digest'.
 
     project_dir: The current project directory (same as session_start).
     intent: Optional keywords describing the active work (e.g. "payment webhook nfr").
 
-    Returns: brief (pin this), contracts_count, decisions_count, instruction.
+    Returns: digest (show the user), brief (context), contracts_count, decisions_count, instruction.
     """
     _reset_tool_call_count()
     return build_brief(project_dir, intent)
