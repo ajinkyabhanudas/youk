@@ -239,7 +239,9 @@ def _render(
         "> **What this measures:** youk tracks process discipline — whether engineering "
         "gates fired (NFR check, code review, skill invocation) before code was written. "
         "A high org\\_score means the gates ran. It does not measure whether the code "
-        "shipped was correct, performant, or secure. Those are separate quality signals."
+        "shipped was correct, performant, or secure. Those are separate quality signals. "
+        "Outcome and overhead measures (corrections, test results, latency, footprint) are in "
+        "`make value-report`, which is the headline; this file is the process view."
     )
     lines.append("")
 
