@@ -270,9 +270,10 @@ def ledger_counts(youk_root: Path, slug: str, session_id: str) -> dict:
         sid = events.hash_identifier(session_id)
         mine = [e for e in events.read_events(youk_root, slug) if e.get("session") == sid]
         return {"tool_calls": sum(1 for e in mine if e["kind"] == "tool" and e.get("src") == "hook"),
-                "corrections": sum(1 for e in mine if e["kind"] == "correction")}
+                "corrections": sum(1 for e in mine if e["kind"] == "correction"),
+                "hook_events": len(mine)}
     except Exception:
-        return {"tool_calls": None, "corrections": None}
+        return {"tool_calls": None, "corrections": None, "hook_events": None}
 
 
 def execute_run(spec: RunSpec, repos: dict[str, dict], work: Path, agent: Agent,
@@ -292,11 +293,17 @@ def execute_run(spec: RunSpec, repos: dict[str, dict], work: Path, agent: Agent,
         restore_hidden_tests(workdir, task)
         passed = mine_tasks.run_tests(workdir, task["test_cmd"], task["runnable_tests"])
     shutil.rmtree(workdir, ignore_errors=True)
+    counts = ledger_counts(youk_root, slug, session_id)
+    # A youk arm whose hooks never fired (a plugin that failed to load) is not that arm: the run
+    # is set aside as an infrastructure error and retried, not counted.
+    if (spec.arm in ("bare", "full") and agent is not fake_agent and outcome.status == "ok"
+            and not counts["hook_events"]):
+        outcome.status, outcome.error, passed = "infra_error", "youk hooks did not fire", None
     return {"ts": datetime.now(UTC).isoformat(timespec="seconds"), "task": task["id"],
             "repo": task["repo"], "arm": spec.arm, "rep": spec.rep, "status": outcome.status,
             "passed": passed, "cost_usd": round(outcome.cost_usd, 4), "wall_s": wall,
             "turns": outcome.turns, "tok_in": outcome.tok_in, "tok_out": outcome.tok_out,
-            "error": outcome.error, **ledger_counts(youk_root, slug, session_id)}
+            "error": outcome.error, **counts}
 
 
 # ---- the battery ------------------------------------------------------------------------------

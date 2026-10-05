@@ -61,7 +61,7 @@ class TestDryRun:
 
     def test_a_pass_is_a_hidden_test_pass_not_the_agents_claim(self, battery):
         task = battery["tasks"][0]
-        spec = rb.RunSpec(task, "bare", 0)
+        spec = rb.RunSpec(task, "superpowers", 0)   # no youk hooks to require
         nothing = lambda s, w, c: rb.AgentOutcome()  # noqa: E731  an agent that changes nothing
         row = rb.execute_run(spec, battery["repos"], battery["work"], nothing, battery["root"])
         assert row["passed"] is False
@@ -196,6 +196,27 @@ class TestAuth:
         summary = _run(battery, agent=boom)
         assert summary["ran"] == len(calls) == rb.MAX_CONSECUTIVE_INFRA
         assert "infrastructure errors in a row" in summary["stopped"]
+
+
+class TestHooksGuard:
+    def test_a_youk_arm_with_no_hook_events_is_set_aside_not_counted(self, battery):
+        quiet = lambda s, w, c: rb.AgentOutcome(cost_usd=0.5, turns=3)  # noqa: E731  no hooks ran
+        row = rb.execute_run(rb.RunSpec(battery["tasks"][0], "bare", 0), battery["repos"],
+                             battery["work"], quiet, battery["root"])
+        assert row["status"] == "infra_error" and row["passed"] is None
+        assert "hooks did not fire" in row["error"]
+
+    def test_the_superpowers_arm_has_no_youk_hooks_and_is_not_held_to_it(self, battery):
+        quiet = lambda s, w, c: rb.AgentOutcome(cost_usd=0.5, turns=3)  # noqa: E731
+        row = rb.execute_run(rb.RunSpec(battery["tasks"][0], "superpowers", 0), battery["repos"],
+                             battery["work"], quiet, battery["root"])
+        assert row["status"] == "ok"
+
+    def test_hook_events_for_the_session_are_counted(self, tmp_path):
+        import events
+        events.emit(tmp_path, "bench-x", kind="session", name="start.startup", session="sid-1")
+        events.emit(tmp_path, "bench-x", kind="session", name="start.startup", session="other")
+        assert rb.ledger_counts(tmp_path, "bench-x", "sid-1")["hook_events"] == 1
 
 
 class TestCleanup:
