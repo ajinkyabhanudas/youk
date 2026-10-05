@@ -36,10 +36,29 @@ import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "servers", "shared"))
 from youk_hook_utils import read_stdin
 
 _YOUK_CORE_URL = os.environ.get("YOUK_CORE_URL", "http://127.0.0.1:8001")
 _TIMEOUT_SECONDS = 8
+
+
+def _emit_session_start(data: dict, cwd: str) -> None:
+    """Record the session opening in the ledger. Never raises, never blocks."""
+    try:
+        from pathlib import Path
+
+        from events import emit
+        from youk_hook_utils import youk_root
+
+        root = youk_root()
+        if root is None:
+            return
+        source = str(data.get("source") or "startup")
+        emit(root, Path(cwd).name or "unknown", kind="session", name=f"start.{source}"[:64],
+             session=str(data.get("session_id", "")), arm=os.environ.get("YOUK_ARM", ""), src="hook")
+    except Exception:
+        pass
 
 
 def main() -> None:
@@ -47,6 +66,8 @@ def main() -> None:
     cwd = data.get("cwd", "")
     if not cwd:
         sys.exit(0)
+
+    _emit_session_start(data, cwd)
 
     query = urllib.parse.urlencode({"project_dir": cwd})
     url = f"{_YOUK_CORE_URL}/session-start-hook?{query}"

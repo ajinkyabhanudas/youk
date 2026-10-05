@@ -77,7 +77,7 @@ Items 2 to 4 apply once S02, S06 and S01 land.
 | S00 | Move dependency management to uv | M | none | todo |
 | S01 | Footprint baseline and budget | S | none | todo |
 | S02 | Event ledger core | M | none | done |
-| S03 | Hook taps | M | S02 | todo |
+| S03 | Hook taps | M | S02 | done |
 | S04 | Server spans and gate events | M | S02 | todo |
 | S05 | Value report | M | S03, S04 | todo |
 | S06 | Registry completeness gate | M | S02 | todo |
@@ -125,6 +125,12 @@ Each lacks a measured need today.
 ## State of the world
 
 (append newest first, 5 lines max per session)
+
+- S03 done (branch vp/05-hook-taps). `plugin/scripts/usage_tap.py` handles PostToolUse, PostToolUseFailure, SessionEnd; the prompt and session-start hooks emit correction and session events. Registered in plugin/hooks/hooks.json.
+  Verified: PostToolUse carries `duration` and Bash `exit_code`; matcher `Skill` works; payload key names vary (`skill`/`skill_name`, `prompt`), so the tap accepts both. Not verified live: whether a failing Bash arrives as PostToolUseFailure; both paths are handled.
+  Latency incl. interpreter: p50 41 ms, p95 45-54 ms with `python3 -S` (stdlib only), 57/67 ms without it. Budget 50 ms p95 is met on a good run and borderline on a noisy one.
+  `hook` events are sampled 1 in 10 (field n=10 is the weight). events.py dropped dataclass/enum to stay import-light.
+  Found, not fixed: post_tool_use.py reads `tool_result` but the payload field is `tool_response`; phrase lists are duplicated in youk_hook_utils, server.py:458 and tests (S07 should unify).
 
 - S02 done (branch vp/04-event-ledger). `servers/shared/events.py`: `emit(root, slug, kind=, name=, ...)` never raises; `read_events(root, slug, since, kinds)` streams.
   Schema v1 kinds: tool, skill, gate, hook, correction, test, commit, outcome, session. Statuses: ok, fail, block. Session and task ids are hashed on emit.

@@ -64,13 +64,7 @@ def _resolve_project_path(host_path: str) -> Path:
     _sync_sp()
     return _sp.resolve_project_path(host_path)
 
-_CONTRACT_PHRASES = [
-    "always ", "never ", "from now on", "remember to", "make sure you",
-    "every time", "don't forget", "commit format", "test after", "before committing",
-    # Implicit corrections — softer phrases that indicate a behavioral contract
-    "don't do that", "wrong approach", "instead of doing", "do it this way",
-    "stop doing", "use this instead", "the right way is",
-]
+from phrases import CONTRACT_PHRASES as _CONTRACT_PHRASES
 
 import re as _re
 

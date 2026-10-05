@@ -17,6 +17,8 @@ because brief and plan read different sources. Loaders are duplicated in `compac
 - Classify each contract `mechanical` (a command, a path rule, a branch rule) or `judgment`. Write the list to
   `knowledge/contracts-classified.json` (reviewed by hand). Mechanical ones feed S12 and S13.
 - Remove the "Active contract" plan item (the brief carries contracts).
+- Unify the correction phrase lists: `youk_hook_utils._CORRECTION_PHRASES` (imported by `reaction_classifier`), the copy at `server.py:458`, and the test copy. `servers/shared/phrases.py` already holds `CONTRACT_PHRASES`.
+- Check `post_tool_use.py`: it reads `tool_result` but the host payload field is `tool_response`.
 
 **Tests.** All consumers return identical lists for the same slug. Brief never says "none" when global contracts exist.
 

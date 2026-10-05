@@ -122,6 +122,7 @@ src_files:
   - {file: servers/core/src/compaction.py, refs: [README.md]}
   - {file: servers/core/src/tokens.py, refs: [README.md]}
   - {file: servers/shared/models.py, refs: [README.md]}
+  - {file: servers/shared/phrases.py, refs: [docs/value-plan/README.md]}
   - {file: servers/shared/events.py, refs: [docs/value-plan/README.md, docs/adr-011-trace-content-invariant.md]}
   - {file: servers/shared/youk_paths.py, refs: [README.md, docs/hosts.md, docs/system-flow.md]}
   - {file: servers/shared/domain_context.py, refs: [README.md, docs/problem-space-modeling-design.md]}

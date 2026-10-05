@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import multiprocessing
-from dataclasses import fields
 from datetime import UTC, datetime, timedelta
 
 import events
@@ -19,9 +18,21 @@ def _lines(path):
 
 
 class TestContentRule:
-    def test_allowed_keys_match_the_dataclass(self):
-        """Drift sentinel: widening the event surface has to be a deliberate edit to both."""
-        assert events.ALLOWED_KEYS == {f.name for f in fields(events.Event)}
+    def test_allowed_keys_are_the_declared_fields(self):
+        """Drift sentinel: widening the event surface has to be a deliberate edit to FIELDS."""
+        assert events.ALLOWED_KEYS == frozenset(events.FIELDS)
+        assert {"kind", "name", "status", "session", "task", "arm", "src", "ms", "n",
+                "tok_in", "tok_out", "v", "ts", "eid"} == events.ALLOWED_KEYS
+
+    def test_module_stays_import_light(self):
+        """Hooks import this on every tool call; dataclasses (with inspect) costs ~8 ms each start."""
+        import subprocess
+        import sys
+        code = ("import sys; sys.path.insert(0, 'servers/shared'); import events; "
+                "print('dataclasses' in sys.modules, 'inspect' in sys.modules)")
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                             cwd=str(__import__("pathlib").Path(__file__).parent.parent))
+        assert out.stdout.split() == ["False", "False"], out.stdout + out.stderr
 
     def test_written_keys_are_a_subset_of_allowed(self, tmp_path):
         events.emit(tmp_path, "youk", kind="tool", name="route_task", ms=12, n=1,
