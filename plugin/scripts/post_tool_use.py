@@ -39,6 +39,23 @@ LARGE_OUTPUT_THRESHOLD = 2000
 MAX_FILES = 10
 
 
+def response_text(data: dict) -> str:
+    """The text of a tool's output from the hook payload.
+
+    The host sends `tool_response`; for Bash it is a dict ({"stdout", "stderr", "exit_code"}),
+    so reading `tool_result` (the old key, kept as a fallback) always gave an empty string and
+    last_signal was never filled from command output. A dict with no recognizable text field
+    yields "" rather than a repr of the whole structure."""
+    response = data.get("tool_response", data.get("tool_result", ""))
+    if isinstance(response, dict):
+        for key in ("stdout", "stderr", "output", "content", "text", "result"):
+            value = response.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        return ""
+    return str(response or "")
+
+
 def extract_signal(tool_name: str, tool_input: dict, tool_result: str) -> str:
     """Extract a meaningful signal from a tool result."""
     result_str = str(tool_result or "")
@@ -96,7 +113,7 @@ def main() -> None:
     cwd = data.get("cwd", "")
     tool_name = data.get("tool_name", "")
     tool_input = data.get("tool_input", {})
-    tool_result = data.get("tool_result", "")
+    tool_result = response_text(data)
 
     root = youk_root()
     if root is None:

@@ -120,15 +120,9 @@ class TestMarkChallengeRanRoundsCounter:
 class TestSessionEndCorrectionDetection:
     """The server scans the summary for correction language — no reliance on Claude's flag."""
 
-    _CORRECTION_PHRASES = [
-        "you missed", "what about", "unchallenged", "you didn't consider",
-        "still not at floor", "loop not dry", "not at floor", "still not done",
-        "angle unchallenged", "you forgot", "missed this",
-    ]
-
     def _correction_detected(self, summary: str) -> bool:
-        summary_lower = summary.lower()
-        return any(p in summary_lower for p in self._CORRECTION_PHRASES)
+        from phrases import has_loop_correction
+        return has_loop_correction(summary)
 
     def test_you_missed_triggers_correction(self):
         assert self._correction_detected("Developer said: you missed the rate-limit angle") is True

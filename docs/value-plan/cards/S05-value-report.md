@@ -24,4 +24,4 @@ The patterns youk already saved say to replace proxies with outcome metrics.
 
 **Kill criterion.** If nobody opens the report in 4 weeks, fold it into the session digest.
 
-**Handoff.** Paste the first real report into the anchor's state of the world.
+**Handoff.** Paste the first real report into the anchor's log entry.
