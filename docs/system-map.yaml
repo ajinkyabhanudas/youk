@@ -313,3 +313,19 @@
   reads: []
   writes: [state/events/]
   real_log: null  # sharded per project and month under state/events/{slug}/{YYYY-MM}.jsonl, not one file; the value report (S05) is its reader
+
+- name: usage_tap_events
+  grounding: deterministic
+  subsystem: value-instrumentation
+  triggers_on: "PostToolUse, PostToolUseFailure and SessionEnd hooks (plugin/scripts/usage_tap.py): records tool, skill, test-runner, commit and session-end events from the host payload, classified by regex, never the command text"
+  reads: [plugin/scripts/usage_tap.py]
+  writes: [state/events/]
+  real_log: null  # sharded per project and month under state/events/; the value report (S05) is its reader
+
+- name: correction_event_capture
+  grounding: deterministic
+  subsystem: value-instrumentation
+  triggers_on: "UserPromptSubmit hook: a prompt matching the pushback phrase list or the stated-rule phrase list (servers/shared/phrases.py) is counted as a correction event, name only, never the prompt text"
+  reads: [servers/shared/phrases.py]
+  writes: [state/events/]
+  real_log: null  # same sharded ledger as usage_tap_events

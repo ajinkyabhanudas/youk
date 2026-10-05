@@ -33,6 +33,7 @@ leaving plenty of room and avoiding auto-compaction at 70%.
 """
 from __future__ import annotations
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -137,6 +138,26 @@ def _load_session_id(root: Path) -> str:
     return "unknown"
 
 
+def _emit_correction_events(root: Path, slug: str, data: dict, prompt: str) -> None:
+    """Count this prompt in the ledger as pushback and/or a stated rule. Enum names only,
+    never the prompt text. Never raises."""
+    try:
+        from events import emit
+        from phrases import has_contract_phrase
+
+        common = {
+            "session": str(data.get("session_id", "")),
+            "arm": os.environ.get("YOUK_ARM", ""),
+            "src": "hook",
+        }
+        if _is_correction(prompt):
+            emit(root, slug, kind="correction", name="pushback", **common)
+        if has_contract_phrase(prompt):
+            emit(root, slug, kind="correction", name="rule_phrase", **common)
+    except Exception:
+        pass
+
+
 def main() -> None:
     data = read_stdin()
     cwd = data.get("cwd", "")
@@ -156,6 +177,8 @@ def main() -> None:
     # ── Correction capture (runs before anything else — highest value signal) ─
     # Detect if this prompt is a correction of the model's prior response.
     # Write to corrections.jsonl regardless of other logic.
+    if len(user_prompt) >= MIN_PROMPT_LEN:
+        _emit_correction_events(root, slug, data, user_prompt)
     if len(user_prompt) >= MIN_PROMPT_LEN and _is_correction(user_prompt):
         session_id = _load_session_id(root)
         capture_correction(root, user_prompt, transcript_path, session_id)

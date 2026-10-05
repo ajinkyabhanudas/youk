@@ -21,13 +21,13 @@ import hashlib
 import json
 import re
 from collections.abc import Iterator
-from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime
-from enum import StrEnum
 from pathlib import Path
 
 from jsonl_lock import locked_jsonl_append
 
+# Plain constants, not dataclass and enum: this module is imported by hooks that start a fresh
+# interpreter on every tool call, and dataclasses (which pulls in inspect) costs about 8 ms.
 SCHEMA_VERSION = 1
 
 # One event line stays small. The cap is a backstop; a line this long means a field got free text.
@@ -35,54 +35,35 @@ _MAX_LINE_BYTES = 512
 _NAME_RE = re.compile(r"^[A-Za-z0-9_.:/+-]{1,64}$")
 _SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
+KINDS = frozenset({"tool", "skill", "gate", "hook", "correction", "test", "commit", "outcome", "session"})
+STATUSES = frozenset({"ok", "fail", "block"})
 
-class Kind(StrEnum):
-    TOOL = "tool"
-    SKILL = "skill"
-    GATE = "gate"
-    HOOK = "hook"
-    CORRECTION = "correction"
-    TEST = "test"
-    COMMIT = "commit"
-    OUTCOME = "outcome"
-    SESSION = "session"
-
-
-class Status(StrEnum):
-    OK = "ok"
-    FAIL = "fail"
-    BLOCK = "block"
+# Every key an event line may carry, with its default. Adding a field is a deliberate act and
+# has to be added here; tests/test_events.py fails if a written key falls outside this set.
+FIELDS: dict = {
+    "kind": None,       # required, one of KINDS
+    "name": None,       # required, an identifier (tool, skill, runner, gate), never free text
+    "status": "ok",
+    "session": "",      # hashed on emit
+    "task": "",         # hashed on emit
+    "arm": "",          # experiment arm, a short enum-like word
+    "src": "",          # emitter, e.g. "hook" or "server"
+    "ms": None,
+    "n": None,
+    "tok_in": None,
+    "tok_out": None,
+    "v": SCHEMA_VERSION,
+    "ts": "",
+    "eid": "",
+}
+ALLOWED_KEYS = frozenset(FIELDS)
+_INT_FIELDS = ("ms", "n", "tok_in", "tok_out")
 
 
 def hash_identifier(value: str) -> str:
     """Stable, non-reversible id for grouping. Same function as observability.hash_identifier,
     kept here so shared code does not import from core."""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
-
-
-@dataclass(frozen=True)
-class Event:
-    kind: str
-    name: str
-    status: str = Status.OK
-    session: str = ""   # hashed on emit
-    task: str = ""      # hashed on emit
-    arm: str = ""       # experiment arm, a short enum-like word
-    src: str = ""       # emitter, e.g. "hook" or "server"
-    ms: int | None = None
-    n: int | None = None
-    tok_in: int | None = None
-    tok_out: int | None = None
-    v: int = SCHEMA_VERSION
-    ts: str = ""
-    eid: str = ""
-
-
-# Every key an event line may carry. Adding a field is a deliberate act and has to be added
-# here too; tests/test_events.py fails if the dataclass and this set drift apart.
-ALLOWED_KEYS = frozenset(f.name for f in fields(Event))
-
-_INT_FIELDS = ("ms", "n", "tok_in", "tok_out")
 
 
 class EventRejected(ValueError):
@@ -93,17 +74,15 @@ def _validate(raw: dict) -> dict:
     unknown = set(raw) - ALLOWED_KEYS
     if unknown:
         raise EventRejected(f"unknown fields: {sorted(unknown)}")
-    event = Event(**raw)
-    out = asdict(event)
-    try:
-        out["kind"] = Kind(out["kind"]).value
-        out["status"] = Status(out["status"]).value
-    except ValueError as exc:
-        raise EventRejected(str(exc)) from exc
-    if not _NAME_RE.match(str(out["name"])):
+    out = {**FIELDS, **raw}
+    if out["kind"] not in KINDS:
+        raise EventRejected("unknown kind")
+    if out["status"] not in STATUSES:
+        raise EventRejected("unknown status")
+    if not isinstance(out["name"], str) or not _NAME_RE.match(out["name"]):
         raise EventRejected("name must be a short identifier, not free text")
     for key in ("arm", "src"):
-        if out[key] and not _NAME_RE.match(str(out[key])):
+        if out[key] and not (isinstance(out[key], str) and _NAME_RE.match(out[key])):
             raise EventRejected(f"{key} must be a short identifier")
     for key in _INT_FIELDS:
         val = out[key]
