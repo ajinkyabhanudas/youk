@@ -27,9 +27,13 @@ _p.add_argument("--port", type=int, default=8000)
 _p.add_argument("--host", default="0.0.0.0")
 _server_args, _ = _p.parse_known_args()
 
+from tool_spans import install_tool_spans
 from youk_paths import YOUK_ROOT
 
 mcp = FastMCP("youk-code", host=_server_args.host, port=_server_args.port)
+
+# Record latency and errors for every tool registered below (servers/shared/tool_spans.py).
+install_tool_spans(mcp, lambda: YOUK_ROOT)
 
 
 @mcp.tool()

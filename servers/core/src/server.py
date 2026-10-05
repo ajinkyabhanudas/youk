@@ -46,6 +46,7 @@ from intent import optimize_intent as _optimize_intent
 from compaction import build_brief, write_contracts
 from tokens import init_token_tracker, record_checkpoint
 from session_slug import get_session_slug as _get_session_slug_impl
+from tool_spans import install_tool_spans
 import state_paths as _sp
 from graph import (
     create_task_graph as _create_task_graph,
@@ -213,6 +214,10 @@ mcp = FastMCP(
         "Never skip. Never reorder."
     ),
 )
+
+# Record latency, errors and gate outcomes for every tool registered below (servers/shared/
+# tool_spans.py). Must stay before the first @mcp.tool().
+install_tool_spans(mcp, lambda: YOUK_ROOT, _get_session_slug)
 
 
 @mcp.tool()
