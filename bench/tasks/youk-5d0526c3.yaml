@@ -1,0 +1,46 @@
+id: youk-5d0526c3
+repo: youk
+language: python
+sha: 5d0526c3f22dd82a5ec969632bd7e8e4fdc84ec5
+parent_sha: 40f4159005268f2ea3651b5255b91f131db72573
+prompt: 'Fix cold-start false positives in detect_reversals
+
+
+  Found by independent verification, not by the test suite -- every real
+
+  test seeded the ledger with a throwaway detect_reversals call before
+
+  logging a dismissal, so none of them exercised a project''s genuine
+
+  first-ever run. Reproduced directly: logging a dismissal before the
+
+  ledger has ever been written caused every pre-existing entry in the
+
+  real brief to count as "new" (trivially true against an empty ledger),
+
+  so the dismissed event''s own unchanged entry matched itself, and a
+
+  second, unrelated entry sharing a single keyword ("langfuse") also
+
+  false-matched. Root cause: "new" has no real meaning without a prior
+
+  baseline to diff against. Fixed by seeding the ledger and reporting
+
+  nothing on a genuinely first-ever run, rather than trying to patch the
+
+  self-match case alone (which was tried first and only closed part of
+
+  the real gap). Added the missing cold-start test.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_reversal_check.py
+runnable_tests:
+- tests/test_reversal_check.py
+added_tests: []
+source_files:
+- servers/core/src/reversal_check.py
+files: 2
+lines: 57
+review:
+  fair: null
+  note: ''

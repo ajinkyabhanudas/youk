@@ -1,0 +1,23 @@
+id: stencil-ae287428
+repo: stencil
+language: python
+sha: ae287428c36c055cec0731b0cc7868de95f56881
+parent_sha: 2ca4ee7e878d2ae639dd8b2b17552ab93ae8b12a
+prompt: 'Make attrition traceable by sample identity
+
+
+  Store missing sample IDs and unscored record IDs because counts cannot support evidence tracing on their
+  own. D7 can now connect every exclusion to the available source evidence.'
+test_cmd: uv run pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_statistics.py
+runnable_tests:
+- tests/test_statistics.py
+added_tests: []
+source_files:
+- src/stencil/statistics.py
+files: 3
+lines: 38
+review:
+  fair: null
+  note: ''

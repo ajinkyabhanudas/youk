@@ -1,0 +1,29 @@
+id: youk-c20f9974
+repo: youk
+language: python
+sha: c20f9974fe259d19eed6f3cfabee564ce066875c
+parent_sha: 745ef069bed4b246dd15ce33c3193679995a2115
+prompt: 'Ground estimated_size in real precedent instead of a cold judgment
+
+
+  A judgment made with no relevant history to anchor it is a guess, not a
+
+  calibrated estimate. optimize_intent''s full (API) path now retrieves
+
+  similar real past sizing decisions and shows the LLM what they actually
+
+  resolved to, before it estimates the size of the new task.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_sizing_precedent_grounding.py
+runnable_tests:
+- tests/test_sizing_precedent_grounding.py
+added_tests:
+- tests/test_sizing_precedent_grounding.py
+source_files:
+- servers/core/src/intent.py
+files: 2
+lines: 81
+review:
+  fair: null
+  note: ''

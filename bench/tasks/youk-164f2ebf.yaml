@@ -1,0 +1,22 @@
+id: youk-164f2ebf
+repo: youk
+language: python
+sha: 164f2ebf3eac8394acef017c93862ebab1c8e292
+parent_sha: 230261d20ad45ca9dffd7a92c1a7f35f5855e38a
+prompt: "Fix skill_invocation_rate undercounting on non-clean close\n\nRoot cause, found investigating\
+  \ skill_invocation_rate's crossed kill\ncriterion (below 50% for its entire recorded history, per CIR-117's\n\
+  audit): the stale-checkpoint fallback that runs for any \nending without a clean /done wrote \"Skills:\
+  \ none\" unconditionally,\nregardless of what actually ran."
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_session.py
+runnable_tests:
+- tests/test_session.py
+added_tests: []
+source_files:
+- servers/core/src/session.py
+files: 2
+lines: 76
+review:
+  fair: null
+  note: ''

@@ -1,0 +1,23 @@
+id: canopy-cee0bd73
+repo: canopy
+language: python
+sha: cee0bd73a9c16bd7ab81aeb5b682a69298918d8d
+parent_sha: e2c6fa037272601c0593ae7827ff18c7054b5fb2
+prompt: "fix(ui): use gr.update(selected=0) + explicit tab ids for reliable tab reset\n\ngr.Tabs(selected=0)\
+  \ yielded a component object which Gradio's postprocess\npasses through unchanged \u2014 no tab switch\
+  \ occurs. gr.update(selected=0)\nproduces the {__type__: update} dict that the frontend handles. Tab\
+  \ ids\n(id=0,1,2) are also required because without them Gradio uses internal\ncomponent ids (e.g. 2,4,6),\
+  \ making selected=0 a no-op."
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_ui.py
+runnable_tests:
+- tests/test_ui.py
+added_tests: []
+source_files:
+- src/canopy/ui/app.py
+files: 2
+lines: 17
+review:
+  fair: null
+  note: ''

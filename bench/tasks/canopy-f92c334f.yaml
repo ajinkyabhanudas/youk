@@ -1,0 +1,19 @@
+id: canopy-f92c334f
+repo: canopy
+language: python
+sha: f92c334f21ac8d535c38bb6b18e651b5cd8d11f2
+parent_sha: 39f8bfa9418cfb77ed57126210dfa73daba54fd4
+prompt: fix SELECT guard to allow CTE queries
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_executor.py
+runnable_tests:
+- tests/test_executor.py
+added_tests: []
+source_files:
+- src/canopy/query/executor.py
+files: 2
+lines: 5
+review:
+  fair: null
+  note: ''

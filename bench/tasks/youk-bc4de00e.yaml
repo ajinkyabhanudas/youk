@@ -1,0 +1,34 @@
+id: youk-bc4de00e
+repo: youk
+language: python
+sha: bc4de00eae0ba924c804aba33f44156c0d0cbf9c
+parent_sha: 7640286999e443a4102b324be202e7035593c717
+prompt: 'Track scope-scoped skill signals, not just the fixed core set
+
+
+  get_skill_health_summary and compute_signals_for_session both iterated only
+
+  the fixed _TRACKED_SKILLS constant (dev-loop, code-review, nfr-check,
+
+  challenge, learn). Any skill outside that set -- concretely, one that lives
+
+  only under a consuming project''s own <project_dir>/.claude/skills rather than
+
+  the global ~/.claude/skills root -- generated real signal every time it fired
+
+  but was silently never scored or surfaced, confirmed live: a real invocation
+
+  of such a skill returned zero tracked signal.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_skill_signals.py
+runnable_tests:
+- tests/test_skill_signals.py
+added_tests: []
+source_files:
+- servers/core/src/skill_signals.py
+files: 2
+lines: 52
+review:
+  fair: null
+  note: ''

@@ -1,0 +1,23 @@
+id: stencil-a659c905
+repo: stencil
+language: python
+sha: a659c90592dafa5afb8d74f79445892c8dc20a29
+parent_sha: ae287428c36c055cec0731b0cc7868de95f56881
+prompt: 'Reject inconsistent analysis summaries
+
+
+  Validate counts against their retained observation and attrition identities because a mismatched summary
+  would break downstream lineage without changing the underlying records.'
+test_cmd: uv run pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_statistics.py
+runnable_tests:
+- tests/test_statistics.py
+added_tests: []
+source_files:
+- src/stencil/statistics.py
+files: 2
+lines: 34
+review:
+  fair: null
+  note: ''

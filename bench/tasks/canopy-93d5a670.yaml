@@ -1,0 +1,26 @@
+id: canopy-93d5a670
+repo: canopy
+language: python
+sha: 93d5a67082bf3e90865bf0a3ff2f0c516486019b
+parent_sha: 7536813ff58c1e4282fbdf9d689de0ab20b899e6
+prompt: "fix: cap SQL length before fuzzy-match regex to prevent quadratic blowup\n\n_column_pattern's\
+  \ regex has O(n^2) worst-case behavior on a long,\nunterminated string literal \u2014 measured ~1.3s\
+  \ at 40k chars, ~5.4s at 100k.\nNot exploitable today: execute_query() always runs before find_candidates()\n\
+  in the real pipeline, and Postgres rejects malformed SQL (including an\nunterminated quote) as a syntax\
+  \ error before find_candidates() ever sees\nthe string. But that's a call-order dependency, not a structural\
+  \ guarantee\n\u2014 a future change that calls find_candidates() on unvalidated SQL would\nmake this\
+  \ live. Real model-generated SQL for this schema runs a few\nhundred characters at most, so a 2000-char\
+  \ cap removes the vector outright\nwith no behavioral change for legitimate input."
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_fuzzy_match.py
+runnable_tests:
+- tests/test_fuzzy_match.py
+added_tests: []
+source_files:
+- src/canopy/query/fuzzy_match.py
+files: 2
+lines: 33
+review:
+  fair: null
+  note: ''

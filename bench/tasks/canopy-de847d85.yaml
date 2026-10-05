@@ -1,0 +1,28 @@
+id: canopy-de847d85
+repo: canopy
+language: python
+sha: de847d85eb89ba3b32fd37079614808b3a4d4c4f
+parent_sha: 8c0365a836e23d9f55a0c3fc2cb21cc9a78b4177
+prompt: 'fix: correct validation_status values in and system prompt
+
+
+  The original documented three validation statuses (validated_true,
+
+  validated_false, unvalidated) from early design docs. The actual DB only
+
+  contains ''pending'' (22,757 rows) and ''approved'' (14,060 rows). Every query
+
+  filtering on validated_true returned 0 rows silently.'
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_schema.py
+runnable_tests:
+- tests/test_schema.py
+added_tests: []
+source_files:
+- src/canopy/schema.py
+files: 3
+lines: 98
+review:
+  fair: null
+  note: ''

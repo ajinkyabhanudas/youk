@@ -1,0 +1,22 @@
+id: canopy-85040fc5
+repo: canopy
+language: python
+sha: 85040fc5db25772d31adea897e3298de9b90de49
+parent_sha: 7c418a62812feaf7355b6679bf90c35637989ba2
+prompt: "fix(): thread-safe writes, expiry pruning, and stronger key\n\n- Wrap read-modify-write in write_cache()\
+  \ with threading.Lock so\n concurrent Gradio requests cannot corrupt the file\n- Prune expired entries\
+  \ before the capacity check so LRU eviction\n acts on live entries only\n- Extend key from 16 \u2192\
+  \ 32 hex chars (128-bit) to eliminate\n birthday collision risk at 200 entries"
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_cache.py
+runnable_tests:
+- tests/test_cache.py
+added_tests: []
+source_files:
+- src/canopy/cache.py
+files: 2
+lines: 56
+review:
+  fair: null
+  note: ''

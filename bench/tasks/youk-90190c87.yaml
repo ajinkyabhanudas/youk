@@ -1,0 +1,29 @@
+id: youk-90190c87
+repo: youk
+language: python
+sha: 90190c8785c724793e1f06336f5c8932f7ba3026
+parent_sha: d636e9da5a62d9526d4036098e6ed224a71a55b6
+prompt: 'fix: detect pasted bot/CI/report output as a route_task trigger
+
+
+  Closes a real gap found during the canopy scaling-upgrade session
+
+  (2026-09-02): a pasted Codecov patch-coverage comment led to real code
+
+  changes with zero route_task call and zero nudge from the ambient
+
+  intelligence layer.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_ambient_intelligence.py
+runnable_tests:
+- tests/test_ambient_intelligence.py
+added_tests: []
+source_files:
+- plugin/scripts/user_prompt_submit.py
+- plugin/scripts/youk_hook_utils.py
+files: 3
+lines: 98
+review:
+  fair: null
+  note: ''
