@@ -76,7 +76,7 @@ Items 2 to 4 apply once S02, S06 and S01 land.
 |---|---|---|---|---|
 | S00 | Move dependency management to uv | M | none | todo |
 | S01 | Footprint baseline and budget | S | none | todo |
-| S02 | Event ledger core | M | none | todo |
+| S02 | Event ledger core | M | none | done |
 | S03 | Hook taps | M | S02 | todo |
 | S04 | Server spans and gate events | M | S02 | todo |
 | S05 | Value report | M | S03, S04 | todo |
@@ -125,3 +125,8 @@ Each lacks a measured need today.
 ## State of the world
 
 (append newest first, 5 lines max per session)
+
+- S02 done (branch vp/04-event-ledger). `servers/shared/events.py`: `emit(root, slug, kind=, name=, ...)` never raises; `read_events(root, slug, since, kinds)` streams.
+  Schema v1 kinds: tool, skill, gate, hook, correction, test, commit, outcome, session. Statuses: ok, fail, block. Session and task ids are hashed on emit.
+  Shards: state/events/{slug}/{YYYY-MM}.jsonl. Append p95 0.12 ms (budget 5 ms). Registry entry `event_ledger_emit` has `real_log: null` because the log is sharded.
+  Subsystem `value-instrumentation` added to the registry test. Environment: uv (S00 done) plus GNU make 4 for two Makefile tests.
