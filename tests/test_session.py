@@ -1264,8 +1264,9 @@ class TestMergeStaleCheckpoint:
         session._merge_stale_checkpoint()
         assert not (youk_root / "state" / "session-open.json").exists()
 
-    def test_resume_candidate_written_to_context_md(self, tmp_path, monkeypatch):
-        """When session-checkpoint.json has resume_candidate, _merge_stale writes it."""
+    def test_a_dropped_sessions_checkpoint_writes_no_resume_pointer(self, tmp_path, monkeypatch):
+        """Recovering a dropped session writes its audit entry but not a prose resume line:
+        where the project stopped is derived from the task graph and git on the next start."""
         import session
         youk_root = tmp_path / "youk"
         host_root = tmp_path / "claude"
@@ -1282,13 +1283,11 @@ class TestMergeStaleCheckpoint:
             youk_root / "state", "session-checkpoint.json",
             slug=slug, timestamp="2026-07-01T10:00:00Z",
             plan_items=["Work on auth refactor"],
-            resume_candidate="Work on auth refactor",
         )
 
         session._merge_stale_checkpoint()
 
-        ctx_content = (ctx_dir / "context.md").read_text()
-        assert "Last working on: Work on auth refactor" in ctx_content
+        assert "resume-from" not in (ctx_dir / "context.md").read_text()
 
     def test_no_resume_written_when_candidate_empty(self, tmp_path, monkeypatch):
         """session-open.json has no resume_candidate — context.md not touched."""
@@ -1340,155 +1339,6 @@ class TestMergeStaleCheckpoint:
         month = now_ts[:7]
         audit_file = host_root / "audit" / f"{month}.md"
         assert not audit_file.exists()
-
-
-class TestBuildBriefResumeCandidate:
-    """compact_context writes resume_candidate to session-checkpoint.json."""
-
-    def test_resume_candidate_extracted_from_plan(self, tmp_path, monkeypatch):
-        import compaction
-        import json
-        youk_root = tmp_path / "youk"
-        (youk_root / "state").mkdir(parents=True)
-        (youk_root / "knowledge" / "projects" / "myproject").mkdir(parents=True)
-        monkeypatch.setattr(compaction, "YOUK_ROOT", youk_root)
-
-        # Write a session-plan.json so build_brief picks up plan items
-        plan_file = youk_root / "state" / "session-plan.json"
-        plan_file.write_text(json.dumps({
-            "slug": "myproject",
-            "plan": ["Work on auth refactor", "Add tests for tokens.py"],
-        }))
-
-        compaction.build_brief(str(tmp_path / "myproject"))
-
-        cp = json.loads((youk_root / "state" / "session-checkpoint.json").read_text())
-        assert cp["resume_candidate"] == "Work on auth refactor"
-
-    def test_resume_candidate_skips_warning_items(self, tmp_path, monkeypatch):
-        import compaction
-        import json
-        youk_root = tmp_path / "youk"
-        (youk_root / "state").mkdir(parents=True)
-        (youk_root / "knowledge" / "projects" / "myproject").mkdir(parents=True)
-        monkeypatch.setattr(compaction, "YOUK_ROOT", youk_root)
-
-        plan_file = youk_root / "state" / "session-plan.json"
-        plan_file.write_text(json.dumps({
-            "slug": "myproject",
-            "plan": ["⚠ Last session closed without /done", "Continue auth work"],
-        }))
-
-        compaction.build_brief(str(tmp_path / "myproject"))
-
-        cp = json.loads((youk_root / "state" / "session-checkpoint.json").read_text())
-        assert cp["resume_candidate"] == "Continue auth work"
-
-    def test_resume_candidate_empty_when_no_plan(self, tmp_path, monkeypatch):
-        import compaction
-        import json
-        youk_root = tmp_path / "youk"
-        (youk_root / "state").mkdir(parents=True)
-        monkeypatch.setattr(compaction, "YOUK_ROOT", youk_root)
-
-        compaction.build_brief(str(tmp_path / "myproject"))
-
-        cp = json.loads((youk_root / "state" / "session-checkpoint.json").read_text())
-        assert cp["resume_candidate"] == ""
-
-
-# ── Cold-start (alpha readiness) ─────────────────────────────────────────────
-
-class TestColdStart:
-    """session_start must not crash on a brand-new machine with no prior audit history.
-
-    Alpha readiness: a new developer who just ran install.sh has:
-    - Empty knowledge/projects/ (no contracts, no context, no decisions)
-    - Empty audit dir (no prior sessions)
-    - No state/session.json
-    All of these must produce a valid SessionState, not an exception.
-    """
-
-    @pytest.fixture(autouse=True)
-    def patch_claude_root(self, tmp_path, monkeypatch, youk_root):
-        """Patch session.HOST_ROOT so audit dir writes don't hit the read-only container path."""
-        import session
-        host_root = tmp_path / "claude"
-        (host_root / "audit").mkdir(parents=True)
-        monkeypatch.setattr(session, "HOST_ROOT", host_root)
-        return host_root
-
-    def test_cold_start_no_prior_audit_returns_session_state(self, youk_root, tmp_path):
-        """Brand-new install: no audit, no contracts, no prior session."""
-        import session
-
-        project_dir = tmp_path / "my-project"
-        project_dir.mkdir()
-
-        state = session.start_session(str(project_dir))
-
-        assert state.session_counter >= 1
-        assert state.resume_point is not None  # may be empty string — that's fine
-        assert state.session_plan is not None
-        assert isinstance(state.session_plan, list)
-        assert state.pending_proposals_count == 0
-        assert state.close_cluster_missed is False  # no prior session = no missed close
-
-    def test_cold_start_session_plan_has_items(self, youk_root, tmp_path):
-        """Session plan must be non-empty even with no prior context."""
-        import session
-
-        project_dir = tmp_path / "new-project"
-        project_dir.mkdir()
-
-        state = session.start_session(str(project_dir))
-        assert len(state.session_plan) >= 1
-
-    def test_cold_start_contracts_empty(self, youk_root, tmp_path):
-        """No contracts on first session — must not crash or return garbage."""
-        import session
-
-        project_dir = tmp_path / "fresh-project"
-        project_dir.mkdir()
-
-        state = session.start_session(str(project_dir))
-        assert isinstance(state.contracts, list)
-
-    def test_cold_start_to_dict_serializable(self, youk_root, tmp_path):
-        """to_dict() must produce a JSON-serializable result on cold start."""
-        import session
-        import json
-
-        project_dir = tmp_path / "serialize-project"
-        project_dir.mkdir()
-
-        state = session.start_session(str(project_dir))
-        d = state.to_dict()
-
-        # Must serialize without error
-        serialized = json.dumps(d)
-        assert '"session_counter"' in serialized
-        assert '"session_plan"' in serialized
-
-    def test_cold_start_does_not_set_close_cluster_missed(self, youk_root, tmp_path):
-        """No prior audit = no missed close cluster. Flag must be False."""
-        import session
-
-        project_dir = tmp_path / "first-ever-project"
-        project_dir.mkdir()
-
-        state = session.start_session(str(project_dir))
-        assert state.close_cluster_missed is False
-
-    def test_cold_start_no_kill_criterion_packet(self, youk_root, tmp_path):
-        """No kill-criterion-triggered.json = no decision packet."""
-        import session
-
-        project_dir = tmp_path / "no-kill-criterion-project"
-        project_dir.mkdir()
-
-        state = session.start_session(str(project_dir))
-        assert state.kill_criterion_decision_packet is None
 
 
 class TestDuplicateSessionStartWithinWindow:

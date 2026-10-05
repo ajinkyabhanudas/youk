@@ -25,6 +25,13 @@ def _write_routing_breadcrumb(task: str, size: str, slug: str = "") -> None:
     """Record that route_task fired for this task. Cleared by task_checkpoint after read."""
     import hashlib as _hashlib
     task_id = _hashlib.sha1(task.encode()).hexdigest()[:12]
+    # Work that names a task already in this project's plan (e.g. "build S08") is that task, so
+    # starting and finishing it lands on the plan's node and not on a second hashed one.
+    try:
+        from graph import find_mentioned_task
+        task_id = (find_mentioned_task(slug, task) if slug else None) or task_id
+    except Exception:
+        pass
     _BREADCRUMB_FILE = _breadcrumb_file(slug)
     try:
         _BREADCRUMB_FILE.parent.mkdir(parents=True, exist_ok=True)

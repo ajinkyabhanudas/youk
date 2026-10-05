@@ -65,6 +65,8 @@ def _resolve_project_path(host_path: str) -> Path:
     return _sp.resolve_project_path(host_path)
 
 from contracts import global_contracts, project_contracts
+from project_identity import project_root as _project_root, project_slug as _canonical_slug
+from resume import render as render_resume, where_stopped
 from phrases import CONTRACT_PHRASES as _CONTRACT_PHRASES
 
 import re as _re
@@ -253,7 +255,7 @@ def _slug(project_dir: str) -> str:
     different path — avoids silently mixing knowledge stores for "api", "backend", etc.
     """
     import hashlib
-    name = Path(project_dir).name or "unknown"
+    name = _canonical_slug(project_dir, _resolve_project_path)
     projects_dir = YOUK_ROOT / "knowledge" / "projects"
     if not projects_dir.exists():
         return name
@@ -264,7 +266,7 @@ def _slug(project_dir: str) -> str:
     if marker.exists():
         registered = marker.read_text().strip()
         # Normalise: strip trailing slash, compare basename-only as fallback
-        if registered and registered != project_dir and Path(registered).name != name:
+        if registered and registered != project_dir and _canonical_slug(registered, _resolve_project_path) != name:
             short_hash = hashlib.sha1(project_dir.encode()).hexdigest()[:6]
             return f"{name}-{short_hash}"
     return name
@@ -288,142 +290,25 @@ def _write_project_context(slug: str, project_type: str, git_log: str, first_see
     # Write path marker on first creation so _slug() can detect collisions later
     marker = ctx_dir / "project-path.txt"
     if not marker.exists() and project_dir:
-        marker.write_text(project_dir)
+        # The project's root, so a session started from a worktree registers the repository.
+        marker.write_text(_project_root(project_dir, _resolve_project_path))
 
-    # Preserve first-seen date and resume-from point across rewrites
+    # Preserve the first-seen date across rewrites. A resume-from line left by older versions
+    # is not carried forward: where a project stopped is derived on read (resume.py).
     existing_first_seen = first_seen
-    existing_resume = ""
     if ctx_file.exists():
         for line in ctx_file.read_text().splitlines():
             if line.startswith("first-seen:"):
                 existing_first_seen = line.split(":", 1)[1].strip()
-            elif line.startswith("resume-from:"):
-                existing_resume = line  # preserve verbatim
 
-    resume_line = f"{existing_resume}\n" if existing_resume else ""
     ctx_file.write_text(
         f"# Project context: {slug}\n\n"
         f"project-type: {project_type}\n"
         f"first-seen: {existing_first_seen}\n"
         f"last-seen: {datetime.utcnow().strftime('%Y-%m-%d')}\n"
-        f"{resume_line}"
         f"\n## Recent commits\n\n"
         f"```\n{git_log or 'no git history'}\n```\n"
     )
-
-
-def _strip_resume_wrapping(text: str) -> str:
-    """Collapse repeated leading resume prefixes to a single one.
-
-    The recursive-Resume bug (Task 1) was caused by resume-in -> summary -> resume-out
-    with no guard: last session's resume line got scraped into this session's summary and
-    re-prefixed, compounding into "Resume: Resume: Resume: ..." every close.
-
-    This does NOT strip all prefixes — a single leading prefix is semantic and load-bearing
-    (session_start branches on `resume_point.startswith("Resume:")` at plan generation, and
-    call sites deliberately tag "Last working on:" / "In progress:"). It removes only the
-    REPETITION: the innermost bare content is recovered, then the OUTERMOST prefix (the
-    caller's intended tag) is preserved. Idempotent on already-clean text.
-    """
-    prefixes = ("Resume:", "Last working on:", "In progress:")
-
-    def _leading_prefix(s: str) -> str | None:
-        s = s.lstrip()
-        for p in prefixes:
-            if s.startswith(p):
-                return p
-        return None
-
-    outer = _leading_prefix(text)
-    if outer is None:
-        return text  # no prefix at all — nothing to collapse
-
-    # Strip every leading prefix down to the bare content...
-    bare = text
-    while True:
-        p = _leading_prefix(bare)
-        if p is None:
-            break
-        bare = bare.lstrip()[len(p):].lstrip()
-
-    # ...then restore exactly one: the caller's outermost tag.
-    return f"{outer} {bare}" if bare else outer
-
-
-def _resolve_youk_root() -> Path:
-    """Return the real youk root, whether running IN the container or on the HOST.
-
-    In the container YOUK_ROOT = /youk and exists. Run host-side (tests, tooling, a session
-    executing outside Docker), /youk does NOT exist — and every write silently no-ops because
-    the target path is unreachable. This was the root of the recurring "resume pointer never
-    updates / reverts to the old string" bug: the writer targeted a container path that isn't
-    there on the host. Fall back to YOUK_HOST_DIR from state/path-map.env (written by install.sh).
-    """
-    if YOUK_ROOT.exists():
-        return YOUK_ROOT
-    path_map = YOUK_ROOT / "state" / "path-map.env"
-    # path-map itself is under YOUK_ROOT — if /youk is absent, read it relative to cwd instead.
-    for candidate_map in (path_map, Path("state/path-map.env"), Path.cwd() / "state" / "path-map.env"):
-        if candidate_map.exists():
-            try:
-                for line in candidate_map.read_text().splitlines():
-                    if line.startswith("YOUK_HOST_DIR="):
-                        host = Path(line.split("=", 1)[1].strip())
-                        if host.exists():
-                            return host
-            except Exception:
-                pass
-    return YOUK_ROOT  # last resort — behaves as before (may no-op host-side)
-
-
-def _update_resume_point(slug: str, resume_text: str) -> None:
-    """Write the resume point for the next session into external context.md.
-
-    Validates through the ResumePointer schema (ADR-009), which rejects recursively
-    wrapped text — so this writer structurally cannot persist the 'Resume: Resume:'
-    corruption, at any call site. On validation failure it strips wrapping and retries
-    once; if still invalid, it writes nothing rather than persist a malformed pointer
-    (fail-safe: a stale-but-valid prior pointer beats a corrupt new one).
-
-    Resolves the real youk root first (container vs host) so the write actually lands —
-    targeting the unreachable /youk container path was why the pointer silently never updated.
-    """
-    root = _resolve_youk_root()
-    ctx_file = root / "knowledge" / "projects" / slug / "context.md"
-    if not ctx_file.exists():
-        return
-
-    # Break the recursion at the source before validation.
-    clean_text = _strip_resume_wrapping(resume_text)[:200]
-    try:
-        from state_schema import ResumePointer, StateValidationError
-
-        try:
-            ResumePointer(slug=slug, text=clean_text)
-        except StateValidationError:
-            # One retry after an aggressive strip.
-            clean_text = _strip_resume_wrapping(clean_text)[:200]
-            try:
-                ResumePointer(slug=slug, text=clean_text)
-            except StateValidationError:
-                # Still invalid — truncate to bare text rather than writing nothing.
-                # A degraded pointer beats a stale one from a prior session.
-                clean_text = clean_text[:80].split(":")[0].strip() or clean_text[:40]
-    except ImportError:
-        # Schema layer unavailable (host without shared on path) — proceed with the
-        # stripped text, which already breaks the known recursion class.
-        pass
-
-    try:
-        lines = [
-            ln
-            for ln in ctx_file.read_text().splitlines()
-            if not ln.startswith("resume-from:")
-        ]
-        lines.append(f"resume-from: {clean_text}")
-        ctx_file.write_text("\n".join(lines) + "\n")
-    except Exception:
-        pass
 
 
 def _load_contracts(slug: str) -> list[str]:
@@ -725,7 +610,7 @@ def _bootstrap_cold_start(project_dir: str, slug: str, tooling: dict) -> list[st
     if not signals:
         return []
 
-    # Write a bootstrap context.md so future sessions have something to resume from
+    # Write a bootstrap context.md recording what was detected
     ctx_dir = YOUK_ROOT / "knowledge" / "projects" / slug
     ctx_dir.mkdir(parents=True, exist_ok=True)
     ctx_file = ctx_dir / "context.md"
@@ -736,7 +621,6 @@ def _bootstrap_cold_start(project_dir: str, slug: str, tooling: dict) -> list[st
             f"first-seen: {datetime.utcnow().strftime('%Y-%m-%d')}\n"
             f"last-seen: {datetime.utcnow().strftime('%Y-%m-%d')}\n"
             f"bootstrap-signals: {', '.join(signals)}\n"
-            f"resume-from: First session — detected {', '.join(signals[:3])}\n"
         )
 
     return signals
@@ -1271,7 +1155,6 @@ def _merge_stale_checkpoint() -> None:
             cp_timestamp = cp.get("timestamp", "")
             cp_slug = cp.get("slug", "unknown")
             cp_plan = cp.get("plan_items", [])
-            cp_resume = cp.get("resume_candidate", "")
 
             if cp_timestamp:
                 cp_dt = datetime.strptime(cp_timestamp, "%Y-%m-%dT%H:%M:%SZ")
@@ -1323,10 +1206,6 @@ def _merge_stale_checkpoint() -> None:
                                 )
                             except Exception:
                                 pass
-                    # If the checkpoint recorded a resume candidate (written by compact_context),
-                    # persist it so next session has a meaningful resume point even on tab-close.
-                    if cp_resume and cp_slug and cp_slug != "unknown":
-                        _update_resume_point(cp_slug, f"Last working on: {cp_resume}")
         except Exception:
             pass  # never block session_start for recovery errors
         finally:
@@ -1463,17 +1342,6 @@ def start_session(project_dir: str) -> SessionState:
     if context_health == "NONE" and project_scan["context_level"] != "L1":
         context_health = project_scan["context_level"]
 
-    # If no in-project context, check youk's external context.md for a resume point.
-    # This is the zero-footprint path: no files needed in the project repo.
-    if not l2_resume and existing_ctx:
-        for line in existing_ctx.splitlines():
-            if line.startswith("resume-from:"):
-                l2_resume = line[len("resume-from:"):].strip()
-                if l2_resume:
-                    if context_health in ("NONE", "L1"):
-                        context_health = "L2"
-                break
-
     if existing_ctx and context_health == "NONE":
         context_health = "L1"
 
@@ -1486,55 +1354,19 @@ def start_session(project_dir: str) -> SessionState:
         if bootstrap_signals:
             context_health = "L1-bootstrap"
 
-    # Priority-ordered resume point: L3 > L2 > pre-close > active_task > README > bootstrap > git log
-
-    # Read active_task.json — slug-guarded so cross-project bleed is impossible.
-    _active_task_resume = ""
-    _at_file = _active_task_file(YOUK_ROOT)
-    if _at_file.exists():
-        try:
-            _at = json.loads(_at_file.read_text())
-            _at_task = _at.get("task", "")
-            _at_slug = _at.get("slug", "")
-            if _at_task and _at_slug == slug:
-                _active_task_resume = f"In progress: {_at_task[:180]}"
-        except Exception:
-            pass
-
-    # Read pre-close.json — written by end_session, consumed once here.
-    # Carries the last known task + whether the session closed cleanly (/done) or dropped.
-    _pre_close_task = ""
-    _pre_close_dropped = False
-    _pre_close_file = _slug_state_dir(slug) / "pre-close.json"
-    if _pre_close_file.exists():
-        try:
-            import time as _pct
-            _pc = json.loads(_pre_close_file.read_text())
-            _pc_age = _pct.time() - _pc.get("written_at", 0)
-            if _pc_age < 7 * 24 * 3600:  # ignore if >7 days stale
-                _pre_close_task = _pc.get("task", "")
-                _pre_close_dropped = not _pc.get("closed_cleanly", False)
-            _pre_close_file.unlink()  # consume — one read per session_start
-        except Exception:
-            pass
-
-    if l2_resume:
-        resume_point = l2_resume
-    elif _pre_close_task and _pre_close_dropped:
-        resume_point = f"⚠ Last session dropped mid-work: {_pre_close_task[:160]}"
-    elif _pre_close_task:
-        resume_point = f"Last session: {_pre_close_task[:160]}"
-    elif _active_task_resume:
-        resume_point = _active_task_resume
-    elif project_scan["readme_snippet"]:
-        resume_point = f"Project: {project_scan['readme_snippet'][:120]}"
-    elif bootstrap_signals:
-        resume_point = f"First session — detected {', '.join(bootstrap_signals[:4])}"
-    elif git_log:
-        first_commit = git_log.splitlines()[0]
-        resume_point = f"Last commit: {first_commit}"
-    else:
-        resume_point = "No prior context found — fresh session."
+    # Where the project stopped is derived from facts on every call, never read from a stored
+    # note: the task graph (started by route_task, finished by task_checkpoint) and git. See
+    # resume.py. The project's own authored prd-status "Resume from" line, if it has one, is
+    # shown beside the facts and does not override them.
+    resume_state = where_stopped(slug, project_dir)
+    resume_point = render_resume(resume_state, authored_note=l2_resume)
+    if not resume_point:
+        if project_scan["readme_snippet"]:
+            resume_point = f"Project: {project_scan['readme_snippet'][:120]}"
+        elif bootstrap_signals:
+            resume_point = f"First session — detected {', '.join(bootstrap_signals[:4])}"
+        else:
+            resume_point = "No prior context found — fresh session."
 
     _t1 = time.monotonic()
     global_contracts = _load_global_contracts()
@@ -2161,7 +1993,7 @@ def start_session(project_dir: str) -> SessionState:
         brief=brief,
         nfr_autonomy_mode=_nfr_autonomy_mode,
         developer_autonomy_rate=round(_nfr_autonomy_rate, 2),
-        force_learn=(close_cluster_missed and days_since_last != 0) or _pre_close_dropped,
+        force_learn=(close_cluster_missed and days_since_last != 0) or bool(resume_state["in_flight"]),
         knowledge_index_line=_knowledge_index_line,
         falsifier_alerts=_falsifier_alerts,
         audit_patterns=_audit_patterns,
@@ -2439,11 +2271,6 @@ def task_checkpoint(
             except Exception:
                 pass
 
-    # Update resume point at every task completion so the pointer is never more than
-    # one task stale, regardless of whether /done runs. Fires for all sizes.
-    if _slug_val:
-        _update_resume_point(_slug_val, f"Completed: {task_label[:180]}")
-
     # Routing breadcrumb gate: for M+ tasks, verify route_task was called before work started.
     # If the breadcrumb is absent, routing was bypassed — surface it so the model can correct now.
     routing_missed = False
@@ -2453,6 +2280,16 @@ def task_checkpoint(
         breadcrumb_file = (_bc_slug if (_bc_slug and _bc_slug.exists()) else
                            (_bc_root if _bc_root.exists() else None))
         if breadcrumb_file and breadcrumb_file.exists():
+            try:
+                # Finish the graph task route_task started. This, not a note, is what records
+                # that the work ended: a task still in flight at the next session start is
+                # work that stopped partway.
+                routed_id = json.loads(breadcrumb_file.read_text()).get("task_id")
+                if routed_id:
+                    from graph import mark_done as _graph_mark_done
+                    _graph_mark_done(routed_id)
+            except Exception:
+                pass
             try:
                 breadcrumb_file.unlink()  # consume: one breadcrumb per task
             except Exception:
@@ -3177,35 +3014,6 @@ def end_session(
         except Exception:
             pass
 
-    # Write pre-close.json — the drop-safe resume anchor.
-    # Written unconditionally so tab-close/context-limit sessions leave a trail.
-    # Read by session_start on the NEXT open; deleted after reading.
-    # closed_cleanly=True only when close_cluster=True — this is what distinguishes
-    # a proper /done from a dropped session.
-    if slug:
-        try:
-            import time as _time
-            _at_task_snap = ""
-            _at_f = _active_task_file(YOUK_ROOT)
-            if _at_f.exists():
-                _at_d = json.loads(_at_f.read_text())
-                if _at_d.get("slug") == slug:
-                    _at_task_snap = _at_d.get("task", "")
-            _sp.atomic_write(
-                _slug_state_dir(slug) / "pre-close.json",
-                json.dumps({
-                    "slug": slug,
-                    "task": _at_task_snap[:200],
-                    "summary": summary[:300],
-                    "skills_invoked": list(skills_used) if skills_used else [],
-                    "commits_made": commits_made,
-                    "closed_cleanly": close_cluster,
-                    "written_at": _time.time(),
-                }),
-            )
-        except Exception:
-            pass
-
     # Clear both recovery files — session_end is the authoritative audit entry.
     # If these aren't cleared, next session_start would write duplicate entries.
     # Also clear per-slug open.json and convergence.json for this session.
@@ -3258,75 +3066,6 @@ def end_session(
         recompute_org_score(slug=slug)
     except Exception:
         pass
-
-    # Write the resume point for the next session into external context.md (zero footprint).
-    # Extract: first non-empty line after a ## heading, or first non-empty line of summary.
-    # Cross-project bleed guard: use the slug from session-open.json (written at session_start)
-    # rather than last_project. If a session was opened in project A but did work described as
-    # project B, last_project still points to A — but summary content would contaminate A's
-    # resume-from with B's work description. session-open.json is authoritative for "what
-    # project this session was opened as."
-    resume_slug = slug
-    try:
-        # Per-slug open.json is authoritative — never fall back to legacy root file.
-        _slug_open = _slug_state_dir(slug) / "open.json" if slug else None
-        if _slug_open and _slug_open.exists():
-            open_data = json.loads(_slug_open.read_text())
-            open_slug = open_data.get("slug", "")
-            if open_slug and open_slug != slug:
-                resume_slug = open_slug
-    except Exception:
-        pass
-
-    if resume_slug:
-        resume_text = ""
-
-        # 1.4b (contract R3): AUTHORITATIVE source first — the project's own task graph.
-        # If youk has a next actionable task for THIS project, that IS what's next, computed
-        # from validated state rather than scraped from prose. This is what makes youk know
-        # its project-scoped next task by itself, every close, without a manual pointer edit.
-        # The scrape below remains the fallback for when the graph has no ready task.
-        try:
-            from graph import next_task as _graph_next_task
-            nxt = _graph_next_task(project=resume_slug)
-            if nxt.get("found") and nxt.get("task"):
-                label = (nxt["task"].get("label") or "").strip()
-                if label:
-                    resume_text = f"NEXT (from task graph): {label}"
-        except Exception:
-            pass
-
-        # Fallback: scrape the summary (first non-empty line after a ## heading).
-        if not resume_text:
-            lines = summary.splitlines()
-            for i, line in enumerate(lines):
-                if line.startswith("##"):
-                    for next_line in lines[i + 1:]:
-                        if next_line.strip():
-                            resume_text = next_line.strip()
-                            break
-                    if resume_text:
-                        break
-            if not resume_text:
-                resume_text = next((ln.strip() for ln in lines if ln.strip()), "")
-
-        # Fallback for XS/S-only sessions: active_task.json task field, if no other
-        # resume text was extracted. XS/S tasks never call task_checkpoint so
-        # _update_resume_point is never called mid-session — end_session is the only chance.
-        if not resume_text:
-            try:
-                _at_f = _active_task_file(YOUK_ROOT)
-                if _at_f.exists():
-                    _at_d = json.loads(_at_f.read_text())
-                    _at_t = _at_d.get("task", "")
-                    _at_s = _at_d.get("slug", "")
-                    if _at_t and _at_s == resume_slug:
-                        resume_text = f"Last worked on: {_at_t[:160]}"
-            except Exception:
-                pass
-
-        if resume_text:
-            _update_resume_point(resume_slug, resume_text)
 
     session_close_detected = any(
         marker in summary
@@ -3412,21 +3151,6 @@ def end_session(
             if _concepts:
                 _result = _write_concepts(_concepts, slug or "unknown", _session_n)
                 concepts_written = _result.get("written", 0)
-        except Exception:
-            pass
-
-    # Resume pointer: on clean close, replace "Completed: X" with the next actionable task.
-    # Decoupled from task_checkpoint (which tracks in-progress state) — /done sets direction.
-    if close_cluster and slug:
-        try:
-            from graph import next_task as _get_next_task
-            _next = _get_next_task(project=slug)
-            if _next and _next.get("found") and _next.get("task", {}).get("label"):
-                _next_label = _next["task"]["label"][:180]
-                _update_resume_point(slug, f"NEXT (from task graph): {_next_label}")
-            else:
-                # No next task — session genuinely closed out; mark clean.
-                _update_resume_point(slug, "Session closed cleanly — no pending tasks")
         except Exception:
             pass
 

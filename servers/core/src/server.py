@@ -8,7 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from session import start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state, _record_outcome_followup, enrich_route_result as _enrich_route_result_impl, write_routing_context as _write_routing_context_impl, append_gate_to_active_task as _append_gate_impl
+from session import _load_state as _load_session_state, start_session, end_session, task_checkpoint as _task_checkpoint, update_convergence_state as _update_convergence_state, _record_outcome_followup, enrich_route_result as _enrich_route_result_impl, write_routing_context as _write_routing_context_impl, append_gate_to_active_task as _append_gate_impl
 from routing import route_task as _route_task, write_scope_escalation as _write_scope_escalation
 from health import (
     run_health_check_with_skill_signals,
@@ -47,6 +47,7 @@ from compaction import build_brief, write_contracts
 from tokens import init_token_tracker, record_checkpoint
 from session_slug import get_session_slug as _get_session_slug_impl
 from phrases import has_loop_correction
+from project_identity import project_slug as _canonical_slug
 from tool_spans import install_tool_spans
 import state_paths as _sp
 from graph import (
@@ -55,6 +56,7 @@ from graph import (
     is_unblocked as _is_unblocked,
     next_task as _next_task,
     mark_done as _mark_done,
+    start_task as _start_task,
 )
 from file_index import (
     index_project as _index_project,
@@ -669,9 +671,15 @@ def route_task(
         # Fails silently — graph is the durable record, not the gate enforcer.
         if result.get("size") in {"M", "L", "XL"}:
             try:
+                # The id route_task recorded in the breadcrumb: the plan's node when the task
+                # text names one, else the hash. Gates and task_checkpoint read the same id.
                 import hashlib as _hashlib2
-                task_id = _hashlib2.sha1(task.encode()).hexdigest()[:12]
-                _create_task_graph([{"id": task_id, "label": task[:120]}])
+                task_id = _routed_task_id() or _hashlib2.sha1(task.encode()).hexdigest()[:12]
+                _slug_now = _get_session_slug()
+                _counter = _load_session_state().get("session_counter", 0)
+                # Tagged to its project and in flight: task_checkpoint closes it, and one still
+                # open at the next session start is what "where this project stopped" reports.
+                _start_task(task_id, task[:120], _slug_now, f"{_slug_now}-{_counter}")
             except Exception:
                 pass
     _enrich_route_result(result, task)
@@ -1630,7 +1638,7 @@ def save_contract(contract: str, project_dir: str) -> dict:
             "note": f"contract too vague — include specific behavior (e.g. 'always run ruff before committing'). Got: {repr(contract)}",
         }
 
-    slug = Path(project_dir).name or "unknown"
+    slug = _canonical_slug(project_dir, _sp.resolve_project_path)
     result = write_contracts(slug, [contract])
     added = result["added"]
     conflicts = result.get("conflicts", [])

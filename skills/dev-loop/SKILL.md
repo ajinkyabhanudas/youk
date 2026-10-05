@@ -124,7 +124,7 @@ Each phase begins with a compact token: `[PHASE: NAME]`
    The rule this encodes: the cost of the check must stay below the cost of the rework it prevents.
    A one-line grep is cheaper than a failed test cycle; a failed test cycle is cheaper than a
    drifted fix that ships. Spend at the tier the risk justifies, never above it. (Worked example:
-   changing `_update_resume_point` to "strip all prefixes" was locally correct but a Tier-1 grep
+   changing a prefix-stripping helper to "strip all prefixes" was locally correct but a Tier-1 grep
    for `startswith("Resume:")` would have surfaced session_start's dependency BEFORE the broken
    test — Tier 1 alone would have caught it.)
 

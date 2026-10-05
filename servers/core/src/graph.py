@@ -159,6 +159,10 @@ def create_task_graph(tasks: list[dict], edges: list[tuple[str, str]] | None = N
                 (t["id"], t["label"], t.get("project")),
             )
             created += cur.rowcount
+            if t.get("project"):
+                # Adopt a row that was seeded before it had an owner.
+                conn.execute("UPDATE tasks SET project = ? WHERE id = ? AND project IS NULL",
+                             (t["project"], t["id"]))
 
         # Cycle guard: build the adjacency of existing + proposed edges and reject if adding
         # them introduces a cycle (a cycle deadlocks next_task for the whole component).
@@ -284,8 +288,8 @@ def is_unblocked(task_id: str, db_path: Path | None = None) -> dict:
 def next_task(project: str | None = None, db_path: Path | None = None) -> dict:
     """Return the next actionable task: unblocked=True, in_flight=False, all parents done.
 
-    project: when given, restrict to that project's tasks (plus untagged project=NULL
-    tasks, which are legacy/unscoped). When None, current behavior — any project's task.
+    project: when given, restrict to exactly that project's tasks; untagged (project=NULL)
+    rows are never anyone's next task. When None, current behavior — any project's task.
     This makes "next task for youk" structurally unable to return another project's task
     (contract R1). Optional with a None default so existing callers are unaffected — the
     blast-radius check found 3 call sites that pass no project; they keep working.
@@ -297,11 +301,10 @@ def next_task(project: str | None = None, db_path: Path | None = None) -> dict:
     params: tuple = ()
     project_clause = ""
     if project is not None:
-        # match the project OR untagged legacy rows (project IS NULL)
-        # youk: NULL-inclusion is a transitional bridge for pre-tag rows → upgrade when
-        # all live rows are project-tagged (drop "OR t.project IS NULL" so an untagged
-        # task from another project can never surface as this project's next task).
-        project_clause = " AND (t.project = ? OR t.project IS NULL)"
+        # Strictly this project's rows. The old clause also matched project IS NULL as a bridge
+        # for pre-tag rows, but route_task seeded most nodes with no project (113 of 147), so
+        # another project's stub could come back as this project's next task.
+        project_clause = " AND t.project = ?"
         params = (project,)
 
     with _connect(db_path) as conn:
@@ -347,6 +350,75 @@ def next_task(project: str | None = None, db_path: Path | None = None) -> dict:
             "stale": bool(row["stale"]),
         },
     }
+
+
+def start_task(task_id: str, label: str, project: str, session_id: str,
+               db_path: Path | None = None) -> dict:
+    """Record that work on a task has begun: tagged to its project, in flight, claimed by this
+    session, and not done. Idempotent. Re-routing the text of an already-finished task reopens
+    it, because routing it again means the work is starting again.
+
+    This is what makes "where did this project stop" a fact instead of a note: a task that is
+    in flight and not done was started and never finished, and mark_done (called by
+    task_checkpoint) is the only thing that closes it.
+    """
+    db_path = db_path if db_path is not None else _DB_PATH
+    with _connect(db_path) as conn:
+        conn.execute("INSERT OR IGNORE INTO tasks (id, label, project) VALUES (?, ?, ?)",
+                     (task_id, label, project))
+        conn.execute(
+            "UPDATE tasks SET project = COALESCE(project, ?), in_flight = 1, done = 0, "
+            "session_id = ? WHERE id = ?",
+            (project, session_id, task_id),
+        )
+        conn.commit()
+    return {"ok": True, "task_id": task_id, "project": project}
+
+
+def open_tasks(project: str, db_path: Path | None = None) -> dict:
+    """This project's unfinished work, from the graph alone.
+
+    {"in_flight": [{id, label, session_id}], "open_count": int}. In flight means started and
+    never finished. Strictly this project's rows.
+    """
+    db_path = db_path if db_path is not None else _DB_PATH
+    with _connect(db_path) as conn:
+        flying = conn.execute(
+            "SELECT id, label, session_id FROM tasks WHERE project = ? AND done = 0 AND in_flight = 1 "
+            "ORDER BY rowid", (project,)).fetchall()
+        open_count = conn.execute(
+            "SELECT COUNT(*) FROM tasks WHERE project = ? AND done = 0", (project,)).fetchone()[0]
+    return {
+        "in_flight": [{"id": r["id"], "label": r["label"], "session_id": r["session_id"]} for r in flying],
+        "open_count": open_count,
+    }
+
+
+def find_mentioned_task(project: str, text: str, db_path: Path | None = None) -> str | None:
+    """The id of the one open task of this project that `text` names, or None.
+
+    Matches a task's whole id, or the part after its last hyphen when that part contains a digit
+    (so "S08" finds "VP-S08"), as a whole token and case-insensitively. Only when exactly one
+    open task matches; two matches is ambiguous and returns None. This is how routing "build
+    S08 replay battery" lands on the plan's S08 node instead of seeding a second, unrelated one.
+    """
+    import re
+
+    db_path = db_path if db_path is not None else _DB_PATH
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id FROM tasks WHERE project = ? AND done = 0", (project,)).fetchall()
+    found = []
+    for (task_id,) in [(r["id"],) for r in rows]:
+        names = {task_id}
+        tail = task_id.rsplit("-", 1)[-1]
+        if tail != task_id and len(tail) >= 2 and any(c.isdigit() for c in tail):
+            names.add(tail)
+        for name in names:
+            if re.search(rf"(?<![A-Za-z0-9_-]){re.escape(name)}(?![A-Za-z0-9_-])", text, re.IGNORECASE):
+                found.append(task_id)
+                break
+    return found[0] if len(found) == 1 else None
 
 
 def mark_done(task_id: str, db_path: Path | None = None) -> dict:

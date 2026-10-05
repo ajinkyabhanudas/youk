@@ -406,3 +406,21 @@
   writes: [state/events/]
   real_log: null
   emits: [correction]
+
+- name: where_stopped_derivation
+  grounding: deterministic
+  subsystem: project-state
+  triggers_on: "session_start (servers/core/src/resume.py): derives where a project stopped from its task graph rows and git, on every call"
+  reads: [state/task-graph.db]
+  writes: []
+  real_log: null
+  untraced_reason: "a pure read of the task graph and git; nothing is persisted, which is the point (docs/resume-state.md)"
+
+- name: routed_task_lifecycle
+  grounding: deterministic
+  subsystem: project-state
+  triggers_on: "route_task for M, L and XL tasks starts the graph task (tagged, in flight); task_checkpoint finishes it"
+  reads: []
+  writes: [state/task-graph.db]
+  real_log: null
+  emits: [gate, outcome]  # server spans record route.<size> and checkpoint.<size>

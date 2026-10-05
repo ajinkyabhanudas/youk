@@ -18,32 +18,12 @@ from state_schema import (
     ActiveTask,
     GateFlag,
     PendingAction,
-    ResumePointer,
     SessionPlan,
     StateValidationError,
 )
 
 
-# --- the bug this task exists to kill: recursive wrapping --------------------
-
-
-def test_resume_pointer_rejects_recursive_wrapping():
-    """The exact corruption class: 'Resume: Resume: Resume: ...'."""
-    with pytest.raises(StateValidationError, match="recursively wrapped"):
-        ResumePointer(slug="youk", text="Resume: Resume: Resume: Last working on: x")
-
-
-def test_resume_pointer_rejects_recursive_last_working_on():
-    with pytest.raises(StateValidationError, match="recursively wrapped"):
-        ResumePointer(
-            slug="youk",
-            text="Last working on: Last working on: Last working on: something",
-        )
-
-
-def test_resume_pointer_accepts_clean_text():
-    p = ResumePointer(slug="youk", text="NEXT = Task 1 feat/state-store-rework")
-    assert p.to_dict()["text"].startswith("NEXT")
+# --- recursive wrapping in the stored plan -----------------------------------
 
 
 def test_session_plan_item_rejects_recursive_wrapping():

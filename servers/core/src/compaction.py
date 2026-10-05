@@ -30,6 +30,8 @@ import sys
 sys.path.insert(0, "/shared")
 
 from contracts import global_contracts, project_contracts
+from project_identity import project_slug
+from state_paths import resolve_project_path
 
 YOUK_ROOT = Path("/youk")
 
@@ -80,7 +82,7 @@ TIER_CLARIFICATION = "[TIER:CLARIFICATION — DROP on compaction]"
 
 
 def _slug(project_dir: str) -> str:
-    return Path(project_dir).name or "unknown"
+    return project_slug(project_dir, resolve_project_path)
 
 
 def _load_contracts(slug: str) -> list[str]:
@@ -447,9 +449,6 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
 
     brief = "\n\n".join(sections)
 
-    # Extract a resume candidate from the session plan — first non-warning item gives
-    # a meaningful "what were we working on" for next session if tab is closed without /done.
-    resume_candidate = _resume_candidate(session_plan)[:200]
 
     checkpoint_file = YOUK_ROOT / "state" / "session-checkpoint.json"
     try:
@@ -459,7 +458,6 @@ def build_brief(project_dir: str, intent: str = "", mode: str = "full") -> dict:
             "slug": slug,
             "plan_items": session_plan,
             "contracts_count": len(contracts),
-            "resume_candidate": resume_candidate,
         }, indent=2))
         open_file = YOUK_ROOT / "state" / "session-open.json"
         if open_file.exists():
