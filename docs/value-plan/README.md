@@ -23,18 +23,15 @@ enforcement, (4) a small always-on footprint, (5) review-ready evidence on every
 - Research: context files cost +20% and gain ~0-4% ([arXiv 2602.11988](https://arxiv.org/abs/2602.11988)); instruction compliance decays with count; METR found devs 19% slower while feeling 20% faster; developers name verification as the top bottleneck.
 - youk's own learned patterns already say this: put deterministic rules in code, replace proxy metrics with outcome metrics.
 
-## Start here (next session: the first real battery run, then G1)
+## Start here (next session: S11 and S12, G1 recorded)
 
 Run `python3 scripts/plan_status.py` to see where the plan stands, read this file, then `battery.md`. Nothing else by default.
 Work in a git worktree off `origin/main`; do not switch branches in `~/.claude/youk` (live bind mount, see Operating notes).
 
-**Status.** Phases 1 and 2 are built (S00 to S10): ledger, taps, report, registry gate, miner, arm router, headless runner, analysis.
-No real battery run has happened. The live install is not updated, so the ledger holds no real events.
+**Status.** S00 to S10 are merged. G1 is recorded (see DECISIONS.md 2026-10-06 and log.md): full did not beat bare in a measurable way (+0.07, interval +0.00 to +0.21, 14 tasks), at 1.20x cost. By the gate's rule S11 and S12 are the priority. The reading is inconclusive rather than negative; a k=3 rerun (about $75 notional) would tighten it.
+The live install is on main and the ledger collects real events from the battery root only.
 
-**Decided (2026-10-05):** $50 cap, notional (subscription only; API keys supported in code, never used unless `--auth api-key`). First run is bare and full; Superpowers is added later. Prompt fairness review was done on 2026-10-05 (see log); Ajinkya can still audit with `mine_tasks.py --review`.
-**Still needed from Ajinkya before the first real run:** `claude setup-token`, then `export CLAUDE_CODE_OAUTH_TOKEN=...` in the shell that runs the battery.
-
-**Stop at G1.** After the first real run, record the arm comparison with `analyze.py --decision` and stop. S11 and S12 scope depends on it.
+**Next.** S11, then S12, each judged against G2 (lean within 5 points of full, always-on at or under 3k tokens, tokens per task down 30%).
 
 ## First goal (M1: youk can see itself)
 

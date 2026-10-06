@@ -4,6 +4,10 @@ One entry per finished card, newest first. Read the entries for the cards yours 
 
 (append newest first, 5 lines max per session)
 
+- G1 recorded (branch vp/14-g1-record). First real battery: bare vs full, 14 tasks, k=1, 28 runs, $25.95 notional (subscription), `bench/results/2026-10-05.jsonl`. pass@1 bare 0.57, full 0.64; paired +0.07 (+0.00 to +0.21); cost 1.20x; time 0.97x. Rule verdict: G1 FAIL (lower bound 0.00). Honest reading: inconclusive. One task (youk-12343343) is the whole difference; 13 of 14 identical.
+  Data issues: bare youk-0313b9b1 timed out at 900 s ($0.00, understates bare cost); full youk-f9c1c0c8 quit after 8 turns; 4 youk tasks fail in both arms (likely unpassable from the prompt). Next: S11 and S12 per the gate. A rerun with k=3 would tighten the interval for about $75 notional; not done.
+  Found on the way: plugin.json was invalid so hooks never loaded under --plugin-dir (#194); non-youk arms now get an empty MCP config (#195).
+
 - S10 built, first real run NOT done (branch vp/12-replay-battery). `scripts/sim/run_battery.py` (clone at parent sha, hidden tests removed, `claude -p --output-format json` per arm in its own config dir, hidden tests restored and graded, one JSONL row per run, `--cap-usd` required, `--max-budget-usd` per run, resumable, rep-task-arm order) and `analyze.py` (task-level bootstrap, paired diff and cost ratio vs bare, G1 verdict, DECISIONS entry). `--dry-run` fake agent drives it end to end in tests. See `battery.md`.
   Spent: $0. Blocked on: dollar cap, Superpowers checkout, auth for the isolated config dirs. Unverified live: the exact `claude -p` JSON field names (`total_cost_usd`, `usage`, `num_turns`) and whether a fresh config dir can authenticate; the smoke test in `battery.md` step 3 checks both for under $5.
 
