@@ -6,9 +6,9 @@ parent_sha: 04cb269d36e5f25f79e0667e64141cdcc36dc7bc
 prompt: 'Add deterministic and attrition records
 
 
-  The tests for this change use these names (create or adapt them as needed): ExactMatchPolicy, FailureKind,
-  architecture_variant_id, case_sensitive, collapse_internal_whitespace, evaluation_failure, event_id,
-  failure_event_id.'
+  The tests for this change use these names (create or adapt them as needed): ExactMatchPolicy,
+  FailureKind, architecture_variant_id, case_sensitive, collapse_internal_whitespace,
+  evaluation_failure, event_id, failure_event_id.'
 test_cmd: uv run pytest {tests} -q -p no:cacheprovider
 hidden_tests:
 - tests/test_scoring.py
@@ -30,5 +30,6 @@ source_files:
 files: 6
 lines: 235
 review:
-  fair: null
-  note: ''
+  fair: false
+  note: title and name list only, so the required behavior cannot be known from the
+    prompt

@@ -6,8 +6,9 @@ parent_sha: e8cf4244b7c232fe3d4a356aca1ae0941b884b6a
 prompt: 'Add immutable dataset registry
 
 
-  The tests for this change use these names (create or adapt them as needed): DatasetArtifact, DatasetRegistry,
-  DatasetVersion, FileExistsError, SampleDefinition, ValueError, coverage_report, dataset_digest.'
+  The tests for this change use these names (create or adapt them as needed): DatasetArtifact,
+  DatasetRegistry, DatasetVersion, FileExistsError, SampleDefinition, ValueError,
+  coverage_report, dataset_digest.'
 test_cmd: uv run pytest {tests} -q -p no:cacheprovider
 hidden_tests:
 - tests/test_datasets.py
@@ -29,5 +30,6 @@ source_files:
 files: 9
 lines: 233
 review:
-  fair: null
-  note: ''
+  fair: false
+  note: title and name list only, so the required behavior cannot be known from the
+    prompt

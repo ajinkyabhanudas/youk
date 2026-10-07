@@ -6,8 +6,9 @@ parent_sha: 2de998701f6095bad49fe0bfef535fe02dc5e362
 prompt: 'Add capability probe and failure taxonomy
 
 
-  The tests for this change use these names (create or adapt them as needed): CapabilityProbeReport, FailureKind,
-  QUOTA_OR_RATE_LIMIT, benign_control_refusal, checked_at, classify_failure, maximum_output_tokens, model_validate.'
+  The tests for this change use these names (create or adapt them as needed): CapabilityProbeReport,
+  FailureKind, QUOTA_OR_RATE_LIMIT, benign_control_refusal, checked_at, classify_failure,
+  maximum_output_tokens, model_validate.'
 test_cmd: uv run pytest {tests} -q -p no:cacheprovider
 hidden_tests:
 - tests/test_capabilities.py
@@ -29,5 +30,6 @@ source_files:
 files: 8
 lines: 256
 review:
-  fair: null
-  note: ''
+  fair: false
+  note: title and name list only, so the required behavior cannot be known from the
+    prompt

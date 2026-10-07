@@ -40,5 +40,5 @@ source_files:
 files: 12
 lines: 367
 review:
-  fair: null
-  note: ''
+  fair: false
+  note: body cut to a fragment once file names were stripped
