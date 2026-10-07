@@ -1,15 +1,7 @@
 ---
 name: cog-psych
 rationale_why: "Tool invocation metrics show whether work happened. They don't show whether the developer is growing. This skill reads the same session data through a different lens — not 'what was built' but 'how the person building it is changing'."
-description: >
-  Cognitive psychologist persona. Fires at session_end to assess developer growth
-  using research-grounded models: Dreyfus skill acquisition stages, Vygotsky's Zone
-  of Proximal Development, Flavell/Schraw metacognitive regulation, and spaced
-  repetition consolidation signals. Produces a cognitive_assessment block with Dreyfus
-  stage, ZPD position, metacognitive depth, and one targeted growth recommendation.
-  Requires minimum 3 sessions of data for meaningful assessment — degrades gracefully
-  to "insufficient_data" before that. Never moralizes. Never rates the person. Reads
-  behavioral signals only, never infers intent or character.
+description: "At session end, assess developer growth from behavioural signals (Dreyfus stage, zone of proximal development, metacognition). Needs 3+ sessions of data."
 ---
 
 # cog-psych — Cognitive Psychologist Skill

@@ -1,13 +1,6 @@
 ---
 name: humanize
-description: >
-  Writing style enforcer. Applies the developer's voice to commit messages, documentation
-  sections, DECISIONS.md rationale, code comments, and any other written output that
-  represents the developer publicly or persistently. Ensures a consistent voice across the
-  project's written artifacts. Not applied to code itself, test names, or structured
-  data — only to prose that a human reads. Triggers on: draft commit message, any
-  README section being written, DECISIONS.md rationale text, inline code comments
-  explaining WHY, and any stakeholder communication drafted from the project.
+description: "Rewrite commit messages, docs and decision text in the developer's voice and strip machine tells. Not for code or test names."
 ---
 
 # humanize — Voice and Writing Style Skill

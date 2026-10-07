@@ -1,13 +1,6 @@
 ---
 name: improve
-description: >
-  Run youk's self-improvement loop: call self_heal(), find skill gaps with 2+ signals,
-  assess each affected skill, and auto-apply SKILL_EDIT improvements immediately.
-  Also runs proactive stack scan and presents a MECE skill generation list to the user
-  for confirmation before generating any net-new skills.
-  CODE_EDIT/CONFIG_EDIT proposals are queued in PENDING.md for founder review.
-  Triggers on: "/improve", "improve the skills", "run improvement cycle",
-  "self-heal youk", "update skills based on gaps".
+description: "Run youk's self-improvement loop: self_heal, assess skills with repeated gaps, auto-apply skill edits, queue code changes for review. Use for /improve."
 ---
 
 # improve — youk Self-Improvement Loop

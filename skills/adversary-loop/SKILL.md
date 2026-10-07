@@ -1,15 +1,6 @@
 ---
 name: adversary-loop
-description: >
-  Context-independent adversary loop for M+ challenge invocations. Spawns a subagent
-  with stripped context (direction + constraints + resolved objections + learned patterns
-  only — no proposer reasoning) to attack a direction until exhaustion. Loop continues
-  until the adversary produces zero new objections across a full round. Breaks the
-  satisfaction-bias root cause structurally: the adversary doesn't know what the proposer
-  is satisfied with, so it cannot stop early because the proposer feels done. Use for M+
-  tasks instead of in-session challenge. In-session challenge (challenge/SKILL.md) remains
-  the fallback for S/quick. Do NOT use for: XS/S tasks, quick/silent mode, tasks where
-  the direction has already survived adversary-loop this session.
+description: "Independent adversary subagent attacks an M+ direction until a full round finds nothing new. Use instead of in-session challenge for M+; not for XS/S."
 ---
 
 # adversary-loop — Context-Independent Direction Attack

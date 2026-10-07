@@ -1,16 +1,6 @@
 ---
 name: research-absorb
-description: >
-  Ingests external research (papers, blog posts, framework docs, architectural writeups)
-  and routes findings into youk's knowledge layer — updating skill content, concept graph
-  entries, or contracts as appropriate. Use this when you've read something new and want
-  to capture what it means for youk specifically. Fires on: "absorb this paper",
-  "what does this mean for youk", "extract what's useful from this", "update youk from
-  this research", "I found a better approach to X". Distinct from /research which scans
-  external sources proactively — this skill processes research you've already found.
-  Do NOT use for: general Q&A about a paper, summarising without routing, or cases where
-  the research contradicts a FIXED_CONSTRAINT (surface the conflict instead).
-
+description: "Read an external source or paper and extract what applies to this project into proposals or notes."
 do-not-trigger-on: |
   General paper summaries with no youk application. Summarising for external audiences.
   Research that contradicts an existing architectural decision without surfacing the conflict.

@@ -1,17 +1,7 @@
 ---
 name: proposal-review
 rationale_why: "CODE_EDIT proposals in PENDING.md accumulate faster than they're reviewed. A proposal written for a function that no longer exists, or a gap that was already closed, wastes founder time on apply_proposal decisions. This skill audits validity before the decision is presented."
-description: >
-  Proposal validity auditor. Reviews accumulated CODE_EDIT and CONFIG_EDIT proposals in
-  PENDING.md and determines whether each is still valid, stale, or conflicting. For each
-  proposal: checks whether the target function/file still exists, whether the gap was closed
-  by other means (another commit, a SKILL_EDIT, a refactor), and whether the proposed change
-  conflicts with current codebase state. Produces a triage table: APPLY NOW / DEFER /
-  CLOSE-STALE / CONFLICT. Does not apply proposals — outputs the triage for founder review.
-  Triggers on: "/improve" cycle (automatically, after SKILL_EDIT phase), "review pending
-  proposals", "what's in PENDING.md", "are these proposals still valid", or any session where
-  get_proposals() returns ≥ 3 PENDING items. Do NOT trigger for: SKILL_EDIT proposals
-  (auto-applied by improve cycle); closed proposals; or proposals already reviewed this session.
+description: "Review queued youk improvement proposals: stress-test, rank, and recommend apply, edit or reject."
 ---
 
 # proposal-review — Pending Proposal Validity Auditor

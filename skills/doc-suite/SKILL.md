@@ -1,16 +1,7 @@
 ---
 name: doc-suite
 rationale_why: "The 4-document product-portfolio phase (PRD, engineering doc, interview-prep, retrospective) only compounds if it runs in the same disciplined order every time. Running it ad hoc, from memory, is how the origin-interview gate and the standalone-PRD bar quietly get skipped under time pressure."
-description: >
-  Runs the full product-portfolio documentation phase for a project, end to end:
-  PRD (write-spec system-prd mode) -> engineering doc -> product-sense/interview-prep
-  doc -> retrospective. Writes all 4 files to ~/Desktop/Product-Portfolio-Docs/{project}/.
-  Handles both ongoing projects (retrospective mode, grounded in existing code/ADRs/git
-  history) and new projects (prospective mode, no build history to walk yet). Triggers
-  on: "run the doc suite", "generate the product docs", "do the full PRD phase",
-  "/doc-suite", any request to produce the complete 4-document set for a project rather
-  than one document at a time. For a single document only, invoke write-spec directly
-  with the relevant mode instead of this orchestrator.
+description: "Produce and keep in sync a project's core documents (README, guides, decisions) from the code and decisions that exist."
 ---
 
 # doc-suite — Product Portfolio Documentation Orchestrator

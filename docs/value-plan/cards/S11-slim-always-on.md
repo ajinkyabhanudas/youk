@@ -32,3 +32,5 @@ Two "skills" (`compaction`, `session`) are internal dev notes that cost listing 
 **Kill criterion.** Any trimmed element that drops pass rate by more than 5 points (interval excludes zero) is restored.
 
 **Handoff.** Before and after footprint table; battery result.
+
+**Status (2026-10-06).** Build done: always-on 1,932 tokens, target 3,000. G2 pass-rate check outstanding (needs E1). The full arm's text is frozen in `bench/arms/full/CLAUDE.md`.

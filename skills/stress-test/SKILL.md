@@ -1,15 +1,6 @@
 ---
 name: stress-test
-description: >
-  Red team skill. Takes any plan, architecture, design decision, or proposed implementation
-  and attacks it from three independent angles before commitment. Spawns three agents, each
-  assigned a distinct failure mode lens — scale, edge cases, and hidden assumptions — and
-  synthesizes their findings into a SURVIVES / NEEDS REVISION / BLOCKED verdict. The goal
-  is not to find reasons to reject good ideas, but to find the specific conditions under
-  which good ideas fail, so those conditions can be addressed before they reach production.
-  Triggers on: "does this design hold up?", "stress test this", "challenge this plan",
-  "what could go wrong with", any major architectural decision before commitment, any
-  /adr DECIDE phase output, and any /pm-review RECOMMEND output.
+description: "Attack a plan or design from scale, edge-case and hidden-assumption angles and return survives, needs revision or blocked."
 ---
 
 # stress-test — Red Team Skill

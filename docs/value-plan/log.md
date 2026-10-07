@@ -4,6 +4,11 @@ One entry per finished card, newest first. Read the entries for the cards yours 
 
 (append newest first, 5 lines max per session)
 
+- S11 built, not yet measured (branch vp/16-slim-always-on). Always-on 11,050 to 1,932 tokens (-83%), under the 3k G2 target. Skill descriptions 7,859 to 1,563 (52 rewritten to 25 words or fewer); template and AGENTS.md cut to the lean context (8 lines) and 8 lines; `compaction` and `session` moved to `docs/internal/` (they were listed every session and triggered nothing).
+  Frozen: the pre-slimming template is `bench/arms/full/CLAUDE.md`, so the full arm stays what G1 measured; the runner reads it from there. Tests that pinned the old template now read the frozen file.
+  Debt made visible: `check_voice`, `log_ab_exposure` and `mark_medium_risk_surfaced` were only reached by prose the lean template dropped; a test lists them as full-arm-only until S12 compiles or removes each.
+  Not done: G2 (lean within 5 points of full on pass rate) needs the E1 design and Ajinkya's budget decision; the saving is measured, the effect on results is not. Kill criterion: restore any trimmed element that costs more than 5 points.
+
 - Eval research and design gate (branch vp/15-eval-design). G1 was a wasted design: 8% power at a 15-point effect, 12 of 14 tasks identical across arms, k=1. Research (`research-eval-design.md`, 11 findings with sources) and a native-overlap assessment (`mods-assessment.md`) written; 3 proposals queued in PENDING.
   Built: `scripts/sim/design.py` (triage, power, minimum detectable effect, cost, interim stop rule) and a gate in `run_battery.py` that refuses a run without a pilot and a design that can see the target effect. Contract saved. Cards E1 (eval v2) and E2 (compounding) added; S11 gets the lean-context rules.
   Not done: the M+ miner tier, the bare pilot, any new spend. Next paid run needs the pilot first and Ajinkya's budget decision.

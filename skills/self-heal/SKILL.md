@@ -1,14 +1,6 @@
 ---
 name: self-heal
-description: >
-  Behavioral execution protocol for youk's self-improvement loop. Makes health and
-  improvement work register as a capability skill in the audit — without this SKILL.md,
-  /health and /improve sessions log "Skills: none" even when real improvement happened.
-  Fires when: /health is typed, /improve is typed, "how is youk doing?", "org_score check",
-  "what gaps exist?", "run self_heal", recurring gap mentioned in session. Produces:
-  org_score, top findings, gap assessment, SKILL_EDIT proposals applied in-session,
-  and a closed improvement cycle. Do NOT use for code review (code-review skill),
-  challenge (challenge/adversary-loop skills), or spec writing (write-spec skill).
+description: "Run youk's health check and queue repairs for failing or stale components."
 ---
 
 # self-heal — youk Self-Improvement Execution Protocol

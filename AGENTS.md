@@ -1,58 +1,8 @@
-# youk — Engineering Memory System
+# youk
 
-This file is loaded by AI coding agents (Cursor, Windsurf, GitHub Copilot, Claude Code, and others) to give them working context about how this project operates.
-
----
-
-## Working agreements (load every session — never paraphrase)
-
-- commit format: small, logical commits with plain-English explanation; one concept per commit
-- explain before acting: state what you are about to do and why before every non-trivial change
-- gate discipline: complete all items in a gate before moving to the next; run lint after every code change
-- no silent fallbacks: if a tool or API call fails, surface the error explicitly
-
----
-
-## How youk works
-
-youk is a compounding engineering system. Every session, it:
-
-1. Loads working agreements (contracts) from `knowledge/projects/{slug}/contracts.md`
-2. Presents a resume point derived from the project's own task graph — picks up where you left off
-3. Routes tasks by size (XS: respond directly / M+: challenge → nfr_check → dev-loop)
-4. Extracts patterns at session end (`/done`) and promotes them to the knowledge base
-5. Runs a wiring pulse — checks that every capability it built is actually invoked in the live loop, not just defined and tested; orphans surface immediately
-6. Revises its own judgment-sets (challenge angles, risk tiers) from evidence, gated by challenge with a versioned revert floor
-7. Auto-refreshes stale generated docs and derivable data fields; never rewrites source or hand-written prose
-
-The longer you use it, the more it adapts to exactly how you build.
-
-**Full youk requires:** Docker Desktop + an MCP-capable agent host + `make install` (~2 min). Claude Code and Codex have hook adapters, and the installer registers whichever it finds (or `YOUK_HOST=...`); any other host needs the two MCP URLs added by hand. Support matrix and what is verified: [docs/hosts.md](docs/hosts.md).
-**youk-lite (any agent):** copy the CLAUDE.md template from [docs/youk-lite.md](docs/youk-lite.md) — zero setup.
-
----
-
-## Project structure
-
-```
-servers/core/    — session, health, routing, contracts (MCP server)
-servers/code/    — skill routing, code review, NFR check (MCP server)
-skills/          — capability skills (learn, challenge, dev-loop, code-review, etc.)
-knowledge/       — gitignored: per-project contracts, decisions, domain concepts
-plugin/          — host hook scripts and hook registration (Claude Code plugin; Codex hooks)
-docs/            — guides, templates, architecture docs
-tests/           — pytest suite (~1760 tests)
-```
-
----
-
-## For agents without youk's hooks
-
-If you are Cursor, Windsurf, GitHub Copilot, or any agent reading this file:
-
-- The working agreements above apply to all sessions on this repo
-- Read `knowledge/projects/youk/contracts.md` if it exists — those are active behavioral agreements
-- Read `knowledge/projects/youk/decisions.md` if it exists — those are architecture decisions already made
-- At session end, offer to update the resume point: "session stopped here — [one sentence]"
-
-youk's full compounding loop (skill routing, self-heal, cross-project promotion) needs the MCP tools, which any MCP host can call, plus hook adapters for the safeguards that must not depend on the model remembering them (Claude Code and Codex today; see [docs/hosts.md](docs/hosts.md)). A host with neither degrades to the working agreements above.
+Working agreements for any agent on this repo:
+- Small, logical commits on a branch, one concept each. Run lint and the full tests before committing.
+- State what you are about to do before a non-trivial change.
+- If a tool or API call fails, surface the error. No silent fallbacks.
+- Contracts: `knowledge/projects/youk/contracts.md`. Decisions: `knowledge/projects/youk/decisions.md`. Both if present.
+- Docs and host support: `docs/hosts.md`, `docs/getting-started.md`. Lite install for any agent: `docs/youk-lite.md`.

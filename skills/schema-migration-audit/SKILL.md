@@ -1,17 +1,7 @@
 ---
 name: schema-migration-audit
 rationale_why: "SQLite ALTER TABLE has no DDL rollback — a wrong migration corrupts the database permanently and silently. This gate catches unsupported DDL, irreversible operations, and silent data loss before they run."
-description: >
-  Pre-migration safety gate for SQLite schema changes. Fires before any ALTER TABLE,
-  CREATE TABLE, DROP TABLE, or migration script runs against a SQLite database. Audits
-  for: unsupported DDL operations (SQLite 3.35+ required for DROP COLUMN), irreversible
-  changes with no rollback path, silent data loss (column type changes, NOT NULL additions
-  to existing data), and missing backup gates. Produces a migration verdict (SAFE / RISKY /
-  BLOCKED) with a concrete remediation for each finding. Triggers on: "migrate the schema",
-  "add column", "drop column", "alter table", "run migrations", any migration file creation
-  or modification, or any task that writes to shared-index.db / task-graph.db schema.
-  Do NOT trigger for: read-only queries, index creation on existing columns (no schema change),
-  or migration rollbacks that have already been reviewed.
+description: "Audit a database or schema migration for data loss, locking, rollback and ordering risks before it runs."
 ---
 
 # schema-migration-audit — SQLite Migration Safety Gate

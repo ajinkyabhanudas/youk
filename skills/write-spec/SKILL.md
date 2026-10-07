@@ -1,15 +1,7 @@
 ---
 name: write-spec
 rationale_why: "Ambiguity discovered during implementation costs 10x more than ambiguity resolved before it. A spec makes every open question explicit while they're still cheap to answer."
-description: >
-  Produces a PRD or feature spec that a senior director would sign off on. Precise
-  problem definition, user outcomes, scoped requirements, success metrics, acceptance
-  criteria, and a one-paragraph executive brief. The standard is: another engineer or
-  PM could pick this up and build or review without further clarification. Triggers on:
-  "write a spec", "write a PRD", "define this feature", "what are we building exactly",
-  any new project before implementation, and handover preparation. Distinct from
-  /pm-review (which decides whether to build) — /write-spec defines what to build
-  once the decision is made.
+description: "Write a PRD or feature spec another engineer could build from: problem, outcomes, scope, metrics, acceptance criteria."
 ---
 
 # write-spec — Feature and Product Specification

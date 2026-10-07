@@ -1,9 +1,6 @@
 ---
 name: simplify
-description: >
-  Code quality skill. After implementation, identify and reduce complexity — long
-  functions, deep nesting, unclear naming, redundant abstractions. Produces a
-  concrete diff-ready list of simplification targets, not general advice.
+description: "Reduce code or process to the simplest form that still passes its checks, and remove what is unused."
 ---
 
 # simplify — Complexity Reduction Gate

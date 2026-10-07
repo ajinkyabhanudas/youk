@@ -1,11 +1,6 @@
 ---
 name: decide
-description: >
-  Log an architectural decision record (ADR). Wraps the adr skill with a prompt
-  for the decision statement if not already given. Use when making a meaningful
-  technical choice that should survive across sessions. Triggers on: "/decide",
-  "log this decision", "record this choice", "write an ADR", "document this
-  architecture decision", "we decided to".
+description: "Log an architecture decision record. Use for /decide, we-decided-to, or any choice that must survive across sessions."
 ---
 
 # decide — Log an Architectural Decision

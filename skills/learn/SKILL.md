@@ -1,16 +1,7 @@
 ---
 name: learn
 rationale_why: "Experience without reflection is just elapsed time. This converts what happened in the session into durable mental models — so the next session starts smarter, not just informed."
-description: >
-  Knowledge coach and learning layer. After any session where a non-trivial pattern,
-  decision, or concept was used, maps it to the developer's existing domain knowledge,
-  builds analogies that make it stick, explicitly calls out where analogies break down
-  (the highest-value part), and identifies genuine knowledge gaps. Persists learnings to
-  domain knowledge files that accumulate across projects and stacks. Works for any
-  developer — discovers their background from knowledge/user-profile.md rather than
-  assuming it. Triggers on: session end (always), "what did I just learn", "explain
-  this concept to me", "how does X relate to Y I already know", or any time a new
-  pattern is applied that connects to prior domains.
+description: "Map patterns used this session to the developer's existing knowledge, name where the analogy breaks, and persist gaps. Runs at session end."
 ---
 
 # learn — Knowledge Coach Skill

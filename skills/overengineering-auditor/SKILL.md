@@ -1,17 +1,7 @@
 ---
 name: overengineering-auditor
 rationale_why: "A plan reviewed only by the team that made it is reviewed by people who are invested in it. A fresh reviewer with no session history sees what commitment blinds: the gap between what the plan does and what the task requires."
-description: >
-  Planning-phase skill. Fires after a plan is produced and before implementation
-  begins. Spawns a context-free subagent — one that receives only the plan text,
-  task description, and repo structure, never the session history — to audit the
-  plan for overengineering. The subagent returns: (1) what is overengineered and
-  why, (2) a simpler alternative with constraints, (3) under what specific
-  circumstances the complexity would be worth it. After the developer approves a
-  direction, triggers stress-test on the accepted plan. Triggers on: any M+ plan
-  that has been produced and approved in outline, explicit "audit this plan",
-  "is this overengineered?", "do we need all of this?", any plan produced by
-  write-spec or the /build routing sequence.
+description: "Audit a plan or change for unneeded abstraction, scope or machinery and propose the simplest version that meets the need."
 ---
 
 # overengineering-auditor — Context-Free Plan Simplicity Gate

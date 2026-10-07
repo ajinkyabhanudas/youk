@@ -1,10 +1,6 @@
 ---
 name: health
-description: >
-  Report youk's current org_score, top findings, and pending proposal count.
-  Read-only health check — does not close the session or trigger improvements.
-  Triggers on: "/health", "how are we doing", "org health", "check health",
-  "what's the org score", "show me the health", "system health check".
+description: "Report youk's org score, top findings and pending proposals. Read-only; use for /health or how-are-we-doing."
 ---
 
 # health — youk Org Health Check

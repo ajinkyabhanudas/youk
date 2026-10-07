@@ -106,13 +106,28 @@ class TestSkills:
 
 
 class TestOrphans:
-    def test_no_tool_is_built_and_never_called(self, tmp_path):
-        """The wiring pulse's check, moved from every session start to CI. It reads the routing
-        text from CLAUDE.md; the shipped template stands in for it here."""
-        shutil.copy(REPO / "docs" / "claude-md-template.md", tmp_path / "CLAUDE.md")
+    # Tools the old always-on text told the model to call. The lean template does not mention
+    # them, so only the full arm's frozen text reaches them. S12 decides each: compile it into a
+    # hook or tool, or remove it. Growing this set means a new tool nothing calls.
+    FULL_ARM_ONLY = {"check_voice", "log_ab_exposure", "mark_medium_risk_surfaced"}
+
+    def _orphans(self, tmp_path, claude_md: Path) -> list[str]:
+        shutil.copy(claude_md, tmp_path / "CLAUDE.md")
         result = wiring_pulse.check_wiring(REPO, tmp_path)
         assert result["total"] > 50
-        assert result["orphaned"] == [], (
-            f"tools never invoked: {result['orphaned']}. Wire them into the routing loop, call "
+        return result["orphaned"]
+
+    def test_no_tool_is_built_and_never_called(self, tmp_path):
+        """The wiring pulse's check, moved from every session start to CI. The routing text it
+        reads is the full arm's frozen CLAUDE.md, the complete instruction set."""
+        orphans = self._orphans(tmp_path, REPO / "bench" / "arms" / "full" / "CLAUDE.md")
+        assert orphans == [], (
+            f"tools never invoked: {orphans}. Wire them into the routing loop, call "
             "them from code or a skill, or add them to wiring_pulse._TERMINAL_TOOLS with a reason."
         )
+
+    def test_the_lean_template_leaves_only_the_known_full_arm_tools_uncalled(self, tmp_path):
+        orphans = set(self._orphans(tmp_path, REPO / "docs" / "claude-md-template.md"))
+        assert orphans <= self.FULL_ARM_ONLY, (
+            f"new tools reachable only through prose that the lean template dropped: "
+            f"{sorted(orphans - self.FULL_ARM_ONLY)}")

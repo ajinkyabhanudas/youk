@@ -1,14 +1,6 @@
 ---
 name: dependency-audit
-description: >
-  Audits Python project dependencies for pinning discipline, transitive vulnerability
-  exposure, and pyproject.toml / requirements.txt health. Fires when: new dependency
-  added to pyproject.toml or requirements.txt, "are our deps safe?", "check for
-  vulnerabilities", unpinned dependency found during code-review, pre-release gate,
-  dependency version conflict reported. Produces: pinning audit, known CVE report
-  (via pip-audit output or manual CVE check), and concrete remediation steps.
-  Do NOT use for install sequence verification (install-experience), runtime errors
-  (dev-loop), or system dependency checks (install-experience SCAN phase).
+description: "Review a new external dependency for maintenance, licence, security and size before adopting it."
 ---
 
 # dependency-audit — Python Dependency Pinning and Vulnerability Audit

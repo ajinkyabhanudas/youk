@@ -1,11 +1,6 @@
 ---
 name: close
-description: >
-  Lightweight session close without code-review or learn. Use when work was
-  exploratory, no code was written, or /done already ran. Does NOT set
-  close_cluster — org_score won't move. Prefer /done for any session where
-  code was written. Triggers on: "/close", "quick close", "lightweight close",
-  "just close the session", "close without review".
+description: "Lightweight session close without review or learning. Use for exploratory sessions or after /done; does not move org_score."
 ---
 
 # close — Lightweight Session Close

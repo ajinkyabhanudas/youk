@@ -1,16 +1,6 @@
 ---
 name: youk-research
-description: >
-  External best-practices scanner for the youk system. Fires when invoked via
-  /research [topic], when self_heal() returns research_topics, or on the weekly
-  scheduled cron. Scans Anthropic engineering blog, Karpathy GitHub activity,
-  OpenAI cookbook, and HN developer tools posts. Extracts patterns relevant to
-  youk (context persistence, token efficiency, skill routing, agent coordination).
-  Deduplicates against existing cross-project.md and PENDING.md. Calls
-  add_proposal() for each novel pattern. Produces a summary of proposals queued.
-  NOT a general web research tool — scope is strictly youk improvement patterns.
-  Never called from session_start, route_task, or any hot path.
-
+description: "Scan external sources for agent-coordination and context patterns relevant to youk and queue them as proposals. Use for /research."
 auto-skip: |
   Skip if this skill already ran within the last 7 days (check last scan timestamp
   in knowledge/projects/youk/last-research-scan.txt). Skip if all topics in the

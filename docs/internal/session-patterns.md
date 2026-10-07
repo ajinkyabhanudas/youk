@@ -1,12 +1,4 @@
----
-name: session
-description: >
-  Internal knowledge file for the youk session server component (servers/core/src/session.py).
-  Documents recurring gap patterns, known gotchas, and invariants that have caused bugs
-  across multiple sessions. Not a user-facing skill — this is the institutional memory for
-  session.py development and maintenance.
----
-
+<!-- Internal development notes for servers/core/src/session.py. Not a skill: it was listed every session and triggered nothing. -->
 # session — Internal Component Patterns
 
 Recurring gap patterns extracted from audit logs (3+ occurrences). This file exists so

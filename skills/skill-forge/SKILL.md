@@ -1,13 +1,6 @@
 ---
 name: skill-forge
-description: >
-  Proactive stack→skill convergence loop — the forward half of youk's self-improvement loop
-  (self_heal is the reactive half). Given any stack, derives the skills an elite engineer would
-  need by deep repo + live internet search, looping at a RISING standard until even an imagined
-  superior engineer has nothing to add, then sharpens each skill's definition to that standard.
-  Auto-applies SKILL_EDIT/FILE_CREATE only (CODE/CONFIG stay hard-gated). Triggers on: "/forge",
-  "forge skills for this stack", "what skills would an elite need here", "raise the skill bar",
-  new stack detected at session start.
+description: "Design, write and stress-test a new skill from a recurring need."
 ---
 
 # skill-forge — Proactive Stack→Skill Convergence Loop

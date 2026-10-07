@@ -1,10 +1,6 @@
 ---
 name: review
-description: >
-  GitHub PR review skill. Reviews open pull requests: reads the diff, tests the
-  logic against the stated intent, surfaces blocking issues and non-blocking notes.
-  Distinct from code-review (which reviews local session work) — this reviews a
-  GitHub PR that already exists.
+description: "Alias for code-review: structured review with severity-tagged findings and a verdict."
 ---
 
 # review — GitHub PR Review

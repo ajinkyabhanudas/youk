@@ -1,13 +1,6 @@
 ---
 name: skill-health
-description: >
-  Meta-skill. Reviews the health of the entire skill ecosystem: which skills are in
-  use, which are being skipped and why, what keeps falling through the cracks despite
-  the skills existing, and what new skills or updates are needed. Produces a living
-  registry update and a health brief. The system that examines itself. Triggers on:
-  "review the skill ecosystem", "what skills do we have", "what's missing from our
-  process", "update the skill registry", after any session where a gap was observed
-  despite skills being in place, or on a periodic review cadence (every 2-3 weeks).
+description: "Review the skill ecosystem: which skills fire, which are skipped, what is missing; update the registry."
 ---
 
 # skill-health — Skill Ecosystem Meta-Skill

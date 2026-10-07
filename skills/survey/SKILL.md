@@ -1,15 +1,6 @@
 ---
 name: survey
-description: >
-  Codebase survey skill. Produces a structured one-page map of the project
-  answering the 12 standard onboarding questions: stack, architecture, modules,
-  entry points, request flow, integrations, config, patterns, standards, key files,
-  technical debt, and a summary. Writes output to knowledge/projects/{slug}/survey.md
-  and tracks the git commit hash so session_start can detect when it's stale.
-  Triggers on: /survey, "map this codebase", "onboard me", "explain the architecture",
-  "what is this project", first session on a project with no prior context,
-  joining a new project.
-
+description: "Map an unfamiliar project: stack, architecture, modules, entry points, integrations. Use for /survey on first contact."
 fast-path: |
   If survey.md already exists AND was written in the last 20 commits, surface the
   existing survey with a freshness note rather than re-running all 6 phases.

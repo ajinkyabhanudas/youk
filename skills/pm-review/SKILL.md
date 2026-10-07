@@ -1,15 +1,6 @@
 ---
 name: pm-review
-description: >
-  Product thinking gate. Answers "should we build this, in this order, for these users?"
-  before any implementation begins. Forces explicit problem definition, user impact
-  estimation, technical cost assessment, and "what are we NOT building" reasoning.
-  Produces a one-paragraph decision memo ready to share with stakeholders. Calibrated
-  for solo or small-team development — not enterprise process overhead. Triggers on:
-  any new feature request, scope expansion, prioritization question, "what should we
-  build next", or any time a user story needs to be assessed before entering dev-loop.
-  Also functions as an AI PM layer: tracks what's been deferred and why, surfaces
-  priority debt when deferred items become urgent.
+description: "Decide whether, when and for whom to build a feature: problem, impact, cost, what is not being built. Use before dev-loop on new features."
 ---
 
 # pm-review — Product Thinking Gate

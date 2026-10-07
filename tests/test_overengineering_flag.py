@@ -79,24 +79,26 @@ class TestOverengineeringFlag:
 
 
 class TestIntakeGateInCLAUDEMd:
-    """Structural test: check_intake_gate appears in the CLAUDE.md gate sequence."""
+    """Structural test: check_intake_gate appears in the full arm's CLAUDE.md gate sequence. The
+    always-on template is now the lean context; the full routing text is frozen in
+    bench/arms/full/CLAUDE.md and the server returns the chain at M+ time (route_task plan_hook)."""
 
     def test_intake_gate_in_hard_rules(self):
-        claude_md = Path(__file__).parent.parent / "docs" / "claude-md-template.md"
+        claude_md = Path(__file__).parent.parent / "bench" / "arms" / "full" / "CLAUDE.md"
         content = claude_md.read_text()
         assert "check_intake_gate=unblocked" in content, (
-            "check_intake_gate must be listed in the M+ hard rules in docs/claude-md-template.md"
+            "check_intake_gate must be listed in the M+ hard rules in bench/arms/full/CLAUDE.md"
         )
 
     def test_intake_gate_in_routing_steps(self):
-        claude_md = Path(__file__).parent.parent / "docs" / "claude-md-template.md"
+        claude_md = Path(__file__).parent.parent / "bench" / "arms" / "full" / "CLAUDE.md"
         content = claude_md.read_text()
         assert "check_intake_gate(task, size, intake_required=true)" in content, (
             "check_intake_gate call must appear in the task routing steps"
         )
 
     def test_overengineering_flag_in_routing_steps(self):
-        claude_md = Path(__file__).parent.parent / "docs" / "claude-md-template.md"
+        claude_md = Path(__file__).parent.parent / "bench" / "arms" / "full" / "CLAUDE.md"
         content = claude_md.read_text()
         assert "overengineering_flag" in content, (
             "overengineering_flag must appear in the task routing steps (step 4b)"

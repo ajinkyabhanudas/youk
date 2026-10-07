@@ -1,9 +1,6 @@
 ---
 name: run
-description: >
-  DevOps skill. Start the project for manual verification — resolves the correct
-  run command for the current project type, executes it, and surfaces any
-  startup errors. Use before any "does this work?" question in a session.
+description: "Run the project's standard command sequence (build, test, lint) and report results."
 ---
 
 # run — Project Start Gate

@@ -1,11 +1,6 @@
 ---
 name: build
-description: >
-  Start a build task with proper routing: calls route_task to size the work, runs
-  nfr_check before any code on M+ tasks, then hands off to dev-loop. Enforces
-  the planning gate — M+ tasks never start without a plan_hook and nfr_check.
-  Triggers on: "/build", "build this", "implement this", "let's build", "start
-  coding", "write this feature", "start implementing".
+description: "Start an M+ task with routing: size it, run nfr_check, then dev-loop. Use for /build, implement or start-coding requests."
 ---
 
 # build — Task Start with Full Gate

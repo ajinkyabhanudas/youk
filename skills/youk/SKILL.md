@@ -1,9 +1,6 @@
 ---
 name: youk
-description: >
-  Collision-proof activation command. Use /youk in projects that have their own
-  .claude/skills/start — it bypasses any project-level /start override and always
-  renders youk's session card. Identical behaviour to /start. Triggers on: "/youk".
+description: "Entry point for youk: routes to the right skill and explains what youk can do."
 ---
 
 # youk — Session Activation (collision-proof alias for /start)

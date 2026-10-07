@@ -2,16 +2,7 @@
 name: nfr-check
 rationale_why: "NFR decisions made after code exists get embedded in the code and cost 10x to change. This gate makes them cheap — four questions now versus a production incident later."
 rationale_why_terse: "[nfr-check] — decide caching, retry, and observability before you build, not after."
-description: >
-  Pre-build non-functional requirements gate. Fires before any dev-loop invocation on
-  non-trivial features. Forces explicit decisions on caching, retry, observability, auth,
-  rate limits, idempotency, consistency, and data volume — before a single line of code
-  is written. Prevents NFR decisions from being deferred until they become production
-  incidents. Triggers on: "add feature", "build X", "implement Y", any new module,
-  endpoint, background job, or integration point. Can also be invoked standalone for
-  NFR-only review of an existing design. Do not trigger for: pure refactors with no
-  external I/O change, doc-only changes, test additions to existing endpoints, or
-  renaming/moving code that introduces no new behavior.
+description: "Decide caching, retries, observability, auth, limits, idempotency and data volume before building. Use before dev-loop on non-trivial features; not for pure refactors."
 ---
 
 # nfr-check — Non-Functional Requirements Gate

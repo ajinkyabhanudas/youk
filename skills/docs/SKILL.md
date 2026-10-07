@@ -1,13 +1,6 @@
 ---
 name: docs
-description: >
-  Doc-sync enforcer. Detects when behavioral gates, commands, or skill behavior change
-  and ensures all derived documentation surfaces are updated in the same session.
-  Triggers on: any behavioral gate change (tool-level enforcement, plan item content,
-  return value semantics), check_doc_graph() returning stale concepts, and /done step 5b
-  doc-staleness sweep. Covers README, getting-started.md, CHANGELOG, GitHub wiki, and
-  skill files as derived surfaces. Does NOT rewrite docs from scratch — only surfaces
-  the delta between what changed and what the docs still say.
+description: "Write or update documentation for a project, feature or API so a new reader can use it without asking."
 ---
 
 # docs — Doc-Sync Enforcer
