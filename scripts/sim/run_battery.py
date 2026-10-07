@@ -47,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "servers" / "shared"))
 import design  # noqa: E402
 import mine_tasks  # noqa: E402
+import public_tasks  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_DIR = REPO_ROOT / "bench" / "results"
@@ -284,19 +285,27 @@ def ledger_counts(youk_root: Path, slug: str, session_id: str) -> dict:
 def execute_run(spec: RunSpec, repos: dict[str, dict], work: Path, agent: Agent,
                 youk_root: Path) -> dict:
     task = spec.task
-    cfg = repos[task["repo"]]
-    repo = Path(cfg["path"]).expanduser()
+    public = bool(task.get("public"))
+    repo = None if public else Path(repos[task["repo"]]["path"]).expanduser()
     slug = f"bench-{task['repo']}"            # one stable slug per repo, so runs do not litter
     workdir = work / "runs" / slug
     session_id = str(uuid.uuid4())
-    prepare_checkout(repo, task, workdir)
+    if public:
+        public_tasks.prepare_checkout(task, workdir)
+    else:
+        prepare_checkout(repo, task, workdir)
     start = time.monotonic()
     outcome = agent(spec, workdir, {"session_id": session_id, "youk_root": youk_root})
     wall = round(time.monotonic() - start, 1)
     passed = None
     if outcome.status != "infra_error":
-        restore_hidden_tests(workdir, task)
-        passed = mine_tasks.run_tests(workdir, task["test_cmd"], task["runnable_tests"])
+        if public:
+            passed = public_tasks.grade(task, workdir, work / "grading")
+            if passed is None:
+                outcome.status, outcome.error = "infra_error", "the grading harness gave no verdict"
+        else:
+            restore_hidden_tests(workdir, task)
+            passed = mine_tasks.run_tests(workdir, task["test_cmd"], task["runnable_tests"])
     shutil.rmtree(workdir, ignore_errors=True)
     counts = ledger_counts(youk_root, slug, session_id)
     # A youk arm whose hooks never fired (a plugin that failed to load) is not that arm: the run
