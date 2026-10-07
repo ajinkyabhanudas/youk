@@ -31,7 +31,7 @@ Work in a git worktree off `origin/main`; do not switch branches in `~/.claude/y
 **Status.** S00 to S10 are merged. G1 is recorded (see DECISIONS.md 2026-10-06 and log.md): full did not beat bare in a measurable way (+0.07, interval +0.00 to +0.21, 14 tasks), at 1.20x cost. By the gate's rule S11 and S12 are the priority. The reading is inconclusive rather than negative; a k=3 rerun (about $75 notional) would tighten it.
 The live install is on main and the ledger collects real events from the battery root only.
 
-**Next.** S11 and S12a are built (lean context, compiled contracts). Re-measure with the E1 design: baseline pilot, then the comparison, judged against G2 (lean within 5 points of full, always-on at or under 3k tokens, tokens per task down 30%). No paid run starts without the design check. S12b (ceremony order, legacy gate files) and E2 (compounding) follow.
+**Resume here: E1a** (see the Phases table in cards/E1-eval-v2.md; only E1c uses model usage). **Next.** S11 and S12a are built (lean context, compiled contracts). Re-measure with the E1 design: baseline pilot, then the comparison, judged against G2 (lean within 5 points of full, always-on at or under 3k tokens, tokens per task down 30%). No paid run starts without the design check. S12b (ceremony order, legacy gate files) and E2 (compounding) follow.
 
 ## First goal (M1: youk can see itself)
 

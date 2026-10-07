@@ -4,6 +4,10 @@ One entry per finished card, newest first. Read the entries for the cards yours 
 
 (append newest first, 5 lines max per session)
 
+- eval v2 split into phases (branch vp/21-eval-phases). usage is the constraint now, so E1 is four resumable phases (E1a to E1d) in the task graph and in the E1 card, each with what it leaves behind and how to resume. only E1c uses the model, and it runs in chunks of 3 tasks that append to one results file and skip finished rows.
+  the derived docs the live install auto-updated (skill count 54 to 52) are committed here so the next pull is clean.
+  next: E1a, the miner tier flag, skip-existing and the runner chunk flag. all free.
+
 - the hooks were never running (branch vp/20-hooks-install). a probe run found 0 plugins and 0 hooks in claude code on this machine, because the installer symlinked plugin/ into ~/.claude/plugins and this version does not discover plugins that way. so the voice capture, event ledger, contract guard and session brief were all dead outside the battery.
   `scripts/install_hooks.py` now registers the hooks in settings.json with absolute paths, since the scripts import from servers/shared relative to their own location and a marketplace install would copy them away from it. idempotent, backs up first, removes only youk's own entries, and the installer, uninstaller and doctor use it. applied to the live settings on 2026-10-07 and a probe run wrote hook events.
   worth knowing: the UserPromptSubmit hook adds a generation frame to every prompt, which is context on every turn and works against the lean goal. not changed here.
