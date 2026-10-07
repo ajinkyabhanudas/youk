@@ -93,7 +93,7 @@ durable per-session `route-task-ran.json` records written by `route_task`.
 |---|---|
 | Docker isolation | youk-core and youk-code are independent containers — one failure doesn't cascade |
 | stdio transport | No network socket, no port binding — no connection-level failures |
-| `make checkup` (L0–L6) | Hierarchical integration test suite — each layer gates the next; L3 exercises all 54 capability skills via real MCP, L5 tests gate contracts and proposal lifecycle, L6 runs a full session round-trip |
+| `make checkup` (L0–L6) | Hierarchical integration test suite — each layer gates the next; L3 exercises all 52 capability skills via real MCP, L5 tests gate contracts and proposal lifecycle, L6 runs a full session round-trip |
 | `make checkup-fast` | L0+L1 only — environment + Docker + MCP handshake; replaces `make doctor` for quick infra checks |
 | `check_doc_graph()` at session_start | Catches documentation drift before it causes confusion in later sessions |
 | Compounding context loop | `session_start` derives where the project stopped from the task graph and git on every call (see docs/resume-state.md); nothing is stored as a note — sessions compound without relying on the host's context window surviving |
