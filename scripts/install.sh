@@ -406,28 +406,21 @@ if [[ "$YOUK_HOST_ID" != "claude-code" ]]; then
 else
 
 PLUGIN_DIR="$YOUK_DIR/plugin"
-PLUGINS_ROOT="$CLAUDE_DIR/plugins"
-LINK_TARGET="$PLUGINS_ROOT/youk-context"
+LEGACY_LINK="$CLAUDE_DIR/plugins/youk-context"
 
-# Ensure plugins dir exists
-mkdir -p "$PLUGINS_ROOT"
-
-# Remove stale symlink or dir
-if [ -L "$LINK_TARGET" ] || [ -d "$LINK_TARGET" ]; then
-  rm -rf "$LINK_TARGET"
+# Older installs symlinked plugin/ into ~/.claude/plugins. Current Claude Code does not discover
+# plugins that way (it found 0 plugins and 0 hooks), so that link did nothing. Remove it.
+if [ -L "$LEGACY_LINK" ]; then
+  rm -f "$LEGACY_LINK"
 fi
 
-# Symlink the plugin so Claude Code discovers it automatically
-ln -sf "$PLUGIN_DIR" "$LINK_TARGET"
-
-# Verify the symlink was actually created — ln -sf can silently fail on some systems
-if [ -L "$LINK_TARGET" ] && [ -d "$LINK_TARGET" ]; then
-  ok "youk-context plugin linked ($LINK_TARGET → $PLUGIN_DIR)"
-  ok "Hooks registered: PreCompact, UserPromptSubmit, PostToolUse"
-  echo "  Note: restart Claude Code for hooks to take effect."
+# Register the hooks in settings.json with absolute paths. The scripts import from servers/shared
+# relative to their own location, so they must run in place. Idempotent, and it backs up first.
+if python3 "$YOUK_DIR/scripts/install_hooks.py" --plugin-dir "$PLUGIN_DIR" --settings "$CLAUDE_DIR/settings.json"; then
+  ok "youk hooks registered in $CLAUDE_DIR/settings.json"
 else
-  fail "youk-context plugin symlink failed — hooks will not be active"
-  warn "Manual fix: ln -sf $PLUGIN_DIR $LINK_TARGET"
+  fail "could not register the youk hooks, so they will not run"
+  warn "Manual fix: python3 $YOUK_DIR/scripts/install_hooks.py --plugin-dir $PLUGIN_DIR"
 fi
 fi  # claude-code hooks plugin
 
