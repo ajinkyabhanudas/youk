@@ -24,6 +24,7 @@ import os
 import re
 import shlex
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 
 DEFAULT_BRANCHES = frozenset({"main", "master"})
@@ -54,6 +55,12 @@ RULES: dict[str, tuple[str, str]] = {
     "dependency-force": (
         "No --force or --legacy-peer-deps on installs. It hides a real conflict.",
         "Resolve the conflicting versions."),
+    "pr-structure": (
+        "A PR description is a formal document with headed sections for what changed, why, the impact and how it was checked.",
+        "Use the PR layout, see docs/writing-templates.md."),
+    "voice-pr-text": (
+        "PR titles and bodies are written in the developer's voice, with no AI-tells.",
+        "Rewrite it plain and short, see docs/voice-style.md, and run check_voice on the draft."),
 }
 
 _SEGMENT_SPLIT = re.compile(r"\s*(?:&&|\|\||;|\||\n)\s*")
@@ -148,11 +155,67 @@ def _is_dotenv(path: str) -> bool:
     return name.split(".")[-1] not in _DOTENV_SAFE_SUFFIX or name == ".env"
 
 
-def evaluate_bash(command: str, cwd: str) -> list[Violation]:
-    """Every contract the command would break, in order. Empty when it is fine."""
+_HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n(.*?)\n\s*\2\b", re.DOTALL)
+_PR_COMMAND = re.compile(r"\bgh\s+pr\s+(create|edit)\b")
+_BODY_FLAG = re.compile(r"""(?:--body|-b)\s+(?:"((?:[^"\\]|\\.)*)"|'([^']*)')""", re.DOTALL)
+_TITLE_FLAG = re.compile(r"""(?:--title|-t)\s+(?:"((?:[^"\\]|\\.)*)"|'([^']*)')""", re.DOTALL)
+_BODY_FILE = re.compile(r"--body-file\s+(\S+)")
+_LONG_QUOTE = re.compile(r"""("(?:[^"\\]|\\.){60,}"|'[^']{60,}')""", re.DOTALL)
+
+
+def _pr_parts(command: str, cwd: str) -> tuple[list[str], list[str]]:
+    """(titles, bodies) of a `gh pr create|edit`, whether given inline, as a heredoc or as a file."""
+    if not _PR_COMMAND.search(command):
+        return [], []
+    titles: list[str] = []
+    bodies = [m.group(3) for m in _HEREDOC.finditer(command)]
+    for pattern, target in ((_TITLE_FLAG, titles), (_BODY_FLAG, bodies)):
+        for m in pattern.finditer(command):
+            value = m.group(1) if m.group(1) is not None else m.group(2)
+            if value and "<<" not in value and "$(" not in value:
+                target.append(value)
+    for m in _BODY_FILE.finditer(command):
+        path = m.group(1).strip("'\"")
+        full = path if os.path.isabs(path) else os.path.join(cwd, path)
+        try:
+            with open(full, encoding="utf-8") as fh:
+                bodies.append(fh.read(20000))
+        except OSError:
+            pass
+    return titles, bodies
+
+
+def _pr_texts(command: str, cwd: str) -> list[str]:
+    titles, bodies = _pr_parts(command, cwd)
+    return titles + bodies
+
+
+def _mask_text_bodies(command: str) -> str:
+    """Blank out heredoc bodies and long quoted strings (commit messages, PR bodies) so prose that
+    mentions `git push origin main` is never read as a command."""
+    masked = _HEREDOC.sub(lambda m: m.group(0).replace(m.group(3), " "), command)
+    return _LONG_QUOTE.sub('" "', masked)
+
+
+def evaluate_bash(command: str, cwd: str,
+                  voice_check: Callable[[str], list[str]] | None = None) -> list[Violation]:
+    """Every contract the command would break, in order. Empty when it is fine.
+    voice_check(text) returns the AI-tells in a text (empty when clean); the hook passes the
+    voice gate here so the guard stays free of imports from the core server code."""
     found: list[Violation] = []
     switched = False
-    for segment in _SEGMENT_SPLIT.split(command.strip()):
+    if _enabled("pr-structure"):
+        from writing_templates import validate_pr
+        for body in _pr_parts(command, cwd)[1]:
+            missing = validate_pr(body)
+            if missing:
+                found.append(Violation("pr-structure", "Missing sections: " + ", ".join(missing) + "."))
+    if voice_check is not None:
+        for text in _pr_texts(command, cwd):
+            tells = voice_check(text)
+            if tells:
+                found.append(Violation("voice-pr-text", "Tells found: " + "; ".join(tells[:4]) + "."))
+    for segment in _SEGMENT_SPLIT.split(_mask_text_bodies(command).strip()):
         tokens = _tokens(segment)
         if not tokens:
             continue
@@ -200,6 +263,7 @@ def evaluate_bash(command: str, cwd: str) -> list[Violation]:
     return [v for v in found if _enabled(v.rule)]
 
 
-def first_violation(command: str, cwd: str) -> Violation | None:
-    found = evaluate_bash(command, cwd)
+def first_violation(command: str, cwd: str,
+                    voice_check: Callable[[str], list[str]] | None = None) -> Violation | None:
+    found = evaluate_bash(command, cwd, voice_check)
     return found[0] if found else None

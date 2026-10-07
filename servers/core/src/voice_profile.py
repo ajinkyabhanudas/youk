@@ -21,6 +21,12 @@ log = logging.getLogger(__name__)
 _MIN_CONFIDENCE = {"medium", "high"}
 
 
+def profile_path(youk_root: Path, slug: str, register: str) -> Path:
+    """Where the measured profile for one project and register is written and read.
+    The humanize skill names this pattern, and a test keeps the two in step."""
+    return youk_root / "knowledge" / "global" / f"voice-{slug}-{register}.md"
+
+
 def rebuild_voice_profiles(youk_root: Path, slug: str) -> dict[str, Any]:
     """Read corpus, profile per register, write to knowledge/global/. Returns a summary dict."""
     corpus_path = youk_root / "knowledge" / "voice-corpus.jsonl"
@@ -76,7 +82,7 @@ def rebuild_voice_profiles(youk_root: Path, slug: str) -> dict[str, Any]:
 
         confidence = profile.get("confidence", "low")
         words = profile.get("words", 0)
-        out_path = output_dir / f"voice-{slug}-{register}.md"
+        out_path = profile_path(youk_root, slug, register)
         log.debug(
             "voice_profile: register=%s words=%d confidence=%s",
             register, words, confidence,

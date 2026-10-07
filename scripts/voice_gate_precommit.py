@@ -3,6 +3,8 @@
 
 Two checks, in order:
 1. Voice gate — blocks commits with any AI-tell, hard or soft (check_text BLOCKED).
+   Layout gate — a commit needs what changed, why and the impact, in proportion to its size
+   (servers/shared/writing_templates.py). Voice is how it sounds, the template is how it is laid out.
 2. Behavioral hint — if humanize:commit hint is active (learned from audit history),
    surface a reminder to run humanize before committing.
 
@@ -83,6 +85,28 @@ if result["gate"] == "BLOCKED":
     sys.exit(1)
 elif result["gate"] == "REVIEW":
     print("[youk REVIEW] Voice gate: the message misses the voice profile targets (not blocking).")
+
+# ── Layout: what changed, why, impact (servers/shared/writing_templates.py) ───
+import os
+
+_off = {x.strip() for x in os.environ.get("YOUK_GUARD_OFF", "").split(",") if x.strip()}
+try:
+    sys.path.insert(0, str(root / "servers" / "shared"))
+    from writing_templates import staged_size, template_for, validate_commit
+
+    files, lines = staged_size(str(root))
+    problems = [] if ({"all", "commit-layout"} & _off) else validate_commit(msg, files, lines)
+    if problems:
+        print("[youk BLOCKED] Commit layout: the message is missing parts a reader needs.")
+        for p in problems:
+            print(f"  {p}")
+        print("Layout for a commit:")
+        print("  " + template_for("commit").replace("\n", "\n  "))
+        sys.exit(1)
+except SystemExit:
+    raise
+except Exception:
+    pass          # a layout check that cannot run never blocks a commit
 
 # ── Behavioral hint: humanize at commit ───────────────────────────────────────
 try:

@@ -89,6 +89,16 @@ def _gates_on(root: Path, cwd: str) -> bool:
     return gates_active(current_arm(root, slug_from_cwd(cwd)))
 
 
+def _voice_tells(text: str) -> list[str]:
+    """AI-tells in a text, hard and soft, empty when it passes the voice gate."""
+    try:
+        from voice_fingerprint import check_text
+        result = check_text(text)
+        return result["tells_hard"] + result["tells_soft"] if result["gate"] == "BLOCKED" else []
+    except Exception:
+        return []
+
+
 def _contract_denial(command: str, cwd: str) -> bool:
     """Deny a Bash command that breaks a compiled contract (servers/shared/contract_guard.py).
     True when it denied. A guard failure never blocks: on any error the command goes through."""
@@ -97,7 +107,7 @@ def _contract_denial(command: str, cwd: str) -> bool:
         if root is not None and not _gates_on(root, cwd):
             return False
         from contract_guard import first_violation
-        violation = first_violation(command, cwd)
+        violation = first_violation(command, cwd, _voice_tells)
         if violation is None:
             return False
         if root is not None:

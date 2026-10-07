@@ -2,7 +2,7 @@
 
 Size M. Depends: none. Metric: B.
 
-**Goal.** A fixed, replayable set of real tasks with hidden tests, mined from Ajinkya's own git history.
+**Goal.** A fixed, replayable set of real tasks with hidden tests, mined from the owner's own git history.
 This is the programmatic simulation: repeatable, many runs, no live-work dependency.
 
 **Why.** Live A/B on one developer is slow and noisy. The battery gives n in days.
@@ -21,7 +21,7 @@ This is the programmatic simulation: repeatable, many runs, no live-work depende
 
 **Out of scope.** Running agents (S10).
 
-**DoD.** Standard DoD. Task list reviewed by Ajinkya for fairness (no task whose prompt gives the answer away).
+**DoD.** Standard DoD. Task list reviewed by the owner for fairness (no task whose prompt gives the answer away).
 
 **Kill criterion.** If fewer than 12 usable tasks exist, add another repo before S10.
 

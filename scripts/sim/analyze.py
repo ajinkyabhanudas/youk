@@ -181,7 +181,7 @@ def decision_entry(rows: list[dict], baseline: str, date: str) -> str:
             f"Because:    {len(rows)} runs over {n_tasks} tasks, arms {', '.join(sorted(data))}; "
             "task-level paired bootstrap. See bench/results for the rows.\n"
             "Cost:       Replay tasks measure correctness and cost on small bug-fix and feature "
-            "work in Ajinkya's own repos. They do not measure compounding across sessions, and "
+            "work in the developer's own repos. They do not measure compounding across sessions, and "
             "the model may have seen similar code.\n")
 
 
