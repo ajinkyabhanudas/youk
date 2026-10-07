@@ -4,6 +4,11 @@ One entry per finished card, newest first. Read the entries for the cards yours 
 
 (append newest first, 5 lines max per session)
 
+- S12a built (branch vp/17-gates-as-code). `servers/shared/contract_guard.py`: 8 mechanical contracts enforced by PreToolUse on Bash, no model recall needed: commit or push to the default branch, force push (lease allowed), --no-verify, newly staged screenshot or secret file, printing .env, forced dependency installs. Ungated in bare, `YOUK_GUARD_OFF` per rule, a gate event `contract.<id>` per block; listed in `config/guardrails.yaml` and tied to the code by a test (22 tests on real git repos).
+  Cost: no always-on tokens; the hook takes about 75 ms p50 as before for non-commit commands and about 200 ms for `git commit` (three git calls). Chosen to miss rather than falsely block: files are checked only when newly added, and only Bash is covered. Reading .env with the Read tool is not (a hook per Read costs a process start each); deny it in settings with `Read(**/.env*)`.
+  Tool disposition: `check_voice` is enforced by the commit-msg hook, so it moved to the terminal list. `log_ab_exposure` and `mark_medium_risk_surfaced` stay full-arm-only on the test's list; the A/B pilot has 5 of 20 exposures and is dormant.
+  Not done (S12b): ceremony order enforced by PreToolUse with a `next` field on tool results, and removing the legacy gate JSON files (needs a task-graph.db health check on the live install). Neither is needed to measure lean against full; both are real risk to the full arm.
+
 - S11 built, not yet measured (branch vp/16-slim-always-on). Always-on 11,050 to 1,932 tokens (-83%), under the 3k G2 target. Skill descriptions 7,859 to 1,563 (52 rewritten to 25 words or fewer); template and AGENTS.md cut to the lean context (8 lines) and 8 lines; `compaction` and `session` moved to `docs/internal/` (they were listed every session and triggered nothing).
   Frozen: the pre-slimming template is `bench/arms/full/CLAUDE.md`, so the full arm stays what G1 measured; the runner reads it from there. Tests that pinned the old template now read the frozen file.
   Debt made visible: `check_voice`, `log_ab_exposure` and `mark_medium_risk_surfaced` were only reached by prose the lean template dropped; a test lists them as full-arm-only until S12 compiles or removes each.

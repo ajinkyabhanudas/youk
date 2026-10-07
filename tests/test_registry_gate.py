@@ -109,7 +109,7 @@ class TestOrphans:
     # Tools the old always-on text told the model to call. The lean template does not mention
     # them, so only the full arm's frozen text reaches them. S12 decides each: compile it into a
     # hook or tool, or remove it. Growing this set means a new tool nothing calls.
-    FULL_ARM_ONLY = {"check_voice", "log_ab_exposure", "mark_medium_risk_surfaced"}
+    FULL_ARM_ONLY = {"log_ab_exposure", "mark_medium_risk_surfaced"}
 
     def _orphans(self, tmp_path, claude_md: Path) -> list[str]:
         shutil.copy(claude_md, tmp_path / "CLAUDE.md")

@@ -89,6 +89,31 @@ def _gates_on(root: Path, cwd: str) -> bool:
     return gates_active(current_arm(root, slug_from_cwd(cwd)))
 
 
+def _contract_denial(command: str, cwd: str) -> bool:
+    """Deny a Bash command that breaks a compiled contract (servers/shared/contract_guard.py).
+    True when it denied. A guard failure never blocks: on any error the command goes through."""
+    try:
+        root = youk_root()
+        if root is not None and not _gates_on(root, cwd):
+            return False
+        from contract_guard import first_violation
+        violation = first_violation(command, cwd)
+        if violation is None:
+            return False
+        if root is not None:
+            try:
+                from arms import current_arm
+                from events import emit
+                emit(root, slug_from_cwd(cwd), kind="gate", name=f"contract.{violation.rule}",
+                     status="block", src="hook", arm=current_arm(root, slug_from_cwd(cwd)))
+            except Exception:
+                pass
+        deny(violation.text())
+        return True
+    except Exception:
+        return False
+
+
 def main() -> None:
     data = read_stdin()
     tool_name = data.get("tool_name", "")
@@ -136,6 +161,8 @@ def main() -> None:
         return
 
     command = tool_input.get("command", "")
+    if command and _contract_denial(command, cwd):
+        return
     if not command or not is_destructive_command(command):
         ok_no_output()
         return

@@ -424,3 +424,12 @@
   writes: [state/task-graph.db]
   real_log: null
   emits: [gate, outcome]  # server spans record route.<size> and checkpoint.<size>
+
+- name: contract_guard
+  grounding: deterministic
+  subsystem: host-hooks
+  triggers_on: "PreToolUse on Bash (plugin/scripts/pre_tool_use.py): a command that breaks a compiled mechanical contract (commit or push to the default branch, force push, --no-verify, staged screenshot or secret file, printing .env, forced dependency install) is denied with the rule and the way out; ungated in the bare arm"
+  reads: [servers/shared/contract_guard.py, config/guardrails.yaml]
+  writes: [state/events/]
+  real_log: null
+  emits: [gate]  # one block event per denial, named contract.<rule id>; the value report counts gates and blocks
