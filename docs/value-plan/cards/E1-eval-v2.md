@@ -32,7 +32,10 @@ Each phase is safe to stop after. Each one says what it leaves behind and how to
 |---|---|---|---|---|
 | E1a | miner `--tier m` and `--skip-existing`, runner `--chunk N` | none | a merged PR | read git log for the PR, rerun the tests |
 | E1b | mine M+ tasks, `mine_tasks.py --tier m --per-repo 12 --skip-existing` | none, tests run locally | `bench/tasks/*.yaml` with `tier: m` | rerun the same command, finished tasks are skipped |
+| E1e | look up public multi-language task sets, written up in `docs/value-plan/public-tasks.md` | a little for the lookup | the research note | read the note, nothing to rerun |
+| E1f | `scripts/sim/public_tasks.py` loader, and grading in the instance image through the swebench harness | none | a merged PR | read git log for the PR, rerun the tests |
+| E1g | `public_tasks.py fetch`, then `sample --per-language 3` and a read of each statement | none, one download | `bench/tasks-public/*.yaml` | rerun with `--skip-existing`, finished tasks are kept |
 | E1c | bare pilot in chunks, `run_battery.py --arms bare --k 3 --pilot-run --chunk 3 --cap-usd 10 --out bench/results/pilot.jsonl` | yes, about 9 runs per call | rows in `bench/results/pilot.jsonl` | rerun the same command, finished rows are skipped |
 | E1d | `design.py bench/results/pilot.jsonl --k 3`, then decide the comparison | none | the design report | rerun, it only reads the pilot file |
 
-Run E1c only when the week's usage allows it. One call is a chunk of 3 tasks, and stopping between calls loses nothing. Check progress at any time with the design command from E1d.
+Run E1c on `bench/tasks` first, and on `--tasks-dir bench/tasks-public` as a second pass. Run it only when the week's usage allows it. One call is a chunk of 3 tasks, and stopping between calls loses nothing. Check progress at any time with the design command from E1d.

@@ -102,6 +102,18 @@
       "label": "E1b mine M+ tasks, free local compute (S)"
     },
     {
+      "id": "VP-E1E",
+      "label": "E1e look up public multi-language task sets, free (S)"
+    },
+    {
+      "id": "VP-E1F",
+      "label": "E1f loader and container grader for public tasks, free (M)"
+    },
+    {
+      "id": "VP-E1G",
+      "label": "E1g sample and review public tasks, free (S)"
+    },
+    {
       "id": "VP-E1C",
       "label": "E1c bare pilot in chunks, paid (M)"
     },
@@ -248,16 +260,32 @@
       "VP-E1B"
     ],
     [
-      "VP-E1B",
-      "VP-E1C"
-    ],
-    [
       "VP-E1C",
       "VP-E1D"
     ],
     [
       "VP-E1D",
       "VP-E1"
+    ],
+    [
+      "VP-E1A",
+      "VP-E1E"
+    ],
+    [
+      "VP-E1E",
+      "VP-E1F"
+    ],
+    [
+      "VP-E1F",
+      "VP-E1G"
+    ],
+    [
+      "VP-E1B",
+      "VP-E1C"
+    ],
+    [
+      "VP-E1G",
+      "VP-E1C"
     ]
   ]
 }
