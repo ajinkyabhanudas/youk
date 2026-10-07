@@ -1,13 +1,7 @@
 ---
 name: intake
 rationale_why: "Most problems arrive under-specified, with the real constraints unstated. Interrogating the problem statement before routing surfaces what the user didn't say — and what they're assuming you'll agree with. This is the earliest intervention point against approval-seeking: before routing, before challenge, before any work begins."
-description: >
-  Adversarial problem intake. Fires when a user brings a new problem to youk.
-  Asks 3 mandatory + 2 context-sensitive adversarial questions, generates pessimistic
-  hypothesis answers, asks the user to correct them. The correction delta is the gap.
-  Precedes challenge and routing — it sharpens the input, not the direction.
-  Invoke explicitly (/intake) or when CLAUDE.md proactive pattern detects a new
-  problem being stated for the first time in a session.
+description: "Turn a vague or large request into a scoped brief before routing. Use when intent is ambiguous or intake_required is true."
 ---
 
 # intake — Adversarial Problem Elicitation

@@ -1,13 +1,6 @@
 ---
 name: context-sync
-description: >
-  Hierarchical context manager. Maintains a 4-level context hierarchy across sessions:
-  global user memory → project context → session state → feature scope. Enforces
-  reference-over-inline loading to minimize token usage. Prunes stale context. Flushes
-  session learnings back to the appropriate level at session end. Triggers on: session
-  start, session end, before spawning any sub-agent, when context feels bloated or
-  stale, "sync context", "clean up context", "what's in context", or any time the
-  same information is being re-derived that should already be loaded.
+description: "Manage context across levels (user, project, session, feature): load by reference, prune stale items, flush learnings. Use when context is bloated or re-derived."
 ---
 
 # context-sync — Hierarchical Context Manager

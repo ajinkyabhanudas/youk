@@ -1,13 +1,6 @@
 ---
 name: start
-description: >
-  Session activation and welcome card. Fires on /start, "activate youk",
-  or any equivalent phrase at the beginning of a session. Calls session_start,
-  reads pending state, and produces a single structured card that orients
-  both the human and the agent. Works for fresh clones (no prior context) and
-  returning sessions (prior work to resume). No code written. No tasks started.
-  Output is the card, then silence — wait for the user to direct.
-
+description: "Open a session with a single orientation card: resume point, pending work, health. Use for /start; writes no code."
 fast-path: |
   If session_start was already called this session AND resume_point is set,
   skip LOAD and go straight to RENDER using the data already in context.

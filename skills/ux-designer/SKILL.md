@@ -1,13 +1,6 @@
 ---
 name: ux-designer
-description: >
-  Multi-agent UX design skill for data-heavy tools and domain-expert interfaces.
-  Activate when designing or reviewing UI/UX: layout decisions, error states, loading
-  feedback, information hierarchy, user flows, or any request involving how a non-technical
-  user will experience the product. Uses a Karpathy-style team of focused agents to
-  reason through design decisions — more thinking at design time means fewer rework cycles.
-  Triggers on: "design the UI", "review this UX", "how should we show X", "what happens
-  when Y fails", "improve the user experience", "what would a user expect", "empathy map".
+description: "Design or review interfaces for data-heavy tools and non-technical users: layout, error states, loading feedback, information hierarchy."
 ---
 
 # ux-designer — Multi-Agent UX Design Skill

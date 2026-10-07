@@ -1,15 +1,7 @@
 ---
 name: security-review
 rationale_why: "Security flaws in auth and data paths are invisible until exploited. Building a threat model before checking means you look for what can go wrong, not just what you remember to check."
-description: >
-  Focused security review for changes touching auth, credentials, external
-  APIs, destructive operations, data persistence, or access control. Goes
-  deeper than code-review's security phase — builds a threat model first,
-  then runs targeted checks against it. Produces a SAFE / SAFE WITH NOTES /
-  BLOCKED verdict with evidence. Triggers on: /check workflow command when
-  auth or credentials are in scope, any change to guardrails config, any
-  new external integration, any change to how data is written or stored.
-
+description: "Threat-model and review changes touching auth, credentials, external APIs, destructive operations or data storage. Verdict: safe, safe with notes, or blocked."
 auto-skip: |
   Skip if code-review already ran a HIGH-tier security phase this session
   AND no new auth/credential surface was added since. Check if

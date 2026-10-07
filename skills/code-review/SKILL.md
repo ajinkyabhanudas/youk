@@ -1,14 +1,7 @@
 ---
 name: code-review
 rationale_why: "The author cannot see their own blind spots. A structured review catches what familiarity hides — correctness gaps, missing edge cases, and assumptions that will break under load."
-description: >
-  Structured code review against correctness, safety, and quality bars.
-  Produces a line-level verdict with severity-tagged findings and a single
-  top-level verdict: APPROVED, APPROVED WITH COMMENTS, or NEEDS REVISION.
-  Triggers on: /done workflow command, explicit review request, before any
-  commit touching shared infrastructure, auth, or data paths. Not a style
-  linter — style violations are INFO only unless they mask a logic issue.
-
+description: "Structured review for correctness, safety and quality with severity-tagged findings and one verdict. Use before commits touching shared, auth or data paths."
 fast-path: |
   If the diff is ≤10 lines and touches only: comments, variable renames,
   string literals, or test fixture values — emit APPROVED WITH COMMENTS

@@ -1,15 +1,7 @@
 ---
 name: adr
 rationale_why: "Undocumented decisions get re-debated, reversed silently, or forgotten. Writing the 'why not' alongside the 'why' ends the debate permanently and makes the cost of reversal visible."
-description: >
-  Architecture Decision Record generator. Fires whenever a significant technical decision
-  is made — new module, library selection, pattern adoption, technology choice, or reversal
-  of a prior decision. Forces explicit "why NOT" documentation alongside the chosen option.
-  Uses a two-agent debate structure: one agent argues FOR the decision, one argues AGAINST,
-  and the record documents both. Prevents the most expensive engineering pattern: re-debating
-  settled decisions because the rejection reasoning was never written down. Triggers on:
-  "which should we use", "how should we structure", "should we use X or Y", any CONNECT
-  output from /nfr-check, or any time a new DECISIONS.md entry is warranted.
+description: "Record a significant technical decision with explicit why-not reasoning. Use when choosing a library, pattern or structure, or reversing a prior decision."
 ---
 
 # adr — Architecture Decision Record Skill

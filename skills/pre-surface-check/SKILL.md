@@ -1,11 +1,6 @@
 ---
 name: pre-surface-check
-description: >
-  Adversarial self-audit that runs before any substantive response is surfaced.
-  One question, one answer, no elaboration. Gates the response: if something
-  significant is missing, it must be added before the response goes out.
-  Exists to break the approval-seeking pattern where outputs stop at "defensible"
-  rather than "complete". Runs silently — the user never sees it unless it finds something.
+description: "Check a finding or recommendation for unsupported claims and gaps before it is shown to the user."
 rationale_why: "Models trained on human approval stop when an answer is defensible, not when it is complete. This check separates those two conditions."
 ---
 

@@ -1,13 +1,6 @@
 ---
 name: task-contract
-description: >
-  Task intake contract: converts a developer's request into a filled, editable
-  contract before heavy work — surfacing what youk understood, adversarial
-  provocations from frame rotation, and what this pass will NOT include.
-  Fill, don't interrogate: present a complete interpretation for editing.
-  Triggers on: M+ tasks at /build time, "contract this task", "spec this task",
-  "what did you understand", explicit /task-contract invocation.
-  Does NOT trigger on XS/S tasks (below contract line).
+description: "Turn an M+ request into an editable contract: what was understood, provocations, and what this pass will not include."
 ---
 
 # task-contract — Task Intake Contract

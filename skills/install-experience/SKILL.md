@@ -1,14 +1,6 @@
 ---
 name: install-experience
-description: >
-  Audits the first-run install sequence for youk: simulates install.sh execution,
-  API key prompt flow, Docker build, and MCP server handshake verification. Distinct
-  from simulate-experience (which covers developer personas post-install). Fires when:
-  install.sh is modified, Docker config changes, "does install work?", "test onboarding",
-  "first-run audit", new developer onboarding review, pre-release gate. Produces: a
-  pass/fail audit of each install step with specific failure modes and remediation steps.
-  Do NOT use for post-install skill usage (simulate-experience), code review (code-review),
-  or dependency version checks (dependency-audit).
+description: "Simulate a first install of youk from a new developer's side and list friction as proposals."
 ---
 
 # install-experience — First-Run Install Sequence Audit

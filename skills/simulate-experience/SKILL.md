@@ -1,15 +1,6 @@
 ---
 name: simulate-experience
-description: >
-  Developer experience audit skill. Simulates youk from the perspective of real
-  developer personas — junior dev first install, senior dev mid-project, dev joining
-  an existing-knowledge project, dev returning after a long gap. Identifies friction
-  points, gaps, and missing context. Output is always a ranked list of actionable
-  improvement proposals, not a narrative report. Designed to feed the self-evolution
-  loop: each finding becomes an add_proposal() call, not just a recommendation.
-  Triggers on: "simulate the dev experience", "test the onboarding", "what would a
-  junior dev see", "walk through the experience", "red team the onboarding", any
-  request to evaluate youk from a user's perspective.
+description: "Walk youk as a developer persona (new, returning, mid-project) and list friction as ranked proposals."
 ---
 
 # simulate-experience — Developer Experience Audit Skill

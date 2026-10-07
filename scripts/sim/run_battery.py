@@ -113,7 +113,7 @@ def arm_setup(arm: str, work: Path, superpowers_dir: Path | None) -> dict:
     spec["env"] = {"YOUK_ARM": arm}
     if arm == "full":
         spec["mcp"] = YOUK_MCP
-        claude_md.write_text((REPO_ROOT / "docs" / "claude-md-template.md").read_text())
+        claude_md.write_text((REPO_ROOT / "bench" / "arms" / "full" / "CLAUDE.md").read_text())
     else:
         claude_md.write_text("")
     return spec

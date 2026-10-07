@@ -1,26 +1,7 @@
 ---
 name: surface-options
 rationale_why: "challenge and adr both engage only after a direction already exists — challenge attacks an interpretation once one is picked, adr documents a choice once it's made. Neither one catches the moment before either exists: an ambiguous, open-ended, or judgment-call request where a real fork is being collapsed silently, with no visibility into what else was on the table."
-description: >
-  Fires on an ambiguous/open-ended/judgment-call request that has a real, unstated
-  fork in it — surfaces 2-4 costed options plus a mandatory recommendation instead
-  of picking one silently. Produces: a short options list (what each option is, its
-  real cost/tradeoff, what's lost by not choosing it) and exactly one named
-  recommendation with a stated reason. Triggers on: a request with a genuine open
-  design/scope/approach choice not yet resolved this session ("should we...",
-  "how should this work", "what's the best way to..."), or explicitly "surface the
-  options" / "what are my options here". Do NOT trigger when: the direction is
-  already explicitly confirmed by the user this session (that fork is closed, not
-  open), the task is XS/S with no real branching path, or the "choice" only has one
-  sane answer (no real fork — that's not ambiguity, it's a rhetorical question).
-  Do-not-trigger-on (disambiguation from `challenge`): a request already committed
-  to a specific interpretation, where the open question is whether that
-  interpretation is *right* — that is challenge's surface ("is this the right
-  problem?"), not this skill's ("which of these real paths do we take?"). If both
-  could plausibly fire on the same request, challenge runs first — it can dissolve
-  the fork entirely (wrong problem framing) before this skill would waste a
-  recommendation on a fork that shouldn't exist. Never fire both on the same
-  request in the same turn.
+description: "List real alternatives for a decision with trade-offs and a recommendation, only when the choice depends on a preference or fact you cannot derive."
 ---
 
 # surface-options — Decision Surface

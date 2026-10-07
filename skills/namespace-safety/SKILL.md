@@ -1,14 +1,6 @@
 ---
 name: namespace-safety
-description: >
-  Gate that checks for naming collisions before new skill names, MCP tool names, config
-  keys, or server names are written. Scans SKILL-REGISTRY.md, server.py tool registrations,
-  and ~/.claude/skills/ directories for conflicts. Fires when: Track A confirmation gate
-  runs (before any generate_skill call), new MCP tool being added to a server, new server
-  name proposed, new config key written to global Claude config. Produces: CLEAR or
-  COLLISION verdict with specific conflict details and rename suggestions. Do NOT use for
-  skill content review (code-review), dependency checks (dependency-audit), or install
-  sequence verification (install-experience).
+description: "Check a new name (tool, skill, module, flag) for collisions with existing names before adding it."
 ---
 
 # namespace-safety — Naming Collision Gate

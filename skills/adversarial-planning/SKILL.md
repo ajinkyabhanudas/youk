@@ -1,18 +1,6 @@
 ---
 name: adversarial-planning
-description: >
-  Adversarial audit skill. Takes any planning target — a product, a plan, a migration,
-  an architecture, a capability roadmap, a set of claims — and produces a battle-tested
-  analysis: claims inventory, empirical verification, null-baseline, adversarial convergence
-  per item, gap register, design-space enumeration, roadmap with rejected alternatives, and
-  a verdict with convergence certificate. Exit condition is zero new objections, not round count.
-  State is externalized so the analysis survives context compaction and tab-close.
-  Triggers on: "audit whether this delivers its promises", "analyze this product/plan adversarially",
-  "derive a roadmap from first principles", "stress-test this architecture", "reason until nothing
-  better exists", "red-team this plan", "what gaps does this have?", "challenge this before we ship",
-  explicit requests for adversarial or claims-based analysis of any non-trivial target.
-  Distinct from challenge (single direction, single task) and adversary-loop (direction attack only).
-  adversarial-planning handles multi-item, multi-phase, stateful audits of products or plans.
+description: "Stateful adversarial audit of a plan, product or roadmap: claims, evidence, gaps, rejected alternatives, verdict. Use for red-teaming multi-part plans."
 ---
 
 # adversarial-planning — Adversarial Analysis and Roadmap Derivation

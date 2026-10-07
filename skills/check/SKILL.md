@@ -1,10 +1,6 @@
 ---
 name: check
-description: >
-  Run code-review, and add security-review if auth, credentials, or data access
-  paths are in scope. Use mid-session before a commit when you want a quality
-  gate without closing the session. Triggers on: "/check", "review this",
-  "check the code", "audit this", "quick review before commit".
+description: "Run code-review, plus security-review when auth, credentials or data access are touched. Use for /check or a pre-commit quality gate."
 ---
 
 # check — Mid-Session Code + Security Review

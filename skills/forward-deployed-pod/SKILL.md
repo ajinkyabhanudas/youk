@@ -1,16 +1,6 @@
 ---
 name: forward-deployed-pod
-description: >
-  Run a simulated forward-deployed AI product team over a real codebase or project — discovery,
-  problem framing, thin-slice scoping, eval design, instrumentation, measurement, and honest
-  evidence write-up. Use this whenever the user wants to bring measurables, evals, metrics, user
-  research, or product rigour into an existing repo or project; wants to turn engineering work
-  into demonstrable product outcomes; asks how to measure whether an AI feature is actually good;
-  needs a metric tree, failure taxonomy, golden set, or eval suite; or is building portfolio
-  evidence for AI/technical product roles. Trigger it even when the user only says things like
-  "how do I know if this is working", "what should I measure here", "make this project look like
-  real product work", "add evals to this", "what would a PM do with this repo", or "help me scope
-  what to build next" — the pod's framing is more useful than an ad-hoc answer.
+description: "Run a small forward-deployed engineering pod on a customer-facing build: scope, ownership, handoff. Use for embedded delivery work."
 ---
 
 # Forward-Deployed Product Pod

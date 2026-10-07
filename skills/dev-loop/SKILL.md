@@ -1,14 +1,7 @@
 ---
 name: dev-loop
 rationale_why: "Implementation without a shared plan produces code that solves the wrong problem correctly. This anchors direction before the first line is written."
-description: >
-  Phase-gated coding loop: write, audit, test, refactor. Triggers on combined-phase
-  requests — "write and test", "audit and fix", "refactor with tests", any full-loop
-  code task, or explicit phase flags (audit only, write only, loop: N). Also triggers
-  on: "review my implementation", "find bugs", "improve this function", "clean this up",
-  or multi-step code quality requests. Do not trigger for: single-sentence explain
-  requests, one-line rename/typo fixes, doc-only edits, or pure Q&A about code with
-  no write/audit/test intent — those route directly without ceremony.
+description: "Phase-gated write, audit, test and refactor loop for combined code tasks. Not for explanations, one-line fixes or doc-only edits."
 ---
 
 # dev-loop — Advanced Developer Coding Skill

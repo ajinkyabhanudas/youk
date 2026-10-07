@@ -1,13 +1,6 @@
 ---
 name: audit
-description: >
-  Project-aware skill coverage audit. Detects what kind of project this is, compares
-  the active skill ecosystem against what that project type needs, and generates the
-  missing skills on the spot. Distinct from /health (org_score and session metrics)
-  and /improve (improves existing skills). This one asks: does youk have the right
-  capabilities for THIS project? Triggers on: "/audit", "audit the project",
-  "audit yourself", "what skills are we missing", "what could youk add for this
-  project", "what skills should exist for this", "self-audit".
+description: "Check whether youk has the skills this project type needs and generate missing ones. Use for /audit or what-skills-are-missing questions."
 ---
 
 # audit — Project-Aware Skill Coverage Audit

@@ -1,17 +1,7 @@
 ---
 name: challenge
 rationale_why: "The most expensive mistake is solving the wrong problem well. This gate attacks the direction before any work is sunk into it — cheap to reverse now, costly later."
-description: >
-  Direction gate skill. Fires before work starts on any M+ task to challenge the
-  interpretation, not the plan. Asks: is this the right problem? Is there a simpler
-  framing? What are we assuming about what the user wants? Runs a constraint-aware
-  pre-mortem loop — iterates challenge rounds until no new objections survive.
-  Exit condition: a challenge round produces nothing new. Only then does work begin.
-  Triggers on: any M+ task at route_task time, explicit "challenge this", "are we
-  solving the right problem?", "before we go further". Does NOT replace stress-test
-  (which red-teams implementation after direction is set). challenge attacks direction itself.
-  Do NOT use for: XS/S tasks, tasks where direction is already explicitly confirmed
-  by the user this session, retest of an already-challenged direction.
+description: "Challenge the direction of an M+ task before work starts: right problem, simpler framing, hidden assumptions. Not for XS/S or already-confirmed directions."
 ---
 
 # challenge — Direction Gate

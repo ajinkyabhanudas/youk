@@ -1,24 +1,24 @@
 {
   "method": "chars/4, approx +/-15%",
   "sources": {
-    "claude_md_template": 2349,
-    "agents_md": 842,
-    "skill_descriptions": 7859
+    "claude_md_template": 237,
+    "agents_md": 132,
+    "skill_descriptions": 1563
   },
   "informational": {
     "mcp_tool_docstrings": 16106,
-    "skill_bodies": 146940
+    "skill_bodies": 138882
   },
   "skills": {
-    "count": 54,
+    "count": 52,
     "largest_descriptions": {
-      "surface-options": 359,
-      "adversarial-planning": 276,
-      "forward-deployed-pod": 230,
-      "proposal-review": 222,
-      "schema-migration-audit": 212
+      "nfr-check": 42,
+      "context-sync": 40,
+      "security-review": 40,
+      "challenge": 39,
+      "code-review": 39
     }
   },
   "mcp_tools": 86,
-  "total_tokens": 11050
+  "total_tokens": 1932
 }

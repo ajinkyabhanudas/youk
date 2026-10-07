@@ -1,13 +1,6 @@
 ---
 name: orchestrate
-description: >
-  Project orchestrator and CEO reporting layer. The founding-layer skill that routes work
-  to the right skills in the right order. Takes a goal and produces a rolling plan —
-  next step only, approved before advancing. Reports org health upward in a format a
-  founder can read in 60 seconds: progress, blockers, health score, next action. Does not
-  do implementation work itself — it coordinates, plans, and reports. Triggers on: any
-  new project, any "what should we do next", any check-in on current project state, and
-  at the start of every session when there is active work in flight.
+description: "Plan and run multi-agent or multi-step work with explicit ownership, dependencies and a convergence check."
 ---
 
 # orchestrate — Project Orchestrator
