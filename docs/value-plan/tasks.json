@@ -46,6 +46,10 @@
       "label": "Headless runner and analysis (L)"
     },
     {
+      "id": "VP-E1",
+      "label": "Eval v2: triage pilot, M+ tier, design gate (M)"
+    },
+    {
       "id": "VP-G1",
       "label": "Gate G1: baseline numbers decide S11, S12 scope"
     },
@@ -84,6 +88,10 @@
     {
       "id": "VP-S18",
       "label": "Evidence page (S)"
+    },
+    {
+      "id": "VP-E2",
+      "label": "Compounding test (L)"
     }
   ],
   "edges": [
@@ -198,6 +206,22 @@
     [
       "VP-S15",
       "VP-S17"
+    ],
+    [
+      "VP-S10",
+      "VP-E1"
+    ],
+    [
+      "VP-E1",
+      "VP-S11"
+    ],
+    [
+      "VP-E1",
+      "VP-E2"
+    ],
+    [
+      "VP-S11",
+      "VP-E2"
     ]
   ]
 }

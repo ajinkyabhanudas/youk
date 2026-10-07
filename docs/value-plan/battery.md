@@ -8,7 +8,8 @@ Built in S08 to S10. Nothing here runs by itself; every real run needs a dollar 
    Prompts were reviewed on 2026-10-05: 14 of 22 tasks are usable, the rest are marked `review.fair: false` and skipped by the runner. Audit with `mine_tasks.py --review`; set `review.fair` in a task file to overrule.
 2. Dry run, no model: `uv run python scripts/sim/run_battery.py --dry-run --arms bare,full,superpowers`. Then `uv run python scripts/sim/analyze.py bench/results/<date>-dry.jsonl` to see the table shape.
 3. Smoke test, two tasks, one arm: `uv run python scripts/sim/run_battery.py --arms bare --limit 2 --cap-usd 5`. Check the cost per run before scaling.
-4. First baseline (bare and full): `uv run python scripts/sim/run_battery.py --cap-usd 50 --k 1`. Add `--arms bare,full,superpowers --superpowers-dir <checkout>` later.
+3b. Triage pilot (required): run `run_battery.py --arms bare --k 3 --pilot-run --cap-usd <cap>` on all candidate tasks, then `uv run python scripts/sim/design.py <pilot.jsonl> --k 3 --target-effect 0.15 --cost-per-run <measured>`. The runner refuses a real run without `--pilot` and a passing design.
+4. Comparison run (after the pilot passes), for example: `uv run python scripts/sim/run_battery.py --cap-usd 50 --k 3 --pilot <pilot.jsonl>`. Add `--arms bare,full,superpowers --superpowers-dir <checkout>` later.
 5. Analyse: `uv run python scripts/sim/analyze.py bench/results/<date>.jsonl --decision`. Paste the table into the log and the entry into DECISIONS.md. That triggers G1.
 
 ## Arms

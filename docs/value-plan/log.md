@@ -4,6 +4,10 @@ One entry per finished card, newest first. Read the entries for the cards yours 
 
 (append newest first, 5 lines max per session)
 
+- Eval research and design gate (branch vp/15-eval-design). G1 was a wasted design: 8% power at a 15-point effect, 12 of 14 tasks identical across arms, k=1. Research (`research-eval-design.md`, 11 findings with sources) and a native-overlap assessment (`mods-assessment.md`) written; 3 proposals queued in PENDING.
+  Built: `scripts/sim/design.py` (triage, power, minimum detectable effect, cost, interim stop rule) and a gate in `run_battery.py` that refuses a run without a pilot and a design that can see the target effect. Contract saved. Cards E1 (eval v2) and E2 (compounding) added; S11 gets the lean-context rules.
+  Not done: the M+ miner tier, the bare pilot, any new spend. Next paid run needs the pilot first and Ajinkya's budget decision.
+
 - G1 recorded (branch vp/14-g1-record). First real battery: bare vs full, 14 tasks, k=1, 28 runs, $25.95 notional (subscription), `bench/results/2026-10-05.jsonl`. pass@1 bare 0.57, full 0.64; paired +0.07 (+0.00 to +0.21); cost 1.20x; time 0.97x. Rule verdict: G1 FAIL (lower bound 0.00). Honest reading: inconclusive. One task (youk-12343343) is the whole difference; 13 of 14 identical.
   Data issues: bare youk-0313b9b1 timed out at 900 s ($0.00, understates bare cost); full youk-f9c1c0c8 quit after 8 turns; 4 youk tasks fail in both arms (likely unpassable from the prompt). Next: S11 and S12 per the gate. A rerun with k=3 would tighten the interval for about $75 notional; not done.
   Found on the way: plugin.json was invalid so hooks never loaded under --plugin-dir (#194); non-youk arms now get an empty MCP config (#195).

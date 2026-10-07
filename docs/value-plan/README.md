@@ -52,6 +52,10 @@ It unlocks every removal decision, because deleting anything before M1 is a gues
 Arms: `bare` (events only), `full` (current youk), `lean` (new), `superpowers` (external, sandboxed).
 Any component with no movement on V1, V2, V3 or B after its review date is removed.
 
+## Evaluation rule (contract, 2026-10-06)
+
+No paid evaluation run starts without the pre-run design check (`scripts/sim/design.py`, enforced in `run_battery.py`): power at the target effect, share of tasks that can discriminate, expected cost. A result inside the minimum detectable effect is reported as "no effect larger than X detected". Findings: `research-eval-design.md`. Native-feature overlap: `mods-assessment.md`.
+
 ## Standard DoD (every card)
 
 1. Tests green, ruff clean, full suite green.

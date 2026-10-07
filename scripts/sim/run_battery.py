@@ -45,6 +45,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "servers" / "shared"))
+import design  # noqa: E402
 import mine_tasks  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -383,6 +384,48 @@ def cleanup_bench_state(youk_home: Path) -> list[str]:
     return removed
 
 
+def design_gate(pilot_path: Path | None, arms: list[str], k: int, cap: float | None,
+                target_effect: float, allow_underpowered: bool,
+                out_path: Path) -> tuple[bool, str]:
+    """The pre-run design check (scripts/sim/design.py). A real run needs a baseline pilot and a
+    design that can see the target effect. An override is allowed but is written next to the
+    results, so an underpowered run is never mistaken for a sound one."""
+    if pilot_path is None or not Path(pilot_path).exists():
+        text = ("no pilot results given (--pilot). Run the baseline arm on the candidate tasks "
+                "with k>=2 first; without it floor and ceiling tasks cannot be told from noise.")
+        report = {"ok": False, "problems": [text]}
+    else:
+        rows = design.load_rows(Path(pilot_path))
+        baseline = "bare" if "bare" in arms else arms[0]
+        rates = design.base_rates(rows, baseline)
+        costs = [r.get("cost_usd") or 0.0 for r in rows
+                 if r.get("arm") == baseline and r.get("status") == "ok"]
+        report = design.design_report(
+            rates, k, len(arms), target_effect,
+            cost_per_run=(sum(costs) / len(costs)) if costs else DEFAULT_MAX_RUN_USD / 3,
+            cap_usd=cap)
+        text = design.render(report)
+    report["override"] = bool(allow_underpowered and not report["ok"])
+    out_path.with_suffix(".design.json").write_text(json.dumps(report, indent=1, default=str))
+    return (report["ok"] or allow_underpowered), text
+
+
+def pilot_gate(arms: list[str], k: int, n_tasks: int, cap: float | None,
+               cost_per_run: float = DEFAULT_MAX_RUN_USD / 3) -> tuple[bool, str]:
+    """A pilot is the baseline arm alone with k>=2, to find which tasks can discriminate. It is
+    exempt from the power check (it produces the data for it) but not from the cost check."""
+    problems = []
+    if arms != ["bare"]:
+        problems.append("a pilot runs the baseline arm only (--arms bare)")
+    if k < 2:
+        problems.append("a pilot needs k>=2 so floor and ceiling tasks can be told from noise")
+    est = design.cost_estimate(n_tasks, k, 1, cost_per_run)
+    if cap is not None and est > cap:
+        problems.append(f"estimated pilot cost ${est} exceeds the cap ${cap:g}")
+    text = f"pilot: {n_tasks} tasks x k={k} x bare, estimated ${est} at ${cost_per_run:.2f} per run"
+    return (not problems), "\n".join([text, *[f"PROBLEM: {p}" for p in problems]])
+
+
 def estimate_line(n_runs: int, max_run: float, cap: float | None) -> str:
     worst = n_runs * max_run
     return (f"{n_runs} runs; worst case ${worst:.0f} at ${max_run:g} per run"
@@ -404,6 +447,14 @@ def main(argv: list[str] | None = None) -> int:
                     help="subscription (default, needs CLAUDE_CODE_OAUTH_TOKEN) or api-key")
     ap.add_argument("--youk-home", type=Path, default=Path.home() / ".claude" / "youk",
                     help="live youk install whose bench-* state is removed after the run")
+    ap.add_argument("--pilot", type=Path,
+                    help="baseline results (k>=2) used by the pre-run design check")
+    ap.add_argument("--target-effect", type=float, default=design.DEFAULT_TARGET_EFFECT,
+                    help="smallest pass-rate difference that would change a decision")
+    ap.add_argument("--pilot-run", action="store_true",
+                    help="this run is the baseline pilot (bare only, k>=2); skips the power check")
+    ap.add_argument("--allow-underpowered", action="store_true",
+                    help="run even if the design check fails; recorded in the .design.json")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--superpowers-dir", type=Path)
     ap.add_argument("--work-dir", type=Path, default=DEFAULT_WORK)
@@ -433,6 +484,19 @@ def main(argv: list[str] | None = None) -> int:
     out = args.out or RESULTS_DIR / f"{datetime.now(UTC):%Y-%m-%d}{'-dry' if args.dry_run else ''}.jsonl"
     youk_root = work / "youk-root"
     youk_root.mkdir(parents=True, exist_ok=True)
+    if not args.dry_run:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if args.pilot_run:
+            ok, text = pilot_gate(arms, args.k, len(tasks), args.cap_usd)
+        else:
+            ok, text = design_gate(args.pilot, arms, args.k, args.cap_usd, args.target_effect,
+                                   args.allow_underpowered, out)
+        print(text)
+        if not ok:
+            print("refusing to spend: the design check failed (see "
+                  "docs/value-plan/research-eval-design.md). --allow-underpowered overrides.",
+                  file=sys.stderr)
+            return 2
     if args.dry_run:
         agent: Agent = fake_agent
     else:
