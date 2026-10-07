@@ -81,12 +81,13 @@ def test_extract_decisions_md_against_real_file():
     """Real test against the actual committed DECISIONS.md -- not a mock."""
     contexts = extract_decisions_md(REPO_ROOT)
 
-    assert len(contexts) == 3
+    assert len(contexts) == 4
     names = {c.name for c in contexts}
     assert names == {
         "Langfuse trace granularity",
         "Langfuse data handling",
         "Proxy score definition",
+        "G1 baseline battery: no measured benefit from full over bare",
     }
 
     by_name = {c.name: c for c in contexts}
@@ -173,7 +174,7 @@ def test_build_domain_brief_reports_real_sources_honestly():
 
     by_path = {s["path"]: s for s in brief.sources}
     assert by_path["DECISIONS.md"]["present"] is True
-    assert by_path["DECISIONS.md"]["entries_parsed"] == 3
+    assert by_path["DECISIONS.md"]["entries_parsed"] == 4
     assert by_path["knowledge/projects/youk/decisions.md"]["present"] == (
         (REPO_ROOT / "knowledge" / "projects" / "youk" / "decisions.md").exists()
     )
