@@ -1,0 +1,146 @@
+id: ml-php-cs-fixer__php-cs-fixer-7663
+repo: php-cs-fixer__php-cs-fixer
+language: php
+sha: c5cde0cf7542234dc061af8a25f77fcdad430e35
+parent_sha: c5cde0cf7542234dc061af8a25f77fcdad430e35
+prompt: "`statement_indentation` is not working /wo curly braces around body\n## Bug\
+  \ report\r\n\r\nCurly braces around body are of course good practise, but `statement_indentation`\
+  \ rule should not require them to work correctly.\r\n\r\n### Runtime version\r\n\
+  \r\nlatest\r\n\r\n### Configuration file\r\n\r\n`statement_indentation` with default\
+  \ config\r\n\r\n### Code snippet that reproduces the problem\r\n\r\n```\r\nwhile\
+  \ ($str[$q] != '|')\r\n    if (++$q >= $endptr)\r\n        break 2;\r\n```\r\n\r\
+  \nis currently fixed to:\r\n\r\n```\r\nwhile ($str[$q] != '|')\r\nif (++$q >= $endptr)\r\
+  \nbreak 2;\r\n```"
+test_cmd: ''
+hidden_tests:
+- tests/Fixer/Whitespace/StatementIndentationFixerTest.php
+runnable_tests:
+- Statement Indentation Fixer > Fix with data set "if-elseif-else without braces"
+- Statement Indentation Fixer > Fix with data set "for without braces"
+- Statement Indentation Fixer > Fix with data set "foreach without braces"
+- Statement Indentation Fixer > Fix with data set "while without braces"
+- Statement Indentation Fixer > Fix with data set "do-while without braces"
+- Statement Indentation Fixer > Fix with data set "nested control structures without
+  braces"
+- Statement Indentation Fixer > Fix with data set "mixex if-else with and without
+  braces"
+- Statement Indentation Fixer > Fix with data set "empty if and else without braces"
+added_tests: []
+interface: []
+source_files:
+- src/Fixer/Whitespace/StatementIndentationFixer.php
+files: 1
+lines: 110
+review:
+  fair: null
+  note: ''
+public:
+  source: swebench-multilingual
+  instance_id: php-cs-fixer__php-cs-fixer-7663
+  github: php-cs-fixer/php-cs-fixer
+  image: swebench/sweb.eval.x86_64.php-cs-fixer_1776_php-cs-fixer-7663:latest
+  log_parser: parse_log_phpunit
+  fail_to_pass:
+  - Statement Indentation Fixer > Fix with data set "if-elseif-else without braces"
+  - Statement Indentation Fixer > Fix with data set "for without braces"
+  - Statement Indentation Fixer > Fix with data set "foreach without braces"
+  - Statement Indentation Fixer > Fix with data set "while without braces"
+  - Statement Indentation Fixer > Fix with data set "do-while without braces"
+  - Statement Indentation Fixer > Fix with data set "nested control structures without
+    braces"
+  - Statement Indentation Fixer > Fix with data set "mixex if-else with and without
+    braces"
+  - Statement Indentation Fixer > Fix with data set "empty if and else without braces"
+  pass_to_pass:
+  - Statement Indentation Fixer > Fix with data set "no brace block"
+  - Statement Indentation Fixer > Fix with data set "simple"
+  - Statement Indentation Fixer > Fix with data set "braces on same line as code"
+  - Statement Indentation Fixer > Fix with data set "with several closing braces on
+    same line"
+  - Statement Indentation Fixer > Fix with data set "with meaningful content on closing
+    line"
+  - Statement Indentation Fixer > Fix with data set "with several opening braces on
+    same line"
+  - Statement Indentation Fixer > Fix with data set "function definition arguments"
+  - Statement Indentation Fixer > Fix with data set "anonymous function definition
+    arguments"
+  - Statement Indentation Fixer > Fix with data set "interface method definition arguments"
+  - Statement Indentation Fixer > Fix with data set "class method definition arguments"
+  - Statement Indentation Fixer > Fix with data set "multiple class methods with many
+    permutations of visibility modifiers"
+  - Statement Indentation Fixer > Fix with data set "trait method definition arguments"
+  - Statement Indentation Fixer > Fix with data set "function call arguments"
+  - Statement Indentation Fixer > Fix with data set "variable function call arguments"
+  - Statement Indentation Fixer > Fix with data set "chained method calls"
+  - Statement Indentation Fixer > Fix with data set "nested arrays (long syntax)"
+  - Statement Indentation Fixer > Fix with data set "nested arrays (short syntax)"
+  - Statement Indentation Fixer > Fix with data set "array (long syntax) with function
+    call"
+  - Statement Indentation Fixer > Fix with data set "array (short syntax) with function
+    call"
+  - Statement Indentation Fixer > Fix with data set "array (long syntax) with class
+    instantiation"
+  - Statement Indentation Fixer > Fix with data set "array (short syntax) with class
+    instantiation"
+  - Statement Indentation Fixer > Fix with data set "implements list"
+  - Statement Indentation Fixer > Fix with data set "extends list"
+  - Statement Indentation Fixer > Fix with data set "use list"
+  - Statement Indentation Fixer > Fix with data set "chained method call with argument"
+  - Statement Indentation Fixer > Fix with data set "argument separator on its own
+    line"
+  - Statement Indentation Fixer > Fix with data set "statement end on its own line"
+  - Statement Indentation Fixer > Fix with data set "multiline control structure conditions"
+  - Statement Indentation Fixer > Fix with data set "switch"
+  - Statement Indentation Fixer > Fix with data set "array (long syntax) with anonymous
+    class"
+  - Statement Indentation Fixer > Fix with data set "array (short syntax) with anonymous
+    class"
+  - Statement Indentation Fixer > Fix with data set "expression function call arguments"
+  - Statement Indentation Fixer > Fix with data set "arrow function definition arguments"
+  - Statement Indentation Fixer > Fix with data set "multiline list in foreach"
+  - Statement Indentation Fixer > Fix with data set "switch case with control structure"
+  - Statement Indentation Fixer > Fix with data set "comment in method calls chain"
+  - Statement Indentation Fixer > Fix with data set "multiple anonymous functions
+    as function arguments"
+  - Statement Indentation Fixer > Fix with data set "multiple anonymous functions
+    as method arguments"
+  - Statement Indentation Fixer > Fix with data set "semicolon on a newline inside
+    a switch case without break statement"
+  - Statement Indentation Fixer > Fix with data set "alternative syntax"
+  - Statement Indentation Fixer > Fix with data set "trait import with conflict resolution"
+  - Statement Indentation Fixer > Fix with data set "multiline class definition"
+  - Statement Indentation Fixer > Fix with data set "comment at end of switch case"
+  - Statement Indentation Fixer > Fix with data set "comment at end of switch default"
+  - Statement Indentation Fixer > Fix with data set "switch ending with empty case"
+  - Statement Indentation Fixer > Fix with data set "switch ending with empty default"
+  - Statement Indentation Fixer > Fix with data set "function ending with a comment
+    and followed by a comma"
+  - Statement Indentation Fixer > Fix with data set "multiline arguments starting
+    with "new" keyword"
+  - Statement Indentation Fixer > Fix with data set "if with only a comment and followed
+    by else"
+  - Statement Indentation Fixer > Fix with data set "comment before else blocks WITHOUT
+    stick_comment_to_next_continuous_control_statement"
+  - Statement Indentation Fixer > Fix with data set "comment before else blocks WITH
+    stick_comment_to_next_continuous_control_statement"
+  - Statement Indentation Fixer > Fix with data set "multiline comment in block -
+    describing next block"
+  - Statement Indentation Fixer > Fix with data set "multiline comment in block -
+    the only content in block"
+  - Statement Indentation Fixer > Fix with data set "comment before elseif blocks"
+  - Statement Indentation Fixer > Fix with data set "comments at the end of if/elseif/else
+    blocks"
+  - Statement Indentation Fixer > Fix with tabs with data set "simple"
+  - Statement Indentation Fixer > Fix php 80 with data set "match expression"
+  - Statement Indentation Fixer > Fix php 80 with data set "attribute"
+  - Statement Indentation Fixer > Fix php 81 with data set "simple enum"
+  - Statement Indentation Fixer > Fix php 81 with data set "backend enum"
+  - Statement Indentation Fixer > Fix php 81 with data set "enum with method"
+  - Statement Indentation Fixer > Is risky
+  - Statement Indentation Fixer > Fixer definitions
+  - Statement Indentation Fixer > Fixers are final
+  - Statement Indentation Fixer > Deprecated fixers have correct summary
+  - Statement Indentation Fixer > Fixer use insert slices when only insertions are
+    performed
+  - Statement Indentation Fixer > Fixer configuration definitions
+  - Statement Indentation Fixer > Not defining constructor

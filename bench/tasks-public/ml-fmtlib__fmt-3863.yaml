@@ -1,0 +1,67 @@
+id: ml-fmtlib__fmt-3863
+repo: fmtlib__fmt
+language: cpp
+sha: dfe5b12c08dfa803fe5a275b380991df25f4b52d
+parent_sha: dfe5b12c08dfa803fe5a275b380991df25f4b52d
+prompt: "support C++23 character range formatting\nIn C++23 it's possible to use the\
+  \ `s` formatter to format char ranges as strings\r\n\r\nFormat String | Contents\
+  \ | Formatted Output\r\n-- | -- | --\r\n{:s} | vector<char>{'H', '\\t', 'l', 'l',\
+  \ 'o'} | H    llo\r\n{:?s} | vector<char>{'H', '\\t', 'l', 'l', 'o'} | \"H\\tllo\"\
+  \r\n\r\n[p2286r8](https://wg21.link/p2286r8)\r\n\r\nTrying to do the same with libfmt\
+  \ results in an \"invalid format specifier\" error\r\n\r\nhttps://flux.godbolt.org/z/nacKGTfM7"
+test_cmd: ''
+hidden_tests:
+- test/ranges-test.cc
+runnable_tests:
+- ranges_test.format_vector
+added_tests: []
+interface: []
+source_files:
+- include/fmt/ranges.h
+files: 1
+lines: 62
+review:
+  fair: null
+  note: ''
+public:
+  source: swebench-multilingual
+  instance_id: fmtlib__fmt-3863
+  github: fmtlib/fmt
+  image: swebench/sweb.eval.x86_64.fmtlib_1776_fmt-3863:latest
+  log_parser: parse_log_googletest
+  fail_to_pass:
+  - ranges_test.format_vector
+  pass_to_pass:
+  - ranges_test.format_array
+  - ranges_test.format_2d_array
+  - ranges_test.format_array_of_literals
+  - ranges_test.format_nested_vector
+  - ranges_test.to_string_vector
+  - ranges_test.format_map
+  - ranges_test.format_set
+  - ranges_test.format_flat_set
+  - ranges_test.format_adl_begin_end
+  - ranges_test.format_pair
+  - ranges_test.format_tuple
+  - ranges_test.tuple_parse_calls_element_parse
+  - ranges_test.format_struct
+  - ranges_test.format_to
+  - ranges_test.disabled_range_formatting_of_path
+  - ranges_test.range
+  - ranges_test.enum_range
+  - ranges_test.unformattable_range
+  - ranges_test.join
+  - ranges_test.join_bytes
+  - ranges_test.join_tuple
+  - ranges_test.join_initializer_list
+  - ranges_test.join_sentinel
+  - ranges_test.join_range
+  - ranges_test.format_join_adl_begin_end
+  - ranges_test.is_printable
+  - ranges_test.escape
+  - ranges_test.range_of_range_of_mixed_const
+  - ranges_test.vector_char
+  - ranges_test.container_adaptor
+  - ranges_test.format_as_tie
+  - ranges_test.lvalue_qualified_begin_end
+  - ranges_odr_test.format_vector
