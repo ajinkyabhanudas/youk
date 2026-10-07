@@ -74,7 +74,7 @@ Items 2 to 4 apply once S02, S06 and S01 land.
 - Concurrency: append-only through `locked_jsonl_append`. No read-modify-write.
 - Volume: shard per project per month; readers stream; no unbounded in-memory loads.
 - Schema: `v` field, additive changes only. Events carry `eid`; readers dedupe.
-- Cost: hook p95 budget 50 ms (verify in S03). Experiment runs have a hard dollar cap set by Ajinkya.
+- Cost: hook p95 budget 50 ms (verify in S03). Experiment runs have a hard dollar cap set by the owner.
 
 ## Session protocol (context cost control)
 

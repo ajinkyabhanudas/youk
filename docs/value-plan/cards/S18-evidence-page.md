@@ -15,7 +15,7 @@ the intervals support. If lean does not beat bare, say so and publish the findin
 
 **Out of scope.** Marketing copy beyond the results.
 
-**DoD.** Standard DoD. Ajinkya reviews before it is shared (publishing is outward-facing).
+**DoD.** Standard DoD. the owner reviews before it is shared (publishing is outward-facing).
 
 **Kill criterion.** None.
 

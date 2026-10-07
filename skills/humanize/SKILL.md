@@ -93,11 +93,17 @@ If a draft is provided, analyze it:
 actually landed with this developer. If `learned=False`, proceed with the profile below,
 then record what you applied.
 
-Apply the developer's voice characteristics. Load the profile in this order:
-1. `knowledge/global/voice-profile.md` — the developer's OWN learned voice (gitignored,
-   local, populated by the voice-fingerprint system). Use it if it exists.
-2. `references/voice-profile.md` — the committed generic template. Fall back to this when
-   no local profile exists yet.
+Apply the developer's voice characteristics. Load these in this order:
+1. `knowledge/global/voice-profile.md`, the hand-kept profile of the developer's own voice
+   (gitignored, local). Use it if it exists.
+2. `knowledge/global/voice-{slug}-{register}.md`, the measured profile youk builds from the
+   developer's own prompts at session end (sentence length, contractions, first person,
+   commas, openers, connectives, punctuation). Use its numbers as writing targets, never
+   as a pass or fail test. Only the `chat` register is captured today, so use it for every
+   kind of writing until `commit` or `doc` profiles exist. Skip it if the file is missing.
+3. `references/voice-profile.md`, the committed generic template, when neither local file exists.
+`docs/voice-style.md` has the short style guide. Commit messages and PR text are checked by
+a hook and blocked on any AI-tell, so write them plain and short and check_voice the draft.
 Never ship or commit a personal profile; it is per-developer data.
 
 **After voicing, record the decomposition** so the vocabulary compounds: call
