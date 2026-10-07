@@ -100,6 +100,8 @@ compiled_contracts:
     from: "never read .env or any secrets file directly (Bash only; deny the Read tool in settings with Read(**/.env*))"
   - id: dependency-force
     from: "never use --legacy-peer-deps or --force to resolve a dependency conflict"
+  - id: pr-structure
+    from: "a PR description is a formal document: what changed, why, impact, how it was checked"
   - id: voice-pr-text
     from: "no AI-tells in any written output; PR titles and bodies are checked with the commit voice gate"
 

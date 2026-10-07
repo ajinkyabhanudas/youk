@@ -30,6 +30,9 @@ def _run(msg_file: Path | None, break_git: bool = False) -> subprocess.Completed
     if msg_file is not None:
         args.append(str(msg_file))
     env = dict(os.environ)
+    # These tests are about the voice gate. The layout check reads whatever the real repo has
+    # staged, so it is switched off here and tested on its own in test_writing_templates.py.
+    env["YOUK_GUARD_OFF"] = "commit-layout"
     if break_git:
         # Force every resolution attempt to fail so the not-found branch is reached.
         # Without this, `git rev-parse --git-path` succeeds from inside the repo and

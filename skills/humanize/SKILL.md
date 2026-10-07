@@ -102,7 +102,7 @@ Apply the developer's voice characteristics. Load these in this order:
    as a pass or fail test. Only the `chat` register is captured today, so use it for every
    kind of writing until `commit` or `doc` profiles exist. Skip it if the file is missing.
 3. `references/voice-profile.md`, the committed generic template, when neither local file exists.
-`docs/voice-style.md` has the short style guide. Commit messages and PR text are checked by
+`docs/voice-style.md` has the style guide and `docs/writing-templates.md` has the layout for each situation. Voice is how it sounds and the template is how it is laid out, so pick the template from the content type (commit, PR, decision, chat) and apply the voice on top. Commit messages and PR text are checked by
 a hook and blocked on any AI-tell, so write them plain and short and check_voice the draft.
 Never ship or commit a personal profile; it is per-developer data.
 

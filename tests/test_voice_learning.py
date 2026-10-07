@@ -23,6 +23,13 @@ def tells(text: str) -> list[str]:
 
 
 CLEAN = "the hook blocks eight things now. force-with-lease is fine and the bare arm skips it."
+
+
+def pr(text: str) -> str:
+    """A PR body in the required layout around some text."""
+    return ("## What changed\n" + text + "\n\n## Why\nthe model had to remember these rules.\n\n"
+            "## Impact\nthey cost no always-on tokens and cannot be skipped.\n\n"
+            "## How it was checked\nthe full suite passed.")
 DASHED = "this adds a hook — it blocks eight things the model used to remember."
 
 
@@ -76,37 +83,38 @@ class TestPrText:
         return [v.rule for v in cg.evaluate_bash(command, str(cwd), tells)]
 
     def test_an_inline_body_with_a_tell_is_blocked(self):
-        assert self._rules(f'gh pr create --title "ok" --body "{DASHED}"') == ["voice-pr-text"]
+        assert self._rules(f'gh pr create --title "ok" --body "{pr(DASHED)}"') == ["voice-pr-text"]
 
     def test_a_heredoc_body_with_a_tell_is_blocked(self):
-        cmd = f"gh pr create --title \"ok\" --body \"$(cat <<'EOF'\n{DASHED}\nEOF\n)\""
+        cmd = f"gh pr create --title \"ok\" --body \"$(cat <<'EOF'\n{pr(DASHED)}\nEOF\n)\""
         assert self._rules(cmd) == ["voice-pr-text"]
 
     def test_a_tell_in_the_title_is_blocked(self):
         assert self._rules('gh pr edit 5 --title "adds a hook — and more"') == ["voice-pr-text"]
 
     def test_a_body_file_is_read_and_checked(self, tmp_path):
-        (tmp_path / "body.md").write_text(DASHED)
+        (tmp_path / "body.md").write_text(pr(DASHED))
         assert self._rules("gh pr create --title ok --body-file body.md", tmp_path) == ["voice-pr-text"]
 
     def test_clean_text_passes(self):
-        assert self._rules(f'gh pr create --title "adds a hook" --body "{CLEAN}"') == []
-        cmd = f"gh pr create --title ok --body \"$(cat <<'EOF'\n{CLEAN}\nEOF\n)\""
+        assert self._rules(f'gh pr create --title "adds a hook" --body "{pr(CLEAN)}"') == []
+        cmd = f"gh pr create --title ok --body \"$(cat <<'EOF'\n{pr(CLEAN)}\nEOF\n)\""
         assert self._rules(cmd) == []
 
     def test_other_gh_commands_are_not_checked(self):
         assert self._rules(f'gh issue create --body "{DASHED}"') == []
 
     def test_without_a_voice_check_nothing_is_flagged(self):
-        assert [v.rule for v in cg.evaluate_bash(f'gh pr create --body "{DASHED}"', str(REPO))] == []
+        assert [v.rule for v in cg.evaluate_bash(f'gh pr create --body "{pr(DASHED)}"', str(REPO))
+                if v.rule == "voice-pr-text"] == []
 
     def test_prose_that_mentions_a_git_command_is_not_run_as_one(self, tmp_path):
         git_repo = tmp_path / "r"
         git_repo.mkdir()
         subprocess.run(["git", "-C", str(git_repo), "init", "-q", "-b", "main"], check=True)
-        body = ("the guard blocks commits and pushes to main, and this body even mentions the command "
-                "below as plain text while it explains what the change does for people who read it.\n"
-                "git push origin main\n")
+        body = pr("the guard blocks commits and pushes to main, and this body even mentions the command "
+                  "below as plain text while it explains what the change does for people who read it.\n"
+                  "git push origin main\n")
         cmd = f"gh pr create --title ok --body \"$(cat <<'EOF'\n{body}\nEOF\n)\""
         assert self._rules(cmd, git_repo) == []
 
@@ -125,13 +133,13 @@ class TestHookEndToEnd:
         return json.loads(out.stdout)
 
     def test_the_hook_blocks_a_pr_body_with_a_tell_and_names_the_rule(self, tmp_path):
-        out = self._run(f'gh pr create --title ok --body "{DASHED}"', tmp_path)
+        out = self._run(f'gh pr create --title ok --body "{pr(DASHED)}"', tmp_path)
         assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
         assert "voice-pr-text" in out["hookSpecificOutput"]["permissionDecisionReason"]
 
     def test_the_hook_lets_a_clean_body_through_and_the_bare_arm_is_ungated(self, tmp_path):
-        assert self._run(f'gh pr create --title ok --body "{CLEAN}"', tmp_path) == {"continue": True}
-        assert self._run(f'gh pr create --body "{DASHED}"', tmp_path, arm="bare") == {"continue": True}
+        assert self._run(f'gh pr create --title ok --body "{pr(CLEAN)}"', tmp_path) == {"continue": True}
+        assert self._run(f'gh pr create --body "{pr(DASHED)}"', tmp_path, arm="bare") == {"continue": True}
 
 
 class TestNoPersonalDataInShippedVoiceFiles:

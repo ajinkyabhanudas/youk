@@ -7,35 +7,38 @@ length, and what to include.
 
 ## Commit Messages
 
-**Audience:** Public (GitHub history, future maintainers)
-**Length:** 1-3 sentences. No bullet lists. No headers.
-**Structure:** [WHY this was needed] — [WHAT changed] — [KEY trade-off if significant]
+Layout comes from `servers/shared/writing_templates.py` (`template_for("commit")`) and is checked
+by the commit-msg hook. Voice comes from the developer's profile. Both apply.
+
+**Audience:** future maintainers reading the history.
+**Layout:** a subject line under 72 characters, then plain paragraphs for what changed, why it was
+needed, and the impact it had. A tiny change may be only a subject. A change of 3 files or 80 lines
+needs all three paragraphs. No labels and no bullet lists, since colon-led lists are an AI-tell.
 
 **Rules:**
-- First sentence: the reason or problem, not just the action
-- Use conventional commit prefix where it helps (feat, fix, refactor, test, docs, chore)
-- Do not start with "This commit", "Added", "Updated" as the first word
-- Do not end with a summary sentence
-- If the change is complex (new module), 2-3 sentences max — not a full explanation
-- Breaking changes: clearly stated in first sentence
+- Say what changed in the developer's own words, then why, then what it changes for whoever uses it.
+- Use a conventional prefix only where the developer does.
+- Do not start with "This commit" and do not end on a summary sentence.
+- Trailers (Co-Authored-By) come last and do not count as a paragraph.
 
-**Template:**
+**Example:**
 ```
-{why the change was needed or what problem it solves}. {what was done}. {key trade-off or what was NOT done — if significant}.
+the bash hook now blocks eight things the model used to have to remember.
 
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+commits and pushes to main, force pushes and forced installs are denied with the rule and what to do instead.
+
+the model skipped these rules under time pressure and the always-on text was carrying them.
+
+they cost no always-on tokens now and cannot be skipped.
 ```
 
-**Examples:**
+---
 
-Before: "Add cache module with LRU eviction and TTL"
-After: "LLM calls for repeated questions pay full API cost every time. Exact-match cache with SHA-256 key, 24h TTL, 500-entry LRU eliminates redundant calls. Semantic caching (embedding-based) deferred until usage patterns justify the cost."
+## Pull Request Descriptions
 
-Before: "Fix bug in query loop where empty results weren't handled"
-After: "Query loop raised AttributeError on empty DB results — no guard on zero-row response. Added explicit empty-result path that returns a plain-English 'no results' message instead."
-
-Before: "Update README with new features"
-After: "README didn't reflect cache module, streaming UI, or current test count. Updated architecture section, feature list, and test count (168). Docker setup instructions unchanged."
+A formal document, not a message. Same voice, headed layout (`template_for("pr")`): What changed,
+Why, Impact, How it was checked, and an optional Not done. The hook blocks a `gh pr create` or
+`gh pr edit` body that is missing the first four. Keep each section short and concrete.
 
 ---
 

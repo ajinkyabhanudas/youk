@@ -20,6 +20,10 @@ The commit hook and the PR check block any AI-tell, hard or soft. Write plain an
 - tidy because-so chains
 - the word "key" and other graded vocabulary
 
+## Voice and layout are separate
+
+The voice is the same in a commit, a PR and a chat reply. The layout changes with the situation: a commit is plain paragraphs for what changed, why and the impact, and a PR is a formal document with headed sections. See `docs/writing-templates.md`.
+
 ## Rule for contributors
 
 Do not commit a person's name, email, writing samples or measured style numbers. They belong in the local, gitignored files above. `tests/test_voice_learning.py` fails if the git user's name appears in the voice and benchmark files.

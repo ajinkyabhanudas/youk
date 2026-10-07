@@ -55,6 +55,9 @@ RULES: dict[str, tuple[str, str]] = {
     "dependency-force": (
         "No --force or --legacy-peer-deps on installs. It hides a real conflict.",
         "Resolve the conflicting versions."),
+    "pr-structure": (
+        "A PR description is a formal document with headed sections for what changed, why, the impact and how it was checked.",
+        "Use the PR layout, see docs/writing-templates.md."),
     "voice-pr-text": (
         "PR titles and bodies are written in the developer's voice, with no AI-tells.",
         "Rewrite it plain and short, see docs/voice-style.md, and run check_voice on the draft."),
@@ -160,25 +163,31 @@ _BODY_FILE = re.compile(r"--body-file\s+(\S+)")
 _LONG_QUOTE = re.compile(r"""("(?:[^"\\]|\\.){60,}"|'[^']{60,}')""", re.DOTALL)
 
 
-def _pr_texts(command: str, cwd: str) -> list[str]:
-    """Title and body text of a `gh pr create|edit`, whether given inline, as a heredoc or as a file."""
+def _pr_parts(command: str, cwd: str) -> tuple[list[str], list[str]]:
+    """(titles, bodies) of a `gh pr create|edit`, whether given inline, as a heredoc or as a file."""
     if not _PR_COMMAND.search(command):
-        return []
-    texts = [m.group(3) for m in _HEREDOC.finditer(command)]
-    for pattern in (_TITLE_FLAG, _BODY_FLAG):
+        return [], []
+    titles: list[str] = []
+    bodies = [m.group(3) for m in _HEREDOC.finditer(command)]
+    for pattern, target in ((_TITLE_FLAG, titles), (_BODY_FLAG, bodies)):
         for m in pattern.finditer(command):
             value = m.group(1) if m.group(1) is not None else m.group(2)
             if value and "<<" not in value and "$(" not in value:
-                texts.append(value)
+                target.append(value)
     for m in _BODY_FILE.finditer(command):
         path = m.group(1).strip("'\"")
         full = path if os.path.isabs(path) else os.path.join(cwd, path)
         try:
             with open(full, encoding="utf-8") as fh:
-                texts.append(fh.read(20000))
+                bodies.append(fh.read(20000))
         except OSError:
             pass
-    return texts
+    return titles, bodies
+
+
+def _pr_texts(command: str, cwd: str) -> list[str]:
+    titles, bodies = _pr_parts(command, cwd)
+    return titles + bodies
 
 
 def _mask_text_bodies(command: str) -> str:
@@ -195,6 +204,12 @@ def evaluate_bash(command: str, cwd: str,
     voice gate here so the guard stays free of imports from the core server code."""
     found: list[Violation] = []
     switched = False
+    if _enabled("pr-structure"):
+        from writing_templates import validate_pr
+        for body in _pr_parts(command, cwd)[1]:
+            missing = validate_pr(body)
+            if missing:
+                found.append(Violation("pr-structure", "Missing sections: " + ", ".join(missing) + "."))
     if voice_check is not None:
         for text in _pr_texts(command, cwd):
             tells = voice_check(text)
