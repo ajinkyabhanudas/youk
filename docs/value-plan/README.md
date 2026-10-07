@@ -31,7 +31,7 @@ Work in a git worktree off `origin/main`; do not switch branches in `~/.claude/y
 **Status.** S00 to S10 are merged. G1 is recorded (see DECISIONS.md 2026-10-06 and log.md): full did not beat bare in a measurable way (+0.07, interval +0.00 to +0.21, 14 tasks), at 1.20x cost. By the gate's rule S11 and S12 are the priority. The reading is inconclusive rather than negative; a k=3 rerun (about $75 notional) would tighten it.
 The live install is on main and the ledger collects real events from the battery root only.
 
-**Next.** S11, then S12, each judged against G2 (lean within 5 points of full, always-on at or under 3k tokens, tokens per task down 30%).
+**Next.** S11 (lean context) and S12 (gates as code) first, then re-measure with the E1 design (`research-eval-design.md`): the G1 design could not decide, so no new paid run starts without the design check. Then E2 (compounding). Each judged against G2 (lean within 5 points of full, always-on at or under 3k tokens, tokens per task down 30%).
 
 ## First goal (M1: youk can see itself)
 
@@ -51,6 +51,10 @@ It unlocks every removal decision, because deleting anything before M1 is a gues
 
 Arms: `bare` (events only), `full` (current youk), `lean` (new), `superpowers` (external, sandboxed).
 Any component with no movement on V1, V2, V3 or B after its review date is removed.
+
+## Evaluation rule (contract, 2026-10-06)
+
+No paid evaluation run starts without the pre-run design check (`scripts/sim/design.py`, enforced in `run_battery.py`): power at the target effect, share of tasks that can discriminate, expected cost. A result inside the minimum detectable effect is reported as "no effect larger than X detected". Findings: `research-eval-design.md`. Native-feature overlap: `mods-assessment.md`.
 
 ## Standard DoD (every card)
 

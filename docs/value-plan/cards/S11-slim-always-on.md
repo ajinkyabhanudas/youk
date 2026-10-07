@@ -1,6 +1,6 @@
 # S11 Slim always-on
 
-Size M. Depends: S01, G1. Metric: V3, B (noninferior).
+Size M. Depends: S01, G1, E1. Metric: V3, B (noninferior).
 
 **Goal.** Cut what is loaded every session without losing results. This builds the `lean` arm's content.
 
@@ -9,6 +9,12 @@ Two "skills" (`compaction`, `session`) are internal dev notes that cost listing 
 
 **Load.** `~/.claude/CLAUDE.md`, `skills/*/SKILL.md` frontmatter (bulk edit), `docs/claude-md-template.md`,
 `bench/arms/lean/`, `bench/footprint-baseline.json`.
+
+**Design rules from the research** (`research-eval-design.md`, findings 5 and 6):
+- The lean context holds only rules that are non-inferable from the repo, project-specific, and checkable. No repository overviews, no restating what the model already does.
+- Start minimal and add a line only for an observed, repeated failure.
+- Brief injection is gated on task size: XS and S get none. Items are short and compressed, never transcripts.
+- Judge lean against full on both task tiers from E1, not on small tasks alone.
 
 **Build.**
 - Lean context at or under 15 lines, hook-injected; global CLAUDE.md reduced to a pointer.
