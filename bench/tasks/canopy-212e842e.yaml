@@ -1,0 +1,34 @@
+id: canopy-212e842e
+repo: canopy
+language: python
+sha: 212e842ebac37a8ac074ca3e8f9daef528aa2664
+parent_sha: 22cd1936ba3935a1bada396ea8ff4872199097dc
+prompt: "feat: register detections.management_unit as third fuzzy-checkable column\n\nLive-verified against\
+  \ gpt-5.1-codex-mini and a real Postgres instance: a\nmistyped management unit name (\"Waman\") correctly\
+  \ surfaced both real\nnear-duplicate candidates (\"Wamani\", \"Waman\xED\"), and clicking one re-ran\
+  \ the\ncorrected question end-to-end. _MAX_GROUPS bumped to 3; UI wiring was\nalready generic over FUZZY_COLUMNS,\
+  \ so no per-group code changes needed.\n\nThe tests for this change use these names (create or adapt\
+  \ them as needed): management_unit."
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/e2e/conftest.py
+- tests/e2e/test_fuzzy_suggestions.py
+- tests/test_fuzzy_match.py
+- tests/test_ui.py
+runnable_tests:
+- tests/e2e/test_fuzzy_suggestions.py
+- tests/test_fuzzy_match.py
+- tests/test_ui.py
+added_tests: []
+interface:
+- management_unit
+source_files:
+- src/canopy/locales/en.py
+- src/canopy/locales/es.py
+- src/canopy/query/fuzzy_match.py
+- src/canopy/ui/app.py
+files: 8
+lines: 223
+review:
+  fair: null
+  note: ''

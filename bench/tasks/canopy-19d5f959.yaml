@@ -1,0 +1,33 @@
+id: canopy-19d5f959
+repo: canopy
+language: python
+sha: 19d5f959021ff86e50c260c1f10f5aadcf9024ec
+parent_sha: a9610a7d467c5d0caab80a4a266d1266f171e694
+prompt: "feat: parse structured interpretation block from model responses\n\n already instructs the model\
+  \ to emit a DATA SOURCE/GAPS/RESEARCH\nQUESTIONS block, but nothing read it back \u2014 LoopResult had\
+  \ no field for it\nand model_text stayed undifferentiated free text. Adds an Interpretation\ndataclass,\
+  \ a conservative all-or-nothing parser (malformed or partial input\nreturns None rather than a garbage-filled\
+  \ object), and round-trip\nsupport with backward-compatible deserialization for pre-existing \nentries.\n\
+  \nThe tests for this change use these names (create or adapt them as needed): Interpretation, _parse_interpretation,\
+  \ data_source, research_questions."
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_cache.py
+- tests/test_query_loop.py
+runnable_tests:
+- tests/test_cache.py
+- tests/test_query_loop.py
+added_tests: []
+interface:
+- Interpretation
+- _parse_interpretation
+- data_source
+- research_questions
+source_files:
+- src/canopy/cache.py
+- src/canopy/query/loop.py
+files: 4
+lines: 272
+review:
+  fair: null
+  note: ''

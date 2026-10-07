@@ -1,0 +1,39 @@
+id: youk-9df90027
+repo: youk
+language: python
+sha: 9df90027665d8cffb0c72969c26a810ef0e17c60
+parent_sha: ea1721ef2b8ec99c2ef0999dcf368a94a71ba0f1
+prompt: "Lock every pattern-learning JSONL append against real concurrent writers\n\nFound live this session:\
+  \ this very conversation ran two separate processes\n(a Codex session and this Claude Code session)\
+  \ connected to the same\nyouk-core server at once, and every append_* function across\n, , , and\n used\
+  \ a bare open(path, \"a\") -- no lock. That's a\npresent correctness gap, not a future-scale one: nothing\
+  \ stopped two real\nconcurrent callers from interleaving writes to the same file today.\n\nThe tests\
+  \ for this change use these names (create or adapt them as needed): across, append_, disposition_event,\
+  \ domain_scope_event, entry_id, jsonl_lock, locked_append_if_id_absent, locked_jsonl_append."
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_jsonl_lock.py
+runnable_tests:
+- tests/test_jsonl_lock.py
+added_tests:
+- tests/test_jsonl_lock.py
+interface:
+- across
+- append_
+- disposition_event
+- domain_scope_event
+- entry_id
+- jsonl_lock
+- locked_append_if_id_absent
+- locked_jsonl_append
+source_files:
+- servers/core/src/pattern_promotion.py
+- servers/core/src/reversal_check.py
+- servers/shared/disposition_event.py
+- servers/shared/domain_scope_event.py
+- servers/shared/jsonl_lock.py
+files: 6
+lines: 263
+review:
+  fair: null
+  note: ''

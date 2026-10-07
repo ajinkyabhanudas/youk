@@ -1,0 +1,38 @@
+id: canopy-1f8baa03
+repo: canopy
+language: python
+sha: 1f8baa0399e337bc92060ec429f44b4ce5dd01ba
+parent_sha: 537255b74549af8c7a81bee91d135d90ffb7111a
+prompt: "feat: render interpretation block distinctly in the Answer tab\n\nCompletes Step 8. The parsed\
+  \ Interpretation now renders as its own\nlabelled section below the answer, separated by a horizontal\
+  \ rule,\nwith bilingual (EN/ES) labels. interpretation=None (guardrail declines,\nnon-execute_sql responses)\
+  \ shows nothing extra \u2014 no visual regression.\n\nThe tests for this change use these names (create\
+  \ or adapt them as needed): LoopResult, _render_interpretation, _render_response, data_source, interpretation_gaps_none,\
+  \ interpretation_heading, interpretation_research, research_questions."
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_query_loop.py
+- tests/test_ui.py
+runnable_tests:
+- tests/test_query_loop.py
+- tests/test_ui.py
+added_tests: []
+interface:
+- LoopResult
+- _render_interpretation
+- _render_response
+- data_source
+- interpretation_gaps_none
+- interpretation_heading
+- interpretation_research
+- research_questions
+source_files:
+- src/canopy/locales/en.py
+- src/canopy/locales/es.py
+- src/canopy/query/loop.py
+- src/canopy/ui/app.py
+files: 6
+lines: 192
+review:
+  fair: null
+  note: ''

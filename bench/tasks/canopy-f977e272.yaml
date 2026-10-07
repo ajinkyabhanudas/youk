@@ -1,0 +1,36 @@
+id: canopy-f977e272
+repo: canopy
+language: python
+sha: f977e27269a0ded9af708889a664b688d4e3145f
+parent_sha: ff7b7b5a950ef07d82f656c178939596b148ba72
+prompt: 'fix: two real gaps found via live Docker verification against gpt-5.1-codex-mini
+
+
+  The mocked e2e suite never exercised a real LLM or real DB, so it missed two
+
+  distinct bugs that only surfaced running the actual Docker-deployed app:
+
+
+  The tests for this change use these names (create or adapt them as needed): QueryResult, is_empty_result,
+  row_count.'
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_fuzzy_match.py
+- tests/test_query_loop_agent.py
+runnable_tests:
+- tests/test_fuzzy_match.py
+- tests/test_query_loop_agent.py
+added_tests: []
+interface:
+- QueryResult
+- is_empty_result
+- row_count
+source_files:
+- src/canopy/query/fuzzy_match.py
+- src/canopy/query/loop.py
+- src/canopy/ui/app.py
+files: 5
+lines: 292
+review:
+  fair: null
+  note: ''
