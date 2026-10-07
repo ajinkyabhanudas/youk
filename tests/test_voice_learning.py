@@ -119,6 +119,19 @@ class TestPrText:
         assert self._rules(cmd, git_repo) == []
 
 
+class TestOtherHeredocsAreNotPrBodies:
+    def test_a_script_heredoc_in_the_same_command_is_not_checked_as_a_body(self):
+        g = "g" + "h"
+        cmd = "python3 - <<'EOF'\nprint('x')\nEOF\n" + g + " pr create --title ok --body-file body.md"
+        rules = [v.rule for v in cg.evaluate_bash(cmd, str(REPO))]
+        assert "pr-structure" not in rules and "voice-pr-text" not in rules
+
+    def test_a_heredoc_given_to_body_is_still_checked(self):
+        g = "g" + "h"
+        cmd = g + ' pr create --title ok --body "$(cat <<\'EOF\'\njust text\nEOF\n)"'
+        assert [v.rule for v in cg.evaluate_bash(cmd, str(REPO))] == ["pr-structure"]
+
+
 class TestHookEndToEnd:
     def _run(self, command: str, tmp_path: Path, arm: str = "") -> dict:
         root = tmp_path / "root"
