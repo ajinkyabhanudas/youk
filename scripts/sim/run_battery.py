@@ -318,6 +318,12 @@ def plan(tasks: list[dict], arms: list[str], k: int, done: set) -> list[RunSpec]
     return [s for s in specs if s.key not in done]
 
 
+def next_chunk(tasks: list[dict], arms: list[str], k: int, done: set, n: int) -> list[dict]:
+    """The first n tasks that still have a run to do, in file order."""
+    pending = {s.task["id"] for s in plan(tasks, arms, k, done)}
+    return [t for t in tasks if t["id"] in pending][:n]
+
+
 def load_done(path: Path) -> set[tuple[str, str, int]]:
     if not path.exists():
         return set()
@@ -442,6 +448,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_S)
     ap.add_argument("--model")
     ap.add_argument("--limit", type=int, help="use only the first N tasks (smoke test)")
+    ap.add_argument("--chunk", type=int,
+                    help="run only the next N tasks that still have unfinished runs, then stop")
     ap.add_argument("--tasks", help="comma-separated task ids")
     ap.add_argument("--auth", choices=AUTH_MODES, default="subscription",
                     help="subscription (default, needs CLAUDE_CODE_OAUTH_TOKEN) or api-key")
@@ -478,10 +486,15 @@ def main(argv: list[str] | None = None) -> int:
         tasks = tasks[:args.limit]
     if not tasks:
         ap.error(f"no tasks in {args.tasks_dir}; run scripts/sim/mine_tasks.py first")
+    out = args.out or RESULTS_DIR / f"{datetime.now(UTC):%Y-%m-%d}{'-dry' if args.dry_run else ''}.jsonl"
+    if args.chunk:
+        tasks = next_chunk(tasks, arms, args.k, load_done(out), args.chunk)
+        if not tasks:
+            print("nothing left: every task has finished runs")
+            return 0
     repos = {r["name"]: r for r in yaml.safe_load(args.repos.read_text())["repos"]}
 
     work = args.work_dir
-    out = args.out or RESULTS_DIR / f"{datetime.now(UTC):%Y-%m-%d}{'-dry' if args.dry_run else ''}.jsonl"
     youk_root = work / "youk-root"
     youk_root.mkdir(parents=True, exist_ok=True)
     if not args.dry_run:

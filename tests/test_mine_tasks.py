@@ -60,6 +60,15 @@ class TestSelect:
         files = [(f"m{i}.py", 1, 0) for i in range(4)] + [("tests/test_m.py", 1, 0)]
         assert "5 files" in mt.select(self._cand(files))
 
+    def test_tier_m_takes_the_band_above_small_and_only_that(self):
+        five = [(f"m{i}.py", 1, 0) for i in range(4)] + [("tests/test_m.py", 1, 0)]
+        assert mt.select(self._cand(five), "m") is None
+        small = [("calc.py", 3, 1), ("tests/test_calc.py", 8, 0)]
+        assert "small tier" in mt.select(self._cand(small), "m")
+        big = [(f"m{i}.py", 1, 0) for i in range(12)] + [("tests/test_m.py", 1, 0)]
+        assert "13 files" in mt.select(self._cand(big), "m")
+        assert "lines" in mt.select(self._cand([("calc.py", 450, 60), ("tests/test_c.py", 5, 0)]), "m")
+
     def test_rejects_over_200_lines(self):
         assert "lines" in mt.select(self._cand([("calc.py", 150, 40), ("tests/test_c.py", 15, 0)]))
 
@@ -224,3 +233,18 @@ class TestOutputs:
         rows = [{"repo": "a", "language": "python"}] * 3
         assert "kill criterion" in mt.summary(rows)
         assert "kill criterion" not in mt.summary(rows * 5)
+
+
+class TestSkipExisting:
+    def test_a_skipped_task_is_not_mined_again(self, tmp_path):
+        repo = tmp_path / "r"
+        repo.mkdir()
+        git(repo, "init", "-q", "-b", "main")
+        commit(repo, {"calc.py": "def add(a, b):\n    return a + b\n"}, "start the calculator")
+        commit(repo, {"calc.py": "def add(a, b):\n    return a + b\n\ndef sub(a, b=0):\n    return 1\n",
+                      "tests/test_sub.py": "from calc import sub\n\ndef test_sub():\n    assert sub(1) == 1\n"},
+               "Add the sub helper so callers can use it directly")
+        first = mt.mine_repo(cfg(repo), limit=5, verify_tests=False)
+        assert len(first) == 1
+        again = mt.mine_repo(cfg(repo), limit=5, verify_tests=False, skip={first[0].id})
+        assert again == []

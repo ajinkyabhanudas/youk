@@ -35,6 +35,8 @@ TASKS_DIR = REPO_ROOT / "bench" / "tasks"
 
 MAX_FILES = 4
 MAX_LINES = 200
+# tier m is the multi-file band above the small tier, where a workflow has room to matter
+TIERS = {"s": (0, MAX_FILES, MAX_LINES), "m": (1, 12, 500)}
 MIN_PROMPT_CHARS = 15
 VERIFY_TIMEOUT_S = 300
 
@@ -131,14 +133,17 @@ def history(repo: Path, limit: int | None = None) -> list[Candidate]:
     return found
 
 
-def select(cand: Candidate) -> str | None:
+def select(cand: Candidate, tier: str = "s") -> str | None:
     """None if the commit qualifies, else the reason it does not."""
+    _, max_files, max_lines = TIERS[tier]
     if not cand.files:
         return "no files"
-    if len(cand.files) > MAX_FILES:
+    if len(cand.files) > max_files:
         return f"{len(cand.files)} files"
-    if cand.lines > MAX_LINES:
+    if cand.lines > max_lines:
         return f"{cand.lines} lines"
+    if tier != "s" and len(cand.files) <= MAX_FILES and cand.lines <= MAX_LINES:
+        return "fits the small tier"
     tests = [p for p, _, _ in cand.files if is_test_path(p)]
     sources = [p for p, _, _ in cand.files if not is_test_path(p) and language_of(p)]
     others = [p for p, _, _ in cand.files
@@ -311,14 +316,16 @@ def _missing_at(repo: Path, rev: str, path: str) -> bool:
 
 
 def mine_repo(repo_cfg: dict, limit: int, verify_tests: bool = True,
-              log=lambda msg: None) -> list[Task]:
+              log=lambda msg: None, tier: str = "s", skip: set[str] | None = None) -> list[Task]:
     repo = Path(repo_cfg["path"]).expanduser()
     tasks: list[Task] = []
     for cand in history(repo):
         if len(tasks) >= limit:
             break
-        reason = select(cand)
+        reason = select(cand, tier)
         if reason:
+            continue
+        if f"{repo_cfg['name']}-{cand.sha[:8]}" in (skip or set()):
             continue
         task = build_task(repo_cfg, cand)
         if not task.runnable_tests:
@@ -379,6 +386,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repo", help="mine only this repo name")
     ap.add_argument("--per-repo", type=int, default=8, help="cap per repo so no repo dominates")
     ap.add_argument("--no-verify", action="store_true", help="skip running tests (candidates only)")
+    ap.add_argument("--tier", choices=sorted(TIERS), default="s",
+                    help="s: up to 4 files and 200 lines. m: up to 12 files and 500 lines, above s")
+    ap.add_argument("--skip-existing", action="store_true",
+                    help="leave out commits that already have a task file, so a rerun resumes")
     ap.add_argument("--review", action="store_true", help="print prompts of written tasks")
     args = ap.parse_args(argv)
 
@@ -390,12 +401,13 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = yaml.safe_load(args.repos.read_text())["repos"]
     mined: list[Task] = []
+    have = {p.stem for p in args.out.glob("*.yaml")} if args.skip_existing else set()
     for repo_cfg in cfg:
         if args.repo and repo_cfg["name"] != args.repo:
             continue
         print(f"{repo_cfg['name']}:", file=sys.stderr)
         tasks = mine_repo(repo_cfg, args.per_repo, not args.no_verify,
-                          log=lambda m: print(m, file=sys.stderr))
+                          log=lambda m: print(m, file=sys.stderr), tier=args.tier, skip=have)
         for t in tasks:
             write_task(t, args.out)
         mined += tasks
