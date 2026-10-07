@@ -25,3 +25,5 @@ dozens of directives in CLAUDE.md. State is also duplicated: legacy gate JSON fi
 **Kill criterion.** A gate that blocks in more than 20% of tasks without catching a defect (events plus outcome) is loosened or removed.
 
 **Handoff.** Gate list with block counts from the ledger.
+
+**Status (2026-10-06).** S12a part 1 done: 8 mechanical contracts compiled (`contract_guard.py`, see log). Remaining, as S12b: `next` field and ceremony order in PreToolUse; remove legacy gate files after a live task-graph.db health check; the two full-arm-only tools.

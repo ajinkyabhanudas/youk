@@ -78,3 +78,32 @@ soft_rules:
     description: "When a decision has real alternatives, document it with /adr"
     enforced_by: "CLAUDE.md proactive pattern"
     violation: "SURFACE — once per session"
+
+# Mechanical contracts compiled into code (S12). Source of truth is servers/shared/contract_guard.py
+# (RULES); tests/test_contract_guard.py fails if this list and the code disagree. Enforced at
+# PreToolUse for Bash commands, ungated in the `bare` arm, switched off per rule with
+# YOUK_GUARD_OFF. Each block is recorded as a gate event named contract.<id>.
+compiled_contracts:
+  - id: commit-on-default-branch
+    from: "work on a branch, not the default branch; one concept per commit"
+  - id: push-to-default-branch
+    from: "never push or commit directly to main; open a PR from a feature branch"
+  - id: force-push
+    from: "destructive operations need explicit confirmation (force push)"
+  - id: no-verify
+    from: "git commit --no-verify bypasses contract enforcement"
+  - id: staged-screenshot
+    from: "screenshot files from Playwright testing must never be committed"
+  - id: staged-secret
+    from: "make sure api keys are not committed to the repo"
+  - id: read-dotenv
+    from: "never read .env or any secrets file directly (Bash only; deny the Read tool in settings with Read(**/.env*))"
+  - id: dependency-force
+    from: "never use --legacy-peer-deps or --force to resolve a dependency conflict"
+
+# Mechanical contracts deliberately not compiled here, with the reason.
+not_compiled_contracts:
+  - contract: "run lint and tests before every commit"
+    reason: "already enforced by the generated .git/hooks/pre-commit (scripts/generate_precommit_hook.py); a second check would run lint twice"
+  - contract: "never print, log or surface the value of API keys"
+    reason: "decided by output content, not by the command; needs a redaction layer, not a command guard"

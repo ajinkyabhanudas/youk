@@ -45,6 +45,9 @@ _TERMINAL_TOOLS: frozenset[str] = frozenset({
     # Called by the host's SessionStart hook (the Codex mcp_tool path), never by name from
     # CLAUDE.md or other code, so it can only ever read as an orphan.
     "session_start_hook",
+    # Enforced mechanically by the commit-msg hook; the tool stays callable for checking a draft
+    # but the always-on text no longer has to tell the model to call it.
+    "check_voice",
 })
 
 
