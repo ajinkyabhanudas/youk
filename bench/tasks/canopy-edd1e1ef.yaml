@@ -1,0 +1,36 @@
+id: canopy-edd1e1ef
+repo: canopy
+language: python
+sha: edd1e1ef38d5358b055d734f809fcf8aebcbdddb
+parent_sha: 6aea130232c2babdbd109db3242d8d227adedbb1
+prompt: "feat: make run_query() self-protecting against unsupported languages\n\n's langdetect gate only\
+  \ protected UI users \u2014 anything calling\nrun_query() directly (scripts, the eval suite, a future\
+  \ CLI) reached the\nmodel with unvalidated input, relying entirely on 's secondary\nprompt instruction,\
+  \ which \xA7 M1 documents as unreliable on the\nactive Azure models.\n\nThe tests for this change use\
+  \ these names (create or adapt them as needed): LangDetectException, UnsupportedLanguageError, ValueError,\
+  \ _lang_detect, is_unsupported_language, model_text."
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_query_loop.py
+- tests/test_ui.py
+runnable_tests:
+- tests/test_query_loop.py
+- tests/test_ui.py
+added_tests: []
+interface:
+- LangDetectException
+- UnsupportedLanguageError
+- ValueError
+- _lang_detect
+- is_unsupported_language
+- model_text
+source_files:
+- scripts/run_benchmark.py
+- scripts/run_eval.py
+- src/canopy/query/loop.py
+- src/canopy/ui/app.py
+files: 6
+lines: 245
+review:
+  fair: null
+  note: ''

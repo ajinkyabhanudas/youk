@@ -1,0 +1,44 @@
+id: youk-f8dc3dbb
+repo: youk
+language: python
+sha: f8dc3dbb6e7e396ae5e925cd50920edd61a21b29
+parent_sha: 4150b9592d660f82d01d804fc615e65b543aa246
+prompt: 'Close the two phase 1 follow-ups: one home for phrase lists, read tool_response
+
+
+  * Define each phrase list once in
+
+
+  The tests for this change use these names (create or adapt them as needed): LOOP_CORRECTION_PHRASES,
+  PUSHBACK_PHRASES, exit_code, has_loop_correction, is_pushback, session_end, tool_response.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_loop_dry_structural.py
+- tests/test_phrases.py
+- tests/test_post_tool_use_payload.py
+runnable_tests:
+- tests/test_loop_dry_structural.py
+- tests/test_phrases.py
+- tests/test_post_tool_use_payload.py
+added_tests:
+- tests/test_phrases.py
+- tests/test_post_tool_use_payload.py
+interface:
+- LOOP_CORRECTION_PHRASES
+- PUSHBACK_PHRASES
+- exit_code
+- has_loop_correction
+- is_pushback
+- session_end
+- tool_response
+source_files:
+- plugin/scripts/post_tool_use.py
+- plugin/scripts/youk_hook_utils.py
+- servers/core/src/server.py
+- servers/shared/phrases.py
+- servers/shared/reaction_classifier.py
+files: 12
+lines: 367
+review:
+  fair: null
+  note: ''

@@ -1,0 +1,32 @@
+id: youk-f6c017de
+repo: youk
+language: python
+sha: f6c017de8438a5a434e445c6250d726ac46c0010
+parent_sha: 40f4fda5c2430db0efe0c5a646ba99ff1047c5e8
+prompt: 'Show the user a short digest instead of pasting the whole brief
+
+
+  The brief is written for the model: tier tags, a footer, and a
+
+  14-item plan that mixes real next steps with housekeeping. Pasting it to the
+
+  user buried the one actionable line and printed the same text two or three
+
+  times, because the SessionStart hook already puts it in context.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_compaction.py
+runnable_tests:
+- tests/test_compaction.py
+added_tests: []
+interface: []
+source_files:
+- servers/core/src/compaction.py
+- servers/core/src/server.py
+- servers/core/src/session.py
+- servers/shared/models.py
+files: 10
+lines: 164
+review:
+  fair: null
+  note: ''

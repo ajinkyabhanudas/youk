@@ -1,0 +1,33 @@
+id: stencil-2de99870
+repo: stencil
+language: python
+sha: 2de998701f6095bad49fe0bfef535fe02dc5e362
+parent_sha: e8cf4244b7c232fe3d4a356aca1ae0941b884b6a
+prompt: 'Add immutable dataset registry
+
+
+  The tests for this change use these names (create or adapt them as needed): DatasetArtifact, DatasetRegistry,
+  DatasetVersion, FileExistsError, SampleDefinition, ValueError, coverage_report, dataset_digest.'
+test_cmd: uv run pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_datasets.py
+runnable_tests:
+- tests/test_datasets.py
+added_tests:
+- tests/test_datasets.py
+interface:
+- DatasetArtifact
+- DatasetRegistry
+- DatasetVersion
+- FileExistsError
+- SampleDefinition
+- ValueError
+- coverage_report
+- dataset_digest
+source_files:
+- src/stencil/datasets.py
+files: 9
+lines: 233
+review:
+  fair: null
+  note: ''

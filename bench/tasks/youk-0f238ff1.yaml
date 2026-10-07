@@ -1,0 +1,53 @@
+id: youk-0f238ff1
+repo: youk
+language: python
+sha: 0f238ff151ebfb3def940e63e621b7396fdb1236
+parent_sha: 9df90027665d8cffb0c72969c26a810ef0e17c60
+prompt: 'Close two real gaps found by tonight''s audit: silent orphan-cap and leak-free promotion
+
+
+  wiring_pulse/pipeline_pulse warnings were capped at 5 in ephemeral -start
+
+  text, and since check_wiring''s orphan order is deterministic, the same first 5
+
+  were the only ones ever shown -- anything past slot 5 was never individually
+
+  named, in any , ever. Now the full, uncapped result is appended to a
+
+  durable JSONL log (state/wiring-pulse-log.jsonl, state/pipeline-pulse-log.jsonl)
+
+  every run, so detection isn''t undermined by a soft, easily-ignored follow-through
+
+  step. Also found and fixed along the way: the wiring/pipeline checks lived inside
+
+  _check_doc_freshness, gated behind an early return on docs/doc-map.yaml existing
+
+  -- meaning they silently never ran at all if that unrelated file was missing,
+
+  despite ''s own docstring claiming it "autoruns EVERY session_start."
+
+
+  The tests for this change use these names (create or adapt them as needed): abstract_claim, leak_blocked,
+  verification_research.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_global_contracts_leak_protection.py
+- tests/test_wiring_pulse_durable_log.py
+runnable_tests:
+- tests/test_global_contracts_leak_protection.py
+- tests/test_wiring_pulse_durable_log.py
+added_tests:
+- tests/test_global_contracts_leak_protection.py
+- tests/test_wiring_pulse_durable_log.py
+interface:
+- abstract_claim
+- leak_blocked
+- verification_research
+source_files:
+- servers/core/src/global_contracts.py
+- servers/core/src/session.py
+files: 4
+lines: 203
+review:
+  fair: null
+  note: ''

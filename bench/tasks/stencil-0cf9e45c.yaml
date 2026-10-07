@@ -1,0 +1,34 @@
+id: stencil-0cf9e45c
+repo: stencil
+language: python
+sha: 0cf9e45c1e55bd61454eec7eb9655de3588cf95a
+parent_sha: 04cb269d36e5f25f79e0667e64141cdcc36dc7bc
+prompt: 'Add deterministic and attrition records
+
+
+  The tests for this change use these names (create or adapt them as needed): ExactMatchPolicy, FailureKind,
+  architecture_variant_id, case_sensitive, collapse_internal_whitespace, evaluation_failure, event_id,
+  failure_event_id.'
+test_cmd: uv run pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_scoring.py
+runnable_tests:
+- tests/test_scoring.py
+added_tests:
+- tests/test_scoring.py
+interface:
+- ExactMatchPolicy
+- FailureKind
+- architecture_variant_id
+- case_sensitive
+- collapse_internal_whitespace
+- evaluation_failure
+- event_id
+- failure_event_id
+source_files:
+- src/stencil/scoring.py
+files: 6
+lines: 235
+review:
+  fair: null
+  note: ''

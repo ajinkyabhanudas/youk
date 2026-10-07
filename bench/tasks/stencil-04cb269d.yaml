@@ -1,0 +1,33 @@
+id: stencil-04cb269d
+repo: stencil
+language: python
+sha: 04cb269d36e5f25f79e0667e64141cdcc36dc7bc
+parent_sha: 2de998701f6095bad49fe0bfef535fe02dc5e362
+prompt: 'Add capability probe and failure taxonomy
+
+
+  The tests for this change use these names (create or adapt them as needed): CapabilityProbeReport, FailureKind,
+  QUOTA_OR_RATE_LIMIT, benign_control_refusal, checked_at, classify_failure, maximum_output_tokens, model_validate.'
+test_cmd: uv run pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_capabilities.py
+runnable_tests:
+- tests/test_capabilities.py
+added_tests:
+- tests/test_capabilities.py
+interface:
+- CapabilityProbeReport
+- FailureKind
+- QUOTA_OR_RATE_LIMIT
+- benign_control_refusal
+- checked_at
+- classify_failure
+- maximum_output_tokens
+- model_validate
+source_files:
+- src/stencil/capabilities.py
+files: 8
+lines: 256
+review:
+  fair: null
+  note: ''

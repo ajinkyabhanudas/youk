@@ -1,0 +1,29 @@
+id: youk-2370492a
+repo: youk
+language: python
+sha: 2370492aa889456fac430a919fd1c31aae7194fb
+parent_sha: b1a8130b6eaf36f27147142c2de01aecc6b8421e
+prompt: 'soft AI tells now block a commit, not just warn.
+
+
+  the commit hook used to print a warning for soft tells like colon lists and short sentence pairs and
+  let the commit through. check_text now returns BLOCKED for any tell, and REVIEW only when a message
+  misses the voice profile targets.'
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_voice_fingerprint.py
+- tests/test_voice_gate_accuracy.py
+runnable_tests:
+- tests/test_voice_fingerprint.py
+- tests/test_voice_gate_accuracy.py
+added_tests: []
+interface: []
+source_files:
+- scripts/voice_gate_precommit.py
+- servers/core/src/server.py
+- servers/core/src/voice_fingerprint.py
+files: 6
+lines: 80
+review:
+  fair: null
+  note: ''

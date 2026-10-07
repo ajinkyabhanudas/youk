@@ -1,0 +1,43 @@
+id: canopy-2c9ad893
+repo: canopy
+language: python
+sha: 2c9ad893865b5ab65d29521a122f621ed28f8320
+parent_sha: c72dd52fab0e5c9fca3c86110d21f083538af1a8
+prompt: 'feat: surface fuzzy-match suggestions as clickable buttons in the UI
+
+
+  Adds a hidden suggestion row (prompt + up to 3 low-emphasis buttons) shown
+
+  only when a query returns 0 rows and a fuzzy_match was found. Clicking a
+
+  suggestion swaps the mistyped literal for the clicked candidate within the
+
+  user''s original question - preserving date ranges, site filters, etc. -
+
+  and re-runs it, mirroring the existing history_radio select-and-rerun
+
+  pattern. Falls back to the bare candidate if the literal isn''t found
+
+  verbatim in the question text.
+
+
+  The tests for this change use these names (create or adapt them as needed): fuzzy_match.'
+test_cmd: env PYTHONPATH=src /opt/anaconda3/bin/python -m pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/e2e/conftest.py
+- tests/e2e/test_fuzzy_suggestions.py
+- tests/test_ui.py
+runnable_tests:
+- tests/e2e/test_fuzzy_suggestions.py
+- tests/test_ui.py
+added_tests:
+- tests/e2e/test_fuzzy_suggestions.py
+interface:
+- fuzzy_match
+source_files:
+- src/canopy/ui/app.py
+files: 4
+lines: 297
+review:
+  fair: null
+  note: ''

@@ -1,0 +1,34 @@
+id: stencil-e8cf4244
+repo: stencil
+language: python
+sha: e8cf4244b7c232fe3d4a356aca1ae0941b884b6a
+parent_sha: f32ecaaaec1cf8f0663dc0b4f2a37cb5011404d9
+prompt: 'Add deterministic prompt
+
+
+  The tests for this change use these names (create or adapt them as needed): ArchitectureVariant, PromptContent,
+  RENDERER_VERSION, ValueError, context_separation, output_contract, prompt_hash, render_prompt.'
+test_cmd: uv run pytest {tests} -q -p no:cacheprovider
+hidden_tests:
+- tests/test_renderer.py
+runnable_tests:
+- tests/test_renderer.py
+added_tests:
+- tests/test_renderer.py
+interface:
+- ArchitectureVariant
+- PromptContent
+- RENDERER_VERSION
+- ValueError
+- context_separation
+- output_contract
+- prompt_hash
+- render_prompt
+source_files:
+- src/stencil/__init__.py
+- src/stencil/renderer.py
+files: 9
+lines: 248
+review:
+  fair: null
+  note: ''

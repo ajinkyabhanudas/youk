@@ -1,0 +1,35 @@
+id: youk-f05b0465
+repo: youk
+language: python
+sha: f05b0465c56900d86e64c3a086c271089ffce4b0
+parent_sha: 0f238ff151ebfb3def940e63e621b7396fdb1236
+prompt: "Route contract promotion through PatternEntry instead of flat markdown\n\n held 65 real entries\
+  \ with no domain/sub_domain\ntagging, no relationships, no scoped retrieval -- useful as a list, not\
+  \ as\nstructured knowledge. promote_to_global_contracts now writes each contract\nas a tagged PatternEntry\
+  \ to state/global-patterns.jsonl, queryable by domain/\nsub_domain via the existing query_global_patterns.\
+  \ is now\ngenerated from that store, not hand-appended to.\n\nThe tests for this change use these names\
+  \ (create or adapt them as needed): PatternEntry, leak_blocked, query_global_patterns, sub_domain, to_dict."
+test_cmd: '{python} -m pytest {tests} -q -p no:cacheprovider --no-cov'
+hidden_tests:
+- tests/test_global_contracts_leak_protection.py
+- tests/test_session.py
+runnable_tests:
+- tests/test_global_contracts_leak_protection.py
+- tests/test_session.py
+added_tests: []
+interface:
+- PatternEntry
+- leak_blocked
+- query_global_patterns
+- sub_domain
+- to_dict
+source_files:
+- servers/core/src/global_contracts.py
+- servers/core/src/server.py
+- servers/core/src/session.py
+- servers/shared/jsonl_lock.py
+files: 6
+lines: 269
+review:
+  fair: null
+  note: ''
