@@ -87,12 +87,33 @@ class TestChunk:
     def test_a_chunk_is_the_next_unfinished_tasks_and_a_rerun_moves_on(self, battery):
         arms = ["bare"]
         first = rb.next_chunk(battery["tasks"], arms, 1, set(), 2)
-        assert [t["id"] for t in first] == [t["id"] for t in battery["tasks"][:2]]
+        assert [t["id"] for t in first] == [t["id"] for t in rb.stratified(battery["tasks"])[:2]]
         _run({**battery, "tasks": first}, arms=arms)
         done = rb.load_done(battery["out"])
         second = rb.next_chunk(battery["tasks"], arms, 1, done, 2)
         assert [t["id"] for t in second] == [t["id"] for t in battery["tasks"][2:]]
         assert rb.next_chunk(battery["tasks"], arms, 1, done | {(t["id"], "bare", 0) for t in second}, 2) == []
+
+
+class TestChunkOrder:
+    def _t(self, i, repo, files=1, lines=10, **extra):
+        return {"id": i, "repo": repo, "files": files, "lines": lines, "language": "python", **extra}
+
+    def test_multi_file_first_then_one_per_repo_in_turn(self):
+        tasks = [self._t("a1", "a"), self._t("a2", "a"), self._t("b1", "b"),
+                 self._t("a3", "a", files=6), self._t("a4", "a", lines=300), self._t("b2", "b", files=5)]
+        ids = [t["id"] for t in rb.stratified(tasks)]
+        assert ids[:3] == ["a3", "b2", "a4"] and ids[3:] == ["a1", "b1", "a2"]
+
+    def test_public_tasks_rotate_by_language_not_repo(self):
+        tasks = [self._t(f"g{i}", f"org__r{i}", language="go", public={"x": 1}) for i in range(2)]
+        tasks.append(self._t("j0", "org__j", language="java", public={"x": 1}))
+        assert [t["id"] for t in rb.stratified(tasks)] == ["g0", "j0", "g1"]
+
+    def test_first_chunk_spans_repos(self):
+        tasks = [self._t(f"a{i}", "a", files=6) for i in range(3)] + [self._t("b0", "b", files=6)]
+        first = rb.next_chunk(tasks, ["bare"], 1, set(), 2)
+        assert {t["repo"] for t in first} == {"a", "b"}
 
 
 class TestCheckout:

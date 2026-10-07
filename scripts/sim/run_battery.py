@@ -327,10 +327,31 @@ def plan(tasks: list[dict], arms: list[str], k: int, done: set) -> list[RunSpec]
     return [s for s in specs if s.key not in done]
 
 
+def is_multi_file(task: dict) -> bool:
+    return task["files"] > mine_tasks.MAX_FILES or task["lines"] > mine_tasks.MAX_LINES
+
+
+def stratified(tasks: list[dict]) -> list[dict]:
+    """Multi-file tasks before small ones, and within each band one task per repo (per language
+    for public tasks) in turn, so that stopping after any chunk still leaves a spread."""
+    ordered: list[dict] = []
+    for multi in (True, False):
+        groups: dict[str, list[dict]] = {}
+        for t in tasks:
+            if is_multi_file(t) == multi:
+                groups.setdefault(t["language"] if t.get("public") else t["repo"], []).append(t)
+        queues = [groups[g] for g in sorted(groups)]
+        while any(queues):
+            for q in queues:
+                if q:
+                    ordered.append(q.pop(0))
+    return ordered
+
+
 def next_chunk(tasks: list[dict], arms: list[str], k: int, done: set, n: int) -> list[dict]:
-    """The first n tasks that still have a run to do, in file order."""
+    """The next n tasks that still have a run to do, in stratified order."""
     pending = {s.task["id"] for s in plan(tasks, arms, k, done)}
-    return [t for t in tasks if t["id"] in pending][:n]
+    return [t for t in stratified(tasks) if t["id"] in pending][:n]
 
 
 def load_done(path: Path) -> set[tuple[str, str, int]]:
