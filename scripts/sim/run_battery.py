@@ -127,6 +127,10 @@ def agent_command(spec: RunSpec, setup: dict, prompt: str, session_id: str, mode
     if setup["mcp"]:
         allowed += ["mcp__youk-core", "mcp__youk-code"]
         cmd += ["--mcp-config", str(mcp_file), "--strict-mcp-config"]
+    else:
+        # No MCP servers at all, so a repo's own .mcp.json or a stray user config cannot give
+        # an arm tools it was not meant to have.
+        cmd += ["--mcp-config", json.dumps({"mcpServers": {}}), "--strict-mcp-config"]
     cmd += ["--allowedTools", ",".join(allowed)]
     for plugin in setup["plugin_dirs"]:
         cmd += ["--plugin-dir", str(plugin)]
