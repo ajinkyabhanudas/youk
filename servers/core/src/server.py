@@ -2463,8 +2463,8 @@ def check_voice(text: str) -> dict:
     running it is expensive, and it is the same move that fixed the coverage view.
 
     Returns: {gate, tells_hard, tells_soft, metrics}.
-    gate is BLOCKED (hard tells present, rewrite), REVIEW (soft tells, judgement call)
-    or CLEAN. Treat BLOCKED as blocking, exactly as the commit hook does.
+    gate is BLOCKED (any hard or soft tell, rewrite), REVIEW (only a voice-profile target
+    missed) or CLEAR. Treat BLOCKED as blocking, exactly as the commit hook does.
     """
     try:
         from voice_fingerprint import check_text

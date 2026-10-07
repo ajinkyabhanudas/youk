@@ -2,8 +2,7 @@
 """Pre-commit gate for commit messages.
 
 Two checks, in order:
-1. Voice gate — blocks commits with hard AI-tells (check_text BLOCKED).
-   Soft tells print a warning but do not block.
+1. Voice gate — blocks commits with any AI-tell, hard or soft (check_text BLOCKED).
 2. Behavioral hint — if humanize:commit hint is active (learned from audit history),
    surface a reminder to run humanize before committing.
 
@@ -75,15 +74,15 @@ if not msg:
 # ── Voice gate ────────────────────────────────────────────────────────────────
 result = check_text(msg)
 if result["gate"] == "BLOCKED":
-    print("[youk BLOCKED] Voice gate: commit message has hard AI-tells:")
+    print("[youk BLOCKED] Voice gate: commit message has AI-tells:")
     for t in result["tells_hard"]:
         print(f"  {t}")
-    print("Rewrite and retry.")
-    sys.exit(1)
-elif result["gate"] == "REVIEW":
-    print("[youk REVIEW] Voice gate: commit message has soft AI-tells (not blocking):")
     for t in result["tells_soft"]:
         print(f"  {t}")
+    print("Rewrite in plain words, short sentences, and retry. See docs/voice-style.md.")
+    sys.exit(1)
+elif result["gate"] == "REVIEW":
+    print("[youk REVIEW] Voice gate: the message misses the voice profile targets (not blocking).")
 
 # ── Behavioral hint: humanize at commit ───────────────────────────────────────
 try:
