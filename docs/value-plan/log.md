@@ -4,6 +4,10 @@ One entry per finished card, newest first. Read the entries for the cards yours 
 
 (append newest first, 5 lines max per session)
 
+- the hooks were never running (branch vp/20-hooks-install). a probe run found 0 plugins and 0 hooks in claude code on this machine, because the installer symlinked plugin/ into ~/.claude/plugins and this version does not discover plugins that way. so the voice capture, event ledger, contract guard and session brief were all dead outside the battery.
+  `scripts/install_hooks.py` now registers the hooks in settings.json with absolute paths, since the scripts import from servers/shared relative to their own location and a marketplace install would copy them away from it. idempotent, backs up first, removes only youk's own entries, and the installer, uninstaller and doctor use it. applied to the live settings on 2026-10-07 and a probe run wrote hook events.
+  worth knowing: the UserPromptSubmit hook adds a generation frame to every prompt, which is context on every turn and works against the lean goal. not changed here.
+
 - voice learning fixed (branch vp/19-voice-learning). the learned profile was written to `voice-{slug}-{register}.md` and nothing read it, because humanize reads `voice-profile.md`. humanize now loads both, and a test ties the skill text to the builder's path (`profile_path`). the measured numbers are writing targets only, never a gate.
   PR titles and bodies go through the commit voice gate in the PreToolUse hook (`gh pr create|edit`, inline, heredoc or `--body-file`), rule `voice-pr-text`. long quoted text and heredocs are masked before the git rules run, so a body that mentions `git push origin main` is not read as that command.
   `scripts/voice_report.py` prints the learned profile beside the 2026-10-06 baseline. there is no corpus on the live machine yet, since the hooks only load after the live install is on main. run it then.

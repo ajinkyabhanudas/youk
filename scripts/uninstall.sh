@@ -110,6 +110,12 @@ step "Context hooks plugin"
 if [ "$YOUK_HOST_ID" != "claude-code" ]; then
   ok "Skipped: the hooks plugin is Claude Code's"
 else
+# Remove youk's hook entries from settings.json (other hooks are left alone).
+if [ -f "$CLAUDE_DIR/settings.json" ] && [ -f "$YOUK_DIR/scripts/install_hooks.py" ]; then
+  python3 "$YOUK_DIR/scripts/install_hooks.py" --remove --plugin-dir "$YOUK_DIR/plugin" --settings "$CLAUDE_DIR/settings.json" \
+    && ok "youk hooks removed from settings.json" || warn "could not edit settings.json hooks"
+fi
+
 LINK_TARGET="$CLAUDE_DIR/plugins/youk-context"
 if [ -L "$LINK_TARGET" ]; then
   # Only remove if it points at youk's plugin.

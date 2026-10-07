@@ -243,16 +243,15 @@ echo ""
 # ── Context hooks plugin ──────────────────────────────────────────────────────
 echo "Context hooks plugin"
 
-PLUGIN_LINK="$HOME/.claude/plugins/youk-context"
 PLUGIN_SRC="$YOUK_DIR/plugin"
-if [ -L "$PLUGIN_LINK" ] && [ -d "$PLUGIN_LINK" ]; then
-  pass "youk-context plugin linked ($PLUGIN_LINK)"
-elif [ -d "$PLUGIN_LINK" ]; then
-  warn "youk-context plugin dir exists but is not a symlink — hooks may be stale" \
-    "Run: rm -rf $PLUGIN_LINK && ln -sf $PLUGIN_SRC $PLUGIN_LINK"
+SETTINGS_FILE="$HOME/.claude/settings.json"
+# Hooks are registered in settings.json with absolute paths (scripts/install_hooks.py). The old
+# plugin symlink is not discovered by current Claude Code and does nothing.
+if [ -f "$SETTINGS_FILE" ] && grep -q "$PLUGIN_SRC/scripts/" "$SETTINGS_FILE"; then
+  pass "youk hooks registered in settings.json"
 else
-  fail "youk-context plugin not linked — hooks not active" \
-    "Run: mkdir -p $HOME/.claude/plugins && ln -sf $PLUGIN_SRC $PLUGIN_LINK"
+  fail "youk hooks not registered in settings.json, so they are not active" \
+    "Run: python3 $YOUK_DIR/scripts/install_hooks.py"
 fi
 
 HOOK_FILE="$PLUGIN_SRC/hooks/hooks.json"
