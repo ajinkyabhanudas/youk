@@ -83,6 +83,18 @@ class TestDryRun:
         assert not any((battery["work"] / "runs").glob("*"))
 
 
+class TestChunk:
+    def test_a_chunk_is_the_next_unfinished_tasks_and_a_rerun_moves_on(self, battery):
+        arms = ["bare"]
+        first = rb.next_chunk(battery["tasks"], arms, 1, set(), 2)
+        assert [t["id"] for t in first] == [t["id"] for t in battery["tasks"][:2]]
+        _run({**battery, "tasks": first}, arms=arms)
+        done = rb.load_done(battery["out"])
+        second = rb.next_chunk(battery["tasks"], arms, 1, done, 2)
+        assert [t["id"] for t in second] == [t["id"] for t in battery["tasks"][2:]]
+        assert rb.next_chunk(battery["tasks"], arms, 1, done | {(t["id"], "bare", 0) for t in second}, 2) == []
+
+
 class TestCheckout:
     def test_agent_sees_the_parent_without_the_commits_new_tests(self, battery, tmp_path):
         task = battery["tasks"][0]
