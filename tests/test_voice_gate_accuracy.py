@@ -189,8 +189,8 @@ class TestNoFalsePositives:
             "Both functions are tested in test_search.py against a fixture corpus of 500 queries."
         )
         r = check_text(text)
-        # May be REVIEW but must not be BLOCKED on a hard tell
-        assert r["gate"] != "BLOCKED", f"False BLOCKED: {r['tells_hard']}"
+        # Must not carry a hard tell; a soft one would also block now, so it must be clean
+        assert r["tells_hard"] == [], f"False hard tell: {r['tells_hard']}"
 
     def test_short_sentences_in_context_not_over_flagged(self):
         # A few short sentences embedded in longer prose should not trigger short_decl_pair
@@ -207,11 +207,11 @@ class TestNoFalsePositives:
         r = check_text(long_para)
         assert r["gate"] == "CLEAR", f"False positive: {r['tells_soft']}"
 
-    def test_commit_body_colon_scaffolding_filtered_in_audit(self):
+    def test_commit_body_colon_scaffolding_is_a_soft_tell_that_now_blocks(self):
         # voice_audit strips colon_scaffolding from soft tells before reporting.
         # Commit bodies are structurally colon-dense (change lists, section headers)
         # and check_text is calibrated for prose. The filter lives in voice_audit, not here.
-        # This test verifies that colon_scaffolding is a known soft tell (not a hard block).
+        # Soft tells block now, so colon-led change lists in commit bodies are rewritten.
         commit_body = (
             "session.py crossed 3900 lines. This PR splits three cohesive function groups "
             "into dedicated modules. No behaviour changes; all callers unchanged.\n\n"
@@ -223,10 +223,11 @@ class TestNoFalsePositives:
             "- test_pending_build_task.py: import and monkeypatch targets updated for git_context"
         )
         r = check_text(commit_body)
-        # Must not be BLOCKED — colon_scaffolding is a soft tell, not a hard block.
-        assert r["gate"] != "BLOCKED", (
-            f"Commit body with file-annotation colons must not be BLOCKED: {r['tells_hard']}"
-        )
+        # No hard tell, but colon_scaffolding is a soft tell and soft tells block now. A commit
+        # body written as a colon-led change list has to be written as plain sentences.
+        assert r["tells_hard"] == []
+        assert any("colon_scaffolding" in t for t in r["tells_soft"])
+        assert r["gate"] == "BLOCKED"
 
 
 # ── Voice audit colon filter ───────────────────────────────────────────────────

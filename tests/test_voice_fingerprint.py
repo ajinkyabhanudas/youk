@@ -4,7 +4,7 @@ Load-bearing properties:
 - profile_corpus returns stable, deterministic measurements on a fixture
 - confidence reflects corpus size (low / medium / high)
 - check_text catches hard tells → BLOCKED regardless of profile
-- check_text catches soft tells → REVIEW
+- check_text blocks soft tells, not only hard ones
 - check_text returns CLEAR on clean prose
 - target comparison (CV band, contractions) works correctly
 - low-confidence profile: target FAIL produces REVIEW, never BLOCKED
@@ -115,11 +115,10 @@ class TestCheckTextGate:
         assert result["gate"] == "BLOCKED"
         assert any("not_just_pivot" in t for t in result["tells_hard"])
 
-    def test_graded_tells_produce_review(self):
+    def test_graded_tells_are_blocked_not_just_flagged(self):
         result = check_text(_GRADED_TEXT)
-        # Should have soft tells from overused graded vocab
-        assert result["gate"] in ("REVIEW", "BLOCKED")
-        assert len(result["tells_soft"]) > 0
+        assert result["gate"] == "BLOCKED"
+        assert len(result["tells_soft"]) > 0 and result["tells_hard"] == []
 
     def test_clean_text_is_clear(self):
         result = check_text(_CLEAN_SHORT)

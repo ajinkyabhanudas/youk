@@ -8,7 +8,7 @@ Two entry points:
   profile_corpus(texts)       → measured_targets dict (from a list of text samples)
   check_text(text, profile)   → {tells_hard, tells_soft, target_pass, gate}
 
-Gate values: "BLOCKED" (hard tell present) | "REVIEW" (soft tells) | "CLEAR"
+Gate values: "BLOCKED" (any hard or soft tell) | "REVIEW" (only a profile target missed) | "CLEAR"
 """
 from __future__ import annotations
 
@@ -308,9 +308,10 @@ def check_text(text: str, profile: dict[str, Any] | None = None) -> dict[str, An
       gate:         str        — "BLOCKED" | "REVIEW" | "CLEAR"
 
     gate logic:
-      BLOCKED  — any hard tell present (regardless of profile confidence)
-      REVIEW   — soft tells present, or target_pass has any FAIL
-      CLEAR    — no hard tells, no soft tells, all targets pass (or no profile)
+      BLOCKED  — any hard tell or any soft tell. Soft tells used to only warn. They are blocked
+                 now: the voice has to read as the developer's own, with none of them.
+      REVIEW   — no tells, but target_pass has a FAIL against the voice profile
+      CLEAR    — no tells, all targets pass (or no profile)
 
     When profile["confidence"] == "low": target comparison runs but gate never
     upgrades to BLOCKED from target failures alone — thin corpus enforces soft only.
@@ -334,9 +335,9 @@ def check_text(text: str, profile: dict[str, Any] | None = None) -> dict[str, An
                 target_pass[key] = "PASS" if abs(got - target) <= tolerance else "FAIL"
 
     # Gate decision
-    if hard:
+    if hard or soft:
         gate = "BLOCKED"
-    elif soft or "FAIL" in target_pass.values():
+    elif "FAIL" in target_pass.values():
         # Thin corpus: only soft-enforce (target FAILs don't escalate to BLOCKED)
         gate = "REVIEW"
     else:
