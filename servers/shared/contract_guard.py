@@ -156,6 +156,8 @@ def _is_dotenv(path: str) -> bool:
 
 
 _HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n(.*?)\n\s*\2\b", re.DOTALL)
+_BODY_HEREDOC = re.compile(
+    r"""(?:--body|-b)\s+"?\$\(\s*cat\s+<<-?\s*(['"]?)(\w+)\1[^\n]*\n(.*?)\n\s*\2\b""", re.DOTALL)
 _PR_COMMAND = re.compile(r"\bgh\s+pr\s+(create|edit)\b")
 _BODY_FLAG = re.compile(r"""(?:--body|-b)\s+(?:"((?:[^"\\]|\\.)*)"|'([^']*)')""", re.DOTALL)
 _TITLE_FLAG = re.compile(r"""(?:--title|-t)\s+(?:"((?:[^"\\]|\\.)*)"|'([^']*)')""", re.DOTALL)
@@ -168,7 +170,9 @@ def _pr_parts(command: str, cwd: str) -> tuple[list[str], list[str]]:
     if not _PR_COMMAND.search(command):
         return [], []
     titles: list[str] = []
-    bodies = [m.group(3) for m in _HEREDOC.finditer(command)]
+    # Only a heredoc handed to the body flag is a PR body. Any other heredoc in the same command,
+    # such as a python script or a file being written, is not.
+    bodies = [m.group(3) for m in _BODY_HEREDOC.finditer(command)]
     for pattern, target in ((_TITLE_FLAG, titles), (_BODY_FLAG, bodies)):
         for m in pattern.finditer(command):
             value = m.group(1) if m.group(1) is not None else m.group(2)
