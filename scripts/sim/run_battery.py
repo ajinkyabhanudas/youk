@@ -59,6 +59,7 @@ AUTH_MODES = ("subscription", "api-key")
 KEY_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 DEFAULT_MAX_RUN_USD = 3.0
+DEFAULT_RUN_USD = 1.5      # measured mean of 12 bare pilot runs on multi-file tasks was 1.46
 YOUK_MCP = {"mcpServers": {
     "youk-core": {"type": "http", "url": "http://127.0.0.1:8001/mcp"},
     "youk-code": {"type": "http", "url": "http://127.0.0.1:8002/mcp"},
@@ -438,7 +439,7 @@ def design_gate(pilot_path: Path | None, arms: list[str], k: int, cap: float | N
                  if r.get("arm") == baseline and r.get("status") == "ok"]
         report = design.design_report(
             rates, k, len(arms), target_effect,
-            cost_per_run=(sum(costs) / len(costs)) if costs else DEFAULT_MAX_RUN_USD / 3,
+            cost_per_run=(sum(costs) / len(costs)) if costs else DEFAULT_RUN_USD,
             cap_usd=cap)
         text = design.render(report)
     report["override"] = bool(allow_underpowered and not report["ok"])
@@ -447,7 +448,7 @@ def design_gate(pilot_path: Path | None, arms: list[str], k: int, cap: float | N
 
 
 def pilot_gate(arms: list[str], k: int, n_tasks: int, cap: float | None,
-               cost_per_run: float = DEFAULT_MAX_RUN_USD / 3) -> tuple[bool, str]:
+               cost_per_run: float = DEFAULT_RUN_USD, runs_left: int | None = None) -> tuple[bool, str]:
     """A pilot is the baseline arm alone with k>=2, to find which tasks can discriminate. It is
     exempt from the power check (it produces the data for it) but not from the cost check."""
     problems = []
@@ -455,10 +456,13 @@ def pilot_gate(arms: list[str], k: int, n_tasks: int, cap: float | None,
         problems.append("a pilot runs the baseline arm only (--arms bare)")
     if k < 2:
         problems.append("a pilot needs k>=2 so floor and ceiling tasks can be told from noise")
-    est = design.cost_estimate(n_tasks, k, 1, cost_per_run)
+    # Runs already finished cost nothing more, so a resumed pilot is priced on what is left.
+    runs = n_tasks * k if runs_left is None else runs_left
+    est = round(runs * cost_per_run, 2)
     if cap is not None and est > cap:
         problems.append(f"estimated pilot cost ${est} exceeds the cap ${cap:g}")
-    text = f"pilot: {n_tasks} tasks x k={k} x bare, estimated ${est} at ${cost_per_run:.2f} per run"
+    text = (f"pilot: {n_tasks} tasks x k={k} x bare, {runs} runs left, "
+            f"estimated ${est} at ${cost_per_run:.2f} per run")
     return (not problems), "\n".join([text, *[f"PROBLEM: {p}" for p in problems]])
 
 
@@ -530,7 +534,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dry_run:
         out.parent.mkdir(parents=True, exist_ok=True)
         if args.pilot_run:
-            ok, text = pilot_gate(arms, args.k, len(tasks), args.cap_usd)
+            ok, text = pilot_gate(arms, args.k, len(tasks), args.cap_usd,
+                                  runs_left=len(plan(tasks, arms, args.k, load_done(out))))
         else:
             ok, text = design_gate(args.pilot, arms, args.k, args.cap_usd, args.target_effect,
                                    args.allow_underpowered, out)

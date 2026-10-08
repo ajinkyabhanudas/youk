@@ -124,7 +124,7 @@ def cost_estimate(n_tasks: int, k: int, arms: int, cost_per_run: float) -> float
 
 
 def design_report(rates: dict[str, tuple[int, int]], k: int, arms: int = 2,
-                  target_effect: float = DEFAULT_TARGET_EFFECT, cost_per_run: float = 1.0,
+                  target_effect: float = DEFAULT_TARGET_EFFECT, cost_per_run: float = 1.5,
                   min_power: float = DEFAULT_MIN_POWER,
                   min_informative: float = DEFAULT_MIN_INFORMATIVE,
                   cap_usd: float | None = None) -> dict:
@@ -222,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--k", type=int, default=3)
     ap.add_argument("--arms", type=int, default=2)
     ap.add_argument("--target-effect", type=float, default=DEFAULT_TARGET_EFFECT)
-    ap.add_argument("--cost-per-run", type=float, default=1.0)
+    ap.add_argument("--cost-per-run", type=float, default=1.5)
     ap.add_argument("--cap-usd", type=float)
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)

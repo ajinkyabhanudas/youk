@@ -129,7 +129,19 @@ class TestRunnerGate:
 class TestPilotGate:
     def test_a_baseline_only_pilot_with_k2_inside_the_cap_passes(self):
         ok, text = rb.pilot_gate(["bare"], 3, 20, 100)
-        assert ok and "estimated $60" in text
+        assert ok and "estimated $90" in text
+
+    def test_a_resumed_pilot_is_priced_on_the_runs_left_not_the_whole_plan(self):
+        ok, text = rb.pilot_gate(["bare"], 3, 3, 6, runs_left=3)
+        assert ok and "3 runs left" in text and "estimated $4.5" in text
+        ok, _ = rb.pilot_gate(["bare"], 3, 3, 6)
+        assert not ok                       # the whole plan, 9 runs at 1.50, would not fit
+
+    def test_default_cost_per_run_matches_the_measured_pilot(self):
+        import inspect
+        assert rb.DEFAULT_RUN_USD == 1.5
+        assert inspect.signature(design.design_report).parameters["cost_per_run"].default == 1.5
+        assert inspect.signature(rb.pilot_gate).parameters["cost_per_run"].default == 1.5
 
     def test_a_pilot_must_be_baseline_only_k2_and_affordable(self):
         ok, text = rb.pilot_gate(["bare", "full"], 1, 100, 50)
