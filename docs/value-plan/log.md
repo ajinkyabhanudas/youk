@@ -4,6 +4,10 @@ One entry per finished card, newest first. Read the entries for the cards yours 
 
 (append newest first, 5 lines max per session)
 
+- E1 closed without a comparison (branch vp/31-e1-close). the bare pilot ran 12 times over 4 multi-file tasks at 1.46 a run: 2 ceiling, 2 mixed. a comparison needs about 14 informative tasks for a 30 point effect and about 60 for 15, which does not fit his usage, so no more paid runs and E1c stops here.
+  the sessions on this machine cannot stand in for it. 344 of 374 are paperclip agent runs and none of them call youk. of the 30 interactive ones 15 with youk and 5 without have 3 or more of his turns, and the pushback rate is 3.4 against 0.7 per 100 turns. the groups differ in task and size, so it shows nothing about benefit.
+  next: let the event ledger fill from his own sessions and read the value report by arm. wiring youk into the paperclip runs is the open question.
+
 - eval v2 split into phases (branch vp/21-eval-phases). usage is the constraint now, so E1 is four resumable phases (E1a to E1d) in the task graph and in the E1 card, each with what it leaves behind and how to resume. only E1c uses the model, and it runs in chunks of 3 tasks that append to one results file and skip finished rows.
   the derived docs the live install auto-updated (skill count 54 to 52) are committed here so the next pull is clean.
   next: E1a, the miner tier flag, skip-existing and the runner chunk flag. all free.
