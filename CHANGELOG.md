@@ -52,6 +52,10 @@ Upgrade path: `git pull --rebase && make update`. Breaking changes are marked **
 
 ### Changed
 
+- Inference credentials are now read only from the process environment. Provider configuration stays credential-free, research uses the provider adapter, and CI exercises route, skill, and session integration paths.
+
+- Code review now requires distinct correctness, structure/boundary, and project-fit passes, with findings tied to code evidence.
+
 - Host-neutral install and runtime. `install.sh` selects an agent host (`YOUK_HOST=claude-code|codex|none`,
   else detected from `PATH`) and only touches what that host owns: MCP registration, its instructions
   file (`CLAUDE.md` or `AGENTS.md`), and, for Claude Code only, skill links, the hooks plugin and the

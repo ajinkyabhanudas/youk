@@ -1,7 +1,7 @@
 """Unit tests for state_paths — slug-scoped state path resolution.
 
 Tests cover:
-  - slug_state_dir: creates and returns correct per-slug path
+  - slug_state_dir: resolves without creating state; ensure_slug_state_dir creates for writes
   - current_session_slug: mtime-based resolution, staleness gate, unknown fallback
   - atomic_write: creates file, idempotent, handles concurrent writes
   - gate_flag_path: correct slug-scoped path construction
@@ -35,28 +35,28 @@ class TestSlugStateDir:
         p = state_paths.slug_state_dir("youk")
         assert p == isolated_youk_root / "state" / "sessions" / "youk"
 
-    def test_creates_dir_on_first_use(self, isolated_youk_root):
+    def test_does_not_create_dir_on_read(self, isolated_youk_root):
         p = state_paths.slug_state_dir("canopy")
-        assert p.is_dir()
+        assert not p.exists()
 
-    def test_idempotent_on_repeated_calls(self, isolated_youk_root):
-        state_paths.slug_state_dir("youk")
-        state_paths.slug_state_dir("youk")  # must not raise
+    def test_ensure_creates_dir_for_writes(self, isolated_youk_root):
+        state_paths.ensure_slug_state_dir("youk")
+        state_paths.ensure_slug_state_dir("youk")  # must not raise
         assert (isolated_youk_root / "state" / "sessions" / "youk").is_dir()
 
     def test_default_scope_is_flat_layout_unchanged(self, isolated_youk_root):
         """Zero-migration requirement: no scope configured must match pre-scope behaviour."""
-        p = state_paths.slug_state_dir("youk", scope=None)
+        p = state_paths.ensure_slug_state_dir("youk", scope=None)
         assert p == isolated_youk_root / "state" / "sessions" / "youk"
 
     def test_named_scope_gets_nested_tree(self, isolated_youk_root):
-        p = state_paths.slug_state_dir("youk", scope="acme")
+        p = state_paths.ensure_slug_state_dir("youk", scope="acme")
         assert p == isolated_youk_root / "state" / "scopes" / "acme" / "sessions" / "youk"
         assert p.is_dir()
 
     def test_different_scopes_same_slug_are_different_directories(self, isolated_youk_root):
-        p1 = state_paths.slug_state_dir("youk", scope="acme")
-        p2 = state_paths.slug_state_dir("youk", scope="beta")
+        p1 = state_paths.ensure_slug_state_dir("youk", scope="acme")
+        p2 = state_paths.ensure_slug_state_dir("youk", scope="beta")
         assert p1 != p2
 
 
@@ -150,7 +150,7 @@ class TestCurrentSessionSlug:
     def test_scope_isolation_default_scope_cannot_see_named_scope_session(self, isolated_youk_root):
         """The isolation guarantee itself: a session open in one scope must be invisible
         to current_session_slug() resolving a different scope, by construction."""
-        state_paths.slug_state_dir("acme-session", scope="acme")
+        state_paths.ensure_slug_state_dir("acme-session", scope="acme")
         acme_open = isolated_youk_root / "state" / "scopes" / "acme" / "sessions" / "acme-session" / "open.json"
         acme_open.write_text(json.dumps({"slug": "acme-session", "written_at": time.time()}))
 
@@ -167,7 +167,7 @@ class TestCurrentSessionSlug:
 
     def test_two_named_scopes_do_not_see_each_other(self, isolated_youk_root):
         for scope, slug in (("acme", "acme-slug"), ("beta", "beta-slug")):
-            d = state_paths.slug_state_dir(slug, scope=scope)
+            d = state_paths.ensure_slug_state_dir(slug, scope=scope)
             (d / "open.json").write_text(json.dumps({"slug": slug, "written_at": time.time()}))
 
         assert state_paths.current_session_slug(scope="acme") == "acme-slug"
@@ -217,6 +217,33 @@ class TestAtomicWrite:
         data = json.loads(target.read_text())
         assert "v" in data
         assert data["v"] in (1, 2)
+
+    def test_replacement_keeps_the_previous_file_when_staging_fails(self, isolated_youk_root, monkeypatch):
+        target = isolated_youk_root / "state" / "sessions" / "youk" / "atomic.json"
+        state_paths.atomic_write(target, '{"v": 1}')
+        monkeypatch.setattr(state_paths, "_locked_write", lambda *_: (_ for _ in ()).throw(OSError("disk full")))
+        with pytest.raises(OSError, match="disk full"):
+            state_paths.atomic_write(target, '{"v": 2}')
+        assert json.loads(target.read_text()) == {"v": 1}
+
+    def test_update_json_preserves_concurrent_entries(self, isolated_youk_root):
+        target = isolated_youk_root / "state" / "sessions" / "youk" / "routes.json"
+        errors: list[str] = []
+
+        def append(value: int) -> None:
+            try:
+                state_paths.update_json(target, lambda current: [*(current or []), value])
+            except Exception as exc:
+                errors.append(str(exc))
+
+        threads = [threading.Thread(target=append, args=(value,)) for value in range(10)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert not errors
+        assert sorted(json.loads(target.read_text())) == list(range(10))
 
 
 # ── gate_flag_path ────────────────────────────────────────────────────────────
@@ -278,18 +305,18 @@ class TestSessionActor:
         assert state_paths.session_actor("no-such-slug") == "founder"
 
     def test_reads_actor_from_open_json(self, isolated_youk_root):
-        d = state_paths.slug_state_dir("youk")
+        d = state_paths.ensure_slug_state_dir("youk")
         (d / "open.json").write_text(json.dumps({"slug": "youk", "actor": "member"}))
         assert state_paths.session_actor("youk") == "member"
 
     def test_old_open_json_with_no_actor_field_defaults_to_founder(self, isolated_youk_root):
         """A session written before this feature existed must not need a migration."""
-        d = state_paths.slug_state_dir("youk")
+        d = state_paths.ensure_slug_state_dir("youk")
         (d / "open.json").write_text(json.dumps({"slug": "youk", "written_at": time.time()}))
         assert state_paths.session_actor("youk") == "founder"
 
     def test_malformed_open_json_defaults_to_founder(self, isolated_youk_root):
-        d = state_paths.slug_state_dir("youk")
+        d = state_paths.ensure_slug_state_dir("youk")
         (d / "open.json").write_text("not valid json")
         assert state_paths.session_actor("youk") == "founder"
 

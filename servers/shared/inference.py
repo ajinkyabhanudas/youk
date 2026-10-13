@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 import hashlib
 import json
-import re
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
@@ -14,7 +13,6 @@ from typing import Protocol
 from pathlib import Path
 from urllib.parse import urlparse
 
-from youk_paths import YOUK_ROOT
 
 
 class InferenceStatus(StrEnum):
@@ -57,7 +55,7 @@ class ProviderEval:
 
 @dataclass(frozen=True)
 class ProviderConfiguration:
-    """Credential-free: a key never goes in this file (see key_file_path)."""
+    """Credential-free provider configuration."""
     provider_id: str
     model: str
     schema_version: int = 1
@@ -86,17 +84,6 @@ def rollback_configuration(path: Path, previous: ProviderConfiguration) -> None:
     save_configuration(path, previous)
 
 
-_SAFE_ID = re.compile(r"[A-Za-z0-9._-]+")
-
-
-def key_file_path(provider_id: str, youk_root: Path | None = None) -> Path:
-    """Where a provider's API key lives: state/inference-keys/{provider}.key under youk's own tree,
-    which both containers already mount. One file per provider, so a key written for one provider is
-    never sent to another. state/ is gitignored."""
-    safe = provider_id if _SAFE_ID.fullmatch(provider_id) else "invalid"
-    return (youk_root or YOUK_ROOT) / "state" / "inference-keys" / f"{safe}.key"
-
-
 def key_env_names(provider_id: str) -> tuple[str, ...]:
     """Environment variables checked for a provider's key, in order."""
     return {"anthropic": ("ANTHROPIC_API_KEY",),
@@ -104,15 +91,13 @@ def key_env_names(provider_id: str) -> tuple[str, ...]:
 
 
 def resolve_api_key(provider_id: str, env_names: tuple[str, ...], youk_root: Path | None = None) -> str:
-    """The first of: the named environment variables, then the provider's key file. Empty if none."""
+    """Return the first configured environment credential, never a credential file."""
+    del provider_id, youk_root
     for name in env_names:
         value = os.environ.get(name, "").strip()
         if value:
             return value
-    try:
-        return key_file_path(provider_id, youk_root).read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""
+    return ""
 
 
 def evaluate_provider(provider: IntentProvider, expected: InferenceStatus) -> ProviderEval:

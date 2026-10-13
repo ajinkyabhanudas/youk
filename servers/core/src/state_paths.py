@@ -15,8 +15,12 @@ from __future__ import annotations
 
 import fcntl
 import json
+import os
+import tempfile
 import time
 from pathlib import Path
+from collections.abc import Callable
+from typing import Any
 
 # YOUK_ROOT is set by the caller module (session.py / server.py) via module-level
 # assignment. Tests patch it via monkeypatch. We default to the container path.
@@ -87,15 +91,20 @@ def scope_state_root(scope: str | None = None) -> Path:
 
 
 def slug_state_dir(slug: str, scope: str | None = None) -> Path:
-    """Return (and create) the per-slug state directory for a scope.
+    """Return the per-slug state directory for a scope without creating it.
 
     Default scope (the common case, and every call site before this change):
     state/sessions/{slug}/, identical to pre-scope behaviour. A configured
     scope: state/scopes/{scope}/sessions/{slug}/.
     """
-    d = scope_state_root(scope) / "sessions" / slug
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return scope_state_root(scope) / "sessions" / slug
+
+
+def ensure_slug_state_dir(slug: str, scope: str | None = None) -> Path:
+    """Create and return the per-slug state directory for a write operation."""
+    directory = slug_state_dir(slug, scope)
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
 
 
 def current_session_slug(scope: str | None = None) -> str:
@@ -161,22 +170,57 @@ def gate_flag_path(slug: str, flag_name: str, scope: str | None = None) -> Path:
     return slug_state_dir(slug, scope) / flag_name
 
 
+def _locked_write(path: Path, data: str) -> None:
+    """Replace path while its sidecar lock is held by the caller."""
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as temporary:
+            temporary.write(data)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_name, path)
+    finally:
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
+
+
 def atomic_write(path: Path, data: str) -> None:
-    """Write data to path with an fcntl advisory lock to prevent concurrent corruption.
+    """Crash-safe replacement write protected by an fcntl advisory lock.
 
     Uses a .lock sidecar file alongside the target. The lock is advisory:
     it protects against concurrent youk processes (async handlers in the same
     uvicorn event loop serialise naturally, but two separate Docker sessions
     on the same host could race). The lock is released on context exit.
 
-    The target file is written atomically via write_text after acquiring the lock.
+    A temporary file is fsynced and replaced while the lock is held. Readers therefore
+    see either the old complete file or the new complete file, never a partial write.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_suffix(".lock")
     with open(lock_path, "w") as lf:
         fcntl.flock(lf, fcntl.LOCK_EX)
-        path.write_text(data)
-        # lock released when with-block exits
+        _locked_write(path, data)
+
+
+def update_json(path: Path, update: Callable[[Any], Any]) -> Any:
+    """Atomically apply update to a JSON value and return the updated value.
+
+    The read and replacement occur under one lock so concurrent read-modify-write
+    callers cannot silently discard each other's update.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(".lock")
+    with open(lock_path, "w") as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            current = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+        except (OSError, json.JSONDecodeError):
+            current = None
+        updated = update(current)
+        _locked_write(path, json.dumps(updated))
+        return updated
 
 
 def open_json_payload(slug: str) -> str:

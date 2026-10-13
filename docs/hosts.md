@@ -82,7 +82,8 @@ selection".
   folder is not.
 - **The one LLM call youk makes itself** (`optimize_intent`) runs through a provider seam with
   Anthropic and OpenAI-compatible adapters (OpenAI, Ollama, vLLM, LM Studio, gateways), configured by
-  `scripts/configure_inference.py`. Without a configured provider it falls back to the heuristic path,
-  so every host works. `scripts/project-research.py` still calls the Anthropic client directly.
+  `scripts/configure_inference.py`. Credentials are supplied through the server process environment.
+  Without a configured provider it falls back to the heuristic path, so every host works. Project
+  research uses the same provider adapter.
 - **File names.** `docs/claude-md-template.md` and the `claude_md` field in session state keep their
   names; the content is host-neutral.

@@ -48,14 +48,21 @@ def call_tool(
 
     Raises RuntimeError if the server returns an error or times out.
     """
+    container_arguments = dict(arguments or {})
+    # The server sees the repository at /youk. Host paths are only valid outside
+    # the container, so translate the standard test project root at this boundary.
+    if container_arguments.get("project_dir") == str(YOUK_DIR):
+        container_arguments["project_dir"] = "/youk"
     msg = json.dumps({
         "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-        "params": {"name": tool, "arguments": arguments or {}},
+        "params": {"name": tool, "arguments": container_arguments},
     })
     raw_result = _run(image, msg, state_dir=state_dir)
 
     # tools/call wraps content in result.content[].text (JSON string)
     content = raw_result.get("content", [])
+    if len(content) > 1:
+        return {"_content": content}
     for block in content:
         if block.get("type") == "text":
             try:
@@ -77,7 +84,9 @@ def _run(
 ) -> dict[str, Any]:
     payload = f"{_MCP_INIT}\n{_MCP_DONE}\n{payload_msg}\n"
 
-    cmd = ["docker", "run", "-i", "--rm"]
+    # Keep sandbox files readable by the pytest process on Linux runners. Docker
+    # otherwise writes bind-mounted state as root, unlike Docker Desktop on macOS.
+    cmd = ["docker", "run", "-i", "--rm", "--user", f"{os.getuid()}:{os.getgid()}"]
 
     if state_dir is not None:
         # Sandbox: mount temp state dir instead of live state/.

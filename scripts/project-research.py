@@ -15,10 +15,12 @@ Scheduled by install.sh via launchd (macOS) or cron (Linux).
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "servers" / "shared"))
+import inference  # noqa: E402
 
 
 # Source-map: project_type → curated context about recent developments
@@ -69,14 +71,11 @@ _SOURCE_MAP: dict[str, str] = {
 }
 
 
-def _resolve_api_key(youk_dir: Path) -> str:
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if key:
-        return key
-    fallback = youk_dir.parent / ".anthropic" / "api_key"
-    if fallback.exists():
-        return fallback.read_text().strip()
-    return ""
+def _provider(youk_dir: Path) -> inference.IntentProvider:
+    """Build the configured provider through youk's vendor-neutral boundary."""
+    return inference.select_intent_provider(
+        config_path=youk_dir / "state" / "inference-provider.json"
+    )
 
 
 def _load_project_type(youk_dir: Path, slug: str) -> str:
@@ -101,21 +100,14 @@ def _list_all_slugs(youk_dir: Path) -> list[str]:
 
 
 def run_research(slug: str, youk_dir: Path) -> bool:
-    api_key = _resolve_api_key(youk_dir)
-    if not api_key:
-        print(f"[{slug}] ANTHROPIC_API_KEY not available — skipping", file=sys.stderr)
-        return False
-
-    try:
-        import anthropic
-    except ImportError:
-        print("anthropic package not installed — run: pip install anthropic", file=sys.stderr)
+    provider = _provider(youk_dir)
+    if provider.capability.status is not inference.InferenceStatus.AVAILABLE:
+        print(f"[{slug}] inference unavailable: {provider.capability.reason} — skipping", file=sys.stderr)
         return False
 
     project_type = _load_project_type(youk_dir, slug)
     context = _SOURCE_MAP.get(project_type, _SOURCE_MAP["unknown"])
 
-    client = anthropic.Anthropic(api_key=api_key)
     today = datetime.utcnow().strftime("%Y-%m-%d")
 
     prompt = (
@@ -132,12 +124,9 @@ def run_research(slug: str, youk_dir: Path) -> bool:
     )
 
     try:
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1200,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        content = response.content[0].text.strip()
+        content = provider.generate(
+            "You produce concise, current engineering research briefings.", prompt, 1200
+        ).text.strip()
     except Exception as e:
         print(f"[{slug}] API call failed: {e}", file=sys.stderr)
         return False
@@ -166,12 +155,11 @@ def main() -> None:
 
     youk_dir = Path(args.youk_dir)
 
-    # Check if API key is available — if not, print migration notice and exit cleanly.
-    # Stack briefings now run in-session via '/research stack' (no API key required).
-    api_key = _resolve_api_key(youk_dir)
-    if not api_key:
+    # Check the configured provider before looping through projects.
+    provider = _provider(youk_dir)
+    if provider.capability.status is not inference.InferenceStatus.AVAILABLE:
         print(
-            "[youk] No ANTHROPIC_API_KEY found — project-research.py requires a key.\n"
+            f"[youk] Inference provider unavailable: {provider.capability.reason}.\n"
             "[youk] Stack briefings now run in-session without an API key:\n"
             "[youk]   Open a Claude Code session and run: /research stack\n"
             "[youk] The briefing writes to the same research-inbox/ path and surfaces\n"

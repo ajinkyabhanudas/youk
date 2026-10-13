@@ -138,13 +138,13 @@ echo ""
 # ── API key ───────────────────────────────────────────────────────────────────
 echo "API key"
 
-# The containers read the key from state/inference-keys/, not from the host environment or the host
-# CLI's sign-in file. configure_inference.py --check reports exactly what optimize_intent will see.
+# Providers read credentials only from their process environment. configure_inference.py --check
+# reports exactly what this command can see; launchd users must export the same variables there.
 if python3 "$YOUK_DIR/scripts/configure_inference.py" --check >/dev/null 2>&1; then
   pass "Inference provider: $(python3 "$YOUK_DIR/scripts/configure_inference.py" --show | sed -n 's/^status: *//p')"
 else
   warn "Inference provider: not configured — optimize_intent will use the heuristic path (no model call)" \
-    "Run: python3 scripts/configure_inference.py --provider anthropic --key-from-env ANTHROPIC_API_KEY (or --provider openai-compatible --base-url URL --model NAME --key-stdin)"
+    "Run: ANTHROPIC_API_KEY=... python3 scripts/configure_inference.py --provider anthropic"
 fi
 echo ""
 

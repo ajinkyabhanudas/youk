@@ -86,6 +86,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install integration test dependencies
+        run: uv sync --frozen
+
       - name: Set up test directories
         run: |
           mkdir -p $HOME/.claude/audit
@@ -102,3 +109,15 @@ jobs:
           make test-core test-code \
             YOUK_DIR=$GITHUB_WORKSPACE \
             CLAUDE_DIR=$HOME/.claude
+
+      - name: Exercise bounded route, skill, and session paths
+        env:
+          YOUK_DIR: ${{ github.workspace }}
+          CLAUDE_DIR: ${{ runner.temp }}/claude
+        run: |
+          mkdir -p "$CLAUDE_DIR"
+          uv run pytest \
+            tests/integration/test_l2_routing.py::test_xs_task_routes_xs \
+            tests/integration/test_l3_skills.py::test_list_skills_contains_capability_skills \
+            tests/integration/test_l6_e2e.py::TestEndToEndSession::test_step1_session_start \
+            -q --no-cov -m integration

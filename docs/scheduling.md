@@ -1,6 +1,6 @@
 # Scheduled Health Checks
 
-> **Full youk only.** Scheduled health checks require Docker Desktop and `youk-core:latest`. No API key is needed; the optional inference credential is configured with `scripts/configure_inference.py` and stored under `state/inference-keys/`. youk-lite users: run `/health` manually inside a Claude session instead.
+> **Full youk only.** Scheduled health checks require Docker Desktop and `youk-core:latest`. No API key is needed. If optional inference is configured, supply its credential through the server process environment. youk-lite users: run `/health` manually inside a Claude session instead.
 
 youk's compounding engine normally fires during agent sessions (`self_heal` runs every 3rd
 session via `health_check_due`). A scheduled health check lets it run on a fixed cadence —

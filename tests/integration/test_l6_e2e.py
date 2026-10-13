@@ -22,7 +22,7 @@ def _read_slug(sandbox_state: Path) -> str | None:
     if not f.exists():
         return None
     try:
-        return json.loads(f.read_text()).get("slug")
+        return json.loads(f.read_text()).get("active_slug")
     except (json.JSONDecodeError, KeyError):
         return None
 
@@ -44,7 +44,9 @@ class TestEndToEndSession:
         f = sandbox_state / "session-open.json"
         assert f.exists(), "session_start must write session-open.json"
         data = json.loads(f.read_text())
-        assert data.get("slug"), "session-open.json must have non-empty slug"
+        slug = data.get("active_slug")
+        assert slug, "session-open.json must have non-empty active_slug"
+        assert (sandbox_state / "sessions" / slug / "open.json").exists()
 
     def test_step2_route_task_m_size(self, sandbox_state):
         # Ensure session is open first
