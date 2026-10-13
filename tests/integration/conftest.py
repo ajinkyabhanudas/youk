@@ -10,6 +10,7 @@ Marks:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import uuid
@@ -17,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-YOUK_DIR = Path.home() / ".claude" / "youk"
+YOUK_DIR = Path(os.environ["YOUK_DIR"]) if "YOUK_DIR" in os.environ else Path.home() / ".claude" / "youk"
 STATE_DIR = YOUK_DIR / "state"
 
 # ---------------------------------------------------------------------------

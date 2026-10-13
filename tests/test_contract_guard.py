@@ -14,6 +14,8 @@ import events
 
 REPO = Path(__file__).parent.parent
 PRE = REPO / "plugin" / "scripts" / "pre_tool_use.py"
+sys.path.insert(0, str(REPO / "plugin" / "scripts"))
+import pre_tool_use
 
 
 def git(repo: Path, *args: str) -> str:
@@ -42,6 +44,18 @@ def repo(tmp_path):
 
 def rules(command: str, cwd: Path) -> list[str]:
     return [v.rule for v in cg.evaluate_bash(command, str(cwd))]
+
+
+def test_contract_guard_failure_blocks_the_bash_command(monkeypatch, tmp_path):
+    """Hard-rule enforcement must fail closed when the checker itself is unavailable."""
+    messages: list[str] = []
+    monkeypatch.setattr(pre_tool_use, "youk_root", lambda: tmp_path)
+    monkeypatch.setattr(pre_tool_use, "_gates_on", lambda root, cwd: True)
+    monkeypatch.setattr(cg, "first_violation", lambda *args: (_ for _ in ()).throw(RuntimeError("broken")))
+    monkeypatch.setattr(pre_tool_use, "deny", messages.append)
+
+    assert pre_tool_use._contract_denial("git commit -m x", str(tmp_path)) is True
+    assert messages and "Cannot verify Bash command" in messages[0]
 
 
 class TestBranchRules:

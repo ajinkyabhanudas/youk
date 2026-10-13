@@ -1386,6 +1386,17 @@ class TestDuplicateSessionStartWithinWindow:
 
         assert session._is_recent_duplicate_session_start("no-such-slug") is False
 
+    def test_session_start_surfaces_an_open_marker_write_failure(self, youk_root, tmp_path, monkeypatch):
+        import session
+
+        monkeypatch.setattr(session._sp, "atomic_write", lambda *_: (_ for _ in ()).throw(OSError("read-only")))
+        project_dir = tmp_path / "marker-failure-project"
+        project_dir.mkdir()
+
+        state = session.start_session(str(project_dir))
+
+        assert "session marker write failed" in state.session_marker_error
+
 
 class TestKillCriterionDecisionPacket:
     """CIR-150 item 4 / CIR-151: session_start must surface a triggered

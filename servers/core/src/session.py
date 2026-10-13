@@ -1763,18 +1763,20 @@ def start_session(project_dir: str) -> SessionState:
         "plan_items": session_plan[:3],
         "actor": _actor,
     }, indent=2)
+    _session_marker_error = ""
     try:
         _sp.YOUK_ROOT = YOUK_ROOT
         _sp.atomic_write(_slug_state_dir(slug) / "open.json", _open_payload)
-    except Exception:
-        pass
+    except OSError as exc:
+        _session_marker_error = f"session marker write failed: {exc}"
+        session_plan.insert(0, f"⚠ {_session_marker_error}")
     try:
         # Legacy redirect pointer — only for _live_session_running() guard in tests.
         # Contains active_slug, not slug details. Do not parse slug from this file.
         _redirect = json.dumps({"active_slug": slug, "open_at": datetime.utcnow().isoformat()})
-        (YOUK_ROOT / "state" / "session-open.json").write_text(_redirect)
-    except Exception:
-        pass
+        _sp.atomic_write(YOUK_ROOT / "state" / "session-open.json", _redirect)
+    except OSError as exc:
+        session_plan.insert(0, f"⚠ legacy session redirect write failed: {exc}")
 
     # Adaptive ceremony: compute nfr_check autonomy rate from recent audit.
     # When rate ≥ 0.4, nfr_check runs in validate mode (coverage check only, no prompting).
@@ -1999,6 +2001,7 @@ def start_session(project_dir: str) -> SessionState:
         audit_patterns=_audit_patterns,
         cross_project_concepts=_cross_project_concepts,
         pending_build_task=_pending_build_task,
+        session_marker_error=_session_marker_error,
     )
 
 

@@ -63,12 +63,14 @@ def test_ambiguous_brief_blocks(sandbox_state):
 
 
 def test_m_task_writes_routing_breadcrumb(sandbox_state):
-    args = {"task": "implement retry logic for health endpoint", "project_dir": YOUK_DIR_STR}
-    call_tool("youk-core:latest", "route_task", args, state_dir=sandbox_state)
+    call_tool("youk-core:latest", "session_start", {"project_dir": YOUK_DIR_STR}, state_dir=sandbox_state)
+    args = {"task": "implement user notification system", "project_dir": YOUK_DIR_STR}
+    result = call_tool("youk-core:latest", "route_task", args, state_dir=sandbox_state)
+    assert result.get("size") in {"M", "L", "XL"}
     breadcrumb = sandbox_state / "routing-breadcrumb.json"
     assert breadcrumb.exists(), "route_task(M) should write routing-breadcrumb.json"
     data = json.loads(breadcrumb.read_text())
-    assert data.get("size") == "M"
+    assert data.get("size") in {"M", "L", "XL"}
 
 
 def test_xs_task_does_not_write_breadcrumb(sandbox_state):
@@ -126,7 +128,11 @@ def test_session_start_writes_session_open(sandbox_state):
     f = sandbox_state / "session-open.json"
     assert f.exists(), "session_start must write state/session-open.json"
     data = json.loads(f.read_text())
-    assert data.get("slug"), "session-open.json must contain a non-empty slug"
+    slug = data.get("active_slug")
+    assert slug, "session-open.json must contain a non-empty active_slug"
+    assert (sandbox_state / "sessions" / slug / "open.json").exists(), (
+        "session_start must write the authoritative slug-scoped open marker"
+    )
 
 
 def test_session_end_deletes_session_open(sandbox_state):

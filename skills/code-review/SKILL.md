@@ -79,6 +79,11 @@ Severity levels: `CRITICAL` | `HIGH` | `MEDIUM` | `LOW` | `INFO`
 
 Categories to check (skip categories with no applicable surface):
 
+Run separate passes for correctness, structure/boundaries, and fit to the project's
+current constraints. One pass cannot establish the others. Every finding cites a
+specific code location and observable consequence; label pattern-based concerns as
+risks and state what condition would make them matter.
+
 **Logic**
 - Off-by-one, boundary conditions, null/None paths
 - Control flow that can be bypassed or short-circuited unintentionally

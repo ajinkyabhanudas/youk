@@ -13,12 +13,6 @@
         <string>YOUK_DIR</string>
     </array>
 
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>ANTHROPIC_API_KEY</key>
-        <string>ANTHROPIC_API_KEY_VALUE</string>
-    </dict>
-
     <!-- Every Wednesday at 09:00 local time (offset from Monday CCR to spread load) -->
     <key>StartCalendarInterval</key>
     <dict>

@@ -182,6 +182,9 @@ class SessionState:
     # the current session's resume point. Surfaced once at session_start as context.
     # Format: [{label, type, project_slug, session_n, summary, match}]
     cross_project_concepts: list[dict] = field(default_factory=list)
+    # Non-empty when the authoritative slug-scoped session marker could not be written.
+    # Session startup remains available, but callers must treat session-scoped state as degraded.
+    session_marker_error: str = ""
     # Convergence state — tracks which of the seven angles have converged on external pressure.
     # Updated mechanically from exchange structure: user-generated pressure that didn't move
     # the answer = convergence signal. Model-generated pressure = noise, not counted.
@@ -227,6 +230,7 @@ class SessionState:
             "falsifier_alerts": self.falsifier_alerts,
             "audit_patterns": self.audit_patterns,
             "cross_project_concepts": self.cross_project_concepts,
+            "session_marker_error": self.session_marker_error,
             "convergence_state": self.convergence_state,
             "pending_build_task": self.pending_build_task,
             "kill_criterion_decision_packet": self.kill_criterion_decision_packet,

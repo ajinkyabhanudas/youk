@@ -191,20 +191,6 @@ mkdir -p \
   "$AUDIT_DIR"
 ok "Directories ready"
 
-# Inference credential. The containers get no host environment, so a key has to live where they can
-# read it: state/inference-keys/ (gitignored, mode 0600, mounted as /youk/state). Seed it from
-# ANTHROPIC_API_KEY only when nothing is configured yet, so a re-install never overwrites a key
-# the user set with scripts/configure_inference.py. Without a key, optimize_intent stays heuristic.
-if [[ -n "${ANTHROPIC_API_KEY:-}" ]] && [[ ! -s "$YOUK_DIR/state/inference-keys/anthropic.key" ]] \
-   && [[ ! -f "$YOUK_DIR/state/inference-provider.json" ]]; then
-  if printf '%s' "$ANTHROPIC_API_KEY" | python3 "$YOUK_DIR/scripts/configure_inference.py" \
-       --provider anthropic --key-stdin >/dev/null; then
-    ok "Inference key saved to state/inference-keys/ (anthropic)"
-  else
-    warn "Could not save the inference key — run scripts/configure_inference.py yourself"
-  fi
-fi
-
 # Write host→container path map so the Docker containers can translate paths passed
 # by the agent host (which uses host-absolute paths) to their mounted equivalents.
 # The containers mount YOUK_DIR → /youk and the host config dir → /host.
@@ -466,11 +452,10 @@ if [[ -z "$PYTHON_BIN" ]]; then
 elif [[ "$(uname)" == "Darwin" ]]; then
   PLIST_SRC="$YOUK_DIR/scripts/com.youk.project-research.plist"
   PLIST_DST="$HOME/Library/LaunchAgents/com.youk.project-research.plist"
-  # Render plist with actual paths (project-research.py resolves its own API key at runtime)
+  # Render plist with actual paths. Provider credentials come from the scheduler process environment.
   sed \
     -e "s|PYTHON_PATH|$PYTHON_BIN|g" \
     -e "s|YOUK_DIR|$YOUK_DIR|g" \
-    -e "s|ANTHROPIC_API_KEY_VALUE||g" \
     "$PLIST_SRC" > "$PLIST_DST"
 
   # Unload stale job if present, load the new one

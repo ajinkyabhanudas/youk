@@ -12,8 +12,7 @@ The threat surface is:
 ## Credential handling
 
 **What youk does:**
-- Reads `ANTHROPIC_API_KEY` from environment variable
-- Falls back to `~/.claude/.anthropic/api_key` (mounted read-only into the container)
+- Reads provider credentials only from environment variables
 - Uses the key only for `optimize_intent` API calls (intent compression)
 
 **What youk never does:**
@@ -56,7 +55,7 @@ If you find a credential exposure, data leak, or other security issue:
 If your `ANTHROPIC_API_KEY` is compromised:
 
 1. Rotate the key at console.anthropic.com immediately
-2. Update your shell profile or `~/.claude/.anthropic/api_key`
+2. Update the environment variable supplied to youk's process
 3. Restart Docker containers: `docker restart $(docker ps -q --filter name=youk)`
 4. Verify the new key is live: `make doctor`
 

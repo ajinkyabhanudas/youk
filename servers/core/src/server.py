@@ -473,7 +473,7 @@ def session_end(
         from datetime import datetime as _dtc
         slug_lc = _get_session_slug()
         correction_file = YOUK_ROOT / "state" / "loop-correction.json"
-        correction_file.write_text(_jc.dumps({
+        _sp.atomic_write(correction_file, _jc.dumps({
             "slug": slug_lc,
             "correction_detected": loop_correction_detected,
             "ts": _dtc.utcnow().isoformat(),
@@ -644,9 +644,8 @@ def route_task(
     # Analogous to nfr-check-ran.json — enables "routing was missed" recovery at next open.
     if not result.get("blocked"):
         import hashlib as _hashlib
-        import json as _json
         from datetime import datetime as _dt
-        flag_file = _sp.slug_state_dir(slug) / "route-task-ran.json"
+        flag_file = _sp.ensure_slug_state_dir(slug) / "route-task-ran.json"
         task_hash = _hashlib.md5(task.encode()).hexdigest()[:8]
         new_entry = {
             "slug": slug,
@@ -655,16 +654,13 @@ def route_task(
             "size": result.get("size", "?"),
             "ts": _dt.utcnow().isoformat(),
         }
-        # Maintain array so multi-task sessions track all routed tasks, not just last
-        existing: list[dict] = []
-        if flag_file.exists():
-            try:
-                raw = _json.loads(flag_file.read_text())
-                existing = raw if isinstance(raw, list) else [raw]
-            except Exception:
-                pass
-        existing.append(new_entry)
-        _sp.atomic_write(flag_file, _json.dumps(existing))
+        # Maintain the array under the same lock as its read. A write-only lock
+        # would still permit two route_task calls to overwrite one another.
+        def _append_route_entry(current: object) -> list[dict]:
+            existing = current if isinstance(current, list) else ([current] if isinstance(current, dict) else [])
+            return [*existing, new_entry]
+
+        _sp.update_json(flag_file, _append_route_entry)
         # Write semantic routing context into active_task.json so context-clear loses nothing.
         _write_routing_context(task, result)
         # Seed task graph node for M+ tasks so gate tools can write to it immediately.
@@ -882,8 +878,8 @@ def check_nfr_gate(task: str, size: str, nfr_decision_block: str | None = None) 
             import json as _json
             from datetime import datetime as _dt
             slug = _get_session_slug()
-            flag_file = _sp.slug_state_dir(slug) / "nfr-check-ran.json"
-            flag_file.write_text(_json.dumps({
+            flag_file = _sp.ensure_slug_state_dir(slug) / "nfr-check-ran.json"
+            _sp.atomic_write(flag_file, _json.dumps({
                 "slug": slug,
                 "ts": _dt.utcnow().isoformat(),
             }))
@@ -941,30 +937,27 @@ def mark_challenge_ran(
             "reason": validation["reason"],
         }
     try:
-        import json as _json
         from datetime import datetime as _dt
         slug = _get_session_slug()
-        flag_file = _sp.slug_state_dir(slug) / "challenge-ran.json"
-        existing_rounds = 0
-        if flag_file.exists():
-            try:
-                existing = _json.loads(flag_file.read_text())
-                if existing.get("slug") == slug:
-                    existing_rounds = existing.get("rounds", 0)
-            except Exception:
-                pass
-        new_rounds = existing_rounds + 1
         converged = objections_this_round == 0
-        flag_file.write_text(_json.dumps({
-            "slug": slug,
-            "task": task,
-            "ts": _dt.utcnow().isoformat(),
-            "rounds": new_rounds,
-            "angles_validated": True,
-            "mode": mode,
-            "objections_last_round": objections_this_round,
-            "converged": converged,
-        }))
+        flag_file = _sp.ensure_slug_state_dir(slug) / "challenge-ran.json"
+
+        def _next_challenge_round(current: object) -> dict:
+            existing = current if isinstance(current, dict) else {}
+            existing_rounds = existing.get("rounds", 0) if existing.get("slug") == slug else 0
+            return {
+                "slug": slug,
+                "task": task,
+                "ts": _dt.utcnow().isoformat(),
+                "rounds": existing_rounds + 1,
+                "angles_validated": True,
+                "mode": mode,
+                "objections_last_round": objections_this_round,
+                "converged": converged,
+            }
+
+        persisted = _sp.update_json(flag_file, _next_challenge_round)
+        new_rounds = persisted["rounds"]
         _append_gate_to_active_task("challenge")
         _record_gate("challenge", slug)
         return {
@@ -1021,7 +1014,7 @@ def check_challenge_gate(task: str, size: str) -> CheckChallengeGateResult:
             import json as _json
             from datetime import datetime as _dt
             flag_file = YOUK_ROOT / "state" / "challenge-gate-passed.json"
-            flag_file.write_text(_json.dumps({
+            _sp.atomic_write(flag_file, _json.dumps({
                 "slug": _cg_slug,
                 "ts": _dt.utcnow().isoformat(),
             }))
@@ -1205,10 +1198,9 @@ def mark_medium_risk_surfaced(task: str) -> dict:
             data = _json.loads(target.read_text())
             data["surfaced"] = True
             data["surfaced_at"] = _dt.utcnow().isoformat()
-            target.write_text(_json.dumps(data))
+            _sp.atomic_write(target, _json.dumps(data))
         else:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(_json.dumps({
+            _sp.atomic_write(target, _json.dumps({
                 "question": "",
                 "surfaced": True,
                 "surfaced_at": _dt.utcnow().isoformat(),
@@ -1744,8 +1736,7 @@ def update_convergence_state(
         pass
     updated = _update_convergence_state(current, angle, status, pressure_source, unknown_unknown)
     try:
-        cs_file.parent.mkdir(parents=True, exist_ok=True)
-        cs_file.write_text(_json.dumps(updated, indent=2))
+        _sp.atomic_write(cs_file, _json.dumps(updated, indent=2))
     except Exception:
         pass
     return updated

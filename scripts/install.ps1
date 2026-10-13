@@ -221,6 +221,9 @@ if ($mcpList -match "youk-core") {
 } else {
     claude mcp add --scope user youk-core --transport stdio -- `
         docker run -i --rm `
+        --env ANTHROPIC_API_KEY `
+        --env OPENAI_API_KEY `
+        --env YOUK_INFERENCE_API_KEY `
         -v "${claudeWsl}:/claude" `
         -v "${youkWsl}:/youk" `
         youk-core:latest

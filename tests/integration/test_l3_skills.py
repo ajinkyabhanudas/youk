@@ -6,7 +6,7 @@ import pytest
 
 from .mcp_client import call_tool, YOUK_DIR
 
-SKILLS_DIR = Path.home() / ".claude" / "youk" / "skills"
+SKILLS_DIR = YOUK_DIR / "skills"
 REGISTRY_FILE = SKILLS_DIR / "SKILL-REGISTRY.md"
 
 CAPABILITY_SKILLS = {
@@ -103,12 +103,18 @@ def _get_skill_list(sandbox_state) -> list:
         return r
     if "_content" in r:
         import json
+        skills = []
         for block in r["_content"]:
             if block.get("type") == "text":
                 try:
-                    return json.loads(block["text"])
+                    decoded = json.loads(block["text"])
                 except (json.JSONDecodeError, TypeError):
-                    pass
+                    continue
+                if isinstance(decoded, list):
+                    return decoded
+                skills.append(decoded)
+        if skills:
+            return skills
     # Fallback: may be parsed as {"_raw": "[...]"}
     if "_raw" in r:
         import json

@@ -345,17 +345,16 @@ Intent optimization remains usable without an LLM through its deterministic heur
 path. Configure a provider with the host-side CLI:
 
 ```bash
-python3 scripts/configure_inference.py --provider anthropic --key-from-env ANTHROPIC_API_KEY
+ANTHROPIC_API_KEY=... python3 scripts/configure_inference.py --provider anthropic
 python3 scripts/configure_inference.py --provider openai-compatible \
   --base-url http://host.docker.internal:11434/v1 --model llama3.1   # local servers need no key
 python3 scripts/configure_inference.py --show     # status, never prints a key
 python3 scripts/configure_inference.py --check    # exit 0 only if the provider is usable
 ```
 
-The provider/model/base URL go to `state/inference-provider.json` (credential-free); keys go
-to `state/inference-keys/<provider>.key` (mode 0600, gitignored, mounted into the containers).
-`install.sh` seeds the Anthropic key from `ANTHROPIC_API_KEY` on first install only. Unsupported
-providers report an explicit degraded result and never fall back silently. Execution traces contain hashes and policy outcomes, never prompts or
+The provider/model/base URL go to `state/inference-provider.json`, which is credential-free.
+Set any provider credential in the environment of the youk server process; it is never copied to
+or read from a file. Unsupported providers report an explicit degraded result and never fall back silently. Execution traces contain hashes and policy outcomes, never prompts or
 responses.
 
 ## Information governance

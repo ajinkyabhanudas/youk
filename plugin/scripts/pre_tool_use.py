@@ -101,7 +101,7 @@ def _voice_tells(text: str) -> list[str]:
 
 def _contract_denial(command: str, cwd: str) -> bool:
     """Deny a Bash command that breaks a compiled contract (servers/shared/contract_guard.py).
-    True when it denied. A guard failure never blocks: on any error the command goes through."""
+    True when it denied. A guard failure denies because hard-rule enforcement is unavailable."""
     try:
         root = youk_root()
         if root is not None and not _gates_on(root, cwd):
@@ -120,8 +120,9 @@ def _contract_denial(command: str, cwd: str) -> bool:
                 pass
         deny(violation.text())
         return True
-    except Exception:
-        return False
+    except Exception as exc:
+        deny(f"Cannot verify Bash command against hard contracts: {type(exc).__name__}. Command blocked.")
+        return True
 
 
 def main() -> None:

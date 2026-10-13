@@ -18,7 +18,6 @@ from inference import (
     InferenceStatus,
     OpenAICompatibleIntentProvider,
     ProviderConfiguration,
-    key_file_path,
     load_configuration,
     resolve_api_key,
     save_configuration,
@@ -167,18 +166,15 @@ def test_an_unavailable_provider_refuses_to_generate_with_its_reason(tmp_path):
         p.generate("s", "u", 5)
 
 
-# --- credentials: env first, then the provider's own key file --------------------------
+# --- credentials: environment only ------------------------------------------------------
 
-def test_key_resolution_order_and_isolation_between_providers(tmp_path, monkeypatch):
-    f = key_file_path("openai", tmp_path)
-    f.parent.mkdir(parents=True)
-    f.write_text("file-key\n")
-    assert resolve_api_key("openai", ("OPENAI_API_KEY",), tmp_path) == "file-key"
+def test_key_resolution_uses_only_the_environment(tmp_path, monkeypatch):
+    legacy = tmp_path / "state" / "inference-keys" / "openai.key"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("file-key\n")
+    assert resolve_api_key("openai", ("OPENAI_API_KEY",), tmp_path) == ""
     monkeypatch.setenv("OPENAI_API_KEY", "env-key")
     assert resolve_api_key("openai", ("OPENAI_API_KEY",), tmp_path) == "env-key"
-    # a key written for one provider is never read for another
-    assert resolve_api_key("anthropic", ("ANTHROPIC_API_KEY",), tmp_path) == ""
-    assert key_file_path("../../etc/passwd", tmp_path).name == "invalid.key"
 
 
 def test_openai_alias_accepts_the_standard_openai_variable(tmp_path, monkeypatch):
@@ -204,9 +200,8 @@ def test_a_config_written_before_base_url_existed_still_loads(tmp_path):
     assert load_configuration(cfg) == ProviderConfiguration("anthropic", "m", base_url="")
 
 
-def test_the_anthropic_adapter_now_reads_the_key_file_too(tmp_path, monkeypatch):
-    monkeypatch.setattr(inference, "YOUK_ROOT", tmp_path)
-    f = key_file_path("anthropic", tmp_path)
+def test_the_anthropic_adapter_does_not_read_a_legacy_key_file(tmp_path, monkeypatch):
+    f = tmp_path / "state" / "inference-keys" / "anthropic.key"
     f.parent.mkdir(parents=True)
     f.write_text("sk-ant-from-file")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -218,8 +213,8 @@ def test_the_anthropic_adapter_now_reads_the_key_file_too(tmp_path, monkeypatch)
 
     # The SDK is optional in CI; a stand-in keeps this about key resolution, not installation.
     monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(Anthropic=_FakeClient))
-    assert inference.AnthropicIntentProvider("m").capability.status is InferenceStatus.AVAILABLE
-    assert seen["key"] == "sk-ant-from-file"
+    assert inference.AnthropicIntentProvider("m").capability.status is InferenceStatus.UNAVAILABLE
+    assert seen == {}
 
 
 # --- the intent call end to end on another model --------------------------------------
@@ -245,30 +240,26 @@ def _cli(tmp_path, *args, stdin="", env=None):
                           text=True, env=full_env)
 
 
-def test_cli_writes_a_credential_free_config_and_a_private_key_file(tmp_path):
-    out = _cli(tmp_path, "--provider", "openai", "--model", "gpt-x", "--key-stdin", stdin="sk-live-123\n")
+def test_cli_writes_a_credential_free_config_without_copying_the_key(tmp_path):
+    out = _cli(tmp_path, "--provider", "openai", "--model", "gpt-x", env={"OPENAI_API_KEY": "sk-live-123"})
     assert out.returncode == 0, out.stderr
     assert "sk-live-123" not in out.stdout + out.stderr
-    key = tmp_path / "state" / "inference-keys" / "openai.key"
-    assert key.read_text() == "sk-live-123\n" and (key.stat().st_mode & 0o777) == 0o600
+    assert not (tmp_path / "state" / "inference-keys").exists()
     cfg = json.loads((tmp_path / "state" / "inference-provider.json").read_text())
     assert cfg["provider_id"] == "openai" and "sk-live-123" not in json.dumps(cfg)
-    assert _cli(tmp_path, "--check").returncode == 0
+    assert _cli(tmp_path, "--check", env={"OPENAI_API_KEY": "sk-live-123"}).returncode == 0
 
 
-def test_cli_key_from_env_and_missing_env_is_an_error(tmp_path):
-    ok = _cli(tmp_path, "--provider", "anthropic", "--key-from-env", "MY_KEY", env={"MY_KEY": "sk-ant-x"})
-    assert ok.returncode == 0 and (tmp_path / "state" / "inference-keys" / "anthropic.key").exists()
-    bad = _cli(tmp_path, "--provider", "openai", "--key-from-env", "NOT_SET")
-    assert bad.returncode == 2 and "NOT_SET" in bad.stderr
+def test_cli_rejects_removed_credential_copying_flags(tmp_path):
+    out = _cli(tmp_path, "--provider", "anthropic", "--key-from-env", "MY_KEY")
+    assert out.returncode == 2 and "--key-from-env" in out.stderr
 
 
 def test_cli_check_fails_when_unconfigured_and_show_never_prints_a_key(tmp_path):
     assert _cli(tmp_path, "--check").returncode == 1
-    _cli(tmp_path, "--provider", "openai-compatible", "--base-url", "https://api.example.com/v1",
-         "--model", "m", "--key-stdin", stdin="topsecret")
-    shown = _cli(tmp_path, "--show")
-    assert "topsecret" not in shown.stdout and "key:      file" in shown.stdout and "status:   available" in shown.stdout
+    _cli(tmp_path, "--provider", "openai-compatible", "--base-url", "https://api.example.com/v1", "--model", "m")
+    shown = _cli(tmp_path, "--show", env={"YOUK_INFERENCE_API_KEY": "topsecret"})
+    assert "topsecret" not in shown.stdout and "key:      environment" in shown.stdout and "status:   available" in shown.stdout
 
 
 def test_cli_requires_a_base_url_for_openai_compatible(tmp_path):
