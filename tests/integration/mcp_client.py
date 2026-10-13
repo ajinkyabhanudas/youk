@@ -84,7 +84,9 @@ def _run(
 ) -> dict[str, Any]:
     payload = f"{_MCP_INIT}\n{_MCP_DONE}\n{payload_msg}\n"
 
-    cmd = ["docker", "run", "-i", "--rm"]
+    # Keep sandbox files readable by the pytest process on Linux runners. Docker
+    # otherwise writes bind-mounted state as root, unlike Docker Desktop on macOS.
+    cmd = ["docker", "run", "-i", "--rm", "--user", f"{os.getuid()}:{os.getgid()}"]
 
     if state_dir is not None:
         # Sandbox: mount temp state dir instead of live state/.
