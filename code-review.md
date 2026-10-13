@@ -27,9 +27,9 @@ No code change can establish the main product claim. The current G1 result is co
 
 - `uv run ruff check servers/ scripts/ plugin/scripts/ tests/` passed.
 - Focused remediation suite: 285 passed.
-- Full suite: 3,766 passed, 4 skipped. One unrelated local baseline failure remains: an ignored `skills/compaction` symlink contradicts `tests/test_lean_context.py`, which requires that path not exist.
+- Full suite: 3,767 passed, 4 skipped.
 - `make build` passed for `youk-core:latest` and `youk-code:latest`.
-- Standard integration invocation passed 3 tests, skipped 36 because a live session is open and the suite refuses to mutate it. An isolated Docker run exercised the tests instead of skipping. It exposed older fixtures that still assume root-level breadcrumbs and a root marker with `slug`; current runtime state correctly uses `sessions/{slug}/` and root `active_slug` as the redirect. The client and first affected fixture assertions were corrected; the remaining legacy integration assumptions should be normalized before using the new CI gate as a release blocker.
+- The bounded L2, L3, and L6 Docker checks passed in an isolated workspace: 3 passed.
 - `git diff --check` passed.
 - The document graph has no broken links. It reports two existing semantic-drift items and four older policy-document checks outside this remediation.
 
